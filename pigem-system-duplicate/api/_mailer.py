@@ -2,337 +2,434 @@
 ================================================================================
 FILE: api/_mailer.py
 PURPOSE:
-  Customer Email Notification Module powered by Encrypted Gmail SMTP (`smtplib`).
+  Customer Email Notification Module using Google Gmail SMTP over SSL (Port 465).
 
-CORE GOVERNANCE & PRIVACY RULES:
-  1. Customer-Only Delivery (`@gmail.com` Exclusivity): Emails are sent ONLY to
-     verified `@gmail.com` Customer addresses. Internal business accounts
-     (`@pigem.com` for Agent, Manager, and Admin) are automatically skipped
-     because internal coordination uses in-system website notifications.
-  2. Clean, Lightweight Professional Card UI: Renders a concise, mobile-friendly
-     540px HTML card with top `#c8102e` brand accent and plain-text fallback.
-  3. RA 10173 Data Privacy Compliance: Correction emails notify the Customer
-     that an update is needed without exposing sensitive personal/ID data in
-     email text, directing them to sign in to their Customer Account.
+KEY RESPONSIBILITIES:
+  1. Strict `@gmail.com` Recipient Guard:
+     Only sends external emails to Customer `@gmail.com` addresses. Internal
+     accounts (`@pigem.ph` / `@pigem.com`) use in-app dashboard notifications.
+  2. Official Corporate Sender Identity & Simple Monochrome Layout:
+     Uses `PIGEM Support Services <donotreply@pigem.ph>` as the display sender,
+     renders the company logo (`black-logo-white-mode.png`) at the top, avoids
+     colored banners or boxes, includes a 4-letter Reference Tag (`Ref no: XXXX`),
+     enforces a 5-minute OTP validity notice, and appends a standard corporate
+     Privileged/Confidential Information legal disclaimer.
 ================================================================================
 """
 
 # ------------------------------------------------------------------------------
-# IMPORTS EXPLANATION (Why each library is imported in the cloud):
+# IMPORTS EXPLANATION:
 # ------------------------------------------------------------------------------
-# `html` escapes user-provided strings (`<`, `>`, `&`) so names or addresses
-# never break HTML email formatting or inject unsafe tags.
+# `EmailMessage` constructs a standards-compliant MIME email with both a plain-text
+# fallback body and an HTML body.
+from email.message import EmailMessage
+
+# `formataddr` formats the "From" header as "PIGEM Support Services <donotreply@pigem.ph>".
+from email.utils import formataddr
+
+# `html` safely escapes user-supplied strings before embedding them in HTML.
 import html
 
-# `getenv` (from Python's standard `os` module) reads `SMTP_HOST`, `SMTP_PORT`,
-# `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, and `APP_BASE_URL` configured in
-# the Vercel Cloud Environment Variables dashboard (`Config` & `Secret`).
-from os import getenv
+# `os` reads SMTP credentials (`SMTP_USER`, `SMTP_PASSWORD`) from Vercel Cloud
+# Environment Variables so no passwords are ever stored in source code.
+import os
 
-# `re` (Regular Expressions) enforces that recipient addresses match `@gmail.com`.
-import re
+# `random` and `string` generate a 4-letter Reference Tag (e.g. `Ref no: VSCF`)
+# when a caller does not explicitly pass `ref_tag` in the payload.
+import random
+import string
 
-# `smtplib` and `ssl` (standard Python libraries) open an encrypted STARTTLS
-# connection to `smtp.gmail.com` on port `587` to send emails securely.
+# `smtplib` connects to `smtp.gmail.com` over SSL (Port 465) or STARTTLS (Port 587).
 import smtplib
-import ssl
 
-# Standard `email.*` modules construct RFC-compliant multipart emails containing
-# both a plain-text body and a styled HTML card body.
-from email.header import Header
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import formataddr, formatdate, make_msgid, parseaddr
-
-# Standard type annotations for clean function signatures.
-from typing import Any, Dict, List, Optional
+# Standard Python type hints for payload dictionaries and optional strings.
+from typing import Any, Dict, Optional
 
 
-# Brand & office constants displayed in the clean HTML card header and footer
-COMPANY_NAME = "PIGEM Combined Facilities Support Services"
-BRAND_RED = "#c8102e"
-BRAND_DARK = "#101828"
-BRAND_BORDER = "#e2e8f0"
-OFFICE_LINE = "Dasmari\u00f1as City, Cavite | Tel: (046) 458-0908 | Hotline: 101-733 (RED)"
-LIVE_BASE_URL = "https://pigem-system-web.vercel.app"
+# ------------------------------------------------------------------------------
+# SMTP CONFIGURATION HELPERS (Read from Vercel Cloud Environment Variables)
+# ------------------------------------------------------------------------------
+def _get_smtp_host() -> str:
+    """Returns the SMTP server hostname (defaults to 'smtp.gmail.com')."""
+    return (os.getenv("SMTP_HOST") or "smtp.gmail.com").strip()
 
-# Regular Expression matching strictly valid `@gmail.com` Customer email addresses
-_GMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@gmail\.com$", re.IGNORECASE)
+
+def _get_smtp_port() -> int:
+    """Returns the SMTP server port (defaults to 465 for implicit SSL)."""
+    raw = (os.getenv("SMTP_PORT") or "465").strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return 465
+
+
+def _get_smtp_user() -> str:
+    """Returns the Gmail SMTP authentication account from Vercel env vars."""
+    return (
+        os.getenv("SMTP_USER")
+        or os.getenv("GMAIL_USER")
+        or os.getenv("EMAIL_USER")
+        or ""
+    ).strip()
+
+
+def _get_smtp_password() -> str:
+    """Returns the 16-character Google App Password from Vercel env vars."""
+    raw = (
+        os.getenv("SMTP_PASSWORD")
+        or os.getenv("GMAIL_APP_PASSWORD")
+        or os.getenv("EMAIL_PASSWORD")
+        or ""
+    )
+    return "".join(raw.split())
+
+
+def _get_sender_name() -> str:
+    """Returns the corporate sender display name shown in the recipient's inbox."""
+    return (
+        os.getenv("SMTP_FROM_NAME")
+        or "PIGEM Support Services"
+    ).strip()
+
+
+def _get_sender_email() -> str:
+    """Returns the official display sender address (defaults to donotreply@pigem.ph)."""
+    return (
+        os.getenv("SMTP_FROM_EMAIL")
+        or "donotreply@pigem.ph"
+    ).strip()
 
 
 def _get_app_base_url() -> str:
-    """Returns `APP_BASE_URL` from Vercel Cloud env or defaults to the live Vercel URL."""
-    return (getenv("APP_BASE_URL") or LIVE_BASE_URL).strip().rstrip("/")
+    """Returns the live Vercel deployment URL so email logos and links resolve."""
+    return (
+        os.getenv("VERCEL_PROJECT_PRODUCTION_URL")
+        and f"https://{os.getenv('VERCEL_PROJECT_PRODUCTION_URL').strip()}"
+        or "https://pigem-system-web.vercel.app"
+    )
 
 
-def _resolve_customer_portal_link(raw_link: str = "") -> str:
-    """Returns a valid direct link to the Customer Portal (`customer.html`)."""
-    clean = (raw_link or "").strip()
-    if clean:
-        return clean
-    return _get_app_base_url() + "/customer.html"
-
-
-def _escape(val: Any) -> str:
-    """Safely HTML-escapes dynamic values before inserting into HTML templates."""
-    if val is None:
-        return ""
-    return html.escape(str(val))
-
-
-def is_customer_gmail(email_addr: str) -> bool:
-    """Returns True strictly when `email_addr` ends with `@gmail.com`."""
-    return bool(_GMAIL_REGEX.match((email_addr or "").strip()))
-
-
-def _get_smtp_config() -> Dict[str, Any]:
-    """Reads Gmail SMTP settings injected by Vercel Cloud Environment Variables."""
-    host = (getenv("SMTP_HOST") or "smtp.gmail.com").strip()
-    try:
-        port = int((getenv("SMTP_PORT") or "587").strip())
-    except ValueError:
-        port = 587
-    user = (getenv("SMTP_USER") or "").strip()
-    # Strip spaces from 16-character Google App Passwords (`xxxx xxxx xxxx xxxx`)
-    password = (getenv("SMTP_PASSWORD") or "").replace(" ", "").strip()
-    raw_from = (getenv("SMTP_FROM") or "").strip()
-    return {
-        "host": host,
-        "port": port,
-        "user": user,
-        "password": password,
-        "raw_from": raw_from,
-    }
+def _generate_ref_tag(existing_tag: str = "") -> str:
+    """Returns a 4-letter uppercase reference tag such as 'VSCF'."""
+    cleaned = "".join(ch for ch in str(existing_tag or "").upper() if ch.isalpha())
+    if len(cleaned) >= 4:
+        return cleaned[:4]
+    return "".join(random.choices(string.ascii_uppercase, k=4))
 
 
 def is_configured() -> bool:
-    """Returns True when real `SMTP_USER` and `SMTP_PASSWORD` values exist in env."""
-    cfg = _get_smtp_config()
-    user = cfg["user"]
-    pw = cfg["password"]
-    if not user or not pw:
-        return False
-    placeholders = {
-        "your_email@gmail.com",
-        "yourgmail@gmail.com",
-        "your_16_char_app_password",
-        "xxxx",
-    }
-    return user.lower() not in placeholders and pw.lower() not in placeholders
+    """Returns True when both SMTP_USER and SMTP_PASSWORD exist in Vercel env vars."""
+    return bool(_get_smtp_user() and _get_smtp_password())
+
+
+def is_Allowed_customer_gmail(email_addr: str) -> bool:
+    """
+    Verifies that the recipient address is a valid `@gmail.com` Customer email.
+    Internal accounts (`@pigem.ph` / `@pigem.com`) use in-app notifications.
+    """
+    cleaned = str(email_addr or "").strip().lower()
+    return "@" in cleaned and cleaned.endswith("@gmail.com")
 
 
 # ------------------------------------------------------------------------------
-# BASE EMAIL CARD RENDERER (OOP Abstraction & Inheritance)
+# SIMPLE ZERO-COLOR CORPORATE EMAIL RENDERER
 # ------------------------------------------------------------------------------
+_CONFIDENTIALITY_STARS = "*" * 150
+
+_CONFIDENTIALITY_NOTICE = (
+    f"{_CONFIDENTIALITY_STARS}"
+    "Privileged/confidential information may be contained in this message. If this message is "
+    "received by anyone other than the intended addressee, please return the message to the sender "
+    "by replying to it and then delete the message from your computer. Unintended recipients are "
+    "prohibited from taking action on the basis of information in this e-mail. No confidentiality "
+    "or privilege is waived or lost by PIGEM Combined Facilities Support Services including its "
+    "affiliates by any mistransmission of this e-mail. PIGEM Combined Facilities Support Services "
+    "does not accept responsibility or liability for the accuracy or completeness of, or presence "
+    "of any virus or disabling code in, this e-mail. PIGEM Combined Facilities Support Services "
+    "reserves the right to monitor e-mail communications through its networks (in accordance with "
+    "applicable laws). Opinions, conclusions, statements and other information in this message that "
+    "do not relate to the official business of PIGEM Combined Facilities Support Services shall be "
+    "understood as neither given nor endorsed by it. PIGEM Combined Facilities Support Services. "
+    "Registered Office: Dasmariñas City, Cavite, Philippines."
+    f"{_CONFIDENTIALITY_STARS}"
+)
+
+
 class BaseEmailTemplateRenderer:
     """
-    Parent class providing the shared, lightweight 540px HTML card wrapper
-    used by all Customer transactional and promotional email templates.
+    Base class that wraps any email body inside a clean, monochrome (zero-color)
+    corporate document layout with the company logo (`black-logo-white-mode.png`),
+    system-generated notice, and confidentiality disclaimer.
     """
 
-    def wrap_card(
+    def __init__(self, sender_name: str):
+        self.sender_name = sender_name
+
+    def _escape(self, value: Any) -> str:
+        """HTML-escapes dynamic values so special characters render safely."""
+        return html.escape(str(value or ""))
+
+    def wrap_layout(
         self,
         title: str,
-        greeting_name: str,
+        subtitle: str,
         body_html: str,
-        action_label: str = "",
-        action_url: str = "",
+        cta_label: str = "",
+        cta_url: str = "",
+        ref_tag: str = "",
     ) -> str:
-        """Wraps email content inside a clean, responsive corporate card."""
-        safe_title = _escape(title)
-        safe_name = _escape(greeting_name or "Valued Customer")
-        button_block = ""
-        if action_label and action_url:
-            button_block = (
-                f'<div style="margin:22px 0 8px 0;">'
-                f'<a href="{_escape(action_url)}" style="display:inline-block;background:{BRAND_RED};color:#ffffff;'
-                f'text-decoration:none;font-size:14px;font-weight:600;padding:10px 20px;border-radius:6px;">'
-                f'{_escape(action_label)}</a></div>'
-            )
+        """
+        Wraps inner HTML inside a simple, zero-color corporate email layout.
+        """
+        safe_title = self._escape(title)
+        safe_sub = self._escape(subtitle)
+        app_url = _get_app_base_url().rstrip("/")
+        logo_url = f"{app_url}/assets/images/black-logo-white-mode.png"
+        final_ref_tag = _generate_ref_tag(ref_tag)
 
-        return f"""<!doctype html>
-<html lang="en">
+        cta_block = ""
+        if cta_label and cta_url:
+            safe_label = self._escape(cta_label)
+            safe_url = self._escape(cta_url)
+            cta_block = f"""
+            <div style="margin:20px 0;">
+              <a href="{safe_url}"
+                 style="display:inline-block;border:1px solid #111111;color:#111111;text-decoration:none;padding:10px 18px;font-weight:700;font-size:13px;">
+                 {safe_label}
+              </a>
+            </div>
+            """
+
+        return f"""<!DOCTYPE html>
+<html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{safe_title}</title>
 </head>
-<body style="margin:0;padding:24px 12px;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:{BRAND_DARK};line-height:1.55;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="540" cellpadding="0" cellspacing="0" border="0" style="max-width:540px;width:100%;background:#ffffff;border:1px solid {BRAND_BORDER};border-top:4px solid {BRAND_RED};border-radius:8px;">
-          <tr>
-            <td style="padding:20px 24px 12px 24px;border-bottom:1px solid #f1f5f9;">
-              <div style="font-size:15px;font-weight:700;color:{BRAND_DARK};">{COMPANY_NAME}</div>
-              <div style="font-size:12px;color:#64748b;margin-top:2px;">Authorized Red Fiber Service Partner</div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:22px 24px;">
-              <div style="font-size:17px;font-weight:700;color:{BRAND_DARK};margin-bottom:12px;">{safe_title}</div>
-              <p style="font-size:14px;color:#334155;margin:0 0 12px 0;">Hello <b>{safe_name}</b>,</p>
-              <div style="font-size:14px;color:#334155;">{body_html}</div>
-              {button_block}
-              <p style="font-size:13px;color:#64748b;margin:20px 0 0 0;">Thank you,<br><b>{COMPANY_NAME}</b></p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:14px 24px;background:#f8fafc;border-top:1px solid {BRAND_BORDER};font-size:11.5px;color:#64748b;">
-              <div>{OFFICE_LINE}</div>
-              <div style="margin-top:4px;">Protected under Republic Act No. 10173 (Data Privacy Act of 2012). Please do not reply to this automated email.</div>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
+<body style="margin:0;padding:24px 12px;background-color:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;line-height:1.6;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #d4d4d4;padding:28px 26px;">
+    <div style="border-bottom:1px solid #d4d4d4;padding-bottom:14px;margin-bottom:20px;">
+      <img src="{logo_url}" alt="PIGEM" style="height:38px;width:auto;display:block;margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:700;color:#111111;letter-spacing:0.3px;">
+        COMBINED FACILITIES SUPPORT SERVICES
+      </div>
+    </div>
+
+    <div style="font-size:18px;font-weight:700;color:#111111;margin-bottom:4px;">{safe_title}</div>
+    <div style="font-size:13px;color:#444444;margin-bottom:18px;">{safe_sub}</div>
+
+    <div style="font-size:14px;color:#111111;">
+      {body_html}
+    </div>
+
+    {cta_block}
+
+    <div style="margin-top:20px;padding-top:14px;border-top:1px solid #e5e5e5;font-size:12.5px;color:#333333;">
+      <div>Ref no: <b>{self._escape(final_ref_tag)}</b></div>
+      <p style="margin:10px 0 0;font-size:12px;color:#444444;">
+        This is a system-generated message. Please do not respond to this email.
+        To ensure reliable delivery of all emails from our system, please ensure you add
+        <b>donotreply@pigem.ph</b> to your address book.
+      </p>
+      <p style="margin:12px 0 0;font-size:11px;color:#555555;word-break:break-word;line-height:1.45;">
+        {self._escape(_CONFIDENTIALITY_NOTICE)}
+      </p>
+    </div>
+  </div>
 </body>
 </html>"""
 
 
-# ------------------------------------------------------------------------------
-# CONCRETE CUSTOMER EMAIL RENDERER (OOP Inheritance)
-# ------------------------------------------------------------------------------
 class CustomerEmailRenderer(BaseEmailTemplateRenderer):
-    """Renders all five Customer email types using clean, simple formatting."""
+    """
+    Renders clean, monochrome (zero-color) email templates for each stage of the
+    Customer lifecycle (`otp`, `activation`, `correction`, `status_update`,
+    `promo`, and `general`).
+    """
 
-    def render_otp(self, code: str, recipient_name: str, purpose: str) -> str:
-        """1. 6-Digit Security OTP (Contact Verification & Customer Password Recovery)."""
-        body = (
-            f"<p style='margin:0 0 14px 0;'>Use the 6-digit verification code below to complete your <b>{_escape(purpose)}</b> request:</p>"
-            f"<div style='background:#f8fafc;border:1px solid {BRAND_BORDER};border-radius:6px;padding:14px;text-align:center;margin:14px 0;'>"
-            f"<span style='font-family:monospace;font-size:26px;font-weight:700;letter-spacing:6px;color:{BRAND_RED};'>{_escape(code)}</span>"
-            f"<div style='font-size:12px;color:#64748b;margin-top:4px;'>Valid for 10 minutes. Do not share this code with anyone.</div>"
-            f"</div>"
-        )
-        return self.wrap_card("Verification Code", recipient_name, body)
-
-    def render_confirmation(
+    def render(
         self,
-        ref_no: str,
-        customer_name: str,
-        plan_name: str,
-        speed: str,
-        price: str,
-        address: str,
-        activation_link: str,
-        activation_code: str,
-        is_existing_account: bool,
+        template_type: str,
+        subject: str,
+        plain_message: str,
+        payload: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """2. Application Reference Number & Customer Account Activation Notice."""
-        portal_url = _resolve_customer_portal_link()
-        if is_existing_account or not activation_code:
-            note = "<p style='margin:12px 0 0 0;'>This application is linked to your existing Customer Account. Sign in anytime to check your status.</p>"
-            cta_label = "Sign In to Customer Account"
-            cta_url = portal_url
-        else:
-            note = (
-                f"<p style='margin:12px 0 0 0;'>Activate your Customer Account using your one-time code "
-                f"<b>{_escape(activation_code)}</b> to monitor your application online.</p>"
+        data = payload or {}
+        ttype = (template_type or "general").strip().lower()
+        app_base = _get_app_base_url().rstrip("/")
+        customer_name = self._escape(data.get("customer_name") or "Valued Subscriber")
+        ref_no = self._escape(data.get("ref_no") or "")
+        plan_name = self._escape(data.get("plan_name") or "Red Fiber Internet Plan")
+        ref_tag = _generate_ref_tag(str(data.get("ref_tag") or ""))
+
+        if ttype == "otp":
+            otp_code = self._escape(data.get("otp_code") or "")
+            purpose_label = self._escape(
+                data.get("purpose_label") or "verify your contact details and continue your transaction"
             )
-            cta_label = "Activate Customer Account"
-            cta_url = activation_link or portal_url
-
-        body = (
-            f"<p style='margin:0 0 12px 0;'>We have received your internet service application. Here is your summary:</p>"
-            f"<div style='background:#f8fafc;border:1px solid {BRAND_BORDER};border-radius:6px;padding:12px 14px;font-size:13.5px;'>"
-            f"<div><b>Reference Number:</b> <span style='color:{BRAND_RED};font-weight:700;'>{_escape(ref_no)}</span></div>"
-            f"<div style='margin-top:4px;'><b>Selected Plan:</b> {_escape(plan_name)} ({_escape(speed)} - {_escape(price)}/mo)</div>"
-            f"<div style='margin-top:4px;'><b>Service Address:</b> {_escape(address)}</div>"
-            f"<div style='margin-top:4px;'><b>Status:</b> Processing</div>"
-            f"</div>"
-            f"{note}"
-        )
-        return self.wrap_card("Application Received", customer_name, body, cta_label, cta_url)
-
-    def render_correction_notice(self, ref_no: str, customer_name: str, portal_link: str, target_summary: str) -> str:
-        """3. RA 10173 Privacy-Safe Correction Notice (no raw ID data exposed in email)."""
-        body = (
-            f"<p style='margin:0 0 12px 0;'>Your application <b>{_escape(ref_no)}</b> requires a quick update before we can proceed.</p>"
-            f"<div style='background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 14px;font-size:13.5px;'>"
-            f"<div><b>Update Requested:</b> {_escape(target_summary)}</div>"
-            f"<div style='margin-top:4px;font-size:12.5px;color:#475569;'>For your privacy under RA 10173, please sign in to your Customer Account to view the note and submit your update.</div>"
-            f"</div>"
-        )
-        return self.wrap_card(
-            f"Update Needed - {ref_no}",
-            customer_name,
-            body,
-            "Open Customer Account",
-            _resolve_customer_portal_link(portal_link),
-        )
-
-    def render_status_update(self, ref_no: str, customer_name: str, status: str, remarks: str, portal_link: str) -> str:
-        """4. Application Status Update (`Approved`, `Rejected`, or `Processing`)."""
-        raw = (status or "").lower()
-        if "approv" in raw:
-            clean_status = "Approved"
-            next_step = "Your application is approved. Please allow 3 to 5 business days for installation scheduling."
-        elif "reject" in raw:
-            clean_status = "Rejected"
-            next_step = "Your application could not be completed at this time. Please check the remarks or contact our support desk."
-        else:
-            clean_status = "Processing"
-            next_step = "Our team is actively processing your application."
-
-        remarks_html = (
-            f"<div style='margin-top:8px;'><b>Remarks:</b> {_escape(remarks)}</div>" if remarks else ""
-        )
-        body = (
-            f"<p style='margin:0 0 12px 0;'>There is an update on your internet service application:</p>"
-            f"<div style='background:#f8fafc;border:1px solid {BRAND_BORDER};border-radius:6px;padding:12px 14px;font-size:13.5px;'>"
-            f"<div><b>Reference Number:</b> {_escape(ref_no)}</div>"
-            f"<div style='margin-top:4px;'><b>Current Status:</b> {_escape(clean_status)}</div>"
-            f"{remarks_html}"
-            f"</div>"
-            f"<p style='margin:12px 0 0 0;font-size:13.5px;'>{_escape(next_step)}</p>"
-        )
-        return self.wrap_card(
-            f"Application Status: {clean_status}",
-            customer_name,
-            body,
-            "View Application",
-            _resolve_customer_portal_link(portal_link),
-        )
-
-    def render_promotional(
-        self,
-        customer_name: str,
-        headline: str,
-        body_text: str,
-        promo_plans: Optional[List[Dict[str, str]]] = None,
-    ) -> str:
-        """5. Promotional Service Announcement for opted-in `@gmail.com` Customers."""
-        plans_rows = ""
-        if promo_plans:
-            items = "".join(
-                f"<li style='margin-bottom:4px;'><b>{_escape(p.get('name'))}</b> ({_escape(p.get('speed'))}) - {_escape(p.get('price'))}/month</li>"
-                for p in promo_plans
+            body = f"""
+            <p style="margin:0 0 12px;">Dear <b>{customer_name}</b>,</p>
+            <p style="margin:0 0 14px;">
+              NEVER SHARE YOUR OTP especially on social media and SMS or email links.
+              Your code is for your eyes only.
+            </p>
+            <p style="margin:0 0 14px;">
+              Your OTP to {purpose_label} is:
+            </p>
+            <div style="border:1px solid #111111;padding:14px 18px;text-align:center;margin:16px 0;">
+              <div style="font-size:26px;font-weight:700;letter-spacing:6px;color:#111111;">{otp_code}</div>
+            </div>
+            <p style="margin:0;font-size:13px;color:#222222;">
+              Ref no: <b>{ref_tag}</b>. This code is only valid for 5 minutes upon receiving this email.
+            </p>
+            """
+            return self.wrap_layout(
+                title="One-Time Verification Code (OTP)",
+                subtitle="Valid for 5 minutes upon receiving this email",
+                body_html=body,
+                ref_tag=ref_tag,
             )
-            plans_rows = f"<ul style='margin:12px 0;padding-left:18px;font-size:13.5px;'>{items}</ul>"
 
-        formatted_body = _escape(body_text).replace("\n", "<br>")
-        body = f"<p style='margin:0 0 10px 0;'>{formatted_body}</p>{plans_rows}"
-        return self.wrap_card(
-            headline or "PIGEM Service Announcement",
-            customer_name,
-            body,
-            "View Plans & Offers",
-            _get_app_base_url() + "/index.html",
+        if ttype == "activation":
+            activation_code = self._escape(data.get("activation_code") or "")
+            activation_link = str(
+                data.get("activation_link") or f"{app_base}/activate.html"
+            )
+            body = f"""
+            <p style="margin:0 0 12px;">Dear <b>{customer_name}</b>,</p>
+            <p style="margin:0 0 14px;">
+              Thank you for submitting your internet service application. To protect your personal data
+              under the Data Privacy Act of 2012 (RA 10173), no detailed personal information is displayed in this email.
+            </p>
+            <div style="border:1px solid #d4d4d4;padding:14px 16px;margin:14px 0;">
+              <div style="margin-bottom:6px;">Application Reference Number: <b>{ref_no}</b></div>
+              <div style="margin-bottom:6px;">Selected Plan: <b>{plan_name}</b></div>
+              <div>6-Digit Activation OTP Code: <b style="letter-spacing:2px;">{activation_code}</b></div>
+            </div>
+            <p style="margin:0 0 10px;font-size:13px;color:#222222;">
+              NEVER SHARE YOUR OTP especially on social media and SMS or email links. Your code is for your eyes only.
+              Ref no: <b>{ref_tag}</b>. This code is only valid for 5 minutes upon receiving this email.
+            </p>
+            <p style="margin:0;font-size:13px;color:#222222;">
+              Click the link below to open the Account Activation page, then enter your email address,
+              preferred username, 6-digit OTP code, and password to activate your Customer Portal account.
+            </p>
+            """
+            return self.wrap_layout(
+                title="Application Received - Activate Your Account",
+                subtitle=f"Application Reference: {ref_no}",
+                body_html=body,
+                cta_label="Open Account Activation Page",
+                cta_url=activation_link,
+                ref_tag=ref_tag,
+            )
+
+        if ttype == "correction":
+            remarks = self._escape(
+                data.get("remarks")
+                or "Please sign in to your Customer Portal to review the requested correction and upload an updated requirement."
+            )
+            portal_link = str(data.get("portal_link") or f"{app_base}/login.html")
+            body = f"""
+            <p style="margin:0 0 12px;">Dear <b>{customer_name}</b>,</p>
+            <p style="margin:0 0 14px;">
+              Our verification team reviewed your application (Reference No. <b>{ref_no}</b>) for <b>{plan_name}</b>
+              and noted an item that requires a quick update before we can proceed:
+            </p>
+            <div style="border:1px solid #111111;padding:14px 16px;margin:14px 0;">
+              <div style="font-size:12px;font-weight:700;text-transform:uppercase;margin-bottom:6px;">
+                Requested Correction / Action Needed
+              </div>
+              <div style="font-size:14px;">{remarks}</div>
+            </div>
+            <p style="margin:0;font-size:13px;">
+              Please sign in to your Customer Portal to update the requested field or re-upload a clear photo of your Valid ID.
+            </p>
+            """
+            return self.wrap_layout(
+                title="Action Needed on Your Application",
+                subtitle=f"Application Reference: {ref_no}",
+                body_html=body,
+                cta_label="Sign In to Customer Portal",
+                cta_url=portal_link,
+                ref_tag=ref_tag,
+            )
+
+        if ttype == "status_update":
+            status_label = self._escape(data.get("status_label") or "Updated")
+            remarks = self._escape(data.get("remarks") or "")
+            installation_date = self._escape(data.get("installation_date") or "")
+            portal_link = str(data.get("portal_link") or f"{app_base}/login.html")
+
+            extra_rows = ""
+            if installation_date:
+                extra_rows += f"<div style='margin-top:6px;'>Target Installation Schedule: <b>{installation_date}</b></div>"
+            if remarks:
+                extra_rows += f"<div style='margin-top:8px;padding-top:8px;border-top:1px solid #e5e5e5;'>Remarks / Instructions: {remarks}</div>"
+
+            body = f"""
+            <p style="margin:0 0 12px;">Dear <b>{customer_name}</b>,</p>
+            <p style="margin:0 0 14px;">
+              There is a status update regarding your internet service application:
+            </p>
+            <div style="border:1px solid #d4d4d4;padding:14px 16px;margin:14px 0;">
+              <div style="margin-bottom:6px;">Reference Number: <b>{ref_no}</b></div>
+              <div style="margin-bottom:6px;">Selected Plan: <b>{plan_name}</b></div>
+              <div>Current Status: <b>{status_label}</b></div>
+              {extra_rows}
+            </div>
+            <p style="margin:0;font-size:13px;">
+              Sign in to your Customer Portal anytime to view your application timeline.
+            </p>
+            """
+            return self.wrap_layout(
+                title=f"Application Update: {status_label}",
+                subtitle=f"Application Reference: {ref_no}",
+                body_html=body,
+                cta_label="View Application Status",
+                cta_url=portal_link,
+                ref_tag=ref_tag,
+            )
+
+        if ttype == "promo":
+            promo_title = self._escape(data.get("promo_title") or subject or "Service Announcement")
+            promo_body = "<br>".join(
+                self._escape(line) for line in (plain_message or "").splitlines()
+            )
+            body = f"""
+            <p style="margin:0 0 12px;">Dear <b>{customer_name}</b>,</p>
+            <div style="border:1px solid #d4d4d4;padding:14px 16px;margin:14px 0;">
+              <div style="font-size:15px;font-weight:700;margin-bottom:8px;">{promo_title}</div>
+              <div style="font-size:14px;">{promo_body}</div>
+            </div>
+            """
+            return self.wrap_layout(
+                title=promo_title,
+                subtitle="Announcement from PIGEM Support Services",
+                body_html=body,
+                cta_label="Explore Fiber Plans",
+                cta_url=f"{app_base}/index.html#plans",
+                ref_tag=ref_tag,
+            )
+
+        safe_lines = "<br>".join(
+            self._escape(line) for line in (plain_message or "").splitlines()
         )
-
-    def render_general(self, subject: str, message: str) -> str:
-        """Fallback general Customer email template."""
-        body = f"<p style='margin:0;'>{_escape(message).replace(chr(10), '<br>')}</p>"
-        return self.wrap_card(subject or "Notification", "Valued Customer", body)
-
-
-_renderer = CustomerEmailRenderer()
+        body = f"""
+        <p style="margin:0 0 12px;">{safe_lines}</p>
+        """
+        return self.wrap_layout(
+            title=subject or "Customer Notification",
+            subtitle="PIGEM Support Services",
+            body_html=body,
+            cta_label="Open Customer Portal",
+            cta_url=f"{app_base}/login.html",
+            ref_tag=ref_tag,
+        )
 
 
 # ------------------------------------------------------------------------------
-# MAIN GMAIL SMTP TLS SENDER
+# MAIN EMAIL DISPATCH FUNCTION (`send`)
 # ------------------------------------------------------------------------------
 def send(
     to: str,
@@ -343,111 +440,80 @@ def send(
     payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Sends a clean multipart (Plain-Text + HTML) email via encrypted Gmail SMTP
-    strictly to `@gmail.com` Customer accounts.
+    Sends a clean monochrome HTML email through Gmail SMTP (`smtp.gmail.com`)
+    strictly to `@gmail.com` Customer addresses.
     """
-    recipient = (to or "").strip().lower()
+    recipient = str(to or "").strip().lower()
     if not recipient or "@" not in recipient:
-        return {"sent": False, "reason": "Recipient email address is invalid or empty."}
+        return {"sent": False, "error": "Invalid recipient email address"}
 
-    # Enforce Customer-only `@gmail.com` delivery; skip internal `@pigem.com` accounts
-    if not is_customer_gmail(recipient):
+    if not is_Allowed_customer_gmail(recipient):
         return {
             "sent": False,
-            "skipped_internal": True,
-            "reason": "Email notifications are sent exclusively to @gmail.com Customer accounts. Internal business accounts receive in-system website notifications.",
+            "skipped_non_gmail": True,
+            "reason": "External email delivery is reserved for Customer @gmail.com accounts; internal accounts receive in-app dashboard notifications.",
         }
 
-    if not is_configured():
+    smtp_user = _get_smtp_user()
+    smtp_password = _get_smtp_password()
+    if not smtp_user or not smtp_password:
         return {
             "sent": False,
-            "unconfigured": True,
-            "reason": "Gmail SMTP is not configured. Set SMTP_USER and SMTP_PASSWORD in Vercel Environment Variables.",
+            "error": "Gmail SMTP is not configured. Set SMTP_USER and SMTP_PASSWORD in Vercel Environment Variables.",
         }
 
-    cfg = _get_smtp_config()
-    data = payload or {}
-    t_type = (template_type or "general").strip().lower()
+    sender_name = _get_sender_name()
+    sender_email = _get_sender_email()
+    renderer = CustomerEmailRenderer(sender_name=sender_name)
 
-    # Select the matching Customer HTML template if custom HTML was not passed
-    if html_content:
-        final_html = html_content
-    elif t_type == "otp":
-        final_html = _renderer.render_otp(
-            code=str(data.get("code") or "000000"),
-            recipient_name=str(data.get("customer_name") or "Valued Customer"),
-            purpose=str(data.get("purpose") or "Account Verification"),
+    final_html = html_content
+    if not final_html:
+        final_html = renderer.render(
+            template_type=template_type,
+            subject=subject or "PIGEM Notification",
+            plain_message=message or "",
+            payload=payload,
         )
-    elif t_type == "application_confirmation":
-        final_html = _renderer.render_confirmation(
-            ref_no=str(data.get("ref_no") or "PIGEM-PENDING"),
-            customer_name=str(data.get("customer_name") or "Valued Applicant"),
-            plan_name=str(data.get("plan_name") or "Red Fiber Plan"),
-            speed=str(data.get("speed") or "100 Mbps"),
-            price=str(data.get("price") or "PHP 1,000"),
-            address=str(data.get("address") or "Dasmari\u00f1as City, Cavite"),
-            activation_link=str(data.get("activation_link") or ""),
-            activation_code=str(data.get("activation_code") or ""),
-            is_existing_account=bool(data.get("is_existing_account")),
-        )
-    elif t_type == "correction_notice":
-        final_html = _renderer.render_correction_notice(
-            ref_no=str(data.get("ref_no") or ""),
-            customer_name=str(data.get("customer_name") or "Valued Customer"),
-            portal_link=str(data.get("portal_link") or ""),
-            target_summary=str(data.get("target_summary") or "Application Detail / ID Photo Update"),
-        )
-    elif t_type == "status_update":
-        final_html = _renderer.render_status_update(
-            ref_no=str(data.get("ref_no") or ""),
-            customer_name=str(data.get("customer_name") or "Valued Customer"),
-            status=str(data.get("status") or "Processing"),
-            remarks=str(data.get("remarks") or ""),
-            portal_link=str(data.get("portal_link") or ""),
-        )
-    elif t_type == "promotional":
-        final_html = _renderer.render_promotional(
-            customer_name=str(data.get("customer_name") or "Valued Subscriber"),
-            headline=str(data.get("headline") or subject),
-            body_text=str(data.get("body_text") or message),
-            promo_plans=data.get("promo_plans"),
-        )
-    else:
-        final_html = _renderer.render_general(subject=subject, message=message)
 
-    plain_fallback = (message or subject or COMPANY_NAME).strip()
+    plain_fallback = (
+        f"{ (message or subject or 'Please view this message in an HTML-capable email client.').strip() }\n\n"
+        "This is a system-generated message. Please do not respond to this email. "
+        "To ensure reliable delivery of all emails from our system, please ensure you add "
+        "donotreply@pigem.ph to your address book.\n\n"
+        f"{_CONFIDENTIALITY_NOTICE}"
+    )
 
-    # Format sender display name and email address cleanly
-    display_name, parsed_addr = parseaddr(cfg["raw_from"])
-    sender_addr = parsed_addr or cfg["user"]
-    sender_name = display_name or COMPANY_NAME
+    msg = EmailMessage()
+    msg["Subject"] = subject or "PIGEM Notification"
+    msg["From"] = formataddr((sender_name, sender_email))
+    msg["Reply-To"] = formataddr((sender_name, "support@pigem.ph"))
+    msg["To"] = recipient
+    msg.set_content(plain_fallback)
+    msg.add_alternative(final_html, subtype="html")
 
-    # Build standard multipart/alternative MIME message
-    mime_msg = MIMEMultipart("alternative")
-    mime_msg["Subject"] = Header(subject or "PIGEM Notification", "utf-8")
-    mime_msg["From"] = formataddr((str(Header(sender_name, "utf-8")), sender_addr))
-    mime_msg["To"] = recipient
-    mime_msg["Date"] = formatdate(localtime=True)
-    mime_msg["Message-ID"] = make_msgid(domain="gmail.com")
+    host = _get_smtp_host()
+    port = _get_smtp_port()
 
-    mime_msg.attach(MIMEText(plain_fallback, "plain", "utf-8"))
-    mime_msg.attach(MIMEText(final_html, "html", "utf-8"))
-
-    # Connect to Gmail SMTP over encrypted TLS (Port 587 STARTTLS or Port 465 SSL)
     try:
-        tls_context = ssl.create_default_context()
-        if cfg["port"] == 465:
-            with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=20, context=tls_context) as server:
-                server.login(cfg["user"], cfg["password"])
-                server.sendmail(sender_addr, [recipient], mime_msg.as_string())
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=15) as server:
+                server.login(smtp_user, smtp_password)
+                server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient])
         else:
-            with smtplib.SMTP(cfg["host"], cfg["port"], timeout=20) as server:
+            with smtplib.SMTP(host, port, timeout=15) as server:
                 server.ehlo()
-                server.starttls(context=tls_context)
+                server.starttls()
                 server.ehlo()
-                server.login(cfg["user"], cfg["password"])
-                server.sendmail(sender_addr, [recipient], mime_msg.as_string())
-
-        return {"sent": True, "provider": "gmail_smtp", "to": recipient}
+                server.login(smtp_user, smtp_password)
+                server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient])
+        return {
+            "sent": True,
+            "provider": "gmail_smtp",
+            "recipient": recipient,
+        }
     except Exception as exc:
-        return {"sent": False, "reason": f"Gmail SMTP error: {exc}"}
+        return {
+            "sent": False,
+            "provider": "gmail_smtp",
+            "error": str(exc)[:220],
+        }

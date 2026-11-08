@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <link rel="icon" href="assets/images/logo.png">
+  <link rel="icon" href="assets/images/black-logo-white-mode.png">
   <title>Application Form | Combined Facilities Support Services</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -19,11 +19,10 @@
   <header class="simple-bar">
     <div class="container" style="justify-content:space-between;">
       <div style="display:flex; align-items:center; gap:12px;">
-        <img data-img="logo.png" src="assets/images/logo.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+        <img data-img="black-logo-white-mode.png" src="assets/images/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
         <span style="font-weight:700; font-size:18px; cursor:default; user-select:none;">Application Form</span>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
-        <button type="button" class="btn btn-small btn-outline" onclick="showPortalGuide('apply_before_start')">Application Guide</button>
         <a href="index.html" class="btn btn-small">&#8592; Back</a>
       </div>
     </div>
@@ -85,7 +84,7 @@
 
     <section id="panel-2" class="card panel" hidden>
       <h3>Contact Information</h3>
-      <p class="small muted">Provide your active Gmail and primary mobile number for application updates and OTP verification.</p>
+      <p class="small muted">Provide your active Gmail and primary mobile number for application updates and one-time OTP verification.</p>
 
       <div class="form-grid mt">
         <div class="full">
@@ -105,15 +104,32 @@
           <div class="upload-box" style="background:var(--bg-soft);">
             <div class="row between" style="align-items:center; flex-wrap:wrap; gap:10px;">
               <div>
-                <b style="font-size:14px;">Contact Verification (OTP) <span class="req" data-req-for="contact_otp" onmouseenter="showReqTip(this, 'Contact OTP', 'Verify your contact details with a 6-digit code.')" onmouseleave="hideReqTip(this)">*</span></b>
-                <p id="otp-status-text" class="small muted">Send a 6-digit OTP code to verify your Gmail and mobile number.</p>
+                <b style="font-size:14px;">Email Verification (OTP) <span class="req" data-req-for="contact_otp" onmouseenter="showReqTip(this, 'Email OTP', 'Verify your Gmail address with a 6-digit code (valid for 5 minutes).')" onmouseleave="hideReqTip(this)">*</span></b>
+                <p id="otp-status-text" class="small muted">Send a one-time 6-digit OTP code to verify your Gmail address.</p>
               </div>
-              <button type="button" id="btn-send-otp" class="btn btn-small btn-red" onclick="sendContactOtp()">Send OTP</button>
+              <button type="button" id="btn-send-otp" class="btn btn-small btn-red" onclick="sendContactOtp()">Send Email OTP</button>
             </div>
-            <div id="otp-Verify-row" class="row mt" style="gap:8px; align-items:center;" hidden>
-              <input id="contact_otp_code" type="text" maxlength="6" placeholder="Enter 6-digit OTP" style="max-width:180px;">
-              <button type="button" class="btn btn-small btn-dark" onclick="verifyContactOtp()">Verify OTP</button>
+            <div id="otp-Verify-row" class="row mt" style="gap:8px; align-items:center; flex-wrap:wrap;" hidden>
+              <input id="contact_otp_code" type="text" maxlength="6" placeholder="Enter 6-digit Email OTP" style="max-width:190px;">
+              <button type="button" class="btn btn-small btn-dark" onclick="verifyContactOtp()">Verify Email OTP</button>
               <span id="otp-badge" class="badge" hidden>Verified</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="full">
+          <div class="upload-box" style="background:var(--bg-soft);">
+            <div class="row between" style="align-items:center; flex-wrap:wrap; gap:10px;">
+              <div>
+                <b style="font-size:14px;">Mobile Number Verification (OTP) <span class="req" data-req-for="phone_otp" onmouseenter="showReqTip(this, 'Mobile OTP', 'Verify your primary mobile number with a one-time 6-digit code (valid for 5 minutes).')" onmouseleave="hideReqTip(this)">*</span></b>
+                <p id="phone-otp-status-text" class="small muted">Send a one-time 6-digit OTP code to verify your primary mobile number.</p>
+              </div>
+              <button type="button" id="btn-send-phone-otp" class="btn btn-small btn-red" onclick="sendPhoneOtp()">Send Mobile OTP</button>
+            </div>
+            <div id="phone-otp-verify-row" class="row mt" style="gap:8px; align-items:center; flex-wrap:wrap;" hidden>
+              <input id="phone_otp_code" type="text" maxlength="6" placeholder="Enter 6-digit Mobile OTP" style="max-width:190px;">
+              <button type="button" class="btn btn-small btn-dark" onclick="verifyPhoneOtp()">Verify Mobile OTP</button>
+              <span id="phone-otp-badge" class="badge" hidden>Verified</span>
             </div>
           </div>
         </div>
@@ -132,7 +148,7 @@
       <div class="row mt" style="margin-bottom:10px; flex-wrap:wrap; gap:8px;">
         <input id="map-search" type="text" placeholder="Search street, barangay, or city (e.g. Burol Main, Dasmariñas)" style="flex:1; min-width:210px;">
         <button type="button" class="btn btn-small" onclick="searchMapAddress()">Search Map</button>
-        <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img src="assets/images/placeholder.png" data-icon="location.png" alt="Location" class="icon-placeholder" title="Flaticon placeholder: location.png"> Use My Location</button>
+        <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img data-img="icons/location.png" src="assets/images/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location</button>
       </div>
 
       <div id="map"></div>
@@ -176,7 +192,7 @@
       <div class="form-grid mt">
         <div>
           <label for="street">Street Name <span class="req" data-req-for="street" onmouseenter="showReqTip(this, 'Street Name', 'Enter street name.')" onmouseleave="hideReqTip(this)">*</span></label>
-          <input id="street" type="text" placeholder="Tokya St.">
+          <input id="street" type="text" placeholder="Sampaguita St.">
         </div>
         <div>
           <label for="subdivision">Subdivision / Village <span class="req" data-req-for="subdivision" onmouseenter="showReqTip(this, 'Subdivision', 'Enter village or subdivision name.')" onmouseleave="hideReqTip(this)">*</span></label>
@@ -213,23 +229,22 @@
     <section id="panel-4" class="card panel" hidden>
       <div class="row between" style="align-items:flex-start; flex-wrap:wrap; gap:10px;">
         <div>
-          <h3>Valid Government ID Upload (Front &amp; Back)</h3>
-          <p class="small muted">Upload clear photos of both the <b>Front</b> and <b>Back</b> of your valid government-issued ID.</p>
+          <h3>Valid Government ID Upload (Front and Back)</h3>
+          <p class="small muted">Upload clear, distinct photos of both the <b>Front</b> and <b>Back</b> of your valid government-issued ID.</p>
         </div>
-        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" onclick="openPhoneQrModal()"><img src="assets/images/placeholder.png" data-icon="qr-phone.png" alt="Phone QR" class="icon-placeholder" title="Flaticon placeholder: qr-phone.png"> Continue on Phone (QR Code)</button>
+        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="assets/images/icons/qr-phone.png" alt="Phone QR (not available)" class="icon-img"> Continue on Phone (QR Code)</button>
       </div>
 
       <div class="notice mt" style="background:var(--bg-soft); border:1px solid var(--line);">
-        <b>Document Upload Instructions &amp; Quality Guide</b>
+        <b>Document Upload Instructions</b>
         <ul style="margin:8px 0 10px 18px; font-size:13.5px; color:var(--muted); line-height:1.5;">
           <li>Place your physical ID flat on a well-lit surface. Do not upload photocopies or digital screenshots.</li>
           <li>Make sure your <b>Full Name, Birth Date, ID Number, Photo, and Barcode/Signature</b> are sharp and readable.</li>
-          <li>Keep all 4 corners of the ID inside the frame with no flash glare or fingers covering the text.</li>
+          <li>Upload the actual <b>Front side</b> and <b>Back side</b> separately (do not upload the same photo twice).</li>
         </ul>
         <div class="id-sample-grid">
-
           <div style="border:2px solid #12b76a; border-radius:10px; padding:10px; background:#fff;">
-            <div style="font-size:12px; font-weight:700; color:#027a48; margin-bottom:6px;">&#10003; GOOD SAMPLE (CLEAR FRONT &amp; BACK)</div>
+            <div style="font-size:12px; font-weight:700; color:#027a48; margin-bottom:6px;">&#10003; GOOD SAMPLE (CLEAR FRONT AND BACK)</div>
             <svg viewBox="0 0 320 96" width="100%" height="84" style="display:block; background:#f8fafc; border-radius:6px; border:1px solid #d0d5dd;">
               <rect x="8" y="10" width="142" height="76" rx="6" fill="#ffffff" stroke="#12b76a" stroke-width="2"/>
               <rect x="16" y="22" width="34" height="42" rx="4" fill="#e2e8f0"/>
@@ -238,7 +253,7 @@
               <rect x="58" y="22" width="80" height="7" rx="3" fill="#1e293b"/>
               <rect x="58" y="35" width="64" height="6" rx="3" fill="#64748b"/>
               <rect x="58" y="47" width="72" height="6" rx="3" fill="#64748b"/>
-              <text x="58" y="74" font-size="8" font-family="sans-serif" fill="#027a48" font-weight="bold">FRONT: CLEAR &amp; FULL</text>
+              <text x="58" y="74" font-size="8" font-family="sans-serif" fill="#027a48" font-weight="bold">FRONT: CLEAR</text>
               <rect x="168" y="10" width="142" height="76" rx="6" fill="#ffffff" stroke="#12b76a" stroke-width="2"/>
               <rect x="176" y="20" width="126" height="12" fill="#1e293b"/>
               <rect x="176" y="40" width="96" height="6" rx="3" fill="#64748b"/>
@@ -249,7 +264,7 @@
           </div>
 
           <div style="border:2px solid #f04438; border-radius:10px; padding:10px; background:#fff;">
-            <div style="font-size:12px; font-weight:700; color:#b42318; margin-bottom:6px;">&#10005; AVOID (BLURRY, GLARE, OR CUT-OFF)</div>
+            <div style="font-size:12px; font-weight:700; color:#b42318; margin-bottom:6px;">&#10005; AVOID (BLURRY, GLARE, OR DUPLICATE)</div>
             <svg viewBox="0 0 320 96" width="100%" height="84" style="display:block; background:#fef3f2; border-radius:6px; border:1px solid #fecdca;">
               <rect x="20" y="14" width="130" height="70" rx="6" fill="#ffffff" stroke="#f04438" stroke-width="2" stroke-dasharray="4 2"/>
               <rect x="30" y="26" width="30" height="36" rx="4" fill="#cbd5e1" opacity="0.4"/>
@@ -296,8 +311,8 @@
             <input id="id_front" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('front', this)">
             <input id="id_front_cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('front', this)">
             <div class="upload-btns">
-              <button type="button" class="btn btn-small" onclick="document.getElementById('id_front').click()"><img src="assets/images/placeholder.png" data-icon="upload.png" alt="Choose File" class="icon-placeholder" title="Flaticon placeholder: upload.png"> Choose from Files</button>
-              <button type="button" id="btn-front-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_front_cam').click()"><img src="assets/images/placeholder.png" data-icon="camera.png" alt="Camera" class="icon-placeholder" title="Flaticon placeholder: camera.png"> Take Photo (Camera)</button>
+              <button type="button" class="btn btn-small" onclick="document.getElementById('id_front').click()"><img data-img="icons/upload.png" src="assets/images/icons/upload.png" alt="Upload (not available)" class="icon-img"> Choose from Files</button>
+              <button type="button" id="btn-front-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_front_cam').click()"><img data-img="icons/camera.png" src="assets/images/icons/camera.png" alt="Camera (not available)" class="icon-img"> Take Photo (Camera)</button>
             </div>
             <div id="id-front-preview-box" class="mt" hidden>
               <img id="id-front-preview" class="id-preview" alt="Front ID Preview">
@@ -312,8 +327,8 @@
             <input id="id_back" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('back', this)">
             <input id="id_back_cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('back', this)">
             <div class="upload-btns">
-              <button type="button" class="btn btn-small" onclick="document.getElementById('id_back').click()"><img src="assets/images/placeholder.png" data-icon="upload.png" alt="Choose File" class="icon-placeholder" title="Flaticon placeholder: upload.png"> Choose from Files</button>
-              <button type="button" id="btn-back-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_back_cam').click()"><img src="assets/images/placeholder.png" data-icon="camera.png" alt="Camera" class="icon-placeholder" title="Flaticon placeholder: camera.png"> Take Photo (Camera)</button>
+              <button type="button" class="btn btn-small" onclick="document.getElementById('id_back').click()"><img data-img="icons/upload.png" src="assets/images/icons/upload.png" alt="Upload (not available)" class="icon-img"> Choose from Files</button>
+              <button type="button" id="btn-back-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_back_cam').click()"><img data-img="icons/camera.png" src="assets/images/icons/camera.png" alt="Camera (not available)" class="icon-img"> Take Photo (Camera)</button>
             </div>
             <div id="id-back-preview-box" class="mt" hidden>
               <img id="id-back-preview" class="id-preview" alt="Back ID Preview">
@@ -329,16 +344,16 @@
     </section>
 
     <section id="panel-5" class="card panel" hidden>
-      <h3>Subscriber Declaration &amp; Consent</h3>
+      <h3>Subscriber Declaration and Consent</h3>
       <p class="small muted">Please review the official Red Fiber subscriber declarations and terms before completing your registration.</p>
 
       <div class="notice mt" style="background:#fff; border:1px solid var(--line); font-size:13.5px; line-height:1.6; max-height:260px; overflow-y:auto; padding:16px;">
-        <b style="color:var(--text); font-size:14px; display:block; margin-bottom:8px;">OFFICIAL SUBSCRIBER CERTIFICATION &amp; UNDERTAKING</b>
+        <b style="color:var(--text); font-size:14px; display:block; margin-bottom:8px;">OFFICIAL SUBSCRIBER CERTIFICATION AND UNDERTAKING</b>
         <p>1. <b>Truthfulness of Information:</b> I hereby certify under penalty of perjury that all personal information, contact numbers, address details, and valid identification documents submitted in this application are authentic, accurate, and belong to me.</p>
         <p style="margin-top:8px;">2. <b>Terms of Service:</b> I agree to abide by the standard Red Fiber Postpaid Terms and Conditions, Acceptable Use Policy, and Combined Facilities Support Services guidelines governing internet service installation and maintenance.</p>
         <p style="margin-top:8px;">3. <b>Data Privacy Consent:</b> Pursuant to the Data Privacy Act of 2012 (RA 10173), I authorize PIGEM Combined Facilities Support Services to collect, store, and process my personal data and ID documents solely for fiber eligibility validation, installation dispatch, billing, and account servicing.</p>
         <p style="margin-top:8px;">4. <b>Customer Premises Equipment (Modem/ONT):</b> I acknowledge that the optical network terminal (ONT) modem and accessories installed in my premises remain property of the provider and shall be handled with due care.</p>
-        <p style="margin-top:8px;">5. <b>No Lock-in &amp; Billing Cycle:</b> I understand that Red Fiber postpaid plans feature no lock-in contract period, and billing commences upon successful fiber line activation and optical power hand-off.</p>
+        <p style="margin-top:8px;">5. <b>No Lock-in and Billing Cycle:</b> I understand that Red Fiber postpaid plans feature no lock-in contract period, and billing commences upon successful fiber line activation and optical power hand-off.</p>
       </div>
 
       <div class="mt-big">
@@ -393,10 +408,6 @@
           </div>
           <div id="step-ld-3" class="reg-step-item">
             <span class="reg-step-icon">3</span>
-            <span>Forwarding Application for Screening</span>
-          </div>
-          <div id="step-ld-4" class="reg-step-item">
-            <span class="reg-step-icon">4</span>
             <span>Generating Official Reference Number</span>
           </div>
         </div>

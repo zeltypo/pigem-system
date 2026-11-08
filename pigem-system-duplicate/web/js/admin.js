@@ -4,8 +4,8 @@
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
 //   1. web/js/config.js  -> Role guide toggles, password validation, and confirmation modals
-//   2. web/js/db.js      -> `checkPageAccess(['admin'])`, `dbGetAllUsers()`, `dbCreateStaffUser()`,
-//                           `dbAdminUpdateUserStatus()`, `dbGetSystemSettings()`, `dbGetLogs()`
+//   2. web/js/db.js      -> `requireLogin(['admin'])`, `dbListUsers()`, `dbCreateUserAccount()`,
+//                           `dbCreateAgentInviteLink()`, `dbUpdateUser()`, `dbListLogs()`
 //   3. web/js/api.js     -> `apiCheckHealth()` for live OpenCV, Gemini, SMTP & reCAPTCHA status
 //   4. web/js/dash-ui.js -> Shared console layout, dark-mode toggle, and audit search
 // ============================================================================
@@ -23,15 +23,9 @@ window.addEventListener("DOMContentLoaded", async function () {
   document.getElementById("top-user-name").textContent = currentAdmin.full_name;
   await refreshAdminData();
   initDashUI(currentAdmin, adminApps, function () { showTab("reports"); });
-
-  setTimeout(function () {
-    if (typeof POPUP_GUIDE_MANAGER !== "undefined") {
-      POPUP_GUIDE_MANAGER.autoShowForPortal("admin_technical_guide");
-    }
-  }, 220);
 });
 
-// `refreshAdminData`: Reloads staff accounts, system settings, popup guide states, cloud health, and audit logs for the Admin Console.
+// `refreshAdminData`: Reloads staff accounts, system settings, cloud health, and audit logs for the Admin Console.
 async function refreshAdminData() {
   adminApps = await dbListAllApplications();
   adminUsers = await dbListUsers();
@@ -69,8 +63,8 @@ async function refreshAdminData() {
     { label: "Admins", value: rCounts.admin, color: "#c8102e" }
   ]);
   renderColumns("chart-admin-cols", [
-    { label: "Pending", value: pending, color: "#2563eb" },
-    { label: "Needs Fix", value: fix, color: "#d97706" },
+    { label: "Pending / Encoding", value: pending, color: "#2563eb" },
+    { label: "Needs Correction", value: fix, color: "#d97706" },
     { label: "Approved", value: approved, color: "#15803d" },
     { label: "Rejected", value: rejected, color: "#dc2626" }
   ]);
@@ -79,7 +73,6 @@ async function refreshAdminData() {
   renderCalendar("admin-full-calendar", adminApps);
 
   renderMaintState();
-  await renderAdminPopupGuides();
   await renderAiState();
   await checkApiHealth();
   renderAdminUsers();
@@ -134,44 +127,6 @@ function toggleMaintMode() {
   );
 }
 
-// `renderAdminPopupGuides`: Renders per-role onboarding guide controls so the Admin can toggle automatic help popups.
-async function renderAdminPopupGuides() {
-  var body = document.getElementById("admin-popup-guides-body");
-  if (!body || typeof dbListPopupGuides !== "function") return;
-  var guides = await dbListPopupGuides();
-  var html = "";
-  for (var i = 0; i < guides.length; i++) {
-    var g = guides[i];
-    var isTech = g.audience_tone === "technical";
-    html +=
-      '<tr>' +
-        '<td><b>' + escapeHtml(g.id) + '</b><div class="tiny muted">Portal: ' + escapeHtml(g.portal) + '</div></td>' +
-        '<td><span class="badge ' + (isTech ? "badge-gray" : "badge-green") + '">' + (isTech ? "Technical (Admin)" : "Polite & Simple") + '</span></td>' +
-        '<td>' + escapeHtml(g.title) + '</td>' +
-        '<td>' + (g.auto_show !== false ? '<span class="badge badge-green">Enabled</span>' : '<span class="badge badge-gray">Manual Only</span>') + '</td>' +
-        '<td>' +
-          '<div style="display:flex; gap:6px; flex-wrap:wrap">' +
-            '<button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide(\'' + escapeHtml(g.id) + '\')">Preview</button>' +
-            '<button type="button" class="btn btn-outline btn-sm" onclick="adminToggleGuideAutoShow(\'' + escapeHtml(g.id) + '\', ' + (g.auto_show === false) + ')">' +
-              (g.auto_show !== false ? "Disable Auto-Show" : "Enable Auto-Show") +
-            '</button>' +
-          '</div>' +
-        '</td>' +
-      '</tr>';
-  }
-  body.innerHTML = html || '<tr><td colspan="5" class="muted">No pop-up guides configured.</td></tr>';
-}
-
-// `adminToggleGuideAutoShow` (params: guideId, nextAutoShow): Saves whether a specific role's welcome guide automatically appears on portal sign-in.
-async function adminToggleGuideAutoShow(guideId, nextAutoShow) {
-  var guide = POPUP_GUIDE_MANAGER.getGuide(guideId);
-  if (!guide) return;
-  guide.auto_show = Boolean(nextAutoShow);
-  await dbSavePopupGuide(guide);
-  await dbAddLog(currentAdmin.email, "Set popup_guides[" + guideId + "].auto_show = " + guide.auto_show);
-  await renderAdminPopupGuides();
-}
-
 // 2. AI Screening Control (Exclusive to Admin)
 var lastHealthData = null;
 
@@ -193,13 +148,13 @@ async function renderAiState() {
   var btn = document.getElementById("btn-toggle-ai");
   if (lbl) {
     if (!on) {
-      lbl.textContent = "Currently DISABLED by Admin (Agent & Manager workspaces switch cleanly to manual document review)";
+      lbl.textContent = "Currently DISABLED by Admin (Agent and Manager workspaces switch cleanly to manual document review)";
     } else if (!pyOnline) {
       lbl.textContent = "Cloud FastAPI Serverless Screening Endpoint (/api) is currently unreachable - manual agent review is active.";
     } else if (!geminiOnline) {
       lbl.textContent = "FastAPI Serverless is ONLINE, awaiting GEMINI_API_KEY in Vercel Environment Variables - manual agent review is active.";
     } else {
-      lbl.textContent = "Cloud AI Screening Engine ONLINE (Vercel FastAPI Serverless + " + (opencvOnline ? "OpenCV Auto-Crop + " : "") + "Google Gemini Vision OCR)";
+      lbl.textContent = "Cloud AI Screening Engine ONLINE (Vercel FastAPI Serverless + " + (opencvOnline ? "OpenCV Auto-Crop + " : "") + "SHA-256 Duplicate Check + Google Gemini Vision OCR)";
     }
   }
   if (btn) {
@@ -233,7 +188,7 @@ function toggleAiMode() {
     next ? "Enable Cloud AI Document Screening Engine?" : "Disable Cloud AI Document Screening Engine?",
     next
       ? "Enabling <code>public.system_settings.ai_enabled = true</code> resumes cloud OpenCV + Google Gemini Vision requirements screening via <code>POST /api/screen-async</code>."
-      : "Disabling <code>public.system_settings.ai_enabled = false</code> pauses automated screening. Customer submissions will continue without interruption using original uploaded ID copies, and all Agents &amp; Managers will receive a manual-review notification.",
+      : "Disabling <code>public.system_settings.ai_enabled = false</code> pauses automated screening. Customer submissions will continue without interruption using original uploaded ID copies, and all Agents and Managers will receive a manual-review notification.",
     next ? "Enable AI Screening" : "Disable AI Screening",
     async function () {
       setAiEnabled(next);
@@ -281,7 +236,7 @@ async function checkApiHealth() {
         : "Check Vercel deployment logs for api/index.py"
     },
     {
-      name: "Google Gemini Vision & AI API (gemini-flash-latest)",
+      name: "Google Gemini Vision and AI API (gemini-flash-latest)",
       status: geminiOk ? "Online (Configured)" : "Key Missing",
       badge: geminiOk ? "badge-green" : "badge-yellow",
       detail: geminiOk
@@ -289,11 +244,11 @@ async function checkApiHealth() {
         : "Add GEMINI_API_KEY in Vercel Environment Variables to activate Vision OCR"
     },
     {
-      name: "OpenCV Readability & 4-Corner Auto-Crop Engine",
+      name: "OpenCV Readability, 4-Corner Auto-Crop, and Duplicate Check",
       status: opencvOk ? "Online" : "Unavailable",
       badge: opencvOk ? "badge-green" : "badge-red",
       detail: opencvOk
-        ? "Evaluates blur, brightness, glare & contrast and saves perspective-cropped working copy in documents/cropped/"
+        ? "Evaluates blur, brightness, glare, contrast, SHA-256 duplicate image check, and saves cropped copy in documents/cropped/"
         : "Requires opencv-python-headless in Vercel Python runtime"
     },
     {
@@ -313,11 +268,11 @@ async function checkApiHealth() {
         : "Using OpenStreetMap Nominatim reverse geocoding"
     },
     {
-      name: "Gmail SMTP Transactional Email Engine",
+      name: "PIGEM Support Services Email Engine",
       status: smtpOk ? "Online" : (pyOk ? "Env Missing" : "Unreachable"),
       badge: smtpOk ? "badge-green" : "badge-red",
       detail: smtpOk
-        ? "Connected via /api/notify (smtp.gmail.com:587 STARTTLS)"
+        ? "Connected via /api/notify (PIGEM Support Services <donotreply@pigem.ph>)"
         : "Configure SMTP_USER and SMTP_PASSWORD in Vercel Environment Variables"
     },
     {
@@ -343,7 +298,7 @@ async function checkApiHealth() {
   box.innerHTML = html;
 }
 
-// 4. Accounts Management (Admin is the sole handler of internal staff business accounts)
+// 4. Accounts Management
 function renderAdminUsers() {
   var body = document.getElementById("admin-users-body");
   if (!body) return;
@@ -391,33 +346,36 @@ function renderAdminUsers() {
   body.innerHTML = html;
 }
 
-// `adminCreateUser`: Validates inputs and registers a new Agent or Manager staff account with a unique username in Supabase.
+// `adminCreateUser`: Validates First Name, Middle Name, Last Name, Username, Official Email (@pigem.ph), and Strong Password to create an Agent or Manager account.
 async function adminCreateUser() {
   hideMsg("acc-msg");
-  var name = document.getElementById("new-acc-name").value.trim();
+  var fname = (document.getElementById("new-acc-fname").value || "").trim();
+  var mname = (document.getElementById("new-acc-mname").value || "").trim();
+  var lname = (document.getElementById("new-acc-lname").value || "").trim();
   var usernameInput = document.getElementById("new-acc-username");
   var username = (usernameInput ? usernameInput.value : "").trim().toLowerCase();
   var email = document.getElementById("new-acc-email").value.trim().toLowerCase();
   var pw = (document.getElementById("new-acc-pw").value || "").trim();
   var role = document.getElementById("new-acc-role").value;
 
-  if (!name || !email) {
-    showMsg("acc-msg", "error", "Please enter Full Name, Username, and Business Account Email.");
+  if (!fname || !lname || !email) {
+    showMsg("acc-msg", "error", "Please enter First Name, Last Name, Username, and Official Email (@pigem.ph).");
     return;
   }
+  var name = [fname, mname, lname].filter(Boolean).join(" ");
   if (!username && typeof sanitizeUsernameSeed === "function") {
     username = sanitizeUsernameSeed(name, email);
   }
   if (typeof isValidUsername === "function" && !isValidUsername(username)) {
-    showMsg("acc-msg", "error", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+    showMsg("acc-msg", "error", "Username must be 3 to 30 characters using letters, numbers, dots (.), hyphens (-), or underscores (_).");
     return;
   }
   if (!isStaffBusinessEmail(email)) {
-    showMsg("acc-msg", "error", "Internal staff must use a business account email (e.g. name@pigem.com). Gmail addresses are reserved for Customers.");
+    showMsg("acc-msg", "error", "Internal staff must use an official @pigem.ph email address. Gmail addresses are reserved for Customers.");
     return;
   }
-  if (!pw || pw.length < 6) {
-    showMsg("acc-msg", "error", "Please provide a password of at least 6 characters.");
+  if (!isStrongPassword(pw)) {
+    showMsg("acc-msg", "error", PASSWORD_REQUIREMENT_TEXT);
     return;
   }
   if (role === "admin") {
@@ -427,28 +385,61 @@ async function adminCreateUser() {
 
   try {
     var created = await dbCreateUserAccount(name, email, pw, role, username);
-    await dbAddLog(currentAdmin.email, "Created " + role + " business account for @" + (created.username || username) + " (" + email + ")");
-    document.getElementById("new-acc-name").value = "";
+    await dbAddLog(currentAdmin.email, "Created " + role + " account for @" + (created.username || username) + " (" + email + ")");
+    document.getElementById("new-acc-fname").value = "";
+    document.getElementById("new-acc-mname").value = "";
+    document.getElementById("new-acc-lname").value = "";
     if (usernameInput) usernameInput.value = "";
     document.getElementById("new-acc-email").value = "";
     document.getElementById("new-acc-pw").value = "";
-    showMsg("acc-msg", "ok", "Business account created for @" + (created.username || username) + " (" + email + " - " + role + ").");
+    showMsg("acc-msg", "ok", "Staff account created for @" + (created.username || username) + " (" + email + " - " + role + ").");
     await refreshAdminData();
   } catch (err) {
     showMsg("acc-msg", "error", err.message);
   }
 }
 
-// `adminOpenResetPasswordModal` (params: userId, userEmail): Opens the Administrator password-reset dialog for a selected staff or customer account.
+// `adminGenerateAgentInvite`: Generates a private one-time INV-... registration link for a new Agent from the Admin Console
+async function adminGenerateAgentInvite() {
+  var noteEl = document.getElementById("adm-invite-note");
+  var note = noteEl ? noteEl.value.trim() : "";
+  try {
+    var res = await dbCreateAgentInviteLink(currentAdmin ? currentAdmin.email : "admin@pigem.ph", note || "Admin Private Agent Registration Invite");
+    var url = getSiteBaseUrl() + "/agent-register.html?invite=" + encodeURIComponent(res.code);
+    var wrap = document.getElementById("adm-invite-output-wrap");
+    var inp = document.getElementById("adm-invite-url");
+    if (inp) inp.value = url;
+    if (wrap) wrap.classList.remove("hidden");
+    if (noteEl) noteEl.value = "";
+    showMsg("adm-invite-msg", "ok", "Private Agent Registration Link (" + res.code + ") created! Share the URL below with your new agent.");
+  } catch (err) {
+    showMsg("adm-invite-msg", "error", err.message || "Could not generate private registration link.");
+  }
+}
+
+// `adminCopyInviteUrl`: Copies the generated private agent registration URL to clipboard
+function adminCopyInviteUrl() {
+  var inp = document.getElementById("adm-invite-url");
+  if (!inp || !inp.value) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(inp.value);
+  } else {
+    inp.select();
+    document.execCommand("copy");
+  }
+  showAlert("Copied", "Private Agent Registration Link copied to clipboard.");
+}
+
+// `adminOpenResetPasswordModal` (params: userId, userEmail): Opens the Administrator password-reset dialog for a selected staff account.
 function adminOpenResetPasswordModal(userId, userEmail) {
   window._adminResetTargetId = userId;
   window._adminResetTargetEmail = userEmail;
   openPopup(
-    '<h3>Reset Business Account Password</h3>' +
+    '<h3>Reset Account Password</h3>' +
     '<p class="small muted mt">Set a new sign-in password for <b>' + escapeHtml(userEmail) + '</b>.</p>' +
     '<div class="mt">' +
-      '<label for="adm-reset-pw">New Password (min. 6 characters)</label>' +
-      '<input id="adm-reset-pw" type="password" placeholder="Enter new password" />' +
+      '<label for="adm-reset-pw">New Password</label>' +
+      '<input id="adm-reset-pw" type="password" data-pw-check="1" placeholder="Enter strong password" />' +
     '</div>' +
     '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
       '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
@@ -461,13 +452,13 @@ function adminOpenResetPasswordModal(userId, userEmail) {
 async function adminConfirmResetPassword() {
   var pwEl = document.getElementById("adm-reset-pw");
   var newPw = pwEl ? pwEl.value.trim() : "";
-  if (!newPw || newPw.length < 6) {
-    showAlert("Password Short", "Please enter at least 6 characters.", "warn");
+  if (!isStrongPassword(newPw)) {
+    showAlert("Password Requirement", PASSWORD_REQUIREMENT_TEXT, "warn");
     return;
   }
   try {
     await dbAdminResetUserPassword(window._adminResetTargetId, newPw);
-    await dbAddLog(currentAdmin.email, "Reset business password for " + window._adminResetTargetEmail);
+    await dbAddLog(currentAdmin.email, "Reset password for " + window._adminResetTargetEmail);
     closePopup();
     showAlert("Password Updated", "Updated sign-in password for " + window._adminResetTargetEmail + ".", "good");
   } catch (err) {
@@ -574,14 +565,14 @@ async function adminSendTestEmail() {
   }
 
   btn.disabled = true;
-  btn.textContent = "Sending via Gmail SMTP...";
-  showMsg("test-email-msg", "info", "Connecting to Gmail SMTP (smtp.gmail.com)...");
+  btn.textContent = "Sending...";
+  showMsg("test-email-msg", "info", "Dispatching via PIGEM Support Services...");
 
   try {
     var res;
     if (type === "otp") {
       var sampleOtp = String(Math.floor(100000 + Math.random() * 900000));
-      res = await apiSendOtpEmail(to, sampleOtp, "Admin Security Test", "Admin");
+      res = await apiSendOtpEmail(to, sampleOtp, "Admin Security Test", "Admin", "VSCF");
     } else if (type === "application_confirmation") {
       res = await apiSendApplicationConfirmationEmail(
         to,
@@ -589,7 +580,7 @@ async function adminSendTestEmail() {
         "PF-20261021-0001",
         { name: "Plan 1400", speed: "300", price: 1400 },
         "Blk 42 Lot 19 Tokya St., Summerwind Village M., Brgy. Burol Main, Dasmariñas City, Cavite",
-        { status: "pending", code: "ACT-789012" }
+        { status: "pending", code: "849201" }
       );
     } else if (type === "correction_notice") {
       res = await apiSendCorrectionEmail(to, "Juan Dela Cruz", "PF-20261021-0001", "The name entered on your application form does not match the name printed on your Valid ID.");
@@ -609,7 +600,7 @@ async function adminSendTestEmail() {
     }
 
     if (res && res.sent) {
-      showMsg("test-email-msg", "ok", "Email delivered via Gmail SMTP to " + to + "! Check inbox (and Spam folder).");
+      showMsg("test-email-msg", "ok", "Email delivered via PIGEM Support Services to " + to + "! Check inbox (and Spam folder).");
     } else if (res && res.offline) {
       showMsg("test-email-msg", "error", "Cloud FastAPI email endpoint (/api/notify) is currently unreachable. Please check Vercel deployment status.");
     } else {
@@ -619,6 +610,6 @@ async function adminSendTestEmail() {
     showMsg("test-email-msg", "error", "Error: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Send Live Email via Gmail SMTP";
+    btn.textContent = "Send Live Email";
   }
 }

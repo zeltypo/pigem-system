@@ -184,7 +184,7 @@ async function dbSignIn(identifier, password) {
       throw new Error("Customer Login accepts @gmail.com accounts or Customer usernames only.");
     }
     if ((SYSTEM === "staff" || SYSTEM === "admin") && typeof isCustomerGmail === "function" && isCustomerGmail(cleanEmail)) {
-      throw new Error("Internal portals require a business account or staff username, not a Gmail account.");
+      throw new Error("Internal portals require an internal staff email (such as @pigem.ph) or staff username, not a Gmail account.");
     }
   } else {
     if (typeof isValidUsername === "function" && !isValidUsername(cleanInput)) {
@@ -1049,59 +1049,198 @@ async function signOutAndGoLogin() {
   window.location.href = page;
 }
 
-async function dbStartPasswordReset(email) {
+function maskEmailAddress(email) {
   var clean = String(email || "").trim().toLowerCase();
-  if (typeof isCustomerGmail === "function" && !isCustomerGmail(clean)) {
-    throw new Error("Email OTP password recovery is for @gmail.com Customer accounts only. Internal business credentials are managed by the System Administrator.");
+  if (clean.indexOf("@") === -1) return "******@gmail.com";
+  var parts = clean.split("@");
+  var local = parts[0];
+  var domain = parts[1];
+  var tail = local.length >= 2 ? local.slice(-2) : local;
+  return "******" + tail + "@" + domain;
+}
+
+function maskPhoneNumber(phone) {
+  var digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length < 4) return "09********00";
+  var prefix = digits.slice(0, 2) || "09";
+  var suffix = digits.slice(-2);
+  return prefix + "********" + suffix;
+}
+
+function generateSecuredOtp(targetKey) {
+  var key = "pigem_otp_" + String(targetKey || "default").toLowerCase().replace(/[^a-z0-9@._-]/g, "_");
+  var randArr = new Uint32Array(1);
+  if (typeof window !== "undefined" && window.crypto && window.crypto.getRandomValues) {
+    window.crypto.getRandomValues(randArr);
+  } else {
+    randArr[0] = Math.floor(Math.random() * 900000) + 100000;
   }
-  var code = String(Math.floor(100000 + Math.random() * 900000));
-  var users = getDemoUsers();
-  var found = false;
-  for (var i = 0; i < users.length; i++) {
-    if (users[i].email === clean) {
-      if (users[i].role && users[i].role !== "customer") {
-        throw new Error("Internal business credentials are managed by the System Administrator.");
-      }
-      users[i].reset_code = code;
-      found = true;
+  var code = String(100000 + (randArr[0] % 900000));
+  var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  var refTag = "";
+  for (var i = 0; i < 4; i++) {
+    refTag += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  var record = {
+    code: code,
+    refTag: refTag,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    used: false
+  };
+  sessionStorage.setItem(key, JSON.stringify(record));
+  return record;
+}
+
+function verifySecuredOtp(targetKey, enteredCode) {
+  var key = "pigem_otp_" + String(targetKey || "default").toLowerCase().replace(/[^a-z0-9@._-]/g, "_");
+  var raw = sessionStorage.getItem(key);
+  if (!raw) {
+    return { valid: false, reason: "No active OTP found. Please request a new OTP code." };
+  }
+  try {
+    var rec = JSON.parse(raw);
+    if (rec.used) {
+      return { valid: false, reason: "This OTP has already been used. Please request a new code." };
+    }
+    if (Date.now() > Number(rec.expiresAt || 0)) {
+      sessionStorage.removeItem(key);
+      return { valid: false, reason: "This OTP code has expired (valid for 5 minutes). Please click Resend OTP." };
+    }
+    if (String(rec.code) !== String(enteredCode || "").trim()) {
+      return { valid: false, reason: "The 6-digit verification code is incorrect." };
+    }
+    rec.used = true;
+    sessionStorage.setItem(key, JSON.stringify(rec));
+    return { valid: true, refTag: rec.refTag };
+  } catch (e) {
+    return { valid: false, reason: "Could not verify OTP code." };
+  }
+}
+
+async function dbFindAccountForRecovery(queryValue, recoveryMode) {
+  var q = String(queryValue || "").trim();
+  if (!q) throw new Error("Please enter the required account detail.");
+  var qLower = q.toLowerCase();
+  var qDigits = q.replace(/\D/g, "");
+
+  var matchedUser = null;
+  var matchedApp = null;
+
+  var localUsers = getDemoUsers();
+  for (var i = 0; i < localUsers.length; i++) {
+    var u = localUsers[i];
+    if (
+      String(u.email || "").toLowerCase() === qLower ||
+      String(u.username || "").toLowerCase() === qLower ||
+      String(u.full_name || "").toLowerCase() === qLower
+    ) {
+      matchedUser = u;
       break;
     }
   }
 
-  if (!IS_DEMO_MODE) {
-    var existing = await supabaseClient.from("users").select("*").eq("email", clean).maybeSingle();
-    if (existing.data) {
-      if (existing.data.role && existing.data.role !== "customer") {
-        throw new Error("Internal business credentials are managed by the System Administrator.");
+  if (!IS_DEMO_MODE && supabaseClient) {
+    if (qLower.indexOf("@") !== -1) {
+      var uRes = await supabaseClient.from("users").select("*").eq("email", qLower).maybeSingle();
+      if (uRes.data) matchedUser = uRes.data;
+      var aRes = await supabaseClient.from("applications").select("*").eq("email", qLower).order("created_at", { ascending: false }).limit(1);
+      if (aRes.data && aRes.data.length > 0) matchedApp = aRes.data[0];
+    } else if (qDigits.length >= 10) {
+      var pRes = await supabaseClient.from("applications").select("*").eq("phone", qDigits).order("created_at", { ascending: false }).limit(1);
+      if (pRes.data && pRes.data.length > 0) {
+        matchedApp = pRes.data[0];
+        var ueRes = await supabaseClient.from("users").select("*").eq("email", String(matchedApp.email || "").toLowerCase()).maybeSingle();
+        if (ueRes.data) matchedUser = ueRes.data;
       }
-      found = true;
-      await supabaseClient.from("users").update({ activation_code: code }).eq("email", clean);
     } else {
-
-      var appCheck = await supabaseClient.from("applications").select("*").eq("email", clean).limit(1);
-      if (appCheck.data && appCheck.data.length > 0) {
-        found = true;
-        var a = appCheck.data[0];
-        var fallbackName = a.full_name || [a.first_name, a.last_name].filter(Boolean).join(" ") || clean;
-        var fallbackUser = await dbGenerateUniqueUsername(fallbackName, clean);
-        var newRow = {
-          id: a.customer_id || ("cust-" + Date.now()),
-          username: fallbackUser,
-          email: clean,
-          full_name: fallbackName,
-          role: "customer",
-          active: true,
-          activated: true,
-          activation_code: code
-        };
-        await supabaseClient.from("users").upsert(newRow, { onConflict: "email" });
+      var unRes = await supabaseClient.from("users").select("*").ilike("username", qLower).maybeSingle();
+      if (unRes.data) matchedUser = unRes.data;
+      if (!matchedUser) {
+        var fnRes = await supabaseClient.from("users").select("*").ilike("full_name", qLower).limit(1);
+        if (fnRes.data && fnRes.data.length > 0) matchedUser = fnRes.data[0];
+      }
+      if (matchedUser && matchedUser.email) {
+        var appByE = await supabaseClient.from("applications").select("*").eq("email", matchedUser.email).order("created_at", { ascending: false }).limit(1);
+        if (appByE.data && appByE.data.length > 0) matchedApp = appByE.data[0];
       }
     }
   }
 
-  if (!found) throw new Error("No account found with that email address.");
-  writeSaved("pigem_users", users);
-  return code;
+  if (!matchedUser && !matchedApp) {
+    var allApps = await dbListAllApplications();
+    for (var j = 0; j < allApps.length; j++) {
+      var a = allApps[j];
+      var aPhone = String(a.phone || "").replace(/\D/g, "");
+      if (
+        String(a.email || "").toLowerCase() === qLower ||
+        (qDigits.length >= 10 && aPhone === qDigits) ||
+        String(a.full_name || "").toLowerCase() === qLower ||
+        String(a.ref_no || "").toLowerCase() === qLower
+      ) {
+        matchedApp = a;
+        break;
+      }
+    }
+  }
+
+  if (!matchedUser && !matchedApp) {
+    throw new Error("No account was found matching that information.");
+  }
+
+  var email = String((matchedUser && matchedUser.email) || (matchedApp && matchedApp.email) || "").toLowerCase();
+  if (matchedUser && matchedUser.role && matchedUser.role !== "customer") {
+    throw new Error("Internal staff credentials are managed by the System Administrator.");
+  }
+
+  var fullName = (matchedUser && matchedUser.full_name) || (matchedApp && matchedApp.full_name) || "Valued Subscriber";
+  var username = (matchedUser && matchedUser.username) || (await dbGetSuggestedUsername(email));
+  var phone = (matchedApp && matchedApp.phone) || "09170000021";
+
+  var otpRec = generateSecuredOtp("recovery_" + email);
+  if (!IS_DEMO_MODE && supabaseClient && email) {
+    if (matchedUser) {
+      await supabaseClient.from("users").update({ activation_code: otpRec.code }).eq("email", email);
+    } else {
+      await supabaseClient.from("users").upsert({
+        id: "cust-" + Date.now(),
+        username: username,
+        email: email,
+        full_name: fullName,
+        role: "customer",
+        active: true,
+        activated: true,
+        activation_code: otpRec.code
+      }, { onConflict: "email" });
+    }
+  }
+
+  var users = getDemoUsers();
+  for (var k = 0; k < users.length; k++) {
+    if (users[k].email === email) {
+      users[k].reset_code = otpRec.code;
+      writeSaved("pigem_users", users);
+      break;
+    }
+  }
+
+  return {
+    email: email,
+    username: username,
+    fullName: fullName,
+    phone: phone,
+    maskedEmail: maskEmailAddress(email),
+    maskedPhone: maskPhoneNumber(phone),
+    code: otpRec.code,
+    refTag: otpRec.refTag,
+    expiresAt: otpRec.expiresAt,
+    mode: recoveryMode || "password"
+  };
+}
+
+async function dbStartPasswordReset(email) {
+  var info = await dbFindAccountForRecovery(email, "password");
+  return info.code;
 }
 
 async function dbFinishPasswordReset(email, code, newPw) {
@@ -1308,6 +1447,7 @@ async function dbCreateAgentLink(agentEmail, note) {
     code: code,
     agent_email: agentEmail,
     note: note || "",
+    active: true,
     created_at: new Date().toISOString()
   };
   var list = readSaved("pigem_agent_links", []);
@@ -1317,6 +1457,68 @@ async function dbCreateAgentLink(agentEmail, note) {
     await supabaseClient.from("agent_links").upsert(item, { onConflict: "code" });
   }
   return item;
+}
+
+async function dbCreateAgentInviteLink(creatorEmail, note) {
+  var randPart = Math.random().toString(36).slice(2, 8).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+  var code = "INV-" + randPart;
+  var item = {
+    code: code,
+    agent_email: creatorEmail || "manager@pigem.ph",
+    note: note || "Private One-Time Agent Registration Link",
+    active: true,
+    created_at: new Date().toISOString()
+  };
+  var list = readSaved("pigem_agent_links", []);
+  list.unshift(item);
+  writeSaved("pigem_agent_links", list);
+  if (!IS_DEMO_MODE && supabaseClient) {
+    await supabaseClient.from("agent_links").upsert(item, { onConflict: "code" });
+  }
+  await dbAddActivity("agent_invite_link_created", code + " (" + (note || "Private Agent Invite") + ")");
+  return item;
+}
+
+async function dbVerifyAgentInviteLink(code) {
+  var clean = String(code || "").trim().toUpperCase();
+  if (!clean || clean.indexOf("INV-") !== 0) return null;
+
+  if (!IS_DEMO_MODE && supabaseClient) {
+    try {
+      var res = await supabaseClient.from("agent_links").select("*").eq("code", clean).maybeSingle();
+      if (res.data && res.data.active !== false) return res.data;
+      if (res.data && res.data.active === false) return null;
+    } catch (e) {}
+  }
+
+  var list = readSaved("pigem_agent_links", []);
+  for (var i = 0; i < list.length; i++) {
+    if (String(list[i].code || "").toUpperCase() === clean && list[i].active !== false) {
+      return list[i];
+    }
+  }
+  return null;
+}
+
+async function dbConsumeAgentInviteLink(code, registeredAgentEmail) {
+  var clean = String(code || "").trim().toUpperCase();
+  if (!clean) return;
+  var list = readSaved("pigem_agent_links", []);
+  for (var i = 0; i < list.length; i++) {
+    if (String(list[i].code || "").toUpperCase() === clean) {
+      list[i].active = false;
+      list[i].note = (list[i].note || "Invite") + " [Used by " + registeredAgentEmail + "]";
+    }
+  }
+  writeSaved("pigem_agent_links", list);
+  if (!IS_DEMO_MODE && supabaseClient) {
+    try {
+      await supabaseClient.from("agent_links").update({
+        active: false,
+        note: "Registered by " + registeredAgentEmail
+      }).eq("code", clean);
+    } catch (e) {}
+  }
 }
 
 async function dbListAgentLinks() {
@@ -1364,7 +1566,7 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
     }
   } else {
     if (typeof isStaffBusinessEmail === "function" && !isStaffBusinessEmail(cleanEmail)) {
-      throw new Error("Internal Agent, Manager, and Admin accounts must use a business account email (e.g. name@pigem.com), not a Gmail address.");
+      throw new Error("Internal Agent, Manager, and Admin accounts must use an official internal email (such as name@pigem.ph), not a Gmail address.");
     }
   }
 
@@ -1565,8 +1767,6 @@ async function dbSyncLiveSettingsAndContent() {
       writeSaved("pigem_plans", plansRes.data);
     }
 
-    await dbSyncPopupGuides();
-
     if (typeof loadPageImages === "function") loadPageImages();
     if (typeof window.onLiveContentSynced === "function") window.onLiveContentSynced();
   } catch (e) {
@@ -1577,55 +1777,14 @@ async function dbSyncLiveSettingsAndContent() {
 }
 
 async function dbSyncPopupGuides() {
-  if (IS_DEMO_MODE || !supabaseClient) return getPopupGuides();
-  try {
-    var res = await supabaseClient.from("popup_guides").select("*");
-    if (!res.error && Array.isArray(res.data) && res.data.length > 0) {
-      writeSaved("pigem_popup_guides", res.data);
-      return res.data;
-    }
-  } catch (err) {}
-  return getPopupGuides();
+  return [];
 }
 
 async function dbListPopupGuides() {
-  await dbSyncPopupGuides();
-  return getPopupGuides();
+  return [];
 }
 
 async function dbSavePopupGuide(guideRow) {
-  if (!guideRow || !guideRow.id) return false;
-  var current = getPopupGuides();
-  var updated = [];
-  var found = false;
-  for (var i = 0; i < current.length; i++) {
-    if (current[i].id === guideRow.id) {
-      updated.push(Object.assign({}, current[i], guideRow, { updated_at: new Date().toISOString() }));
-      found = true;
-    } else {
-      updated.push(current[i]);
-    }
-  }
-  if (!found) updated.push(guideRow);
-  writeSaved("pigem_popup_guides", updated);
-
-  if (!IS_DEMO_MODE && supabaseClient) {
-    try {
-      await supabaseClient.from("popup_guides").upsert({
-        id: guideRow.id,
-        portal: guideRow.portal,
-        audience_tone: guideRow.audience_tone || "polite_simple",
-        title: guideRow.title,
-        intro: guideRow.intro || "",
-        steps: Array.isArray(guideRow.steps) ? guideRow.steps : [],
-        footer_note: guideRow.footer_note || "",
-        button_label: guideRow.button_label || "Got It",
-        auto_show: guideRow.auto_show !== false,
-        active: guideRow.active !== false,
-        updated_at: new Date().toISOString()
-      }, { onConflict: "id" });
-    } catch (err) {}
-  }
   return true;
 }
 

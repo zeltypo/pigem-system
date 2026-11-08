@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>My Applications - PIGEM Customer Portal</title>
 
-  <link rel="icon" type="image/png" href="assets/images/logo.png" />
+  <link rel="icon" type="image/png" href="assets/images/black-logo-white-mode.png" />
 
   <link rel="stylesheet" href="assets/style.css" />
 </head>
@@ -15,14 +15,14 @@
   <header class="topbar">
     <div class="container topbar-inner">
       <div class="brand" style="display:flex; align-items:center; gap:10px;">
-        <img src="assets/images/logo.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
+        <img src="assets/images/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
         <div><b style="cursor:default; user-select:none;">Combined Facilities Support Services</b></div>
       </div>
 
       <nav class="nav-links">
-        <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('customer_portal_guide')">Guide</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('customer_portal_guide')">Tutorial</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
-          <img src="assets/images/placeholder.png" data-icon="bell.png" alt="Notifications" class="icon-placeholder" title="Flaticon placeholder: bell.png" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+          <img data-img="icons/bell.png" src="assets/images/icons/bell.png" alt="Notifications (not available)" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
         </button>
         <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="My Account">CU</button>
       </nav>

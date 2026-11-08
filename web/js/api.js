@@ -1,9 +1,7 @@
 function _getPortalBaseUrl() {
-
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
     return window.location.origin;
   }
-
   return (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) ? CONFIG.PUBLIC_URL : "https://pigem-system-web.vercel.app";
 }
 
@@ -12,9 +10,17 @@ function _apiEndpoint(path) {
   return base.replace(/\/$/, "") + path;
 }
 
+function generateOtpRefTag() {
+  var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  var tag = "";
+  for (var i = 0; i < 4; i++) {
+    tag += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return tag;
+}
+
 async function apiVerifyCaptcha(token) {
   var clean = String(token || "").trim();
-
   if (!clean) return { verified: false };
 
   try {
@@ -27,7 +33,6 @@ async function apiVerifyCaptcha(token) {
     var data = await res.json();
     return { verified: data.verified === true };
   } catch (err) {
-
     return { verified: true, fallback: true };
   }
 }
@@ -36,12 +41,10 @@ function apiStartBackgroundScreening(applicationId) {
   if (!applicationId) return Promise.resolve({ queued: false });
 
   return (async function () {
-
     var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = controller ? setTimeout(function () { controller.abort(); }, 55000) : null;
     try {
       var headers = { "Content-Type": "application/json" };
-
       if (typeof dbGetToken === "function") {
         var token = await dbGetToken();
         if (token) headers["Authorization"] = "Bearer " + token;
@@ -59,7 +62,6 @@ function apiStartBackgroundScreening(applicationId) {
       if (!res.ok) return { queued: false, offline: true };
       return await res.json();
     } catch (err) {
-
       if (timer) clearTimeout(timer);
       return { queued: false, offline: true };
     }
@@ -67,7 +69,6 @@ function apiStartBackgroundScreening(applicationId) {
 }
 
 async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
-
   var offlineResult = {
     preliminary: true,
     status: "offline",
@@ -115,21 +116,22 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
     var data = await response.json();
     var q = data.quality || {};
     var notes = data.ai || {};
-    var comps = Array.isArray(data.comparisons) ? data.comparisons : [];
+    var compsObj = data.comparisons || {};
+    var comps = Array.isArray(compsObj) ? compsObj : (compsObj.fields || []);
 
-    var nameComp = comps.find(function (c) { return c.key === "full_name"; });
-    var dobComp = comps.find(function (c) { return c.key === "birth_date"; });
-    var idComp = comps.find(function (c) { return c.key === "id_number"; });
+    var nameComp = comps.find(function (c) { return c.key === "full_name" || c.field === "full_name"; });
+    var dobComp = comps.find(function (c) { return c.key === "birth_date" || c.field === "birth_date"; });
+    var idComp = comps.find(function (c) { return c.key === "id_number" || c.field === "id_number"; });
 
-    data.name_match = Boolean(nameComp && nameComp.status === "match");
-    data.birth_date_match = Boolean(dobComp && dobComp.status === "match");
-    data.id_number_match = Boolean(idComp && idComp.status === "match");
+    data.name_match = Boolean(nameComp && (nameComp.status === "match" || nameComp.matched === true));
+    data.birth_date_match = Boolean(dobComp && (dobComp.status === "match" || dobComp.matched === true));
+    data.id_number_match = Boolean(idComp && (idComp.status === "match" || idComp.matched === true));
 
     var hasQualityIssue = Boolean(q.issues && q.issues.length > 0);
     var hasFieldGap = comps.length > 0 && !(data.name_match && data.birth_date_match && data.id_number_match);
     data.overall_status = (hasQualityIssue || hasFieldGap) ? "Needs Review" : "Verified";
-    data.blur_score = q.blur_score || "OK";
-    data.issues = (notes.findings && notes.findings.length) ? notes.findings : (q.issues || []);
+    data.blur_score = (q.metrics && q.metrics.blur_score) || q.blur_score || "OK";
+    data.issues = (notes.notes && notes.notes.length) ? notes.notes : (q.issues || []);
     return data;
   } catch (error) {
     return offlineResult;
@@ -138,7 +140,6 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
 
 async function apiSendEmail(toEmail, subjectText, messageText, options) {
   options = options || {};
-
   if (typeof options === "string") {
     options = { template_type: options };
   }
@@ -173,7 +174,7 @@ async function apiSendEmail(toEmail, subjectText, messageText, options) {
         id: data.id,
         unconfigured: Boolean(data.unconfigured),
         sandbox_restricted: Boolean(data.sandbox_restricted),
-        reason: data.reason || ""
+        reason: data.reason || data.error || ""
       };
     }
 
@@ -182,7 +183,7 @@ async function apiSendEmail(toEmail, subjectText, messageText, options) {
     return {
       sent: false,
       status: res.status,
-      reason: errData.reason || errData.detail || "Server error",
+      reason: errData.reason || errData.detail || errData.error || "Server error",
       unconfigured: Boolean(errData.unconfigured),
       sandbox_restricted: Boolean(errData.sandbox_restricted)
     };
@@ -191,34 +192,42 @@ async function apiSendEmail(toEmail, subjectText, messageText, options) {
   }
 }
 
-async function apiSendOtpEmail(toEmail, code, purpose, recipientName) {
-  var pName = recipientName || "Valued Applicant";
-  var subj = "PIGEM Account Security - Your " + (purpose || "Verification") + " Code is " + code;
-  var msg = "Your 6-Digit Verification Code is: " + code;
+async function apiSendOtpEmail(toEmail, code, purpose, recipientName, refTag) {
+  var pName = recipientName || "Valued Subscriber";
+  var tag = refTag || generateOtpRefTag();
+  var purposeLabel = purpose || "verify your contact details and continue your transaction";
+  var subj = "PIGEM Verification Code (Ref no: " + tag + ")";
+  var msg =
+    "NEVER SHARE YOUR OTP especially on social media and SMS or email links. Your code is for your eyes only.\n\n" +
+    "Your OTP to " + purposeLabel + " is " + code + ". Ref no: " + tag + ". This code is only valid for 5 minutes upon receiving this email.";
   return await apiSendEmail(toEmail, subj, msg, {
     template_type: "otp",
     payload: {
+      otp_code: String(code),
       code: String(code),
-      purpose: purpose || "Contact Verification",
-      customer_name: pName
+      purpose_label: purposeLabel,
+      customer_name: pName,
+      ref_tag: tag
     }
   });
 }
 
 async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo, planObj, addressStr, accountInfo) {
   var p = planObj || {};
-  var subj = "PIGEM Application Confirmation - Reference No. " + refNo;
+  var tag = generateOtpRefTag();
+  var subj = "PIGEM Application Received - Reference No. " + refNo + " (Ref no: " + tag + ")";
   var msg = "Thank you for applying. Reference No: " + refNo;
   var isExisting = accountInfo && accountInfo.status === "active";
   var actCode = accountInfo && accountInfo.code ? accountInfo.code : "";
   var baseUrl = _getPortalBaseUrl();
-  var actLink = baseUrl + "/activate.html?email=" + encodeURIComponent(toEmail) + "&code=" + encodeURIComponent(actCode);
+  var actLink = baseUrl + "/activate.html?invite=1";
 
   return await apiSendEmail(toEmail, subj, msg, {
-    template_type: "application_confirmation",
+    template_type: "activation",
     payload: {
       ref_no: refNo,
-      customer_name: customerName || "Applicant",
+      ref_tag: tag,
+      customer_name: customerName || "Valued Subscriber",
       plan_name: p.name ? ("Red Fiber " + p.name) : "Red Fiber Plan",
       speed: p.speed ? (p.speed + " Mbps") : "Standard Speed",
       price: p.price ? ("₱" + Number(p.price).toLocaleString("en-PH")) : "₱1,400",
@@ -231,15 +240,17 @@ async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo,
 }
 
 async function apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, targetSummary) {
-  var subj = "PIGEM Action Required - Update Needed for Reference No. " + refNo;
-  var msg = remarks || ("Action required on your application " + refNo + ". Please sign in to your Customer Account to submit the requested update.");
+  var tag = generateOtpRefTag();
+  var subj = "PIGEM Action Needed - Reference No. " + refNo + " (Ref no: " + tag + ")";
+  var msg = remarks || ("Action needed on your application " + refNo + ". Please sign in to your Customer Portal to submit the requested update.");
   return await apiSendEmail(toEmail, subj, msg, {
-    template_type: "correction_notice",
+    template_type: "correction",
     payload: {
       ref_no: refNo,
+      ref_tag: tag,
       customer_name: customerName,
       remarks: remarks || "",
-      portal_link: _getPortalBaseUrl() + "/customer.html",
+      portal_link: _getPortalBaseUrl() + "/login.html",
       target_summary: targetSummary || "Information / Document Clarification Required"
     }
   });
@@ -247,7 +258,6 @@ async function apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, tar
 
 async function apiSendStatusEmail(toEmail, customerName, refNo, status, remarks, targetSummary) {
   var st = (status || "").toLowerCase();
-
   if (st.indexOf("correction") !== -1 || st.indexOf("need") !== -1) {
     return await apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, targetSummary);
   }
@@ -255,26 +265,32 @@ async function apiSendStatusEmail(toEmail, customerName, refNo, status, remarks,
   if (st.indexOf("approv") !== -1) customerStatus = "Approved";
   else if (st.indexOf("reject") !== -1) customerStatus = "Rejected";
 
+  var tag = generateOtpRefTag();
   var subj = "PIGEM Application Update - Reference No. " + refNo + " [" + customerStatus + "]";
   var msg = "Application " + refNo + " status: " + customerStatus + (remarks ? ("\n\nRemarks: " + remarks) : "");
   return await apiSendEmail(toEmail, subj, msg, {
     template_type: "status_update",
     payload: {
       ref_no: refNo,
+      ref_tag: tag,
       customer_name: customerName,
+      status_label: customerStatus,
       status: customerStatus,
       remarks: remarks || "",
-      portal_link: _getPortalBaseUrl() + "/customer.html"
+      portal_link: _getPortalBaseUrl() + "/login.html"
     }
   });
 }
 
 async function apiSendPromotionalEmail(toEmail, customerName, headline, bodyText, promoPlans) {
-  var subj = headline + " - PIGEM Red Fiber";
+  var tag = generateOtpRefTag();
+  var subj = headline + " - PIGEM Support Services";
   return await apiSendEmail(toEmail, subj, bodyText, {
-    template_type: "promotional",
+    template_type: "promo",
     payload: {
+      ref_tag: tag,
       customer_name: customerName,
+      promo_title: headline,
       headline: headline,
       body: bodyText,
       promo_plans: promoPlans || []

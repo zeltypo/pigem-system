@@ -41,55 +41,33 @@ var CONFIG = {
   UNIT_TYPES: ["House", "Townhouse", "Apartment", "Condominium", "Dormitory", "Commercial"],
 
   ID_TYPES: [
+    { name: "Philippine National ID (PhilSys)", hint: "PhilSys Card Number: 16 digits (1234-5678-9012-3456) or PSN: 12 digits.", pattern: /^(\d{12}|\d{16})$/ },
     { name: "National ID", hint: "PhilSys Card Number: 16 digits (1234-5678-9012-3456) or PSN: 12 digits.", pattern: /^(\d{12}|\d{16})$/ },
-    { name: "Philippine Passport", hint: "1-2 letters, 7 digits, optional letter at the end (P1234567A).", pattern: /^[A-Z]{1,2}\d{7}[A-Z]?$/ },
+    { name: "Driver's License", hint: "1 letter + 10 digits (N01-23-456789).", pattern: /^[A-Z]\d{10}$/ },
     { name: "Philippine Driver's License", hint: "1 letter + 10 digits (N01-23-456789).", pattern: /^[A-Z]\d{10}$/ },
-    { name: "SSS/GSIS with photo", hint: "SSS: 10 digits (34-1234567-8). GSIS: 11 digits.", pattern: /^\d{10,11}$/ },
+    { name: "Passport", hint: "1-2 letters, 7 digits, optional letter at the end (P1234567A).", pattern: /^[A-Z]{1,2}\d{7}[A-Z]?$/ },
+    { name: "Philippine Passport", hint: "1-2 letters, 7 digits, optional letter at the end (P1234567A).", pattern: /^[A-Z]{1,2}\d{7}[A-Z]?$/ },
+    { name: "UMID", hint: "CRN: 12 digits (0111-2345678-9).", pattern: /^\d{12}$/ },
     { name: "Unified Multi-Purpose ID", hint: "CRN: 12 digits (0111-2345678-9).", pattern: /^\d{12}$/ },
-    { name: "My.SSS ID", hint: "SSS number: 10 digits.", pattern: /^\d{10}$/ },
-    { name: "PRC/IBP/OFW/Diplomat ID", hint: "PRC: 7 digits. Other IDs: type the number exactly as printed.", pattern: /^[A-Z0-9]{5,15}$/ },
-    { name: "Digitized PhilHealth ID", hint: "12 digits (12-345678901-2).", pattern: /^\d{12}$/ },
-    { name: "Laminated PhilHealth ID", hint: "12 digits (12-345678901-2).", pattern: /^\d{12}$/ },
-    { name: "Digitized Postal ID", hint: "PRN: 12 to 13 characters as printed.", pattern: /^[A-Z0-9]{12,13}$/ },
-    { name: "Laminated Postal ID", hint: "Type the number exactly as printed.", pattern: /^[A-Z0-9]{6,15}$/ },
-    { name: "Digitized Voter's/Comelec ID", hint: "VIN: letters and digits as printed (around 22 characters).", pattern: /^[A-Z0-9]{15,28}$/ },
-    { name: "Voter's ID", hint: "VIN: letters and digits as printed.", pattern: /^[A-Z0-9]{15,28}$/ },
-    { name: "TIN with photo", hint: "9 to 12 digits (123-456-789-000).", pattern: /^\d{9,12}$/ },
-    { name: "AFP ID", hint: "Type the number exactly as printed.", pattern: /^[A-Z0-9]{4,20}$/ },
-    { name: "PNP ID", hint: "Type the number exactly as printed.", pattern: /^[A-Z0-9]{4,20}$/ },
-    { name: "Philippine Air Force ID", hint: "Type the number exactly as printed.", pattern: /^[A-Z0-9]{4,20}$/ },
-    { name: "Locally-issued Credit Card (photo or non-photo)", hint: "Last 4 digits of the card only.", pattern: /^\d{4}$/ },
-    { name: "Company ID (Top 1000 Corporations)", hint: "Employee ID number as printed.", pattern: /^[A-Z0-9]{3,20}$/ },
-    { name: "Firearms License ID (Digitized/Card Type only)", hint: "Type the number exactly as printed.", pattern: /^[A-Z0-9]{4,20}$/ },
-    { name: "Alien Certificate of Registration (Permanent Status)", hint: "ACR I-Card number as printed (letter + digits).", pattern: /^[A-Z0-9]{6,15}$/ },
-    { name: "Student ID (Top 228 Universities and Colleges)", hint: "Student number as printed.", pattern: /^[A-Z0-9]{4,20}$/ },
-    { name: "Police Clearance (Verifiable Online)", hint: "Clearance number as printed.", pattern: /^[A-Z0-9]{6,25}$/ },
-    { name: "Senior Citizen's ID", hint: "OSCA ID number as printed.", pattern: /^[A-Z0-9]{3,20}$/ },
-    { name: "Barangay ID", hint: "Barangay ID number as printed.", pattern: /^[A-Z0-9]{2,20}$/ }
+    { name: "SSS ID", hint: "SSS: 10 digits (34-1234567-8).", pattern: /^\d{10,11}$/ },
+    { name: "SSS/GSIS with photo", hint: "SSS: 10 digits (34-1234567-8). GSIS: 11 digits.", pattern: /^\d{10,11}$/ },
+    { name: "PRC ID", hint: "PRC: 7 digits.", pattern: /^[A-Z0-9]{5,15}$/ },
+    { name: "Postal ID", hint: "PRN: 12 to 13 characters as printed.", pattern: /^[A-Z0-9]{6,15}$/ },
+    { name: "Voter's ID", hint: "VIN: letters and digits as printed.", pattern: /^[A-Z0-9]{6,28}$/ }
   ]
 };
 
 var DEFAULT_CONTENT = {
-  logo_image: "logo.png",
-  hero_slides: [
-    { tag: "RED FIBER POSTPAID", image: "Banners/home-banner-1.png", title: "Fiber internet for your home", text: "No lock-in. Zero modem fee. 50% off the ₱2,000 installation fee." },
-    { tag: "SIMPLENG WIFI", image: "Banners/home-banner-2.png", title: "Apply online, anytime", text: "Send your application and valid ID from your phone or computer." },
-    { tag: "LOCAL SUPPORT", image: "Banners/home-banner-3.png", title: "Your local team in Dasmariñas, Cavite", text: "Ready to help with your Red Fiber application from start to installation." },
-    { tag: "PURE FIBER PLANS", image: "hero-fleet.png", title: "Fast, unlimited fiber connection", text: "Plans starting at ₱1,000/month with speeds up to 500 Mbps." }
-  ],
+  logo_image: "black-logo-white-mode.png",
+  dark_logo_image: "white-logo-dark-mode.png",
+  hero_slides: [],
   area_text: "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.",
   announcement: {
     active: false,
     headline: "",
     body: ""
   },
-  about_slides: [
-    { tag: "ABOUT PIGEM", image: "Banners/about-banner-1.png", title: "About PIGEM", text: "Electrical and telecommunications services in Dasmariñas City, Cavite." },
-    { tag: "FIELD OPERATIONS", image: "hero-fleet.png", title: "Our field team", text: "Around 40 trained installers and technicians." },
-    { tag: "ESTABLISHED 2021", image: "Banners/about-banner-2.png", title: "Serving since 2021", text: "Established on December 28, 2021." },
-    { tag: "TRUSTED PARTNER", image: "Banners/about-banner-3.png", title: "Complete telecommunication support", text: "Guided installation and responsive local coordination." }
-  ],
-
+  about_slides: [],
   client_images: ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"],
   vehicle_images: [
     "Vehicles/vehicle-1.png", "Vehicles/vehicle-2.png", "Vehicles/vehicle-3.png",
@@ -100,14 +78,9 @@ var DEFAULT_CONTENT = {
     "Permits/permit-4.png", "Permits/permit-5.png", "Permits/permit-6.png",
     "Permits/permit-7.png", "Permits/permit-8.png", "Permits/permit-9.png"
   ],
-
   asset_library: {
-    Banners: [
-      "Banners/home-banner-1.png", "Banners/home-banner-2.png", "Banners/home-banner-3.png",
-      "Banners/about-banner-1.png", "Banners/about-banner-2.png", "Banners/about-banner-3.png",
-      "hero-fleet.png"
-    ],
-    Logos: ["logo.png"],
+    Banners: [],
+    Logos: ["black-logo-white-mode.png", "white-logo-dark-mode.png"],
     Clients: ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"],
     Vehicles: [
       "Vehicles/vehicle-1.png", "Vehicles/vehicle-2.png", "Vehicles/vehicle-3.png",
@@ -128,16 +101,16 @@ var DEFAULT_CONTENT = {
   },
   faqs: [
     { q: "Where is Red Fiber available?", a: "Red Fiber is available in select areas of Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu. Pin your exact location on the application form and our team will confirm if your area can be served." },
-    { q: "What do I need to apply?", a: "One valid ID (front photo), your contact details, and your complete installation address." },
+    { q: "What do I need to apply?", a: "One valid government ID (clear front and back photos), your contact details, and your complete installation address." },
     { q: "Is there a lock-in period?", a: "No. All plans have no lock-in period and zero modem fee." },
-    { q: "How will I know the status of my application?", a: "After you submit, you will receive a reference number and an email to activate your customer account. Log in anytime to check your status." },
-    { q: "What if there is a problem with my application?", a: "We will email you and show what needs to be fixed in your account. You can update your details or upload a clearer ID there." },
+    { q: "How will I know the status of my application?", a: "After you submit, you will receive a reference number and an email link to activate your customer account. Log in anytime to check your status." },
+    { q: "What if there is a problem with my application?", a: "We will email you and show what needs to be updated in your account. You can update your details or upload a clearer ID there." },
     { q: "How long is installation after approval?", a: "Please allow 3 to 5 business days after approval for installation scheduling." }
   ]
 };
 
 function getImageUrl(filePath) {
-  if (!filePath) return ROOT + "assets/images/placeholder.png";
+  if (!filePath) return "";
   if (filePath.indexOf("data:") === 0 || filePath.indexOf("http") === 0) return filePath;
   if (CONFIG.ASSET_SOURCE === "supabase" && CONFIG.SUPABASE_URL !== "") {
     return CONFIG.SUPABASE_URL + "/storage/v1/object/public/website-assets/" + filePath;
@@ -151,11 +124,15 @@ function getImageUrl(filePath) {
 var cloudAssetFailures = 0;
 
 function imageFallback(img, filePath) {
-  cloudAssetFailures++;
   img.onerror = null;
-  img.src = ROOT + "assets/images/placeholder.png";
-  if (cloudAssetFailures >= 2) {
-    showSystemMaintenanceNotice();
+  var nameLower = String(filePath || "").toLowerCase();
+  if (nameLower.indexOf("logo") !== -1) {
+    img.src = ROOT + "assets/images/" + (filePath || "black-logo-white-mode.png");
+    img.onerror = function () {
+      img.onerror = null;
+      img.src = ROOT + "assets/images/black-logo-white-mode.png";
+    };
+    return;
   }
 }
 
@@ -165,29 +142,38 @@ function showSystemMaintenanceNotice(customMsg) {
   var banner = document.createElement("div");
   banner.id = "sys-maintenance-banner";
   banner.style.cssText = "background:#dc2626; color:#ffffff; padding:12px 18px; font-size:13.5px; text-align:center; position:sticky; top:0; z-index:99999; font-weight:700; box-shadow:0 3px 10px rgba(0,0,0,0.25);";
-  banner.innerHTML = "<b>System Notice:</b> " + (customMsg || "Cloud Asset Storage &amp; Database is temporarily degraded or undergoing maintenance. Public application services are operating under maintenance mode. Hotline: 101-733 (RED) | (046) 458-0908.");
+  banner.innerHTML = "<b>System Notice:</b> " + (customMsg || "Cloud Asset Storage and Database is temporarily degraded or undergoing maintenance. Hotline: 101-733 (RED) | (046) 458-0908.");
   if (document.body) {
     document.body.insertBefore(banner, document.body.firstChild);
   }
 }
 
-function loadPageImages() {
+function getActiveThemeLogoFilename() {
   var wc = getWebsiteContent();
-  var activeLogo = wc.logo_image || "logo.png";
+  var isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  var lightLogo = (wc.logo_image && wc.logo_image !== "logo.png") ? wc.logo_image : "black-logo-white-mode.png";
+  var darkLogo = wc.dark_logo_image || "white-logo-dark-mode.png";
+  return isDark ? darkLogo : lightLogo;
+}
+
+function loadPageImages() {
+  var activeLogo = getActiveThemeLogoFilename();
 
   var images = document.querySelectorAll("img[data-img]");
   for (var i = 0; i < images.length; i++) {
     var filePath = images[i].getAttribute("data-img");
-    if (filePath === "logo.png") filePath = activeLogo;
+    if (filePath === "logo.png" || filePath === "black-logo-white-mode.png" || filePath === "white-logo-dark-mode.png") {
+      filePath = activeLogo;
+    }
     images[i].setAttribute("onerror", "imageFallback(this, '" + filePath + "')");
     images[i].src = getImageUrl(filePath);
   }
 
-  if (activeLogo !== "logo.png") {
-    var brandImgs = document.querySelectorAll(".brand img, .logo img, .simple-bar img");
-    for (var b = 0; b < brandImgs.length; b++) {
-      brandImgs[b].src = getImageUrl(activeLogo);
-    }
+  var brandImgs = document.querySelectorAll(".brand img, .logo img, .simple-bar img, .sidebar-logo");
+  for (var b = 0; b < brandImgs.length; b++) {
+    if (brandImgs[b].classList && (brandImgs[b].classList.contains("icon-img") || brandImgs[b].classList.contains("icon-placeholder"))) continue;
+    brandImgs[b].setAttribute("onerror", "imageFallback(this, '" + activeLogo + "')");
+    brandImgs[b].src = getImageUrl(activeLogo);
   }
 }
 
@@ -202,7 +188,6 @@ function writeSaved(key, value) {
 }
 
 function getActivePlans() { return readSaved("pigem_plans", CONFIG.PLANS); }
-
 function saveActivePlans(plans) {
   writeSaved("pigem_plans", plans);
   if (typeof dbSaveLivePlans === "function") dbSaveLivePlans(plans);
@@ -214,7 +199,6 @@ function getWebsiteContent() {
   merged.asset_library = Object.assign({}, DEFAULT_CONTENT.asset_library, saved.asset_library || {});
   return merged;
 }
-
 function saveWebsiteContent(content) {
   writeSaved("pigem_website_content", content);
   if (typeof dbSaveLiveWebsiteContent === "function") dbSaveLiveWebsiteContent(content);
@@ -227,7 +211,6 @@ function getSystemSettings() {
     maintenance_message: "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly."
   }, readSaved("pigem_system_settings", {}));
 }
-
 function saveSystemSettings(settings) {
   writeSaved("pigem_system_settings", settings);
   if (typeof dbSaveLiveSystemSettings === "function") dbSaveLiveSystemSettings(settings);
@@ -267,7 +250,7 @@ function formatAddress(app) {
     app.house_no ? app.house_no + (app.house_suffix ? " " + app.house_suffix : "") : "",
     app.unit_no,
     app.floor_no ? "Floor " + app.floor_no : "",
-    app.building_name,
+    app.building_name && app.building_name !== "N/A" ? app.building_name : "",
     app.street,
     app.subdivision,
     app.barangay ? "Brgy. " + app.barangay : "",
@@ -291,8 +274,7 @@ function isServiceArea(addressText) {
 
 function getDefaultStatusInstruction(status, note) {
   if (status === "Needs Correction") return note || "Please update the information or ID requested below.";
-  if (status === "Ready for Encoding") return "Your requirements are complete. We are preparing your application for the provider.";
-  if (status === "Provider Processing") return "Your application was sent to the provider. Please wait for the validation result.";
+  if (status === "Encoding") return note || "Your application passed initial verification and is now being encoded into the provider portal.";
   if (status === "Approved") return note || "Approved. Please wait 3 to 5 business days for installation scheduling. Watch your email and phone for updates.";
   if (status === "Rejected") return note || "Your application did not pass provider validation.";
   return "We are reviewing your application. Please check your email for updates.";
@@ -339,17 +321,24 @@ function toggleMenu() {
 }
 
 var sliderTimers = {};
-
 function startSlider(sliderId, slides) {
   var box = document.getElementById(sliderId);
   if (!box) return;
+
+  if (!slides || slides.length === 0) {
+    box.innerHTML = "";
+    box.style.display = "none";
+    clearInterval(sliderTimers[sliderId]);
+    return;
+  }
+  box.style.display = "";
 
   var html = "";
   var dots = "";
   for (var i = 0; i < slides.length; i++) {
     html +=
       '<div class="slide' + (i === 0 ? " active" : "") + '">' +
-        '<img src="' + getImageUrl(slides[i].image) + '" onerror="imageFallback(this, \'' + slides[i].image + '\')" alt="' + (slides[i].title || "Banner") + '">' +
+        '<img src="' + getImageUrl(slides[i].image) + '" onerror="imageFallback(this, \'' + slides[i].image + '\')" alt="' + (slides[i].title || "Banner (not available)") + '">' +
         (slides[i].title || slides[i].text
           ? '<div class="slide-text"><div class="container"><h1>' + (slides[i].title || "") + "</h1><p>" + (slides[i].text || "") + "</p></div></div>"
           : "") +
@@ -450,12 +439,90 @@ function getHomeForRole(role) {
   return ROOT + "customer.html";
 }
 
+function evaluatePasswordRules(pw) {
+  var val = String(pw || "");
+  return {
+    length: val.length >= 8,
+    upper: /[A-Z]/.test(val),
+    lower: /[a-z]/.test(val),
+    digit: /[0-9]/.test(val),
+    special: /[^A-Za-z0-9\s]/.test(val)
+  };
+}
+
+function isStrongPassword(pw) {
+  var r = evaluatePasswordRules(pw);
+  return Boolean(r.length && r.upper && r.lower && r.digit && r.special);
+}
+
+var PASSWORD_REQUIREMENT_TEXT = "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special symbol.";
+
+function getSiteBaseUrl() {
+  var path = window.location.pathname || "/";
+  var folder = path.substring(0, path.lastIndexOf("/"));
+  return window.location.origin + folder;
+}
+
+function attachPasswordRegexChecklist(inputEl) {
+  if (!inputEl || inputEl.getAttribute("data-regex-attached") === "1") return;
+  var id = inputEl.id || "";
+  var needsChecklist =
+    inputEl.getAttribute("data-pw-check") === "1" ||
+    id === "adm-pw" ||
+    id === "act-pass" ||
+    id === "ag-reg-pw" ||
+    id === "m-ag-pw" ||
+    id === "adm-new-pw" ||
+    id === "prof-new-pw" ||
+    id === "rec-new-pw";
+
+  if (!needsChecklist) return;
+  inputEl.setAttribute("data-regex-attached", "1");
+
+  var box = document.createElement("div");
+  box.className = "pw-regex-box";
+  box.innerHTML =
+    '<div class="pw-regex-title">Password Requirements:</div>' +
+    '<div class="pw-regex-grid">' +
+      '<span data-rule="length">&#9675; At least 8 characters</span>' +
+      '<span data-rule="upper">&#9675; 1 uppercase letter (A-Z)</span>' +
+      '<span data-rule="lower">&#9675; 1 lowercase letter (a-z)</span>' +
+      '<span data-rule="digit">&#9675; 1 number (0-9)</span>' +
+      '<span data-rule="special">&#9675; 1 special symbol (!@#$...)</span>' +
+    '</div>';
+
+  var targetParent = inputEl.closest(".pw-wrap") || inputEl;
+  if (targetParent.parentNode) {
+    targetParent.parentNode.insertBefore(box, targetParent.nextSibling);
+  }
+
+  function refreshRules() {
+    var rules = evaluatePasswordRules(inputEl.value);
+    var items = box.querySelectorAll("[data-rule]");
+    for (var i = 0; i < items.length; i++) {
+      var key = items[i].getAttribute("data-rule");
+      var passed = Boolean(rules[key]);
+      items[i].classList.toggle("passed", passed);
+      var labelText = items[i].textContent.replace(/^[\u2713\u25CB\s]+/, "");
+      items[i].innerHTML = (passed ? "&#10003; " : "&#9675; ") + labelText;
+    }
+  }
+
+  inputEl.addEventListener("input", refreshRules);
+  inputEl.addEventListener("focus", refreshRules);
+  refreshRules();
+}
+
 function initPasswordEyeToggles(rootEl) {
   var container = rootEl || document;
-  var pwInputs = container.querySelectorAll('input[type="password"]');
+  var pwInputs = container.querySelectorAll('input[type="password"], input[data-pw-field="1"]');
   for (var i = 0; i < pwInputs.length; i++) {
     var inp = pwInputs[i];
-    if (inp.getAttribute("data-eye-ready") === "1") continue;
+    inp.setAttribute("data-pw-field", "1");
+    if (inp.getAttribute("data-eye-ready") === "1") {
+      attachPasswordRegexChecklist(inp);
+      continue;
+    }
     inp.setAttribute("data-eye-ready", "1");
 
     var wrap = document.createElement("div");
@@ -466,24 +533,38 @@ function initPasswordEyeToggles(rootEl) {
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "pw-eye";
-    btn.setAttribute("aria-label", "Show or hide password");
-    btn.title = "Show / Hide Password";
+    btn.setAttribute("aria-label", "Toggle password visibility");
+    btn.setAttribute("aria-pressed", "false");
+    btn.title = "Show or Hide Field";
     btn.innerHTML =
       '<svg class="eye-open" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
       '<svg class="eye-closed" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-     (function (inputEl, buttonEl) {
-      buttonEl.onclick = function () {
-        var isPw = inputEl.type === "password";
-        inputEl.type = isPw ? "text" : "password";
+
+    (function (inputEl, buttonEl) {
+      buttonEl.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var currentType = (inputEl.getAttribute("type") || inputEl.type || "password").toLowerCase();
+        var nextType = currentType === "password" ? "text" : "password";
+        try {
+          inputEl.type = nextType;
+        } catch (err) {}
+        inputEl.setAttribute("type", nextType);
+        var isRevealed = nextType === "text";
+        buttonEl.setAttribute("aria-pressed", isRevealed ? "true" : "false");
+        buttonEl.classList.toggle("is-revealed", isRevealed);
+        inputEl.classList.toggle("pw-field-revealed", isRevealed);
         var openIcon = buttonEl.querySelector(".eye-open");
         var closedIcon = buttonEl.querySelector(".eye-closed");
         if (openIcon && closedIcon) {
-          openIcon.style.display = isPw ? "none" : "block";
-          closedIcon.style.display = isPw ? "block" : "none";
+          openIcon.style.display = isRevealed ? "none" : "block";
+          closedIcon.style.display = isRevealed ? "block" : "none";
         }
-      };
+      });
     })(inp, btn);
+
     wrap.appendChild(btn);
+    attachPasswordRegexChecklist(inp);
   }
 }
 
@@ -554,7 +635,7 @@ function checkPublicMaintenance() {
   document.body.innerHTML =
     '<main class="auth-page">' +
       '<div class="card auth-card center" style="max-width:520px">' +
-        '<img src="' + getImageUrl((getWebsiteContent().logo_image || "logo.png")) + '" alt="PIGEM" style="height:64px; margin:0 auto 14px" />' +
+        '<img src="' + getImageUrl(getActiveThemeLogoFilename()) + '" alt="PIGEM" style="height:64px; margin:0 auto 14px" />' +
         '<h2>Website Under Maintenance</h2>' +
         '<p class="muted mt">' +
           (settings.maintenance_message || "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly.") +
@@ -685,211 +766,252 @@ function sanitizeUsernameSeed(fullName, email) {
   return base.slice(0, 24);
 }
 
-var DEFAULT_POPUP_GUIDES = [
-  {
-    id: "home_welcome",
-    portal: "home",
-    audience_tone: "polite_simple",
-    title: "Welcome to PIGEM Red Fiber Online Services",
-    intro: "Thank you for visiting PIGEM Combined Facilities Support Services. Here is a quick guide on how to explore plans and apply online:",
-    steps: [
-      "Browse our pure fiber plans below to compare monthly rates and speeds.",
-      "Click Apply Now on your preferred plan when you are ready to register.",
-      "Prepare one clear photo of a valid government or company ID and an active @gmail.com email address.",
-      "Already applied? Click Customer Login at the top right to sign in with your Gmail account and check your status."
-    ],
-    footer_note: "Need assistance? Call our local desk at (046) 458-0908 or Hotline 101-733 (RED).",
-    button_label: "Got It",
-    auto_show: false,
-    active: true
-  },
-  {
-    id: "apply_before_start",
-    portal: "apply",
-    audience_tone: "polite_simple",
-    title: "Before You Start Your Application",
-    intro: "Welcome! To make your Red Fiber registration smooth and hassle-free, please take note of these simple reminders:",
-    steps: [
-      "Step 1 - Choose Your Plan & Location: Select your fiber plan and pin your exact installation address on the map.",
-      "Step 2 - Verify Your Gmail & Mobile Number: Enter your complete name and active @gmail.com address to receive your 6-digit verification code.",
-      "Step 3 - Upload Clear Valid ID Photos: Make sure your ID name, birth date, and ID number are clear and readable with good lighting.",
-      "Step 4 - Quick Submission: Once submitted, you will immediately receive your Reference Number while our team reviews your application."
-    ],
-    footer_note: "Your personal information and ID photos are protected under the Data Privacy Act of 2012 (RA 10173).",
-    button_label: "Proceed to Application Form",
-    auto_show: true,
-    active: true
-  },
-  {
-    id: "customer_portal_guide",
-    portal: "customer",
-    audience_tone: "polite_simple",
-    title: "Welcome to Your Customer Account",
-    intro: "Here you can conveniently monitor your Red Fiber application and respond to any update requests from our team:",
-    steps: [
-      "Processing: Our team is verifying your details and coordinating your application.",
-      "Action Needed (Under Processing): If an update box appears on your card, simply edit the requested detail or upload a clearer ID photo and click Submit.",
-      "Approved: Your application passed verification. Please allow 3 to 5 business days for installation scheduling.",
-      "Rejected: View the remarks on your card or contact our support desk if you wish to re-apply."
-    ],
-    footer_note: "You can reopen this guide anytime using the Guide button at the top bar.",
-    button_label: "Continue to My Account",
-    auto_show: true,
-    active: true
-  },
-  {
-    id: "agent_workspace_guide",
-    portal: "agent",
-    audience_tone: "polite_simple",
-    title: "Agent Workspace Quick Guide",
-    intro: "Welcome! Everything in your workspace is organized into clear sections so you can review applications smoothly:",
-    steps: [
-      "1. Screening Banner & Queue: New applications undergo cloud document checking in the background. Preliminary findings are shown for your review before any customer update is requested.",
-      "2. Applicant Details & Valid ID Check: Open any application to compare the customer's form details side-by-side with their Cropped Copy or Original ID Photo.",
-      "3. Update Application Status: Record your verification progress (Under Agent Review, Encoding) and save the final Validator decision (Approved or Rejected).",
-      "4. Confirm Customer Update Request: If a name, birth date, ID number, address, or ID photo needs a correction, review the pre-drafted message in Section 4 and send a polite update notice."
-    ],
-    footer_note: "Tip: Screening results are preliminary—always inspect the ID photo before confirming a status change.",
-    button_label: "Start Reviewing",
-    auto_show: true,
-    active: true
-  },
-  {
-    id: "manager_dashboard_guide",
-    portal: "manager",
-    audience_tone: "polite_simple",
-    title: "Manager Dashboard & CMS Guide",
-    intro: "Welcome to the Management Portal. Use the organized sidebar sections to oversee operations and website content safely:",
-    steps: [
-      "Operations & Analytics: Monitor daily applications, conversion rates, barangay activity, and agent workloads.",
-      "Application Oversight: Inspect any customer record, reassign applications between agents, or apply a status override when needed.",
-      "Website Content (CMS) & Announcements: Update banners, plans, company story, strips, FAQs, and publish customer announcements or offers.",
-      "In-System Status Notices: Internal notifications alert your dashboard whenever Auto-Screening or Maintenance Mode is updated by the Admin."
-    ],
-    footer_note: "Internal business accounts (@pigem.com) for Agents and Manager are managed by the System Administrator.",
-    button_label: "Open Dashboard",
-    auto_show: true,
-    active: true
-  },
-  {
-    id: "admin_technical_guide",
-    portal: "admin",
-    audience_tone: "technical",
-    title: "Technical Administration & Cloud Architecture Reference",
-    intro: "Technical overview of cloud serverless endpoints, AI-assisted requirements screening, account governance, and in-system status notifications:",
-    steps: [
-      "Vercel Serverless FastAPI (/api): Hosts REST endpoints (/api/health, /api/verify-captcha, /api/screen-async, /api/screen, /api/notify, /api/polite-remark) alongside public and internal web portals.",
-      "Two-Stage OpenCV + Gemini Vision Pipeline: Stage 1 runs OpenCV blur, glare, brightness, and contrast diagnostics; Stage 2 generates a 4-corner perspective-cropped working copy in documents/cropped/ and executes Google Gemini Vision OCR + deterministic field comparison for human Agent review.",
-      "Identity & Notification Separation: Customers authenticate exclusively with @gmail.com accounts and receive Gmail SMTP notifications; the single provisioned Admin manages @pigem.com business credentials for Agents and the Manager, who receive in-system website notifications.",
-      "Maintenance, AI & Pop-up Controls: All state switches require explicit confirmation and broadcast in-system status notifications to Agents and the Manager."
-    ],
-    footer_note: "All administrative toggles and RBAC changes are recorded in public.system_logs.",
-    button_label: "Acknowledge Technical Guide",
-    auto_show: true,
-    active: true
-  }
-];
+var DASHBOARD_TUTORIAL_STEPS = {
+  customer: [
+    {
+      selector: "#st-total",
+      title: "Step 1: Application Summary Cards",
+      text: "See your total submitted applications and whether each is Processing, Approved, or Rejected."
+    },
+    {
+      selector: "#cust-app-list",
+      title: "Step 2: My Submitted Applications",
+      text: "Click any application card on the left to open its live timeline and status instructions."
+    },
+    {
+      selector: "#cust-detail-box",
+      title: "Step 3: Status Details and Requested Updates",
+      text: "If our verification team requests a correction, an update box appears here so you can edit the field or upload a clearer ID photo."
+    },
+    {
+      selector: "#avatar-btn",
+      title: "Step 4: Account Profile and Theme",
+      text: "Click your profile circle to switch between Light Mode and Dark Mode or update your username and password."
+    }
+  ],
+  agent: [
+    {
+      selector: "#nav-overview",
+      title: "Step 1: Workspace Overview",
+      text: "See your assigned applications, incoming queue count, and status breakdown at a glance."
+    },
+    {
+      selector: "#nav-queue",
+      title: "Step 2: Application Queue (Unclaimed)",
+      text: "Claim newly submitted customer applications so you can inspect their requirements and Valid ID."
+    },
+    {
+      selector: "#nav-claimed",
+      title: "Step 3: My Claimed Applications",
+      text: "Open any claimed application to run or refresh automated document screening and compare OCR fields."
+    },
+    {
+      selector: "#nav-encoding",
+      title: "Step 4: Encoding Queue",
+      text: "One-click access to verified applications that are currently being encoded into the provider portal."
+    },
+    {
+      selector: "#nav-correction",
+      title: "Step 5: Needs Correction",
+      text: "One-click access to applications waiting for the customer to submit a corrected detail or clearer ID photo."
+    },
+    {
+      selector: "#nav-approved",
+      title: "Step 6: Approved Applications",
+      text: "View all applications that passed provider validation and are scheduled for installation."
+    },
+    {
+      selector: "#nav-rejected",
+      title: "Step 7: Rejected Applications",
+      text: "View applications that did not pass provider validation along with recorded validator remarks."
+    }
+  ],
+  manager: [
+    {
+      selector: "#nav-overview",
+      title: "Step 1: Executive Overview",
+      text: "Monitor total applications, approval rates, barangay distribution, and daily trends."
+    },
+    {
+      selector: "#nav-app-all",
+      title: "Step 2: All Applications and Status Shortcuts",
+      text: "Inspect any application or use the sidebar shortcuts for Encoding, Needs Correction, Approved, and Rejected."
+    },
+    {
+      selector: "#nav-agent-links",
+      title: "Step 3: Agent Accounts and Private Invite Links",
+      text: "Create a new Agent account directly or generate a private one-time registration link for a new Agent."
+    },
+    {
+      selector: "#nav-cms-banners",
+      title: "Step 4: Website Content (CMS)",
+      text: "Update homepage banners, fiber plans, logos, and customer announcements."
+    }
+  ],
+  admin: [
+    {
+      selector: "#nav-overview",
+      title: "Step 1: System Overview",
+      text: "Monitor active user accounts, total applications, and system status."
+    },
+    {
+      selector: "#nav-maintenance",
+      title: "Step 2: Maintenance Control",
+      text: "Toggle public website Maintenance Mode with instant in-app status notices to staff."
+    },
+    {
+      selector: "#nav-ai",
+      title: "Step 3: Automated Screening Control",
+      text: "Enable or pause the cloud document screening pipeline and review screening logs."
+    },
+    {
+      selector: "#nav-accounts",
+      title: "Step 4: Accounts and Private Agent Links",
+      text: "Create Manager or Agent accounts (@pigem.ph) or generate private one-time Agent registration links."
+    },
+    {
+      selector: "#nav-logs",
+      title: "Step 5: Audit and Login Logs",
+      text: "Inspect chronological system events and login history across all portals."
+    }
+  ]
+};
 
-function getPopupGuides() {
-  var saved = readSaved("pigem_popup_guides", null);
-  if (!Array.isArray(saved) || saved.length === 0) return DEFAULT_POPUP_GUIDES;
-  var map = {};
-  for (var i = 0; i < saved.length; i++) {
-    if (saved[i] && saved[i].id) map[saved[i].id] = saved[i];
+var _tourState = {
+  portal: "",
+  steps: [],
+  index: 0,
+  userKey: ""
+};
+
+function startDashboardTour(portalName, forceManual) {
+  var p = String(portalName || window.DASH_PORTAL || "").toLowerCase();
+  if (!DASHBOARD_TUTORIAL_STEPS[p]) return;
+
+  var userEmail = "";
+  try {
+    var rawUser = sessionStorage.getItem("pigem_user_cache");
+    if (rawUser) userEmail = (JSON.parse(rawUser).email || "").toLowerCase();
+  } catch (e) {}
+  var storageKey = "pigem_tour_done_" + p + "_" + (userEmail || "default");
+
+  if (!forceManual && localStorage.getItem(storageKey) === "1") {
+    return;
   }
-  var merged = [];
-  for (var j = 0; j < DEFAULT_POPUP_GUIDES.length; j++) {
-    var def = DEFAULT_POPUP_GUIDES[j];
-    merged.push(map[def.id] ? Object.assign({}, def, map[def.id]) : def);
-  }
-  return merged;
+
+  _tourState.portal = p;
+  _tourState.steps = DASHBOARD_TUTORIAL_STEPS[p];
+  _tourState.index = 0;
+  _tourState.userKey = storageKey;
+  renderDashboardTourStep();
 }
 
-class PopupGuideManager {
-  constructor() {
-    this._sessionPrefix = "pigem_guide_seen_";
+function renderDashboardTourStep() {
+  removeDashboardTourElements();
+  var steps = _tourState.steps || [];
+  if (_tourState.index < 0 || _tourState.index >= steps.length) {
+    finishDashboardTour();
+    return;
   }
 
-  getGuide(guideId) {
-    var list = getPopupGuides();
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].id === guideId) return list[i];
-    }
-    return null;
+  var step = steps[_tourState.index];
+  var target = document.querySelector(step.selector);
+
+  var prevHighlight = document.querySelectorAll(".tour-target-highlight");
+  for (var i = 0; i < prevHighlight.length; i++) {
+    prevHighlight[i].classList.remove("tour-target-highlight");
   }
 
-  renderGuideModal(guide, onDone) {
-    if (!guide) return;
-    var isTech = guide.audience_tone === "technical";
-    var badgeHtml = isTech
-      ? '<span class="badge badge-gray">Technical Admin Reference</span>'
-      : '<span class="badge badge-green">Quick Guide</span>';
+  var bubble = document.createElement("div");
+  bubble.id = "dashboard-tour-bubble";
+  bubble.className = "tour-bubble";
 
-    var stepsArr = Array.isArray(guide.steps) ? guide.steps : [];
-    var stepsHtml = "";
-    for (var i = 0; i < stepsArr.length; i++) {
-      stepsHtml +=
-        '<div class="guide-step-row">' +
-          '<span class="guide-step-num">' + (i + 1) + '</span>' +
-          '<div>' + stepsArr[i] + '</div>' +
-        '</div>';
+  var total = steps.length;
+  var currentNum = _tourState.index + 1;
+
+  bubble.innerHTML =
+    '<div class="tour-bubble-arrow"></div>' +
+    '<div class="row between" style="margin-bottom:6px;">' +
+      '<span class="badge" style="background:var(--red);color:#fff;font-size:11px;">Step ' + currentNum + ' of ' + total + '</span>' +
+      '<button type="button" class="btn btn-small btn-outline" style="padding:2px 8px;font-size:11px;" onclick="finishDashboardTour()">Skip</button>' +
+    '</div>' +
+    '<div style="font-weight:700;font-size:14.5px;margin-bottom:4px;color:var(--text);">' + step.title + '</div>' +
+    '<div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:12px;">' + step.text + '</div>' +
+    '<div class="row between">' +
+      (_tourState.index > 0
+        ? '<button type="button" class="btn btn-small btn-outline" onclick="stepDashboardTour(-1)">&larr; Previous</button>'
+        : '<span></span>') +
+      (_tourState.index < total - 1
+        ? '<button type="button" class="btn btn-small btn-red" onclick="stepDashboardTour(1)">Next &rarr;</button>'
+        : '<button type="button" class="btn btn-small btn-red" onclick="finishDashboardTour()">Finish Tutorial</button>') +
+    '</div>';
+
+  document.body.appendChild(bubble);
+
+  if (target) {
+    var parentSub = target.closest(".nav-sub");
+    if (parentSub && parentSub.classList.contains("hidden")) {
+      parentSub.classList.remove("hidden");
     }
-
-    window._activeGuideDoneCallback = typeof onDone === "function" ? onDone : null;
-
-    var html =
-      '<div class="row between" style="margin-bottom:8px;">' +
-        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-          '<h3 style="margin:0;">' + guide.title + '</h3>' +
-          badgeHtml +
-        '</div>' +
-        '<button type="button" class="btn btn-outline btn-sm" onclick="finishPortalGuide()">Close</button>' +
-      '</div>' +
-      '<p class="small muted" style="margin-bottom:10px;line-height:1.55;">' + (guide.intro || "") + '</p>' +
-      '<div class="guide-steps">' + stepsHtml + '</div>' +
-      (guide.footer_note
-        ? '<div class="notice mt" style="font-size:12.5px;">' + guide.footer_note + '</div>'
-        : '') +
-      '<div class="row mt" style="justify-content:flex-end;">' +
-        '<button type="button" class="btn btn-red" onclick="finishPortalGuide()">' + (guide.button_label || "Continue") + '</button>' +
-      '</div>';
-
-    openPopup(html, true);
-  }
-
-  showGuide(guideId, onDone) {
-    var guide = this.getGuide(guideId);
-    if (!guide) return;
-    sessionStorage.setItem(this._sessionPrefix + guideId, "1");
-    this.renderGuideModal(guide, onDone);
-  }
-
-  autoShowForPortal(guideId, onDone) {
-    var guide = this.getGuide(guideId);
-    if (!guide || guide.active === false || guide.auto_show === false) {
-      if (typeof onDone === "function") onDone();
-      return;
+    target.classList.add("tour-target-highlight");
+    try {
+      target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    } catch (e) {}
+    var rect = target.getBoundingClientRect();
+    var topPos = Math.max(16, Math.min(window.innerHeight - 210, rect.top - 6));
+    var leftPos = rect.right + 16;
+    if (leftPos + 320 > window.innerWidth) {
+      leftPos = Math.max(16, rect.left);
+      topPos = Math.min(window.innerHeight - 210, rect.bottom + 12);
+      bubble.classList.add("tour-bubble-top");
     }
-    if (sessionStorage.getItem(this._sessionPrefix + guideId) === "1") {
-      if (typeof onDone === "function") onDone();
-      return;
-    }
-    sessionStorage.setItem(this._sessionPrefix + guideId, "1");
-    this.renderGuideModal(guide, onDone);
+    bubble.style.top = topPos + "px";
+    bubble.style.left = leftPos + "px";
+  } else {
+    bubble.style.top = "84px";
+    bubble.style.right = "24px";
   }
 }
 
-var POPUP_GUIDE_MANAGER = new PopupGuideManager();
+function stepDashboardTour(delta) {
+  _tourState.index += delta;
+  renderDashboardTourStep();
+}
+
+function removeDashboardTourElements() {
+  var old = document.getElementById("dashboard-tour-bubble");
+  if (old) old.remove();
+  var highlighted = document.querySelectorAll(".tour-target-highlight");
+  for (var i = 0; i < highlighted.length; i++) {
+    highlighted[i].classList.remove("tour-target-highlight");
+  }
+}
+
+function finishDashboardTour() {
+  if (_tourState.userKey) {
+    localStorage.setItem(_tourState.userKey, "1");
+  }
+  removeDashboardTourElements();
+}
 
 function showPortalGuide(guideId, onDone) {
-  POPUP_GUIDE_MANAGER.showGuide(guideId, onDone);
+  var map = {
+    customer_portal_guide: "customer",
+    agent_workspace_guide: "agent",
+    manager_dashboard_guide: "manager",
+    admin_technical_guide: "admin"
+  };
+  var portal = map[guideId] || window.DASH_PORTAL || "";
+  if (portal && DASHBOARD_TUTORIAL_STEPS[portal]) {
+    startDashboardTour(portal, true);
+    return;
+  }
+  if (typeof onDone === "function") onDone();
 }
 
 function finishPortalGuide() {
-  var cb = window._activeGuideDoneCallback;
-  window._activeGuideDoneCallback = null;
+  finishDashboardTour();
   closePopup();
-  if (typeof cb === "function") cb();
 }
 
 function openConfirmPopup(title, messageHtml, confirmLabel, onConfirm, isDanger) {

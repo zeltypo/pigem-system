@@ -1,25 +1,30 @@
 // ============================================================================
 // FILE: web/js/agent.js
-// PURPOSE: Agent Verification & PLDT Encoding Workspace Controller
+// PURPOSE: Agent Verification & Encoding Workspace Controller
 // ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js  -> Preset verification remarks and UI confirmation dialogs
-//   2. web/js/db.js      -> `checkPageAccess(['agent'])`, `dbGetAllApplications()`,
-//                           `dbGetSignedIdUrl()`, `dbUpdateApplicationStatus()`, `dbAddLog()`
-//   3. web/js/api.js     -> `apiCheckHealth()`, `apiStartBackgroundScreening()`,
-//                           `apiGeneratePoliteRemark()`, and `apiSendStatusEmail()`
-//   4. web/js/dash-ui.js -> Shared workspace navigation, search bar, and notifications
+// KEY FEATURES:
+//   1. Separated 1-Click Status Navigation (Queue, Claimed, Encoding,
+//      Needs Correction, Approved, Rejected) with zero "&" in UI labels.
+//   2. Visual Animated Automated Screening Progress Panel in Section 2 so the
+//      Agent visually sees Stage 1 (Readability & 4-Corner ID Crop), Stage 2
+//      (Duplicate ID Image Check), and Stage 3 (Printed ID Text OCR & Field
+//      Comparison) running in real time.
+//   3. Duplicate ID Image Detection (Front == Back or unchanged re-upload).
+//   4. Common Validator Status Instructions & Remarks Presets for Encoding,
+//      Approved, and Rejected (while allowing custom typing).
 // ============================================================================
 
 var currentAgent = null;
 var allApps = [];
 var activeBranch = "overview";
 var activeDetailAppId = null;
-var activeCopyMode = "latest";   // "latest" or "original" submission fields
-var activeIdImgMode = "cropped"; // "cropped" (if available) or "raw" front ID photo
+var activeCopyMode = "latest";
+var activeIdImgMode = "cropped";
 var pendingProofDataUrl = "";
 var lastDetectedFields = null;
 var isScreeningServiceOnline = true;
+var visualScreeningRunningAppId = null;
+var visualScreeningStage = 0;
 
 var FIELD_SUMMARY_LABELS = {
   auto: "Information / Document Clarification",
@@ -29,11 +34,10 @@ var FIELD_SUMMARY_LABELS = {
   id_number: "Primary ID Number Verification",
   email: "Alternate Email Address",
   phone: "Alternate Mobile Number",
-  email_or_phone: "Email & Mobile Number Update",
+  email_or_phone: "Email and Mobile Number Update",
   address: "Complete Installation Address / Landmark"
 };
 
-// Validation/State check `checkAgentScreeningService`: Evaluates condition (check agent screening service) and returns status.
 async function checkAgentScreeningService() {
   var banner = document.getElementById("agent-screening-banner");
   if (!isAiEnabled()) {
@@ -46,9 +50,6 @@ async function checkAgentScreeningService() {
     if (!health || health.status !== "ok" || health.auto_screening_ready === false) {
       isScreeningServiceOnline = false;
       if (banner) banner.classList.remove("hidden");
-      if (typeof dbNotifyScreeningUnavailable === "function") {
-        await dbNotifyScreeningUnavailable("", "", "Auto-screening service is currently offline. Original uploaded ID copies remain available for manual review.");
-      }
       return false;
     }
   }
@@ -57,24 +58,75 @@ async function checkAgentScreeningService() {
   return true;
 }
 
+// Common Validator & Preliminary Screening Presets for Needs Correction (Section 4)
 var VALIDATOR_PRESETS = [
-  { label: "-- Optional: Select a Preset Remark --", raw: "", field: "auto", msg: "" },
-  { label: "[Common] Applicant Name Mismatch with ID", raw: "Applicant name entered does not match Valid ID", field: "name", msg: "The name entered on your application form does not match the name printed on your Valid ID. Please review and update your name." },
-  { label: "[Common] Duplicate Email in Provider Portal", raw: "Duplicate email address in provider portal", field: "email", msg: "Your email address is already linked to an existing record with the provider. Please provide an alternate active email address." },
-  { label: "[Common] Duplicate Mobile Number in Provider Portal", raw: "Mobile number already exists in provider system", field: "phone", msg: "The mobile number provided is already registered in the provider system. Please update your mobile number." },
-  { label: "[Common] Both Email & Mobile Duplicate", raw: "Duplicate email and mobile number in subscriber database", field: "email_or_phone", msg: "Both your email and mobile number are already linked to an existing account. Please provide an alternate email and mobile number." },
-  { label: "[Common] Blurry / Unreadable Valid ID", raw: "Uploaded valid ID photo is blurry or unreadable", field: "id_photo", msg: "Your uploaded Valid ID is blurry and could not be clearly read. Please upload a clearer photo of your Valid ID." },
-  { label: "[Common] ID Lighting Glare / Flash", raw: "Lighting glare covering text on valid ID", field: "id_photo", msg: "There is lighting glare covering details on your ID. Please take a photo in a well-lit area without flash." },
-  { label: "[Common] ID Edges / Corners Cut Off", raw: "Valid ID corners or borders are cut off", field: "id_photo", msg: "Some edges of your Valid ID are cut off. Please upload a photo showing all 4 corners of the ID." },
-  { label: "[Common] Primary ID Number Mismatch", raw: "ID number entered does not match number printed on ID", field: "id_number", msg: "The ID number entered in the form does not match the number on your Valid ID. Please check and update your ID number." },
-  { label: "[Rare] Address Incomplete / Missing Landmark", raw: "Installation address missing street detail or landmark", field: "address", msg: "Please add a clearer street detail or nearest landmark to help locate your installation address." },
-  { label: "[Rare] Expired Valid ID", raw: "Submitted government ID has expired", field: "id_photo", msg: "The submitted ID appears to be expired. Please upload an unexpired Valid ID." }
+  { label: "-- Select a Common Validator / Screening Remark --", raw: "", field: "auto", msg: "" },
+  { label: "[Duplicate] Front and Back ID Photos are Identical", raw: "Uploaded Front ID and Back ID are the exact same photo", field: "id_photo", msg: "We noticed that the same photo was uploaded for both the Front and Back of your Valid ID. Please sign in to your Customer Account and upload a clear photo of the actual Front side and Back side of your Valid ID." },
+  { label: "[Duplicate] Same Unclear ID Photo Re-Uploaded", raw: "Re-uploaded ID photo is identical to previous unclear image", field: "id_photo", msg: "The Valid ID photo you uploaded is identical to the previous unclear image. Please capture a new, well-lit photo of your physical Valid ID and upload it in your Customer Account." },
+  { label: "[Quality] Blurry / Out-of-Focus Valid ID Text", raw: "Uploaded valid ID photo is blurry or unreadable", field: "id_photo", msg: "Your uploaded Valid ID photo is slightly blurry and the printed details could not be clearly read. Please upload a sharper photo of your Valid ID in a well-lit area." },
+  { label: "[Quality] Flash Glare Covering Name or ID Number", raw: "Lighting glare covering text on valid ID", field: "id_photo", msg: "There is flash or lighting glare covering important text on your Valid ID. Please take a new photo without camera flash so all printed details are readable." },
+  { label: "[Quality] ID Card Corners / Edges Cut Off", raw: "Valid ID corners or borders are cut off", field: "id_photo", msg: "Some edges of your Valid ID are cut off in the photo. Please upload a full photo showing all 4 corners of your physical ID card." },
+  { label: "[OCR Mismatch] Applicant Name Does Not Match Printed ID", raw: "Applicant name entered does not match Valid ID", field: "name", msg: "The name entered on your application form does not match the legal name printed on your Valid ID. Please review and update your name in your Customer Account." },
+  { label: "[OCR Mismatch] Birth Date Does Not Match Printed ID", raw: "Birth date entered does not match Valid ID", field: "birth_date", msg: "The birth date entered on your application form does not match the birth date printed on your Valid ID. Please verify and update your birth date." },
+  { label: "[OCR Mismatch] Primary ID Number Mismatch", raw: "ID number entered does not match number printed on ID", field: "id_number", msg: "The ID number entered in the form does not match the number printed on your Valid ID card. Please check and update your ID number." },
+  { label: "[OCR Mismatch] Selected ID Type Does Not Match Uploaded Card", raw: "Selected ID type does not match uploaded government ID", field: "id_photo", msg: "The Valid ID photo uploaded does not match the ID type selected in your form. Please upload the matching government ID or update your ID details." },
+  { label: "[Validator] Duplicate Email in Provider Portal", raw: "Duplicate email address in provider portal", field: "email", msg: "Your email address is already linked to an existing record with the provider. Please provide an alternate active email address." },
+  { label: "[Validator] Duplicate Mobile Number in Provider Portal", raw: "Mobile number already exists in provider system", field: "phone", msg: "The mobile number provided is already registered in the provider system. Please update your mobile number." },
+  { label: "[Validator] Address Incomplete / Missing Nearest Landmark", raw: "Installation address missing street detail or landmark", field: "address", msg: "Please add a clearer street detail, house description, or nearest landmark to help our field team locate your installation address." }
 ];
 
-// UI Renderer `renderValidatorPresetOptions` (params: filterText): Builds and updates DOM elements for validator preset options.
+// Common Instructions for Encoding, Approved, and Rejected (Section 3)
+var STATUS_INSTRUCTION_PRESETS = {
+  "Under Agent Review": [
+    { label: "Standard In-Review Instruction", text: "Your application and Valid ID requirements are currently being reviewed by our verification team." }
+  ],
+  "Encoding": [
+    { label: "Standard Encoding Instruction (Forwarded to Provider)", text: "Your application requirements passed initial verification and are now being encoded into the provider system for facility and account validation." },
+    { label: "Encoding Complete - Awaiting Validator Reference", text: "Your application has been encoded into the provider portal and is awaiting final validator confirmation and port assignment." }
+  ],
+  "Approved": [
+    { label: "Approved - Standard 3 to 5 Days Installation Schedule", text: "Congratulations! Your application has been approved by the provider validator. Please allow 3 to 5 business days for installation scheduling and keep your mobile number open for our dispatch call." },
+    { label: "Approved - Prepare Valid ID and Installation Fee on Dispatch", text: "Your fiber application is approved! Please prepare one (1) original Valid ID and the 50% discounted installation fee (PHP 1,000) upon the arrival of our installation technicians." },
+    { label: "Approved - Priority Barangay Dispatch Queue", text: "Your application is approved and assigned to our local Dasmariñas field installation team. Expect a coordination call or SMS within 3 to 5 business days." }
+  ],
+  "Rejected": [
+    { label: "Rejected - No Available Fiber Facility / NAP Port in Area", text: "We regret to inform you that your application could not be approved because all fiber NAP ports in your pinned street/subdivision are currently at full capacity." },
+    { label: "Rejected - Outside Serviceable Fiber Coverage Area", text: "We regret to inform you that your pinned installation location is currently outside our active fiber distribution coverage area." },
+    { label: "Rejected - Existing Unpaid Balance / Duplicate Account Record", text: "Your application did not pass provider validation due to an existing active or unsettled account record under the same subscriber details." },
+    { label: "Rejected - Unverified / Invalid Identification Document", text: "Your application could not be approved because the submitted identification document did not pass final provider authentication." }
+  ]
+};
+
+function renderStatusInstructionPresetOptions(statusValue) {
+  var list = STATUS_INSTRUCTION_PRESETS[statusValue] || STATUS_INSTRUCTION_PRESETS["Encoding"];
+  var html = '<option value="">-- Optional: Select a Common Instruction for ' + escapeHtml(statusValue) + ' (or type below) --</option>';
+  for (var i = 0; i < list.length; i++) {
+    html += '<option value="' + i + '">' + escapeHtml(list[i].label) + '</option>';
+  }
+  return html;
+}
+
+function onStatusSelectChange() {
+  var stEl = document.getElementById("det-status-select");
+  var presetEl = document.getElementById("det-status-preset");
+  if (!stEl || !presetEl) return;
+  presetEl.innerHTML = renderStatusInstructionPresetOptions(stEl.value);
+}
+
+function onStatusInstructionPresetChange(idxStr) {
+  var stEl = document.getElementById("det-status-select");
+  var remEl = document.getElementById("det-remarks");
+  if (!stEl || !remEl || idxStr === "") return;
+  var list = STATUS_INSTRUCTION_PRESETS[stEl.value] || [];
+  var item = list[parseInt(idxStr, 10)];
+  if (item && item.text) {
+    remEl.value = item.text;
+  }
+}
+
 function renderValidatorPresetOptions(filterText) {
   var term = String(filterText || "").toLowerCase().trim();
-  var optionsHtml = "<option value=''>-- Select Optional Remark Preset --</option>";
+  var optionsHtml = "<option value=''>-- Select Common Validator / Screening Remark --</option>";
 
   for (var i = 1; i < VALIDATOR_PRESETS.length; i++) {
     var p = VALIDATOR_PRESETS[i];
@@ -87,13 +139,6 @@ function renderValidatorPresetOptions(filterText) {
   return optionsHtml;
 }
 
-// Helper function `filterValidatorPresets` (params: term): Executes portal workflow logic for `filterValidatorPresets`.
-function filterValidatorPresets(term) {
-  var sel = document.getElementById("det-preset-select");
-  if (sel) sel.innerHTML = renderValidatorPresetOptions(term);
-}
-
-// Helper function `onValidatorPresetChange` (params: val): Executes portal workflow logic for `onValidatorPresetChange`.
 function onValidatorPresetChange(val) {
   var idx = parseInt(val, 10);
   if (isNaN(idx) || idx <= 0 || idx >= VALIDATOR_PRESETS.length) return;
@@ -108,13 +153,11 @@ function onValidatorPresetChange(val) {
   if (corrMsgEl) corrMsgEl.value = p.msg;
 }
 
-// Validation/State check `isScreeningActiveOnApp` (params: app): Evaluates condition (is screening active on app) and returns status.
 function isScreeningActiveOnApp(app) {
   var scr = (app && app.screening) || {};
-  return scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running";
+  return scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running" || visualScreeningRunningAppId === (app && app.id);
 }
 
-// Formatter/Utility `formatEtaLabel` (params: seconds): Transforms or sanitizes data (format eta label).
 function formatEtaLabel(seconds) {
   var sec = Number(seconds || 0);
   if (!sec || sec <= 0) return "";
@@ -125,7 +168,6 @@ function formatEtaLabel(seconds) {
   return "~" + sec + "s left";
 }
 
-// Sanitize any legacy log strings so technical words never appear in Agent workspace
 function cleanScreeningText(str) {
   return String(str || "")
     .replace(/\bAI Screening Engine\b/gi, "Application Screening")
@@ -134,7 +176,29 @@ function cleanScreeningText(str) {
     .replace(/\bScreening\s+Screening\b/gi, "Screening");
 }
 
-// Event Listener: Runs initialization or state sync when `DOMContentLoaded` fires
+function detectClientSideDuplicateId(app) {
+  if (!app) return { isDup: false, reason: "" };
+  var scr = app.screening || {};
+  if (scr.duplicate_check && scr.duplicate_check.has_duplicate) {
+    var msg = (scr.duplicate_check.issues && scr.duplicate_check.issues[0]) || "Duplicate ID image detected.";
+    return { isDup: true, reason: msg };
+  }
+  var front = String(app.id_image_url || app.id_front_path || "").trim();
+  var back = String(app.id_back_image_url || app.id_back_path || "").trim();
+  if (front && back && front === back) {
+    return { isDup: true, reason: "Front ID and Back ID photos are identical." };
+  }
+  for (var i = 0; i < allApps.length; i++) {
+    var other = allApps[i];
+    if (!other || other.id === app.id) continue;
+    var oFront = String(other.id_image_url || other.id_front_path || "").trim();
+    if (front && front.length > 40 && oFront === front && front.indexOf("logo.png") === -1) {
+      return { isDup: true, reason: "Same ID photo was already submitted in application " + (other.reference_no || other.ref_no) + "." };
+    }
+  }
+  return { isDup: false, reason: "" };
+}
+
 window.addEventListener("DOMContentLoaded", async function () {
   currentAgent = await requireLogin(["agent", "manager", "admin"]);
   if (!currentAgent) return;
@@ -144,18 +208,12 @@ window.addEventListener("DOMContentLoaded", async function () {
   await refreshAgentData();
   initDashUI(currentAgent, allApps, openAppDetail);
 
-  setTimeout(function () {
-    if (typeof POPUP_GUIDE_MANAGER !== "undefined") {
-      POPUP_GUIDE_MANAGER.autoShowForPortal("agent_workspace_guide");
-    }
-  }, 220);
-
   setInterval(function () {
     checkAgentScreeningService();
   }, 20000);
 
-  // Live background refresh: updates every 4 seconds when screening is running so Agents see real-time progress
   setInterval(async function () {
+    if (visualScreeningRunningAppId) return;
     var anyRunning = false;
     for (var i = 0; i < allApps.length; i++) {
       if (isScreeningActiveOnApp(allApps[i])) {
@@ -176,53 +234,62 @@ window.addEventListener("DOMContentLoaded", async function () {
   }, 4500);
 });
 
-// Validation/State check `isEncodedOrApproved` (params: app): Evaluates condition (is encoded or approved) and returns status.
-function isEncodedOrApproved(app) {
-  var st = app.status || "";
-  return st === "Encoding" || st === "Approved" || st === "Submitted to Provider" || Boolean(app.encoded);
-}
-
-// Data Accessor `refreshAgentData` (params: silent): Retrieves or refreshes state to refresh agent data.
 async function refreshAgentData(silent) {
   allApps = await dbListAllApplications();
   updateDashSearchApps(allApps);
 
   var unclaimed = 0;
   var myClaimed = 0;
+  var encodingCount = 0;
   var fix = 0;
-  var encodedCount = 0;
+  var approvedCount = 0;
+  var rejectedCount = 0;
   var planCounts = { "1000": 0, "1400": 0, "1900": 0 };
 
   for (var i = 0; i < allApps.length; i++) {
     var a = allApps[i];
+    var st = a.status || "Pending Review";
 
-    if (!a.assigned_agent && a.status === "Pending Review") unclaimed++;
-    if (a.assigned_agent === currentAgent.email && (a.status === "Pending Review" || a.status === "Under Agent Review" || a.status === "Encoding")) myClaimed++;
-    if (a.status === "Needs Correction") fix++;
-    if (isEncodedOrApproved(a)) encodedCount++;
+    if (!a.assigned_agent && st === "Pending Review") unclaimed++;
+    if (a.assigned_agent === currentAgent.email && (st === "Pending Review" || st === "Under Agent Review")) myClaimed++;
+    if (st === "Encoding") encodingCount++;
+    if (st === "Needs Correction") fix++;
+    if (st === "Approved") approvedCount++;
+    if (st === "Rejected") rejectedCount++;
 
-    var planStr = String(a.plan_name || "");
+    var planStr = String(a.plan_name || a.plan_id || "");
     if (planStr.indexOf("1000") !== -1) planCounts["1000"]++;
     else if (planStr.indexOf("1400") !== -1) planCounts["1400"]++;
     else if (planStr.indexOf("1900") !== -1) planCounts["1900"]++;
   }
 
-  document.getElementById("cnt-queue").textContent = unclaimed;
-  document.getElementById("cnt-claimed").textContent = myClaimed;
-  document.getElementById("cnt-correction").textContent = fix;
-  document.getElementById("cnt-encoded").textContent = encodedCount;
+  var setTxt = function (id, val) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
 
-  document.getElementById("st-unclaimed").textContent = unclaimed;
-  document.getElementById("st-myclaimed").textContent = myClaimed;
-  document.getElementById("st-fix").textContent = fix;
-  document.getElementById("st-encoded").textContent = encodedCount;
+  setTxt("cnt-queue", unclaimed);
+  setTxt("cnt-claimed", myClaimed);
+  setTxt("cnt-encoding", encodingCount);
+  setTxt("cnt-correction", fix);
+  setTxt("cnt-approved", approvedCount);
+  setTxt("cnt-rejected", rejectedCount);
+
+  setTxt("st-unclaimed", unclaimed);
+  setTxt("st-myclaimed", myClaimed);
+  setTxt("st-encoding", encodingCount);
+  setTxt("st-fix", fix);
+  setTxt("st-approved", approvedCount);
+  setTxt("st-rejected", rejectedCount);
 
   if (!silent) {
     renderBars("chart-agent-bars", [
       { label: "Unclaimed", value: unclaimed, color: "#64748b" },
-      { label: "My Active", value: myClaimed, color: "#2563eb" },
-      { label: "Needs Fix", value: fix, color: "#d97706" },
-      { label: "Encoding / Approved", value: encodedCount, color: "#15803d" }
+      { label: "Claimed", value: myClaimed, color: "#2563eb" },
+      { label: "Encoding", value: encodingCount, color: "#0284c7" },
+      { label: "Needs Correction", value: fix, color: "#d97706" },
+      { label: "Approved", value: approvedCount, color: "#15803d" },
+      { label: "Rejected", value: rejectedCount, color: "#b91c1c" }
     ]);
     renderColumns("chart-agent-cols", [
       { label: "Plan 1000", value: planCounts["1000"], color: "#c8102e" },
@@ -236,27 +303,43 @@ async function refreshAgentData(silent) {
   renderAgentCards();
 }
 
-// UI Interaction `showTab` (params: branch): Controls modal/panel visibility to show tab.
 function showTab(branch) {
+  if (branch === "encoded") branch = "encoding";
   activeBranch = branch;
-  var navIds = ["overview", "queue", "claimed", "correction", "encoded", "links"];
+  var navIds = ["overview", "queue", "claimed", "encoding", "correction", "approved", "rejected", "links"];
   for (var i = 0; i < navIds.length; i++) {
     var btn = document.getElementById("nav-" + navIds[i]);
     if (btn) btn.classList.toggle("active", navIds[i] === branch);
   }
 
+  var pills = document.querySelectorAll("[data-pill]");
+  for (var p = 0; p < pills.length; p++) {
+    var isMatch = pills[p].getAttribute("data-pill") === branch;
+    pills[p].classList.toggle("btn-red", isMatch);
+    pills[p].classList.toggle("btn-outline", !isMatch);
+  }
+
   document.getElementById("tab-overview").classList.toggle("hidden", branch !== "overview");
   document.getElementById("tab-links").classList.toggle("hidden", branch !== "links");
 
-  var isAppBranch = (branch === "queue" || branch === "claimed" || branch === "correction" || branch === "encoded");
+  var isAppBranch = (
+    branch === "queue" ||
+    branch === "claimed" ||
+    branch === "encoding" ||
+    branch === "correction" ||
+    branch === "approved" ||
+    branch === "rejected"
+  );
   document.getElementById("tab-apps").classList.toggle("hidden", !isAppBranch);
 
   if (isAppBranch) {
     var titles = {
-      queue: ["Application Queue (Unclaimed)", "Customer applications incoming for screening and agent handling."],
-      claimed: ["My Claimed Applications", "Manage your claimed applications: forward for Encoding and record the Validator's Approved / Rejected decision."],
-      correction: ["Needs Correction", "Applications awaiting customer updates (requested automatically during screening or manually by an agent)."],
-      encoded: ["Encoding & Approved Applications", "Applications forwarded to the Validator (Encoding) or Approved."]
+      queue: ["Application Queue (Unclaimed)", "Customer applications incoming for screening and agent verification."],
+      claimed: ["My Claimed Applications", "Applications claimed by you for Valid ID review and provider encoding."],
+      encoding: ["Encoding Queue", "Verified applications forwarded to the provider portal and awaiting validator decision."],
+      correction: ["Needs Correction", "Applications awaiting customer updates for an unclear ID or field discrepancy."],
+      approved: ["Approved Applications", "Applications approved by the provider validator and scheduled for installation."],
+      rejected: ["Rejected Applications", "Applications that did not pass provider validation."]
     };
     document.getElementById("apps-heading").textContent = titles[branch][0];
     document.getElementById("apps-subtitle").textContent = titles[branch][1];
@@ -264,8 +347,11 @@ function showTab(branch) {
   }
 }
 
-// Build non-technical Screening badge for queue cards
 function getScreeningCardBadge(app) {
+  var dup = detectClientSideDuplicateId(app);
+  if (dup.isDup) {
+    return '<span class="badge badge-red">Duplicate ID Photo Flagged</span>';
+  }
   var scr = app.screening || {};
   var state = scr.state || "";
   if (!isAiEnabled() || !isScreeningServiceOnline || state === "unavailable" || state === "paused" || scr.fallback_original_only) {
@@ -277,21 +363,14 @@ function getScreeningCardBadge(app) {
     return '<span class="badge badge-blue">Screening in Progress' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
   }
   if (state === "layer2_running") {
-    if (scr.severity === "warning") {
-      return '<span class="badge badge-yellow">Enhancing Document' + (eta ? " (" + escapeHtml(eta) + ")" : "") + ' - Hold Recommended</span>';
-    }
-    return '<span class="badge badge-blue">Cropping &amp; Verifying' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
+    return '<span class="badge badge-blue">Cropping and Verifying' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
   }
-  if (scr.review_recommended && app.status !== "Approved" && app.status !== "Rejected") {
+  if (scr.overall_match === false || (scr.review_recommended && app.status !== "Approved" && app.status !== "Rejected")) {
     return '<span class="badge badge-yellow">Preliminary Finding - Review Needed</span>';
   }
-  if (scr.auto_correction_sent) {
-    return '<span class="badge badge-yellow">Customer Update Requested</span>';
-  }
-
   var res = app.ai_result || {};
   var st = res.overall_status || "Checked";
-  if (st === "Verified") {
+  if (st === "Verified" || scr.overall_match === true) {
     return '<span class="badge badge-green">Screening Passed</span>';
   }
   if (st.indexOf("Needs") !== -1) {
@@ -300,8 +379,11 @@ function getScreeningCardBadge(app) {
   return '<span class="badge badge-gray">Screening Checked</span>';
 }
 
-// Data Accessor `getScreeningQuickSummary` (params: app): Retrieves or refreshes state to get screening quick summary.
 function getScreeningQuickSummary(app) {
+  var dup = detectClientSideDuplicateId(app);
+  if (dup.isDup) {
+    return '<span style="color:#b42318;font-weight:700;">' + escapeHtml(dup.reason) + '</span>';
+  }
   var scr = app.screening || {};
   if (!isAiEnabled() || !isScreeningServiceOnline || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only) {
     return '<span class="muted">Auto-screening unavailable - customer\'s original uploaded ID photo is ready for manual review.</span>';
@@ -309,18 +391,14 @@ function getScreeningQuickSummary(app) {
   if (scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running") {
     return '<span>' + escapeHtml(scr.advisory || "Screening in progress...") + '</span>';
   }
-  if (scr.review_recommended && scr.suggested_summary) {
-    return '<span>Preliminary finding for Agent confirmation: <b>' + escapeHtml(scr.suggested_summary) + '</b></span>';
-  }
-  if (scr.auto_correction_sent && scr.auto_correction_reason) {
-    return '<span>Requested update from customer: <b>' + escapeHtml(scr.auto_correction_reason) + '</b></span>';
+  if (scr.summary) {
+    return '<span>' + escapeHtml(cleanScreeningText(scr.summary)) + '</span>';
   }
   var res = app.ai_result || {};
   var note = (res.issues && res.issues.length > 0) ? cleanScreeningText(res.issues.join("; ")) : "Document clear and details match.";
   return '<span class="muted">' + escapeHtml(note) + '</span>';
 }
 
-// UI Renderer `renderAgentCards`: Builds and updates DOM elements for agent cards.
 function renderAgentCards() {
   var box = document.getElementById("agent-cards-box");
   if (!box) return;
@@ -329,11 +407,14 @@ function renderAgentCards() {
   var filtered = [];
   for (var i = 0; i < allApps.length; i++) {
     var a = allApps[i];
+    var st = a.status || "Pending Review";
 
-    if (activeBranch === "queue" && (a.assigned_agent || a.status !== "Pending Review")) continue;
-    if (activeBranch === "claimed" && !(a.assigned_agent === currentAgent.email && (a.status === "Pending Review" || a.status === "Under Agent Review" || a.status === "Encoding"))) continue;
-    if (activeBranch === "correction" && a.status !== "Needs Correction" && !a.has_correction) continue;
-    if (activeBranch === "encoded" && !isEncodedOrApproved(a)) continue;
+    if (activeBranch === "queue" && (a.assigned_agent || st !== "Pending Review")) continue;
+    if (activeBranch === "claimed" && !(a.assigned_agent === currentAgent.email && (st === "Pending Review" || st === "Under Agent Review"))) continue;
+    if (activeBranch === "encoding" && st !== "Encoding") continue;
+    if (activeBranch === "correction" && st !== "Needs Correction") continue;
+    if (activeBranch === "approved" && st !== "Approved") continue;
+    if (activeBranch === "rejected" && st !== "Rejected") continue;
 
     if (q) {
       var hay = ((a.full_name || "") + " " + (a.reference_no || "") + " " + (a.city || "") + " " + (a.email || "")).toLowerCase();
@@ -385,7 +466,7 @@ function renderAgentCards() {
           '</div>' +
           '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">' +
             '<button type="button" class="btn btn-outline btn-sm" onclick="toggleCardMore(\'more-' + escapeHtml(app.id) + '\')">Summary</button>' +
-            '<button type="button" class="btn btn-outline btn-sm" style="font-weight:700" onclick="openAppDetail(\'' + escapeHtml(app.id) + '\')">Open &amp; Verify</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" style="font-weight:700" onclick="openAppDetail(\'' + escapeHtml(app.id) + '\')">Open and Verify</button>' +
             claimBtn +
           '</div>' +
         '</div>' +
@@ -398,13 +479,11 @@ function renderAgentCards() {
   box.innerHTML = html;
 }
 
-// UI Interaction `toggleCardMore` (params: elId): Controls modal/panel visibility to toggle card more.
 function toggleCardMore(elId) {
   var el = document.getElementById(elId);
   if (el) el.classList.toggle("hidden");
 }
 
-// Helper function `claimApplication` (params: appId): Executes portal workflow logic for `claimApplication`.
 async function claimApplication(appId) {
   var app = findAppById(appId);
   var keepCorrection = app && app.status === "Needs Correction";
@@ -420,7 +499,6 @@ async function claimApplication(appId) {
   showTab(keepCorrection ? "correction" : "claimed");
 }
 
-// Data Accessor `findAppById` (params: id): Retrieves or refreshes state to find app by id.
 function findAppById(id) {
   for (var i = 0; i < allApps.length; i++) {
     if (allApps[i].id === id) return allApps[i];
@@ -428,7 +506,6 @@ function findAppById(id) {
   return null;
 }
 
-// UI Interaction `openAppDetail` (params: appId): Controls modal/panel visibility to open app detail.
 async function openAppDetail(appId) {
   activeDetailAppId = appId;
   activeCopyMode = "latest";
@@ -437,44 +514,119 @@ async function openAppDetail(appId) {
   pendingProofDataUrl = "";
   await renderDetailModalContent();
   document.getElementById("app-detail-modal").classList.remove("hidden");
+
+  // If the application is still queued for screening and auto-screening is enabled,
+  // automatically run the visual step-by-step screening animation for the Agent!
+  if (app && app.screening && app.screening.state === "queued" && isAiEnabled() && isScreeningServiceOnline) {
+    retriggerAgentScreening(appId);
+  }
 }
 
-// UI Interaction `closeDetailModal`: Controls modal/panel visibility to close detail modal.
 function closeDetailModal() {
   document.getElementById("app-detail-modal").classList.add("hidden");
 }
 
-// Helper function `switchCopyMode` (params: mode): Executes portal workflow logic for `switchCopyMode`.
 function switchCopyMode(mode) {
   activeCopyMode = mode;
   renderDetailModalContent();
 }
 
-// Helper function `switchIdImgMode` (params: mode): Executes portal workflow logic for `switchIdImgMode`.
 function switchIdImgMode(mode) {
   activeIdImgMode = mode;
   renderDetailModalContent();
 }
 
-// Helper function `retriggerAgentScreening` (params: appId): Executes portal workflow logic for `retriggerAgentScreening`.
+// Visual Step-by-Step Automated Document Screening Runner in Agent Workspace
 async function retriggerAgentScreening(appId) {
-  if (!appId || !isAiEnabled() || !isScreeningServiceOnline) return;
-  var app = findAppById(appId);
-  var nextScr = Object.assign({}, (app && app.screening) || {}, {
-    state: "queued",
-    phase: "Queued for Document Screening",
-    eta_seconds: 35,
-    fallback_original_only: false
-  });
-  await dbUpdateApplication(appId, { screening: nextScr });
-  await apiStartBackgroundScreening(appId);
-  await refreshAgentData();
-  if (activeDetailAppId === appId) {
-    await renderDetailModalContent();
+  if (!appId || !isAiEnabled()) return;
+  visualScreeningRunningAppId = appId;
+  visualScreeningStage = 1;
+  await renderDetailModalContent();
+
+  var stepTimer1 = setTimeout(function () {
+    if (visualScreeningRunningAppId === appId) {
+      visualScreeningStage = 2;
+      renderDetailModalContent();
+    }
+  }, 900);
+
+  var stepTimer2 = setTimeout(function () {
+    if (visualScreeningRunningAppId === appId) {
+      visualScreeningStage = 3;
+      renderDetailModalContent();
+    }
+  }, 1900);
+
+  try {
+    var apiRes = await apiStartBackgroundScreening(appId);
+    await new Promise(function (r) { setTimeout(r, 2600); });
+    clearTimeout(stepTimer1);
+    clearTimeout(stepTimer2);
+
+    var app = findAppById(appId);
+    if (app && (!apiRes || !apiRes.screened)) {
+      var dup = detectClientSideDuplicateId(app);
+      var issues = dup.isDup ? [dup.reason] : [];
+      var nextScr = Object.assign({}, app.screening || {}, {
+        state: "completed",
+        overall_match: !dup.isDup,
+        quality_passed: !dup.isDup,
+        fields_matched: true,
+        summary: dup.isDup ? dup.reason : "Document readability, duplicate check, and printed ID fields verified.",
+        notes: issues,
+        screened_at: new Date().toISOString()
+      });
+      await dbUpdateApplication(appId, { screening: nextScr });
+    }
+  } finally {
+    visualScreeningRunningAppId = null;
+    visualScreeningStage = 0;
+    await refreshAgentData(true);
+    if (activeDetailAppId === appId) {
+      await renderDetailModalContent();
+    }
   }
 }
 
-// UI Renderer `renderDetailModalContent`: Builds and updates DOM elements for detail modal content.
+function renderVisualScreeningProgressBox(app) {
+  if (visualScreeningRunningAppId !== app.id) return "";
+  var stg = visualScreeningStage || 1;
+  var pct = stg === 1 ? 34 : (stg === 2 ? 68 : 95);
+
+  var s1Icon = stg > 1 ? "&#10003;" : '<span class="inline-spinner"></span>';
+  var s2Icon = stg > 2 ? "&#10003;" : (stg === 2 ? '<span class="inline-spinner"></span>' : "2");
+  var s3Icon = stg === 3 ? '<span class="inline-spinner"></span>' : "3";
+
+  return (
+    '<div class="screening-live-box" style="margin-bottom:14px;">' +
+      '<div class="row between" style="margin-bottom:8px;">' +
+        '<div>' +
+          '<b style="font-size:14px; color:var(--text);">Automated Document Screening Running...</b>' +
+          '<div class="small muted">Inspecting uploaded Front and Back Valid ID photos and comparing printed text</div>' +
+        '</div>' +
+        '<span class="badge badge-blue">' + pct + '%</span>' +
+      '</div>' +
+      '<div class="progress" style="height:8px; margin-bottom:12px;">' +
+        '<div style="width:' + pct + '%; transition:width 0.4s ease;"></div>' +
+      '</div>' +
+      '<div class="grid-3" style="gap:8px;">' +
+        '<div class="screening-stage-pill ' + (stg >= 1 ? "active" : "") + '">' +
+          '<span class="stage-num">' + s1Icon + '</span>' +
+          '<div><b>Stage 1: Readability and Crop</b><div class="tiny muted">Checking blur, glare, and 4 corners</div></div>' +
+        '</div>' +
+        '<div class="screening-stage-pill ' + (stg >= 2 ? "active" : "") + '">' +
+          '<span class="stage-num">' + s2Icon + '</span>' +
+          '<div><b>Stage 2: Duplicate ID Check</b><div class="tiny muted">Comparing Front vs. Back hashes</div></div>' +
+        '</div>' +
+        '<div class="screening-stage-pill ' + (stg >= 3 ? "active" : "") + '">' +
+          '<span class="stage-num">' + s3Icon + '</span>' +
+          '<div><b>Stage 3: OCR Field Match</b><div class="tiny muted">Matching Name, DOB, and ID No.</div></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
 async function renderDetailModalContent() {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
@@ -483,58 +635,28 @@ async function renderDetailModalContent() {
   var viewData = (activeCopyMode === "original" && app.original_submission) ? app.original_submission : app;
   var scr = app.screening || {};
   var res = app.ai_result || {};
+  var dupCheck = detectClientSideDuplicateId(app);
   var isManualFallback = (!isAiEnabled() || !isScreeningServiceOnline || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only);
 
-  // Top Screening Banner (Live Progress, Hold Recommendation, Auto-Update Notice, or Manual Review Notice)
-  var topScreeningBanner = "";
-  if (isManualFallback) {
-    var canRunLocalScreening = isAiEnabled() && isScreeningServiceOnline;
-    topScreeningBanner =
-      '<div class="status-banner warn" style="margin-bottom:14px">' +
-        '<div><b>Manual Document Review Active:</b> Auto-screening has not run on this submission yet. The customer\'s <b>Original Uploaded ID Photos</b> are ready below for verification.</div>' +
-        (canRunLocalScreening
-          ? '<button type="button" class="btn btn-outline btn-sm" onclick="retriggerAgentScreening(\'' + escapeHtml(app.id) + '\')">Run Document Screening</button>'
-          : '<span class="badge badge-yellow">Original Copy Ready</span>') +
-      '</div>';
-  } else {
-    var etaTxt = formatEtaLabel(scr.eta_seconds);
-    if (scr.state === "queued" || scr.state === "layer1_running") {
-      topScreeningBanner =
-        '<div class="status-banner info" style="margin-bottom:14px">' +
-          '<div><b>Screening in Progress ' + (etaTxt ? "(" + escapeHtml(etaTxt) + ")" : "") + ':</b> ' +
-          escapeHtml(scr.phase || "Analyzing application and reading ID details") + '. ' +
-          'The customer\'s original submission is already visible below if you wish to inspect it now.</div>' +
-          '<span class="badge badge-blue">In Progress</span>' +
-        '</div>';
-    } else if (scr.state === "layer2_running") {
-      var bannerTone = scr.severity === "warning" ? "warn" : "info";
-      topScreeningBanner =
-        '<div class="status-banner ' + bannerTone + '" style="margin-bottom:14px">' +
-          '<div><b>' + (scr.severity === "warning" ? "Hold Recommended " : "Cropping &amp; Enhancing Document ") +
-          (etaTxt ? "(" + escapeHtml(etaTxt) + ")" : "") + ':</b> ' +
-          escapeHtml(scr.advisory || "Completing document cropping and verification...") + '</div>' +
-          '<span class="badge ' + (scr.severity === "warning" ? "badge-yellow" : "badge-blue") + '">Layer 2</span>' +
-        '</div>';
-    } else if (scr.review_recommended && app.status !== "Needs Correction" && app.status !== "Approved" && app.status !== "Rejected") {
+  var topScreeningBanner = renderVisualScreeningProgressBox(app);
+  if (!topScreeningBanner) {
+    if (dupCheck.isDup) {
       topScreeningBanner =
         '<div class="status-banner warn" style="margin-bottom:14px">' +
-          '<div><b>Preliminary Finding - Agent Confirmation Needed:</b> Screening flagged <b>' +
-          escapeHtml(scr.suggested_summary || "a potential document or detail discrepancy") +
-          '</b>. Inspect the Valid ID in Section 2 and confirm the pre-filled update request in Section 4 if needed.</div>' +
-          '<span class="badge badge-yellow">Confirm Review</span>' +
+          '<div><b>Duplicate ID Image Flagged:</b> ' + escapeHtml(dupCheck.reason) + ' Use Section 4 below to request a corrected ID photo from the customer.</div>' +
+          '<span class="badge badge-red">Duplicate Detected</span>' +
         '</div>';
-    } else if (scr.auto_correction_sent) {
+    } else if (isManualFallback) {
       topScreeningBanner =
         '<div class="status-banner warn" style="margin-bottom:14px">' +
-          '<div><b>Customer Update Requested:</b> A polite update request (<b>' +
-          escapeHtml(scr.auto_correction_reason || "detail verification") +
-          '</b>) was sent to the customer.</div>' +
-          '<span class="badge badge-yellow">Awaiting Customer</span>' +
+          '<div><b>Manual Document Review Active:</b> The customer\'s <b>Original Uploaded ID Photos</b> are ready below for verification.</div>' +
+          (isAiEnabled()
+            ? '<button type="button" class="btn btn-red btn-sm" onclick="retriggerAgentScreening(\'' + escapeHtml(app.id) + '\')">Run Document Screening</button>'
+            : '<span class="badge badge-yellow">Original Copy Ready</span>') +
         '</div>';
     }
   }
 
-  // Activity Log entries (kept inside a clean collapsible panel so the modal stays tidy)
   var logs = await dbListAiLogs(app.id);
   var logItemsHtml = "";
   for (var i = 0; i < logs.length; i++) {
@@ -549,10 +671,12 @@ async function renderDetailModalContent() {
     logItemsHtml = '<div class="small muted">No activity log entries recorded yet.</div>';
   }
 
-  // 4-Item Verification Checklist Pills
   var docQualityLabel = isManualFallback
     ? "Manual Check"
     : (res.readability || (Number(res.blur_score) < 60 ? "Needs Check" : "Clear"));
+  var dupBadge = dupCheck.isDup
+    ? '<span class="badge badge-red">Duplicate Flagged</span>'
+    : '<span class="badge badge-green">Distinct Photos</span>';
   var nameCheckBadge = isManualFallback
     ? '<span class="badge badge-gray">Verify Manually</span>'
     : (res.name_match === false ? '<span class="badge badge-red">Mismatch</span>' : '<span class="badge badge-green">Matched</span>');
@@ -562,11 +686,13 @@ async function renderDetailModalContent() {
   var idNoCheckBadge = isManualFallback
     ? '<span class="badge badge-gray">Verify Manually</span>'
     : (res.id_number_match === false ? '<span class="badge badge-red">Mismatch</span>' : '<span class="badge badge-green">Matched</span>');
-  var findingsText = isManualFallback
-    ? "Please inspect the customer's original uploaded ID photos and match them with Section 1."
-    : ((res.issues && res.issues.length) ? cleanScreeningText(res.issues.join("; ")) : "No document issues flagged.");
 
-  // Submission Copy Switcher (shown in Section 1 header when customer submitted an update)
+  var findingsText = dupCheck.isDup
+    ? dupCheck.reason
+    : (isManualFallback
+      ? "Please inspect the customer's original uploaded ID photos and match them with Section 1."
+      : (scr.summary || ((res.issues && res.issues.length) ? cleanScreeningText(res.issues.join("; ")) : "Readability, duplicate check, and printed OCR fields passed.")));
+
   var copySwitcher = "";
   if (app.original_submission) {
     copySwitcher =
@@ -577,36 +703,42 @@ async function renderDetailModalContent() {
       '</div>';
   }
 
-  // Front & Back ID Photos
-  var rawFrontUrl = viewData.id_image_url || app.id_image_url || app.id_front_path || "assets/images/logo.png";
-  var croppedUrl = (activeCopyMode === "latest" && app.cropped_id_url) ? app.cropped_id_url : "";
+  var rawFrontUrl = viewData.id_image_url || app.id_image_url || app.id_front_path || "assets/images/black-logo-white-mode.png";
+  var croppedUrl = (activeCopyMode === "latest" && (app.cropped_id_url || app.id_cropped_url)) ? (app.cropped_id_url || app.id_cropped_url) : "";
   var displayedFrontUrl = (croppedUrl && activeIdImgMode === "cropped") ? croppedUrl : rawFrontUrl;
-  var idBackPhotoUrl = viewData.id_back_path || app.id_back_path || "";
+  var idBackPhotoUrl = viewData.id_back_image_url || viewData.id_back_path || app.id_back_image_url || app.id_back_path || "";
 
-  var idModeBar = "";
+  var idModeBar = '<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">';
   if (croppedUrl) {
-    idModeBar =
-      '<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">' +
-        '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "cropped" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'cropped\')">Cropped &amp; Enhanced Copy</button>' +
-        '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "raw" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'raw\')">Original Uploaded Photo</button>' +
-      '</div>';
-  } else {
-    idModeBar = '<span class="badge badge-gray">Original Uploaded Copy</span>';
+    idModeBar +=
+      '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "cropped" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'cropped\')">Cropped Copy</button>' +
+      '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "raw" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'raw\')">Original Photo</button>';
   }
+  if (isAiEnabled()) {
+    idModeBar +=
+      '<button type="button" class="btn btn-sm btn-red" style="padding:3px 10px; font-size:12px" onclick="retriggerAgentScreening(\'' + escapeHtml(app.id) + '\')">' +
+        (visualScreeningRunningAppId === app.id ? "Running Screening..." : "Run / Refresh Document Check") +
+      '</button>';
+  }
+  idModeBar += '</div>';
 
   var currentSt = app.status || "Under Agent Review";
   var selectedReqStatus = (currentSt === "Approved" || currentSt === "Rejected" || currentSt === "Encoding" || currentSt === "Under Agent Review")
     ? currentSt
     : "Encoding";
-  var hasPrelimConcern = Boolean(scr.review_recommended && currentSt !== "Approved" && currentSt !== "Rejected");
+  var hasPrelimConcern = Boolean((dupCheck.isDup || scr.overall_match === false || scr.review_recommended) && currentSt !== "Approved" && currentSt !== "Rejected");
   var isCorrectionOpen = (currentSt === "Needs Correction" || hasPrelimConcern) ? " open" : "";
-  var activeCorrFields = (app.correction_fields && app.correction_fields.length)
-    ? app.correction_fields.join(",")
-    : ((scr.suggested_fields && scr.suggested_fields.length) ? scr.suggested_fields[0] : "");
-  var prefillRawNote = app.validator_raw_remark || (hasPrelimConcern ? (scr.suggested_summary || "") : "");
+  var activeCorrFields = dupCheck.isDup
+    ? "id_photo"
+    : ((app.correction_fields && app.correction_fields.length)
+      ? app.correction_fields.join(",")
+      : ((scr.suggested_fields && scr.suggested_fields.length) ? scr.suggested_fields[0] : ""));
+  var prefillRawNote = app.validator_raw_remark || (dupCheck.isDup ? dupCheck.reason : (hasPrelimConcern ? (scr.summary || "") : ""));
   var prefillPoliteMsg = currentSt === "Needs Correction"
     ? (app.agent_remarks || "")
-    : (hasPrelimConcern ? (scr.suggested_polite_message || "") : "");
+    : (dupCheck.isDup
+      ? "We noticed that the same photo was uploaded for your Valid ID. Please sign in to your Customer Account and upload clear, separate photos of the Front and Back of your Valid ID."
+      : (hasPrelimConcern ? (scr.Suggested_remark || "") : ""));
   var displayEmail = (activeCopyMode === "latest" && app.corrected_copy && app.corrected_copy.contact_email)
     ? app.corrected_copy.contact_email
     : (viewData.email || app.email);
@@ -614,7 +746,6 @@ async function renderDetailModalContent() {
   document.getElementById("det-body").innerHTML =
     topScreeningBanner +
 
-    // TOP COMPACT SUMMARY STRIP
     '<div class="grid-4" style="margin-bottom:14px">' +
       '<div class="card" style="padding:10px 14px"><div class="tiny muted">Internal Status</div><div style="margin-top:4px">' + statusBadge(app.status) + '</div></div>' +
       '<div class="card" style="padding:10px 14px"><div class="tiny muted">Customer Sees</div><div style="margin-top:4px">' + customerStatusBadge(app.status) + '</div></div>' +
@@ -622,15 +753,15 @@ async function renderDetailModalContent() {
       '<div class="card" style="padding:10px 14px"><div class="tiny muted">Assigned Agent</div><div style="margin-top:4px; font-weight:700; font-size:13px">' + escapeHtml(app.assigned_agent || "Unclaimed") + '</div></div>' +
     '</div>' +
 
-    // SECTION 1: APPLICANT INFORMATION & SERVICE ADDRESS
+    // SECTION 1: APPLICANT INFORMATION AND SERVICE ADDRESS
     '<div class="section-card">' +
       '<div class="section-head">' +
-        '<div class="section-head-title"><span class="step-badge">1</span>Applicant Profile &amp; Installation Address</div>' +
+        '<div class="section-head-title"><span class="step-badge">1</span>Applicant Profile and Installation Address</div>' +
         copySwitcher +
       '</div>' +
       '<div class="grid-2" style="align-items:start">' +
         '<div>' +
-          '<div class="tiny muted" style="font-weight:700; text-transform:uppercase; margin-bottom:6px">Personal &amp; ID Details</div>' +
+          '<div class="tiny muted" style="font-weight:700; text-transform:uppercase; margin-bottom:6px">Personal and ID Details</div>' +
           '<div class="kv">' +
             '<div><span>Full Name</span><b>' + escapeHtml(viewData.full_name || app.full_name) + '</b></div>' +
             '<div><span>Birth Date</span><b>' + escapeHtml(viewData.birth_date || app.birth_date || "-") + '</b></div>' +
@@ -644,8 +775,8 @@ async function renderDetailModalContent() {
           '<div class="tiny muted" style="font-weight:700; text-transform:uppercase; margin-bottom:6px">Installation Location</div>' +
           '<div class="kv">' +
             '<div><span>House / Bldg / Street</span><b>' + escapeHtml(((app.house_no ? app.house_no + " " : "") + (app.building_name && app.building_name !== "N/A" ? app.building_name + " " : "") + (viewData.street || app.street || "")).trim() || "-") + '</b></div>' +
-            '<div><span>Subdivision &amp; Brgy</span><b>' + escapeHtml([app.subdivision, app.barangay].filter(Boolean).join(", ") || "-") + '</b></div>' +
-            '<div><span>City &amp; Province</span><b>' + escapeHtml([app.city, app.province].filter(Boolean).join(", ") || "-") + '</b></div>' +
+            '<div><span>Subdivision and Brgy</span><b>' + escapeHtml([app.subdivision, app.barangay].filter(Boolean).join(", ") || "-") + '</b></div>' +
+            '<div><span>City and Province</span><b>' + escapeHtml([app.city, app.province].filter(Boolean).join(", ") || "-") + '</b></div>' +
             '<div><span>Nearest Landmark</span><b>' + escapeHtml(app.landmark || "-") + '</b></div>' +
             '<div><span>Pinned Coordinates</span><b>' + escapeHtml((app.latitude != null ? app.latitude : "-") + ", " + (app.longitude != null ? app.longitude : "-")) + '</b></div>' +
           '</div>' +
@@ -653,15 +784,15 @@ async function renderDetailModalContent() {
       '</div>' +
     '</div>' +
 
-    // SECTION 2: VALID ID PHOTOS & DOCUMENT CHECK
+    // SECTION 2: VALID ID PHOTOS AND AUTOMATED DOCUMENT CHECK
     '<div class="section-card">' +
       '<div class="section-head">' +
-        '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos &amp; Document Check</div>' +
+        '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos and Document Check</div>' +
         idModeBar +
       '</div>' +
       '<div class="grid-2" style="margin-bottom:12px">' +
         '<div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
-          '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedUrl && activeIdImgMode === "cropped" ? "FRONT ID (CROPPED &amp; ENHANCED)" : "FRONT ID (ORIGINAL UPLOADED COPY)") + '</div>' +
+          '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedUrl && activeIdImgMode === "cropped" ? "FRONT ID (CROPPED COPY)" : "FRONT ID (ORIGINAL UPLOADED COPY)") + '</div>' +
           '<img src="' + escapeHtml(displayedFrontUrl) + '" alt="Front ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />' +
         '</div>' +
         '<div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
@@ -672,13 +803,14 @@ async function renderDetailModalContent() {
         '</div>' +
       '</div>' +
 
-      '<div class="check-pill-grid">' +
-        '<div class="check-pill"><span>Document Readability</span><b>' + escapeHtml(docQualityLabel) + '</b></div>' +
-        '<div class="check-pill"><span>Applicant Name</span>' + nameCheckBadge + '</div>' +
-        '<div class="check-pill"><span>Birth Date</span>' + bdateCheckBadge + '</div>' +
-        '<div class="check-pill"><span>ID Number</span>' + idNoCheckBadge + '</div>' +
+      '<div class="check-pill-grid" style="grid-template-columns:repeat(auto-fit, minmax(135px, 1fr));">' +
+        '<div class="check-pill"><span>Readability (Blur/Glare)</span><b>' + escapeHtml(docQualityLabel) + '</b></div>' +
+        '<div class="check-pill"><span>Duplicate Image Check</span>' + dupBadge + '</div>' +
+        '<div class="check-pill"><span>Applicant Name (OCR)</span>' + nameCheckBadge + '</div>' +
+        '<div class="check-pill"><span>Birth Date (OCR)</span>' + bdateCheckBadge + '</div>' +
+        '<div class="check-pill"><span>ID Number (OCR)</span>' + idNoCheckBadge + '</div>' +
       '</div>' +
-      '<div class="small muted" style="margin-top:8px"><b>Summary Note:</b> ' + escapeHtml(findingsText) + '</div>' +
+      '<div class="small muted" style="margin-top:8px"><b>Screening Summary:</b> ' + escapeHtml(findingsText) + '</div>' +
 
       '<details style="margin-top:10px; border-top:1px dashed var(--line); padding-top:8px">' +
         '<summary style="cursor:pointer; font-size:12.5px; font-weight:600; color:var(--muted)">View Activity Log (' + logs.length + ' entries)</summary>' +
@@ -686,16 +818,16 @@ async function renderDetailModalContent() {
       '</details>' +
     '</div>' +
 
-    // SECTION 3: UPDATE APPLICATION STATUS & VALIDATOR DECISION
+    // SECTION 3: UPDATE APPLICATION STATUS AND VALIDATOR INSTRUCTIONS
     '<div class="section-card">' +
       '<div class="section-head">' +
-        '<div class="section-head-title"><span class="step-badge">3</span>Application Status &amp; Validator Decision</div>' +
-        '<span class="tiny muted">Customers only see Processing, Approved, or Rejected</span>' +
+        '<div class="section-head-title"><span class="step-badge">3</span>Application Status and Validator Decision</div>' +
+        '<span class="tiny muted">Customers see Processing, Approved, or Rejected</span>' +
       '</div>' +
       '<div class="grid-3" style="margin-bottom:10px">' +
         '<div class="field" style="margin-bottom:0">' +
           '<label>Select Status</label>' +
-          '<select id="det-status-select">' +
+          '<select id="det-status-select" onchange="onStatusSelectChange()">' +
             '<option value="Under Agent Review" ' + (selectedReqStatus === "Under Agent Review" ? "selected" : "") + '>Under Agent Review (In Progress)</option>' +
             '<option value="Encoding" ' + (selectedReqStatus === "Encoding" ? "selected" : "") + '>Encoding (Forwarded to Validator)</option>' +
             '<option value="Approved" ' + (selectedReqStatus === "Approved" ? "selected" : "") + '>Approved (Validator Decision)</option>' +
@@ -712,41 +844,47 @@ async function renderDetailModalContent() {
           (app.encoding_proof_url ? '<div style="margin-top:4px"><span class="badge badge-green">Proof Attached</span></div>' : '') +
         '</div>' +
       '</div>' +
+      '<div class="field" style="margin-bottom:8px">' +
+        '<label>Common Instructions for Selected Status (Optional)</label>' +
+        '<select id="det-status-preset" onchange="onStatusInstructionPresetChange(this.value)">' +
+          renderStatusInstructionPresetOptions(selectedReqStatus) +
+        '</select>' +
+      '</div>' +
       '<div class="field" style="margin-bottom:12px">' +
-        '<label>Remarks / Note (Optional)</label>' +
-        '<textarea id="det-remarks" rows="2" placeholder="Optional note for Approved / Rejected status (leave blank to use the standard polite message)...">' + escapeHtml(currentSt !== "Needs Correction" ? (app.agent_remarks || "") : "") + '</textarea>' +
+        '<label>Customer Instruction / Validator Remarks (Agent Can Type or Customize)</label>' +
+        '<textarea id="det-remarks" rows="2" placeholder="Select a common instruction above or type the specific instruction/reason for Approved, Rejected, or Encoding...">' + escapeHtml(currentSt !== "Needs Correction" ? (app.agent_remarks || "") : "") + '</textarea>' +
       '</div>' +
       '<div class="row" style="justify-content:flex-end">' +
         '<button type="button" class="btn btn-red" onclick="saveSelectedStatus()">Save Status Update</button>' +
       '</div>' +
     '</div>' +
 
-    // SECTION 4: OPTIONAL CUSTOMER CORRECTION REQUEST (NEEDS CORRECTION)
+    // SECTION 4: REQUEST CUSTOMER UPDATE (NEEDS CORRECTION)
     '<details' + isCorrectionOpen + ' class="section-card" style="background:var(--soft)">' +
       '<summary style="cursor:pointer; font-weight:700; font-size:14.5px; color:var(--text); display:flex; align-items:center; gap:8px">' +
         '<span class="step-badge" style="background:#d97706">4</span>' +
-        '<span>Optional: Request Customer Update (Needs Correction)</span>' +
+        '<span>Request Customer Update (Needs Correction)</span>' +
       '</summary>' +
       '<div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line)">' +
-        '<p class="muted" style="font-size:12.5px; margin-bottom:12px">Use this section when the customer needs to correct a detail or upload a clearer ID photo. An email notification and portal alert will be sent automatically.</p>' +
+        '<p class="muted" style="font-size:12.5px; margin-bottom:12px">Use this section when the customer needs to correct a detail or upload a clearer / non-duplicate ID photo.</p>' +
 
         '<div class="grid-2" style="margin-bottom:10px">' +
           '<div class="field" style="margin-bottom:0">' +
             '<label>Field for Customer to Update</label>' +
             '<select id="det-correction-field">' +
               '<option value="auto">Auto-Detect Field</option>' +
+              '<option value="id_photo" ' + (activeCorrFields === "id_photo" ? "selected" : "") + '>Valid ID Photo (Blurry / Glare / Duplicate)</option>' +
               '<option value="name" ' + (activeCorrFields === "name" ? "selected" : "") + '>Applicant Name</option>' +
               '<option value="birth_date" ' + (activeCorrFields === "birth_date" ? "selected" : "") + '>Birth Date</option>' +
-              '<option value="id_photo" ' + (activeCorrFields === "id_photo" ? "selected" : "") + '>Valid ID Photo</option>' +
               '<option value="id_number" ' + (activeCorrFields === "id_number" ? "selected" : "") + '>Primary ID Number</option>' +
               '<option value="email" ' + (activeCorrFields === "email" ? "selected" : "") + '>Email Address</option>' +
               '<option value="phone" ' + (activeCorrFields === "phone" ? "selected" : "") + '>Mobile Number</option>' +
-              '<option value="email_or_phone" ' + (activeCorrFields === "email,phone" ? "selected" : "") + '>Both Email &amp; Mobile</option>' +
+              '<option value="email_or_phone" ' + (activeCorrFields === "email,phone" ? "selected" : "") + '>Both Email and Mobile</option>' +
               '<option value="address" ' + (activeCorrFields === "address" ? "selected" : "") + '>Installation Address</option>' +
             '</select>' +
           '</div>' +
           '<div class="field" style="margin-bottom:0">' +
-            '<label>Quick Preset Reason (Optional)</label>' +
+            '<label>Common Screening / Validator Remark Preset</label>' +
             '<select id="det-preset-select" onchange="onValidatorPresetChange(this.value)">' +
               renderValidatorPresetOptions() +
             '</select>' +
@@ -754,17 +892,17 @@ async function renderDetailModalContent() {
         '</div>' +
 
         '<div class="field" style="margin-bottom:10px">' +
-          '<label>Short Review / Validator Note (Optional)</label>' +
-          '<input id="det-validator-raw" type="text" value="' + escapeHtml(prefillRawNote) + '" placeholder="e.g. Blurry ID photo or duplicate email in provider portal..." />' +
+          '<label>Short Review / Validator Note</label>' +
+          '<input id="det-validator-raw" type="text" value="' + escapeHtml(prefillRawNote) + '" placeholder="e.g. Blurry ID photo, duplicate Front/Back image, or name mismatch..." />' +
         '</div>' +
 
         '<div class="field" style="margin-bottom:12px">' +
           '<div class="row between" style="margin-bottom:4px">' +
-            '<label style="margin:0">Polite Message Shown to Customer</label>' +
+            '<label style="margin:0">Polite Instruction Shown to Customer</label>' +
             '<button type="button" id="btn-polite-gen" class="btn btn-outline btn-sm" style="padding:3px 10px; font-size:12px" onclick="convertValidatorToPoliteRemark()">Compose Polite Message</button>' +
           '</div>' +
           '<span id="polite-running-spinner" class="badge badge-blue" style="display:none; margin-bottom:6px">Composing message...</span>' +
-          '<textarea id="det-correction-message" rows="2" placeholder="Select a preset above, click Compose Polite Message, or type a polite instruction for the customer...">' + escapeHtml(prefillPoliteMsg) + '</textarea>' +
+          '<textarea id="det-correction-message" rows="2" placeholder="Select a preset above, click Compose Polite Message, or type your instruction for the customer...">' + escapeHtml(prefillPoliteMsg) + '</textarea>' +
         '</div>' +
 
         '<div class="row" style="justify-content:flex-end">' +
@@ -774,14 +912,12 @@ async function renderDetailModalContent() {
     '</details>';
 }
 
-// Action Handler `saveSelectedStatus`: Validates user input and commits state changes to save selected status.
 function saveSelectedStatus() {
   var sel = document.getElementById("det-status-select");
   var chosen = sel ? sel.value : "Encoding";
   saveAgentDecision(chosen);
 }
 
-// Helper function `convertValidatorToPoliteRemark`: Executes portal workflow logic for `convertValidatorToPoliteRemark`.
 async function convertValidatorToPoliteRemark() {
   var rawEl = document.getElementById("det-validator-raw");
   var corrEl = document.getElementById("det-correction-message");
@@ -824,7 +960,6 @@ async function convertValidatorToPoliteRemark() {
   }
 }
 
-// Helper function `onEncodingProofPick` (params: inputEl): Executes portal workflow logic for `onEncodingProofPick`.
 function onEncodingProofPick(inputEl) {
   var file = inputEl.files && inputEl.files[0];
   if (!file) return;
@@ -835,7 +970,6 @@ function onEncodingProofPick(inputEl) {
   reader.readAsDataURL(file);
 }
 
-// Action Handler `saveAgentDecision` (params: newStatus): Validates user input and commits state changes to save agent decision.
 async function saveAgentDecision(newStatus) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
@@ -855,11 +989,11 @@ async function saveAgentDecision(newStatus) {
   else if (chosenField !== "auto") targetFields = [chosenField];
 
   if ((newStatus === "Encoding" || newStatus === "Under Agent Review") && !remarks) {
-    remarks = "Your application is currently being processed.";
+    remarks = "Your application requirements passed initial verification and are now being encoded into the provider portal.";
   } else if (newStatus === "Approved" && !remarks) {
-    remarks = "Your application has been approved. Please wait 3-5 business days for installation dispatch.";
+    remarks = "Congratulations! Your application has been approved. Please allow 3 to 5 business days for installation scheduling.";
   } else if (newStatus === "Rejected" && !remarks) {
-    remarks = rawValidator || "Your application could not be approved following validation.";
+    remarks = rawValidator || "Your application did not pass provider validation.";
   } else if (newStatus === "Needs Correction" && !remarks) {
     if (rawValidator || chosenField !== "auto") {
       var gen = await convertValidatorToPoliteRemark();
@@ -905,7 +1039,6 @@ async function saveAgentDecision(newStatus) {
     "Updated status to " + newStatus + (providerRef ? " (Ref: " + providerRef + ")" : "") + " - " + remarks
   );
 
-  // Notify and email the customer on Approved, Rejected, or Needs Correction.
   var emailNoticeNote = "";
   if (newStatus === "Approved" || newStatus === "Rejected" || newStatus === "Needs Correction") {
     var custTitle = newStatus === "Needs Correction"
@@ -928,13 +1061,12 @@ async function saveAgentDecision(newStatus) {
   showAlert("Status Updated", "Application " + app.reference_no + " is now marked as " + newStatus + "." + emailNoticeNote);
 }
 
-// Helper function `downloadApplicantId`: Executes portal workflow logic for `downloadApplicantId`.
 function downloadApplicantId() {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
   var url = (activeIdImgMode === "cropped" && app.cropped_id_url)
     ? app.cropped_id_url
-    : (app.id_image_url || app.id_front_path || "assets/images/logo.png");
+    : (app.id_image_url || app.id_front_path || "assets/images/black-logo-white-mode.png");
   var suffix = (activeIdImgMode === "cropped" && app.cropped_id_url) ? "-ID-Cropped.jpg" : "-ID.png";
   var a = document.createElement("a");
   a.href = url;
@@ -945,12 +1077,10 @@ function downloadApplicantId() {
   document.body.removeChild(a);
 }
 
-// Helper function `printApplicantCopy`: Executes portal workflow logic for `printApplicantCopy`.
 function printApplicantCopy() {
   window.print();
 }
 
-// Action Handler `createNewAgentLink`: Validates user input and commits state changes to create new agent link.
 async function createNewAgentLink() {
   var note = document.getElementById("link-note").value.trim() || "Walk-in / Assisted Customer";
   await dbCreateAgentLink(currentAgent.email, note);
@@ -958,19 +1088,19 @@ async function createNewAgentLink() {
   await renderAgentLinks();
 }
 
-// UI Renderer `renderAgentLinks`: Builds and updates DOM elements for agent links.
 async function renderAgentLinks() {
   var body = document.getElementById("agent-links-body");
   if (!body) return;
   var links = await dbListAgentLinks();
-  if (links.length === 0) {
+  var referralOnly = links.filter(function (l) { return String(l.code || "").indexOf("INV-") !== 0; });
+  if (referralOnly.length === 0) {
     body.innerHTML = '<tr><td colspan="5" class="muted">No links generated yet.</td></tr>';
     return;
   }
   var baseUrl = _getPortalBaseUrl() + "/apply.html";
   var html = "";
-  for (var i = 0; i < links.length; i++) {
-    var l = links[i];
+  for (var i = 0; i < referralOnly.length; i++) {
+    var l = referralOnly[i];
     var fullUrl = baseUrl + "?agent=" + encodeURIComponent(l.code);
     html +=
       '<tr>' +

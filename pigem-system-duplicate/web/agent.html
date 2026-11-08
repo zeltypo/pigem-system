@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     FILE OVERVIEW: Agent Verification & PLDT Encoding Workspace (web/agent.html)
-     PURPOSE: Provides preliminary ID screening review, side-by-side comparison, polite update requests, and PLDT encoding workflow.
-     HOSTING: Deployed as static cloud frontend on Vercel with Supabase & /api/*
+     FILE OVERVIEW: Agent Verification and Encoding Workspace (web/agent.html)
+     PURPOSE: Provides preliminary ID screening review, visual screening progress,
+              duplicate ID detection, side-by-side OCR comparison, polite update
+              requests, and provider encoding status management.
      ========================================================================== -->
 <html lang="en">
 <head>
@@ -10,15 +11,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Application Handling Management - PIGEM Agent Workspace</title>
   <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
-  <link rel="icon" type="image/png" href="assets/images/logo.png" />
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (responsive layout, cards, forms, and dark mode) -->
+  <link rel="icon" type="image/png" href="assets/images/black-logo-white-mode.png" />
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
   <link rel="stylesheet" href="assets/style.css" />
 </head>
 <body>
 
   <!-- SPLASH SCREEN -->
   <div id="splash" class="splash">
-    <img src="assets/images/logo.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
+    <img data-img="black-logo-white-mode.png" src="assets/images/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
     <b>Application Management System</b>
     <span class="muted" style="font-size:13px">Application Handling Management (Agent)</span>
   </div>
@@ -28,7 +29,7 @@
     <!-- SIDEBAR -->
     <aside class="dash-side">
       <div class="brand">
-        <img src="assets/images/logo.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
+        <img data-img="black-logo-white-mode.png" src="assets/images/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
         <div>
           <b>PIGEM Staff</b>
           <span>Application Handling</span>
@@ -36,12 +37,12 @@
       </div>
 
       <button id="nav-overview" data-nav-label="Overview" data-nav-target="overview" class="active" onclick="showTab('overview')">
-        <span><img src="assets/images/placeholder.png" data-icon="overview.png" alt="Overview" class="icon-placeholder" title="Flaticon placeholder: overview.png" />Overview</span>
+        <span><img data-img="icons/overview.png" src="assets/images/icons/overview.png" alt="Overview (not available)" class="icon-img" />Overview</span>
       </button>
 
-      <!-- EXPANDABLE APPLICATIONS BRANCH -->
+      <!-- EXPANDABLE APPLICATIONS BRANCH (Separated Statuses for 1-Click Access) -->
       <button type="button" onclick="toggleNavGroup(this)">
-        <span><img src="assets/images/placeholder.png" data-icon="applications.png" alt="Applications" class="icon-placeholder" title="Flaticon placeholder: applications.png" />Applications</span>
+        <span><img data-img="icons/applications.png" src="assets/images/icons/applications.png" alt="Applications (not available)" class="icon-img" />Applications</span>
         <span class="chev">v</span>
       </button>
       <div class="nav-sub">
@@ -53,22 +54,30 @@
           <span>Claimed</span>
           <span id="cnt-claimed" class="badge badge-blue">0</span>
         </button>
-        <button id="nav-correction" data-nav-label="Needs Correction (Optional)" data-nav-target="correction" onclick="showTab('correction')">
+        <button id="nav-encoding" data-nav-label="Encoding Queue" data-nav-target="encoding" onclick="showTab('encoding')">
+          <span>Encoding</span>
+          <span id="cnt-encoding" class="badge badge-blue">0</span>
+        </button>
+        <button id="nav-correction" data-nav-label="Needs Correction" data-nav-target="correction" onclick="showTab('correction')">
           <span>Needs Correction</span>
           <span id="cnt-correction" class="badge badge-yellow">0</span>
         </button>
-        <button id="nav-encoded" data-nav-label="Encoding & Approved" data-nav-target="encoded" onclick="showTab('encoded')">
-          <span>Encoding / Approved</span>
-          <span id="cnt-encoded" class="badge badge-green">0</span>
+        <button id="nav-approved" data-nav-label="Approved Applications" data-nav-target="approved" onclick="showTab('approved')">
+          <span>Approved</span>
+          <span id="cnt-approved" class="badge badge-green">0</span>
+        </button>
+        <button id="nav-rejected" data-nav-label="Rejected Applications" data-nav-target="rejected" onclick="showTab('rejected')">
+          <span>Rejected</span>
+          <span id="cnt-rejected" class="badge badge-red">0</span>
         </button>
       </div>
 
       <button id="nav-links" data-nav-label="Application Links" data-nav-target="links" onclick="showTab('links')">
-        <span><img src="assets/images/placeholder.png" data-icon="link.png" alt="Links" class="icon-placeholder" title="Flaticon placeholder: link.png" />Application Links</span>
+        <span><img data-img="icons/link.png" src="assets/images/icons/link.png" alt="Links (not available)" class="icon-img" />Application Links</span>
       </button>
 
-      <button type="button" data-nav-label="Settings & Theme" data-nav-target="settings" onclick="toggleProfileDrawer()">
-        <span><img src="assets/images/placeholder.png" data-icon="settings.png" alt="Settings" class="icon-placeholder" title="Flaticon placeholder: settings.png" />Settings</span>
+      <button type="button" data-nav-label="Settings and Theme" data-nav-target="settings" onclick="toggleProfileDrawer()">
+        <span><img data-img="icons/settings.png" src="assets/images/icons/settings.png" alt="Settings (not available)" class="icon-img" />Settings</span>
       </button>
 
       <div class="side-foot">© 2026 All Rights Reserved</div>
@@ -90,11 +99,11 @@
         </div>
 
         <div class="top-actions">
-          <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('agent_workspace_guide')">Guide</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('agent_workspace_guide')">Tutorial</button>
           <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
-            <img src="assets/images/placeholder.png" data-icon="bell.png" alt="Notifications" class="icon-placeholder" title="Flaticon placeholder: bell.png" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+            <img data-img="icons/bell.png" src="assets/images/icons/bell.png" alt="Notifications (not available)" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
           </button>
-          <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account & Theme">AG</button>
+          <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">AG</button>
         </div>
       </div>
 
@@ -106,13 +115,18 @@
         <span class="badge badge-yellow">Original ID Copy Active</span>
       </div>
 
-      <!-- TAB 1: OVERVIEW (STATS + GRAPHS + CALENDAR) -->
+      <!-- TAB 1: OVERVIEW -->
       <section id="tab-overview">
         <div class="grid-4" style="margin-bottom:20px">
-          <div class="stat"><div class="num" id="st-unclaimed">0</div><div class="lbl">Unclaimed Queue</div></div>
-          <div class="stat"><div class="num" id="st-myclaimed">0</div><div class="lbl">My Claimed</div></div>
-          <div class="stat"><div class="num" id="st-fix">0</div><div class="lbl">Needs Correction</div></div>
-          <div class="stat"><div class="num" id="st-encoded">0</div><div class="lbl">Encoded / Approved</div></div>
+          <div class="stat" style="cursor:pointer" onclick="showTab('queue')"><div class="num" id="st-unclaimed">0</div><div class="lbl">Unclaimed Queue</div></div>
+          <div class="stat" style="cursor:pointer" onclick="showTab('claimed')"><div class="num" id="st-myclaimed">0</div><div class="lbl">My Claimed</div></div>
+          <div class="stat" style="cursor:pointer" onclick="showTab('encoding')"><div class="num" id="st-encoding">0</div><div class="lbl">Encoding</div></div>
+          <div class="stat" style="cursor:pointer" onclick="showTab('correction')"><div class="num" id="st-fix">0</div><div class="lbl">Needs Correction</div></div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:20px">
+          <div class="stat" style="cursor:pointer" onclick="showTab('approved')"><div class="num" id="st-approved">0</div><div class="lbl">Approved Applications</div></div>
+          <div class="stat" style="cursor:pointer" onclick="showTab('rejected')"><div class="num" id="st-rejected">0</div><div class="lbl">Rejected Applications</div></div>
         </div>
 
         <div class="grid-2" style="margin-bottom:20px">
@@ -132,7 +146,7 @@
         </div>
       </section>
 
-      <!-- TAB 2: APPLICATION LISTS (QUEUE / CLAIMED / NEEDS CORRECTION / ENCODED) -->
+      <!-- TAB 2: APPLICATION LISTS (WITH QUICK 1-CLICK STATUS SHORTCUT PILLS) -->
       <section id="tab-apps" class="hidden">
         <div class="card" style="margin-bottom:16px">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
@@ -140,10 +154,18 @@
               <h2 id="apps-heading" style="font-size:20px">Application Queue</h2>
               <p id="apps-subtitle" class="muted" style="font-size:13px">Unclaimed customer applications ready for agent verification.</p>
             </div>
-            <div style="display:flex; gap:8px; align-items:center">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
               <input id="q-filter" type="text" placeholder="Filter by name, ref no., or city..." oninput="renderAgentCards()" style="max-width:240px" />
               <button type="button" class="btn btn-outline btn-sm" onclick="refreshAgentData()">Refresh</button>
             </div>
+          </div>
+          <div class="quick-status-pills mt" style="display:flex; gap:6px; flex-wrap:wrap; padding-top:10px; border-top:1px solid var(--line);">
+            <button type="button" class="btn btn-sm btn-outline" data-pill="queue" onclick="showTab('queue')">Queue</button>
+            <button type="button" class="btn btn-sm btn-outline" data-pill="claimed" onclick="showTab('claimed')">Claimed</button>
+            <button type="button" class="btn btn-sm btn-outline" data-pill="encoding" onclick="showTab('encoding')">Encoding</button>
+            <button type="button" class="btn btn-sm btn-outline" data-pill="correction" onclick="showTab('correction')">Needs Correction</button>
+            <button type="button" class="btn btn-sm btn-outline" data-pill="approved" onclick="showTab('approved')">Approved</button>
+            <button type="button" class="btn btn-sm btn-outline" data-pill="rejected" onclick="showTab('rejected')">Rejected</button>
           </div>
         </div>
 
@@ -183,7 +205,7 @@
     </div>
   </div>
 
-  <!-- APPLICATION DETAILS & VERIFICATION MODAL -->
+  <!-- APPLICATION DETAILS AND VERIFICATION MODAL -->
   <div id="app-detail-modal" class="modal hidden" onclick="if(event.target===this) closeDetailModal()">
     <div class="modal-box wide">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--line)">
@@ -192,8 +214,8 @@
           <h2 id="det-title" style="font-size:20px; margin-top:4px">Reference</h2>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap">
-          <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantId()"><img src="assets/images/placeholder.png" data-icon="download.png" alt="Download" class="icon-placeholder" title="Flaticon placeholder: download.png" />Download ID</button>
-          <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()"><img src="assets/images/placeholder.png" data-icon="printer.png" alt="Print" class="icon-placeholder" title="Flaticon placeholder: printer.png" />Print Copy</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantId()"><img data-img="icons/download.png" src="assets/images/icons/download.png" alt="Download (not available)" class="icon-img" />Download ID</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()"><img data-img="icons/printer.png" src="assets/images/icons/printer.png" alt="Print (not available)" class="icon-img" />Print Copy</button>
           <button type="button" class="btn btn-outline btn-sm" onclick="closeDetailModal()">Close</button>
         </div>
       </div>
@@ -217,26 +239,25 @@
   <div id="profile-drawer" class="drawer hidden" onclick="if(event.target===this) toggleProfileDrawer()">
     <div class="drawer-panel">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
-        <b>Agent Account &amp; Theme</b>
+        <b>Agent Account and Theme</b>
         <button type="button" class="btn btn-outline btn-sm" onclick="toggleProfileDrawer()">Close</button>
       </div>
       <div id="profile-drawer-body"></div>
     </div>
   </div>
 
-  <!-- INLINE SCRIPT: Page-specific portal configuration and startup logic -->
   <script>window.SYSTEM = "staff";</script>
-  <!-- IMPORT: Official Supabase JavaScript SDK v2 for PostgreSQL database queries, Auth JWTs, and private ID Storage -->
+  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- IMPORT: Global cloud configuration, Dasmarinas barangay directory, plan defaults, and UI popup helpers -->
+  <!-- IMPORT: Global cloud configuration and UI helpers -->
   <script src="js/config.js"></script>
-  <!-- IMPORT: Cloud database & storage data-access layer wrapping Supabase Auth, RLS tables, and audit logging -->
+  <!-- IMPORT: Cloud database and storage data-access layer -->
   <script src="js/db.js"></script>
-  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for reCAPTCHA verification, ID screening, and Gmail SMTP emails -->
+  <!-- IMPORT: Cloud backend service client -->
   <script src="js/api.js"></script>
-  <!-- IMPORT: Shared dashboard shell controller (sidebar navigation, theme toggle, notifications bell, and profile menu) -->
+  <!-- IMPORT: Shared dashboard shell controller -->
   <script src="js/dash-ui.js"></script>
-  <!-- IMPORT: Agent workspace controller managing screening review, polite remark drafting, and PLDT encoding status -->
+  <!-- IMPORT: Agent workspace controller -->
   <script src="js/agent.js"></script>
 </body>
 </html>

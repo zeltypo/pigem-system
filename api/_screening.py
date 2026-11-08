@@ -2,904 +2,738 @@ import base64
 
 from datetime import datetime, timezone
 
-from os import getenv
+import hashlib
 
-import re
+import json
 
-import time
+import os
+
+from typing import Any, Dict, List, Optional, Tuple
 
 import urllib.parse
 
-import httpx
+import urllib.request
 
 import _gemini
 
 import _quality
 
-def _utc_iso() -> str:
+def _supabase_url() -> str:
 
-    return datetime.now(timezone.utc).isoformat()
+    return (
 
-class BaseCloudGateway:
+        os.getenv("SUPABASE_URL")
 
-    def is_configured(self) -> bool:
+        or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 
-        raise NotImplementedError()
+        or "https://lvvtrwsmvxgdovmurqbz.supabase.co"
 
-    def fetch_application(self, app_id: str):
+    ).strip().rstrip("/")
 
-        raise NotImplementedError()
+def _supabase_key() -> str:
 
-    def update_application(self, app_id: str, patch: dict) -> bool:
+    return (
 
-        raise NotImplementedError()
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-class SupabaseApplicationGateway(BaseCloudGateway):
+        or os.getenv("SUPABASE_ANON_KEY")
 
-    _DATA_URL_REGEX = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,(.+)$")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
-    def _credentials(self) -> tuple:
+        or ""
 
-        url = (getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    ).strip()
 
-        key = (getenv("SUPABASE_ANON_KEY") or "").strip()
+def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
-        return url, key
+    key = _supabase_key()
 
-    def is_configured(self) -> bool:
+    base = {
 
-        url, key = self._credentials()
+        "apikey": key,
 
-        return bool(url and key)
+        "Authorization": f"Bearer {key}",
 
-    def _headers(self, content_type: str = "application/json", extra: dict = None) -> dict:
+        "Content-Type": "application/json",
 
-        _, key = self._credentials()
+    }
 
-        hdrs = {
+    if extra:
 
-            "apikey": key,
+        base.update(extra)
 
-            "Authorization": f"Bearer {key}",
+    return base
 
-        }
+def _fetch_application(application_id: str) -> Optional[Dict[str, Any]]:
 
-        if content_type:
+    base_url = _supabase_url()
 
-            hdrs["Content-Type"] = content_type
+    key = _supabase_key()
 
-        if extra:
-
-            hdrs.update(extra)
-
-        return hdrs
-
-    def is_screening_enabled(self) -> bool:
-
-        if not self.is_configured():
-
-            return True
-
-        url, _ = self._credentials()
-
-        try:
-
-            res = httpx.get(
-
-                f"{url}/rest/v1/system_settings?id=eq.main&select=ai_enabled",
-
-                headers=self._headers(),
-
-                timeout=8,
-
-            )
-
-            if res.status_code == 200:
-
-                rows = res.json()
-
-                if rows and rows[0].get("ai_enabled") is False:
-
-                    return False
-
-        except Exception:
-
-            pass
-
-        return True
-
-    def fetch_application(self, app_id: str):
-
-        if not self.is_configured() or not app_id:
-
-            return None
-
-        url, _ = self._credentials()
-
-        safe_id = urllib.parse.quote(str(app_id), safe="")
-
-        try:
-
-            res = httpx.get(
-
-                f"{url}/rest/v1/applications?id=eq.{safe_id}&select=*",
-
-                headers=self._headers(),
-
-                timeout=12,
-
-            )
-
-            if res.status_code == 200:
-
-                rows = res.json()
-
-                return rows[0] if rows else None
-
-        except Exception:
-
-            pass
+    if not base_url or not key:
 
         return None
 
-    def update_application(self, app_id: str, patch: dict) -> bool:
+    col = "id" if "-" in application_id and len(application_id) >= 32 else "ref_no"
 
-        if not self.is_configured() or not app_id:
+    query = urllib.parse.urlencode({col: f"eq.{application_id}", "select": "*", "limit": "1"})
 
-            return False
+    url = f"{base_url}/rest/v1/applications?{query}"
 
-        url, _ = self._credentials()
+    req = urllib.request.Request(url, headers=_headers(), method="GET")
 
-        safe_id = urllib.parse.quote(str(app_id), safe="")
+    try:
 
-        payload = dict(patch)
+        with urllib.request.urlopen(req, timeout=10) as resp:
 
-        payload["updated_at"] = _utc_iso()
+            rows = json.loads(resp.read().decode("utf-8"))
 
-        try:
+            if isinstance(rows, list) and rows:
 
-            res = httpx.patch(
+                return rows[0]
 
-                f"{url}/rest/v1/applications?id=eq.{safe_id}",
-
-                headers=self._headers(extra={"Prefer": "return=minimal"}),
-
-                json=payload,
-
-                timeout=12,
-
-            )
-
-            return res.status_code in (200, 204)
-
-        except Exception:
-
-            return False
-
-    def download_id_bytes(self, id_source: str):
-
-        src = (id_source or "").strip()
-
-        if not src:
-
-            return None
-
-        m_b64 = self._DATA_URL_REGEX.match(src)
-
-        if m_b64:
-
-            try:
-
-                return base64.b64decode(m_b64.group(1))
-
-            except Exception:
-
-                return None
-
-        url, _ = self._credentials()
-
-        if src.startswith("http://") or src.startswith("https://"):
-
-            target_url = src
-
-        else:
-
-            clean_path = src.lstrip("/")
-
-            target_url = f"{url}/storage/v1/object/public/documents/{clean_path}"
-
-        try:
-
-            res = httpx.get(target_url, timeout=18, follow_redirects=True)
-
-            if res.status_code == 200 and res.content:
-
-                return res.content
-
-        except Exception:
-
-            pass
+    except Exception:
 
         return None
 
-    def upload_cropped_id(self, ref_no: str, jpeg_bytes: bytes) -> str:
+    return None
 
-        if not self.is_configured() or not jpeg_bytes:
+def _fetch_recent_applications_for_duplicate_check(exclude_app_id: str) -> List[Dict[str, Any]]:
 
-            return ""
+    base_url = _supabase_url()
 
-        url, _ = self._credentials()
+    key = _supabase_key()
 
-        clean_ref = re.sub(r"[^A-Za-z0-9_-]", "", ref_no or "APP")
+    if not base_url or not key:
 
-        file_path = f"cropped/{clean_ref}-{int(time.time())}.jpg"
+        return []
 
-        upload_url = f"{url}/storage/v1/object/documents/{file_path}"
+    query = urllib.parse.urlencode({
+
+        "select": "id,ref_no,email,id_type,id_number,screening",
+
+        "order": "created_at.desc",
+
+        "limit": "100",
+
+    })
+
+    url = f"{base_url}/rest/v1/applications?{query}"
+
+    req = urllib.request.Request(url, headers=_headers(), method="GET")
+
+    try:
+
+        with urllib.request.urlopen(req, timeout=8) as resp:
+
+            rows = json.loads(resp.read().decode("utf-8"))
+
+            if isinstance(rows, list):
+
+                return [r for r in rows if str(r.get("id") or "") != str(exclude_app_id)]
+
+    except Exception:
+
+        return []
+
+    return []
+
+def _patch_application(app_uuid: str, fields: Dict[str, Any]) -> bool:
+
+    base_url = _supabase_url()
+
+    key = _supabase_key()
+
+    if not base_url or not key:
+
+        return False
+
+    query = urllib.parse.urlencode({"id": f"eq.{app_uuid}"})
+
+    url = f"{base_url}/rest/v1/applications?{query}"
+
+    body = json.dumps(fields).encode("utf-8")
+
+    req = urllib.request.Request(
+
+        url,
+
+        data=body,
+
+        headers=_headers({"Prefer": "return=minimal"}),
+
+        method="PATCH",
+
+    )
+
+    try:
+
+        with urllib.request.urlopen(req, timeout=10) as resp:
+
+            return 200 <= resp.status < 300
+
+    except Exception:
+
+        return False
+
+def _insert_table_row(table: str, row_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+
+    base_url = _supabase_url()
+
+    key = _supabase_key()
+
+    if not base_url or not key:
+
+        return None
+
+    url = f"{base_url}/rest/v1/{table}"
+
+    body = json.dumps(row_data).encode("utf-8")
+
+    req = urllib.request.Request(
+
+        url,
+
+        data=body,
+
+        headers=_headers({"Prefer": "return=representation"}),
+
+        method="POST",
+
+    )
+
+    try:
+
+        with urllib.request.urlopen(req, timeout=10) as resp:
+
+            rows = json.loads(resp.read().decode("utf-8"))
+
+            if isinstance(rows, list) and rows:
+
+                return rows[0]
+
+    except Exception:
+
+        return None
+
+    return None
+
+def _download_image_bytes(url_or_data: str) -> Optional[bytes]:
+
+    raw = (url_or_data or "").strip()
+
+    if not raw:
+
+        return None
+
+    if raw.startswith("data:") and ";base64," in raw:
 
         try:
 
-            res = httpx.post(
+            b64_part = raw.split(";base64,", 1)[1]
 
-                upload_url,
-
-                headers=self._headers(content_type="image/jpeg", extra={"x-upsert": "true"}),
-
-                content=jpeg_bytes,
-
-                timeout=18,
-
-            )
-
-            if res.status_code in (200, 201):
-
-                return f"{url}/storage/v1/object/public/documents/{file_path}"
+            return base64.b64decode(b64_part)
 
         except Exception:
 
-            pass
+            return None
+
+    if raw.startswith("http://") or raw.startswith("https://"):
+
+        try:
+
+            req = urllib.request.Request(raw, headers={"User-Agent": "PIGEM-Cloud-Screening/1.0"})
+
+            with urllib.request.urlopen(req, timeout=12) as resp:
+
+                return resp.read()
+
+        except Exception:
+
+            return None
+
+    return None
+
+def _upload_cropped_image(app_ref: str, side: str, jpeg_bytes: bytes) -> Optional[str]:
+
+    base_url = _supabase_url()
+
+    key = _supabase_key()
+
+    if not base_url or not key or not jpeg_bytes:
+
+        return None
+
+    safe_ref = "".join(ch for ch in (app_ref or "APP") if ch.isalnum() or ch in ("-", "_"))
+
+    stamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    object_path = f"cropped/{safe_ref}_{side}_{stamp}.jpg"
+
+    upload_url = f"{base_url}/storage/v1/object/id-documents/{object_path}"
+
+    headers = {
+
+        "apikey": key,
+
+        "Authorization": f"Bearer {key}",
+
+        "Content-Type": "image/jpeg",
+
+        "x-upsert": "true",
+
+    }
+
+    req = urllib.request.Request(upload_url, data=jpeg_bytes, headers=headers, method="POST")
+
+    try:
+
+        with urllib.request.urlopen(req, timeout=12) as resp:
+
+            if 200 <= resp.status < 300:
+
+                return f"{base_url}/storage/v1/object/public/id-documents/{object_path}"
+
+    except Exception:
+
+        pass
+
+    return None
+
+def _compute_sha256(image_bytes: Optional[bytes]) -> str:
+
+    if not image_bytes:
 
         return ""
 
-    def insert_notification(self, row: dict) -> None:
+    return hashlib.sha256(image_bytes).hexdigest()
 
-        if not self.is_configured():
+def _check_duplicate_images(
 
-            return
+    app_row: Dict[str, Any],
 
-        url, _ = self._credentials()
+    front_sha256: str,
 
-        try:
+    back_sha256: str,
 
-            httpx.post(
+) -> Dict[str, Any]:
 
-                f"{url}/rest/v1/notifications",
+    issues: List[str] = []
 
-                headers=self._headers(extra={"Prefer": "return=minimal"}),
+    front_equals_back = False
 
-                json=row,
+    same_as_previous_upload = False
 
-                timeout=8,
+    matched_other_refs: List[str] = []
 
-            )
+    if front_sha256 and back_sha256 and front_sha256 == back_sha256:
 
-        except Exception:
+        front_equals_back = True
 
-            pass
+        issues.append(
 
-    def insert_screening_record(
-
-        self,
-
-        app_id: str,
-
-        quality_obj: dict,
-
-        ocr_obj: dict,
-
-        comps: list,
-
-        remark: str,
-
-    ) -> None:
-
-        if not self.is_configured():
-
-            return
-
-        url, _ = self._credentials()
-
-        try:
-
-            httpx.post(
-
-                f"{url}/rest/v1/screenings",
-
-                headers=self._headers(extra={"Prefer": "return=minimal"}),
-
-                json={
-
-                    "application_id": app_id,
-
-                    "quality": quality_obj,
-
-                    "ocr": ocr_obj,
-
-                    "comparisons": comps,
-
-                    "ai_remark": remark,
-
-                    "status": "completed",
-
-                },
-
-                timeout=8,
-
-            )
-
-        except Exception:
-
-            pass
-
-    def insert_document_record(self, app_id: str, doc_type: str, file_path: str, version: str) -> None:
-
-        if not self.is_configured() or not file_path:
-
-            return
-
-        url, _ = self._credentials()
-
-        try:
-
-            httpx.post(
-
-                f"{url}/rest/v1/documents",
-
-                headers=self._headers(extra={"Prefer": "return=minimal"}),
-
-                json={
-
-                    "application_id": app_id,
-
-                    "doc_type": doc_type,
-
-                    "file_path": file_path,
-
-                    "version": version,
-
-                },
-
-                timeout=8,
-
-            )
-
-        except Exception:
-
-            pass
-
-class CloudScreeningCoordinator:
-
-    def __init__(self, gateway: SupabaseApplicationGateway) -> None:
-
-        self._gateway = gateway
-
-        self._last_alert_at = 0.0
-
-    def _notify_staff_unavailable(self, ref_no: str, cust_name: str, reason_note: str) -> None:
-
-        now_ts = time.time()
-
-        if now_ts - self._last_alert_at < 60.0:
-
-            return
-
-        self._last_alert_at = now_ts
-
-        label_ref = ref_no or "New Application"
-
-        applicant = cust_name or "Applicant"
-
-        body = (
-
-            f"Auto-screening is currently not active ({reason_note}). "
-
-            f"{applicant}'s original uploaded Valid ID for {label_ref} is ready for manual verification."
+            "Duplicate ID Image: The uploaded Front ID and Back ID photos are the exact same image file. Please upload the actual Back side of the Valid ID."
 
         )
 
-        self._gateway.insert_notification({
+    prev_screening = app_row.get("screening")
 
-            "role": "agent",
+    if isinstance(prev_screening, dict):
 
-            "title": f"Manual Document Review Active ({label_ref})",
+        prev_front_hash = str(prev_screening.get("front_sha256") or "")
 
-            "message": body,
+        prev_back_hash = str(prev_screening.get("back_sha256") or "")
 
-            "is_read": False,
+        prev_failed = not bool(prev_screening.get("overall_match", True))
 
-        })
+        if prev_failed and prev_front_hash and front_sha256 == prev_front_hash:
 
-        self._gateway.insert_notification({
+            if not back_sha256 or (prev_back_hash and back_sha256 == prev_back_hash):
 
-            "role": "manager",
+                same_as_previous_upload = True
 
-            "title": f"Auto-Screening Notice ({label_ref})",
+                issues.append(
 
-            "message": body,
-
-            "is_read": False,
-
-        })
-
-    def run_pipeline(self, app_id: str) -> dict:
-
-        clean_id = (app_id or "").strip()
-
-        if not clean_id:
-
-            return {"queued": False, "completed": False, "reason": "Missing application_id."}
-
-        if not self._gateway.is_configured():
-
-            return {"queued": False, "completed": False, "reason": "Supabase credentials not configured."}
-
-        app_row = self._gateway.fetch_application(clean_id)
-
-        if not app_row:
-
-            return {"queued": False, "completed": False, "reason": "Application not found."}
-
-        ref_no = app_row.get("ref_no") or app_row.get("reference_no") or clean_id
-
-        cust_name = app_row.get("full_name") or "Customer"
-
-        if not self._gateway.is_screening_enabled():
-
-            self._gateway.update_application(
-
-                clean_id,
-
-                {
-
-                    "screening": {
-
-                        "state": "paused",
-
-                        "phase": "Original Copy Ready (Manual Review)",
-
-                        "eta_seconds": 0,
-
-                        "fallback_original_only": True,
-
-                        "advisory": "Automated screening is paused. Original uploaded ID photo is ready for manual Agent verification.",
-
-                        "updated_at": _utc_iso(),
-
-                    }
-
-                },
-
-            )
-
-            self._notify_staff_unavailable(ref_no, cust_name, "screening paused in settings")
-
-            return {"queued": False, "completed": False, "state": "paused"}
-
-        if not _gemini.is_available():
-
-            self._gateway.update_application(
-
-                clean_id,
-
-                {
-
-                    "screening": {
-
-                        "state": "unavailable",
-
-                        "phase": "Original Copy Ready (Manual Review)",
-
-                        "eta_seconds": 0,
-
-                        "fallback_original_only": True,
-
-                        "advisory": "Screening service is currently unavailable. Original uploaded ID photo is ready for manual Agent verification.",
-
-                        "updated_at": _utc_iso(),
-
-                    }
-
-                },
-
-            )
-
-            self._notify_staff_unavailable(ref_no, cust_name, "vision OCR key not configured")
-
-            return {"queued": False, "completed": False, "state": "unavailable"}
-
-        try:
-
-            self._gateway.update_application(
-
-                clean_id,
-
-                {
-
-                    "screening": {
-
-                        "state": "layer1_running",
-
-                        "phase": "Checking Document Quality",
-
-                        "eta_seconds": 12,
-
-                        "severity": "normal",
-
-                        "advisory": "Checking ID photo clarity and lighting before extracting printed details...",
-
-                        "updated_at": _utc_iso(),
-
-                    }
-
-                },
-
-            )
-
-            front_src = app_row.get("id_front_path") or app_row.get("id_image_url") or ""
-
-            back_src = app_row.get("id_back_path") or ""
-
-            front_raw_bytes = self._gateway.download_id_bytes(front_src)
-
-            if not front_raw_bytes:
-
-                self._gateway.update_application(
-
-                    clean_id,
-
-                    {
-
-                        "screening": {
-
-                            "state": "unavailable",
-
-                            "phase": "Original Copy Ready (Manual Review)",
-
-                            "eta_seconds": 0,
-
-                            "fallback_original_only": True,
-
-                            "advisory": "Uploaded ID file could not be fetched automatically. Please inspect the original uploaded photo directly.",
-
-                            "updated_at": _utc_iso(),
-
-                        }
-
-                    },
+                    "Unchanged Re-Uploaded Image: The ID photo is identical to the previously flagged upload. Please capture a new, clearer photo."
 
                 )
 
-                return {"queued": False, "completed": False, "state": "unavailable"}
+    app_uuid = str(app_row.get("id") or "")
 
-            back_raw_bytes = self._gateway.download_id_bytes(back_src) if back_src else None
+    entered_id_num = "".join(ch for ch in str(app_row.get("id_number") or "").upper() if ch.isalnum())
 
-            fast_q = _quality.quick_check(front_raw_bytes)
+    recent_apps = _fetch_recent_applications_for_duplicate_check(app_uuid)
 
-            early_warn = bool(fast_q.get("severe") or fast_q.get("issues"))
+    for other in recent_apps:
 
-            stage1_msg = (
+        other_ref = str(other.get("ref_no") or "")
 
-                "Hold Recommended: Potential lighting or sharpness issue detected—creating enhanced working copy and extracting text."
+        other_scr = other.get("screening") if isinstance(other.get("screening"), dict) else {}
 
-                if early_warn
+        other_f_hash = str(other_scr.get("front_sha256") or "")
 
-                else "Document clarity checked. Cropping working copy and reading printed details..."
+        other_b_hash = str(other_scr.get("back_sha256") or "")
+
+        if front_sha256 and (front_sha256 in (other_f_hash, other_b_hash)):
+
+            if other_ref and other_ref not in matched_other_refs:
+
+                matched_other_refs.append(other_ref)
+
+        elif back_sha256 and (back_sha256 in (other_f_hash, other_b_hash)):
+
+            if other_ref and other_ref not in matched_other_refs:
+
+                matched_other_refs.append(other_ref)
+
+    if matched_other_refs:
+
+        refs_str = ", ".join(matched_other_refs[:3])
+
+        issues.append(
+
+            f"Duplicate ID Image Across Applications: This exact ID photo was already used in application {refs_str}."
+
+        )
+
+    return {
+
+        "has_duplicate": bool(issues),
+
+        "front_equals_back": front_equals_back,
+
+        "same_as_previous_upload": same_as_previous_upload,
+
+        "matched_other_refs": matched_other_refs,
+
+        "front_sha256": front_sha256,
+
+        "back_sha256": back_sha256,
+
+        "issues": issues,
+
+    }
+
+def _evaluate_front_and_back_quality(
+
+    front_bytes: bytes, back_bytes: Optional[bytes]
+
+) -> Tuple[Dict[str, Any], Optional[bytes], Optional[bytes]]:
+
+    front_quality, cropped_front = _quality.enhance_and_crop(front_bytes)
+
+    cropped_back = None
+
+    back_quality = None
+
+    if back_bytes:
+
+        back_quality, cropped_back = _quality.enhance_and_crop(back_bytes)
+
+    combined = dict(front_quality)
+
+    combined["front_passed"] = bool(front_quality.get("passed", True))
+
+    combined["front_summary"] = front_quality.get("summary", "")
+
+    if back_quality:
+
+        combined["back_passed"] = bool(back_quality.get("passed", True))
+
+        combined["back_summary"] = back_quality.get("summary", "")
+
+        combined["back_metrics"] = back_quality.get("metrics", {})
+
+        if not back_quality.get("passed", True):
+
+            combined["passed"] = False
+
+            back_issues = [f"Back ID: {msg}" for msg in (back_quality.get("issues") or [])]
+
+            combined["issues"] = list(combined.get("issues") or []) + back_issues
+
+            combined["summary"] = (
+
+                f"Front ID: {front_quality.get('summary', 'Checked')}. "
+
+                f"Back ID: {back_quality.get('summary', 'Needs review')}."
 
             )
 
-            self._gateway.update_application(
+    else:
 
-                clean_id,
+        combined["back_passed"] = False
 
-                {
+        combined["back_summary"] = "Back ID photo not uploaded yet."
 
-                    "screening": {
+    return combined, cropped_front, cropped_back
 
-                        "state": "layer2_running",
+def run_application_screening(application_id: str) -> Dict[str, Any]:
 
-                        "phase": "Cropping Working Copy and Extracting ID Text",
+    app_row = _fetch_application(application_id)
 
-                        "eta_seconds": 7,
+    if not app_row:
 
-                        "severity": "warning" if early_warn else "normal",
+        return {
 
-                        "advisory": stage1_msg,
+            "screened": False,
 
-                        "layer1_issues": fast_q.get("issues", []),
+            "error": f"Application '{application_id}' was not found in Supabase.",
 
-                        "updated_at": _utc_iso(),
+        }
 
-                    }
+    app_uuid = str(app_row.get("id") or "")
 
-                },
+    app_ref = str(app_row.get("ref_no") or application_id)
 
-            )
+    front_url = str(app_row.get("id_image_url") or app_row.get("id_image_data") or "").strip()
 
-            full_q, cropped_front_jpeg = _quality.enhance_and_crop(front_raw_bytes)
+    back_url = str(app_row.get("id_back_image_url") or app_row.get("id_back_image_data") or "").strip()
 
-            cropped_url = ""
+    front_raw_bytes = _download_image_bytes(front_url)
 
-            if cropped_front_jpeg:
+    back_raw_bytes = _download_image_bytes(back_url) if back_url else None
 
-                cropped_url = self._gateway.upload_cropped_id(ref_no, cropped_front_jpeg)
+    if not front_raw_bytes:
 
-                if cropped_url:
+        return {
 
-                    self._gateway.insert_document_record(
+            "screened": False,
 
-                        clean_id,
+            "application_id": app_uuid,
 
-                        app_row.get("id_type") or "Valid ID",
+            "ref_no": app_ref,
 
-                        cropped_url,
+            "error": "Front Valid ID image could not be downloaded for screening.",
 
-                        "cropped",
+        }
 
-                    )
+    front_sha256 = _compute_sha256(front_raw_bytes)
 
-            ocr_front_bytes = cropped_front_jpeg if cropped_front_jpeg else front_raw_bytes
+    back_sha256 = _compute_sha256(back_raw_bytes)
 
-            ocr_back_bytes = None
+    duplicate_check = _check_duplicate_images(app_row, front_sha256, back_sha256)
 
-            if back_raw_bytes:
+    quality_result, cropped_front_bytes, cropped_back_bytes = _evaluate_front_and_back_quality(
 
-                _, cropped_back_jpeg = _quality.enhance_and_crop(back_raw_bytes)
+        front_raw_bytes, back_raw_bytes
 
-                ocr_back_bytes = cropped_back_jpeg if cropped_back_jpeg else back_raw_bytes
+    )
 
-            declared_id_type = str(app_row.get("id_type") or "").strip()
+    if duplicate_check.get("has_duplicate"):
 
-            ocr_data = _gemini.extract_id_text(
+        quality_result["passed"] = False
 
-                ocr_front_bytes,
+        dup_issues = duplicate_check.get("issues") or []
 
-                back_bytes=ocr_back_bytes,
+        quality_result["issues"] = dup_issues + list(quality_result.get("issues") or [])
 
-                id_type=declared_id_type,
+        quality_result["summary"] = dup_issues[0]
 
-            )
+    cropped_front_url = ""
 
-            entered_data = {
+    if cropped_front_bytes:
 
-                "full_name": app_row.get("full_name") or "",
+        cropped_front_url = _upload_cropped_image(app_ref, "front", cropped_front_bytes) or ""
 
-                "first_name": app_row.get("first_name") or "",
+    cropped_back_url = ""
 
-                "middle_name": app_row.get("middle_name") or "",
+    if cropped_back_bytes:
 
-                "last_name": app_row.get("last_name") or "",
+        cropped_back_url = _upload_cropped_image(app_ref, "back", cropped_back_bytes) or ""
 
-                "birth_date": app_row.get("birth_date") or "",
+    ocr_front_input = cropped_front_bytes if cropped_front_bytes else front_raw_bytes
 
-                "id_type": declared_id_type,
+    ocr_back_input = (
 
-                "id_number": app_row.get("id_number") or "",
+        cropped_back_bytes
 
-            }
+        if cropped_back_bytes
 
-            comparisons = _gemini.compare_fields(entered_data, ocr_data)
+        else (back_raw_bytes if back_raw_bytes else None)
 
-            guidance_notes = _gemini.write_guidance(full_q, comparisons)
+    )
 
-            suggested_fields = []
+    id_type = str(app_row.get("id_type") or "")
 
-            concern_reasons = []
+    ocr_result = _gemini.extract_id_text(ocr_front_input, ocr_back_input, id_type=id_type)
 
-            if full_q.get("issues") and (not full_q.get("readable")) and float(full_q.get("blur_score", 100)) < 48.0:
+    entered_fields = {
 
-                suggested_fields.append("id_photo")
+        "full_name": app_row.get("customer_name") or "",
 
-                concern_reasons.append("Unclear or blurry Valid ID photo")
+        "first_name": app_row.get("first_name") or "",
 
-            for comp in comparisons:
+        "middle_name": app_row.get("middle_name") or "",
 
-                c_key = comp.get("key")
+        "last_name": app_row.get("last_name") or "",
 
-                c_status = comp.get("status")
+        "birth_date": app_row.get("birth_date") or "",
 
-                if c_status == "mismatch" and c_key in ("name", "birth_date", "id_number"):
+        "id_type": id_type,
 
-                    if c_key not in suggested_fields:
+        "id_number": app_row.get("id_number") or "",
 
-                        suggested_fields.append(c_key)
+    }
 
-                    concern_reasons.append(comp.get("note") or f"{comp.get('field')} mismatch with Valid ID")
+    comparisons = _gemini.compare_fields(entered_fields, ocr_result)
 
-                elif c_status == "partial" and c_key in ("name", "birth_date", "id_number"):
+    guidance = _gemini.write_guidance(quality_result, comparisons)
 
-                    if "id_photo" not in suggested_fields and full_q.get("issues"):
+    quality_ok = bool(quality_result.get("passed", True)) and bool(back_raw_bytes) and not bool(duplicate_check.get("has_duplicate"))
 
-                        suggested_fields.append("id_photo")
+    fields_ok = bool(comparisons.get("all_matched", False))
 
-                    concern_reasons.append(comp.get("note") or f"{comp.get('field')} requires visual verification")
+    overall_match = bool(quality_ok and fields_ok)
 
-            review_recommended = bool(len(concern_reasons) > 0 or full_q.get("issues"))
+    now_iso = datetime.now(timezone.utc).isoformat()
 
-            suggested_polite_message = ""
+    notes_list = list(guidance.get("notes") or [])
 
-            suggested_summary = "; ".join(concern_reasons) if concern_reasons else ""
+    for dup_msg in (duplicate_check.get("issues") or []):
 
-            if review_recommended:
+        if dup_msg not in notes_list:
 
-                raw_summary = suggested_summary or "; ".join(full_q.get("issues") or ["Document clarification needed"])
+            notes_list.insert(0, dup_msg)
 
-                primary_field = suggested_fields[0] if suggested_fields else "id_photo"
+    if not back_raw_bytes:
 
-                polite_res = _gemini.write_polite_remark(raw_summary, primary_field)
+        notes_list.append("Back of Valid ID has not been uploaded yet.")
 
-                suggested_polite_message = polite_res.get("polite_message") or ""
+    summary_text = (
 
-            findings_list = guidance_notes.get("findings") or full_q.get("issues") or ["Document clear and details match."]
+        duplicate_check["issues"][0]
 
-            overall_status = "Needs Review" if review_recommended else "Verified"
+        if duplicate_check.get("has_duplicate") and duplicate_check.get("issues")
 
-            ai_result_obj = {
+        else str(guidance.get("summary") or "")
 
-                "preliminary": True,
+    )
 
-                "overall_status": overall_status,
+    screening_payload = {
 
-                "blur_score": full_q.get("blur_score", "OK"),
+        "preliminary": True,
 
-                "readability_label": full_q.get("readability_label", "Clear"),
+        "overall_match": overall_match,
 
-                "cropped_id_url": cropped_url,
+        "quality_passed": quality_ok,
 
-                "quality": full_q,
+        "fields_matched": fields_ok,
 
-                "ocr": ocr_data,
+        "summary": summary_text,
 
-                "comparisons": comparisons,
+        "notes": notes_list,
 
-                "issues": findings_list,
+        "Suggested_remark": guidance.get("Suggested_remark") or summary_text,
 
-                "guidance": guidance_notes.get("guidance", []),
+        "quality": quality_result,
 
-                "suggested_fields": suggested_fields,
+        "ocr": ocr_result,
 
-                "suggested_polite_message": suggested_polite_message,
+        "comparisons": comparisons,
 
-                "name_match": all(c.get("status") == "match" for c in comparisons if c.get("key") == "name"),
+        "duplicate_check": duplicate_check,
 
-                "birth_date_match": all(c.get("status") == "match" for c in comparisons if c.get("key") == "birth_date"),
+        "front_sha256": front_sha256,
 
-                "id_number_match": all(c.get("status") == "match" for c in comparisons if c.get("key") == "id_number"),
+        "back_sha256": back_sha256,
 
-            }
+        "cropped_front_url": cropped_front_url,
 
-            final_advisory = (
+        "cropped_back_url": cropped_back_url,
 
-                f"Preliminary finding for Agent review: {suggested_summary or '; '.join(findings_list[:2])}"
+        "screened_at": now_iso,
 
-                if review_recommended
+    }
 
-                else "Screening completed: ID working copy is clear and entered details match extracted information."
+    update_fields: Dict[str, Any] = {
 
-            )
+        "screening": screening_payload,
 
-            final_screening = {
+        "updated_at": now_iso,
 
-                "state": "completed",
+    }
 
-                "phase": "Preliminary Findings Ready" if review_recommended else "Screening Passed",
+    if cropped_front_url:
 
-                "eta_seconds": 0,
+        update_fields["id_cropped_url"] = cropped_front_url
 
-                "severity": "warning" if review_recommended else "ok",
+    if cropped_back_url:
 
-                "advisory": final_advisory,
+        update_fields["id_back_cropped_url"] = cropped_back_url
 
-                "cropped_id_url": cropped_url,
+    _patch_application(app_uuid, update_fields)
 
-                "review_recommended": review_recommended,
+    doc_row = _insert_table_row(
 
-                "suggested_fields": suggested_fields,
+        "documents",
 
-                "suggested_summary": suggested_summary,
+        {
 
-                "suggested_polite_message": suggested_polite_message,
+            "application_id": app_uuid,
 
-                "fallback_original_only": False,
+            "id_type": id_type,
 
-                "completed_at": _utc_iso(),
+            "id_number": str(app_row.get("id_number") or ""),
 
-            }
+            "front_image_url": front_url,
 
-            existing_logs = app_row.get("ai_log") if isinstance(app_row.get("ai_log"), list) else []
+            "back_image_url": back_url,
 
-            existing_logs = list(existing_logs)
+            "cropped_front_url": cropped_front_url,
 
-            existing_logs.append({
+            "cropped_back_url": cropped_back_url,
 
-                "id": f"scr-{int(time.time() * 1000)}",
+        },
 
-                "actor": "Screening",
+    )
 
-                "message": final_advisory,
+    doc_id = doc_row.get("id") if isinstance(doc_row, dict) else None
 
-                "created_at": _utc_iso(),
+    _insert_table_row(
 
-            })
+        "screenings",
 
-            patch_data = {
+        {
 
-                "ai_result": ai_result_obj,
+            "application_id": app_uuid,
 
-                "screening": final_screening,
+            "document_id": doc_id,
 
-                "ai_log": existing_logs,
+            "quality_passed": quality_ok,
 
-            }
+            "overall_match": overall_match,
 
-            if cropped_url:
+            "blur_score": float((quality_result.get("metrics") or {}).get("blur_score") or 0),
 
-                patch_data["cropped_id_path"] = cropped_url
+            "brightness": float((quality_result.get("metrics") or {}).get("brightness") or 0),
 
-            self._gateway.update_application(clean_id, patch_data)
+            "glare_pct": float((quality_result.get("metrics") or {}).get("glare_pct") or 0),
 
-            self._gateway.insert_screening_record(clean_id, full_q, ocr_data, comparisons, "; ".join(findings_list))
+            "extracted_fields": ocr_result,
 
-            return {
+            "field_comparisons": comparisons,
 
-                "queued": True,
+            "notes": notes_list,
 
-                "completed": True,
+            "summary": summary_text,
 
-                "state": "completed",
+        },
 
-                "review_recommended": review_recommended,
+    )
 
-                "cropped_id_url": cropped_url,
+    return {
 
-            }
+        "screened": True,
 
-        except Exception as err:
+        "preliminary": True,
 
-            self._gateway.update_application(
+        "application_id": app_uuid,
 
-                clean_id,
+        "ref_no": app_ref,
 
-                {
+        "overall_match": overall_match,
 
-                    "screening": {
+        "screening": screening_payload,
 
-                        "state": "unavailable",
-
-                        "phase": "Original Copy Ready (Manual Review)",
-
-                        "eta_seconds": 0,
-
-                        "fallback_original_only": True,
-
-                        "advisory": "Automated screening encountered an interruption. Original uploaded ID photo is ready for manual Agent verification.",
-
-                        "error": str(err),
-
-                        "updated_at": _utc_iso(),
-
-                    }
-
-                },
-
-            )
-
-            self._notify_staff_unavailable(ref_no, cust_name, "screening interruption")
-
-            return {"queued": False, "completed": False, "state": "unavailable", "reason": str(err)}
-
-_gateway = SupabaseApplicationGateway()
-
-_coordinator = CloudScreeningCoordinator(_gateway)
-
-def run_application_screening(app_id: str) -> dict:
-
-    return _coordinator.run_pipeline(app_id)
+    }

@@ -1,11 +1,11 @@
 // ============================================================================
 // FILE: web/js/manager.js
-// PURPOSE: Operational Manager Dashboard, Analytics, Plans & Website Content Controller
+// PURPOSE: Operational Manager Dashboard, Analytics, Agent Invites, Plans & Website Content Controller
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
 //   1. web/js/config.js  -> Fiber plan schemas, website content keys, and modal helpers
-//   2. web/js/db.js      -> `checkPageAccess(['manager'])`, `dbGetAllApplications()`,
-//                           `dbSavePlansToCloud()`, `dbSaveCmsToCloud()`, `dbGetMarketingSubscribers()`
+//   2. web/js/db.js      -> `requireLogin(['manager', 'admin'])`, `dbListAllApplications()`,
+//                           `dbCreateAgentInviteLink()`, `dbCreateStaffAccount()`, `saveSiteContent()`
 //   3. web/js/api.js     -> `apiCheckHealth()`, `apiSendStatusEmail()`, `apiSendPromotionalEmail()`
 //   4. web/js/dash-ui.js -> Shared dashboard sidebar, global search, and notifications
 // ============================================================================
@@ -74,7 +74,7 @@ function getMgrScreeningBadge(app) {
     if (scr.severity === "warning") {
       return '<span class="badge badge-yellow">Enhancing Document' + (eta ? " (" + escapeHtml(eta) + ")" : "") + ' - Hold Recommended</span>';
     }
-    return '<span class="badge badge-blue">Cropping &amp; Verifying' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
+    return '<span class="badge badge-blue">Cropping and Verifying' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
   }
   if (scr.review_recommended && app.status !== "Approved" && app.status !== "Rejected") {
     return '<span class="badge badge-yellow">Preliminary Finding - Review Needed</span>';
@@ -104,12 +104,6 @@ window.addEventListener("DOMContentLoaded", async function () {
   await refreshManagerData();
   loadAllCmsEditors();
   initDashUI(currentManager, mgrApps, openMgrAppModal);
-
-  setTimeout(function () {
-    if (typeof POPUP_GUIDE_MANAGER !== "undefined") {
-      POPUP_GUIDE_MANAGER.autoShowForPortal("manager_dashboard_guide");
-    }
-  }, 220);
 
   setInterval(function () {
     checkMgrScreeningService();
@@ -183,10 +177,11 @@ async function refreshManagerData() {
 
 // UI Interaction `showTab` (params: tab): Controls modal/panel visibility to show tab.
 function showTab(tab) {
+  if (tab === "app-encoded") tab = "app-approved";
   activeMgrTab = tab;
   var allNavs = [
     "overview",
-    "app-all", "app-override", "app-encoded",
+    "app-all", "app-encoding", "app-override", "app-approved", "app-rejected",
     "agent-perf", "agent-links",
     "cms-banners", "cms-assets", "cms-about", "cms-plans", "cms-faqs",
     "promo-broadcast"
@@ -196,7 +191,13 @@ function showTab(tab) {
     if (btn) btn.classList.toggle("active", allNavs[i] === tab);
   }
 
-  var isAppView = (tab === "app-all" || tab === "app-override" || tab === "app-encoded");
+  var isAppView = (
+    tab === "app-all" ||
+    tab === "app-encoding" ||
+    tab === "app-override" ||
+    tab === "app-approved" ||
+    tab === "app-rejected"
+  );
   var isCmsView = (tab.indexOf("cms-") === 0);
 
   document.getElementById("tab-overview").classList.toggle("hidden", tab !== "overview");
@@ -212,7 +213,6 @@ function showTab(tab) {
   var tabPromo = document.getElementById("tab-promo-broadcast");
   if (tabPromo) tabPromo.classList.toggle("hidden", tab !== "promo-broadcast");
 
-  // Show Website Content (CMS) bar WITHOUT shutting off the live website automatically
   var maintBar = document.getElementById("cms-maint-bar");
   if (maintBar) {
     maintBar.classList.toggle("hidden", !isCmsView);
@@ -224,10 +224,12 @@ function showTab(tab) {
   if (isAppView) {
     var headings = {
       "app-all": "All Customer Applications",
-      "app-override": "Applications Needing Override / Correction",
-      "app-encoded": "Encoded & Approved Applications"
+      "app-encoding": "Encoding Applications (With Provider Validator)",
+      "app-override": "Applications Needing Correction",
+      "app-approved": "Approved Applications",
+      "app-rejected": "Rejected Applications"
     };
-    document.getElementById("mgr-apps-title").textContent = headings[tab];
+    document.getElementById("mgr-apps-title").textContent = headings[tab] || "All Customer Applications";
     renderManagerApps();
   }
 }
@@ -291,8 +293,10 @@ function renderManagerApps() {
   var list = [];
   for (var i = 0; i < mgrApps.length; i++) {
     var a = mgrApps[i];
-    if (activeMgrTab === "app-override" && a.status !== "Needs Correction" && a.status !== "Rejected") continue;
-    if (activeMgrTab === "app-encoded" && a.status !== "Encoding" && a.status !== "Approved" && a.status !== "Submitted to Provider" && !a.encoded) continue;
+    if (activeMgrTab === "app-encoding" && a.status !== "Encoding") continue;
+    if (activeMgrTab === "app-override" && a.status !== "Needs Correction") continue;
+    if (activeMgrTab === "app-approved" && a.status !== "Approved" && a.status !== "Submitted to Provider") continue;
+    if (activeMgrTab === "app-rejected" && a.status !== "Rejected") continue;
     if (q) {
       var hay = ((a.full_name || "") + " " + (a.reference_no || "") + " " + (a.assigned_agent || "") + " " + (a.city || "")).toLowerCase();
       if (hay.indexOf(q) === -1) continue;
@@ -301,7 +305,7 @@ function renderManagerApps() {
   }
 
   if (list.length === 0) {
-    box.innerHTML = '<div class="card muted" style="text-align:center; padding:26px">No matching applications found.</div>';
+    box.innerHTML = '<div class="card muted" style="text-align:center; padding:26px">No matching applications found in this view.</div>';
     return;
   }
 
@@ -370,10 +374,10 @@ function openMgrAppModal(appId) {
   if (app.cropped_id_url || app.id_front_url) {
     docLinksHtml = '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">';
     if (app.cropped_id_url) {
-      docLinksHtml += '<a href="' + escapeHtml(app.cropped_id_url) + '" target="_blank" class="btn btn-outline btn-sm"><img src="assets/images/placeholder.png" data-icon="preview.png" alt="Cropped ID" class="icon-placeholder" title="Flaticon placeholder: preview.png" />View Cropped &amp; Enhanced ID</a>';
+      docLinksHtml += '<a href="' + escapeHtml(app.cropped_id_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="assets/images/icons/preview.png" alt="Cropped ID (not available)" class="icon-img" />View Cropped and Enhanced ID</a>';
     }
     if (app.id_front_url) {
-      docLinksHtml += '<a href="' + escapeHtml(app.id_front_url) + '" target="_blank" class="btn btn-outline btn-sm"><img src="assets/images/placeholder.png" data-icon="camera.png" alt="Original ID" class="icon-placeholder" title="Flaticon placeholder: camera.png" />View Original Uploaded ID</a>';
+      docLinksHtml += '<a href="' + escapeHtml(app.id_front_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/camera.png" src="assets/images/icons/camera.png" alt="Original ID (not available)" class="icon-img" />View Original Uploaded ID</a>';
     }
     docLinksHtml += '</div>';
   }
@@ -387,7 +391,7 @@ function openMgrAppModal(appId) {
         '<div><span>Screening</span><b>' + getMgrScreeningBadge(app) + '</b></div>' +
         '<div><span>Screening Note</span><b style="font-weight:500">' + escapeHtml(scrDetail) + '</b></div>' +
         '<div><span>Plan</span><b>' + escapeHtml(app.plan_name) + '</b></div>' +
-        '<div><span>Email &amp; Mobile</span><b>' + escapeHtml(app.email + " / " + app.phone) + '</b></div>' +
+        '<div><span>Email and Mobile</span><b>' + escapeHtml(app.email + " / " + app.phone) + '</b></div>' +
         '<div><span>Primary ID</span><b>' + escapeHtml(app.id_type + " - " + app.id_number) + '</b></div>' +
         '<div><span>Address</span><b>' + escapeHtml((app.street || "") + ", " + (app.barangay || "") + ", " + (app.city || "")) + '</b></div>' +
         docLinksHtml +
@@ -406,7 +410,7 @@ function openMgrAppModal(appId) {
           '</select>' +
         '</div>' +
         '<div class="field"><label>Manager Remarks</label><textarea id="mgr-remarks" rows="2">' + escapeHtml(app.agent_remarks || "") + '</textarea></div>' +
-        '<button type="button" class="btn btn-red" style="width:100%" onclick="saveMgrOverride()">Save Assignment &amp; Status Override</button>' +
+        '<button type="button" class="btn btn-red" style="width:100%" onclick="saveMgrOverride()">Save Assignment and Status Override</button>' +
       '</div>' +
     '</div>';
 
@@ -514,23 +518,115 @@ function renderAgentPerformance() {
   body.innerHTML = html || '<tr><td colspan="6" class="muted">No agents found.</td></tr>';
 }
 
-// UI Renderer `renderManagerLinks`: Builds and updates DOM elements for manager links.
+// Action Handler `generateManagerAgentInvite`: Generates a private one-time INV-... registration link for a new Agent
+async function generateManagerAgentInvite() {
+  var noteEl = document.getElementById("mgr-invite-note");
+  var note = noteEl ? noteEl.value.trim() : "";
+  try {
+    var res = await dbCreateAgentInviteLink(currentManager ? currentManager.email : "manager@pigem.ph", note || "Manager Private Agent Registration Invite");
+    var url = getSiteBaseUrl() + "/agent-register.html?invite=" + encodeURIComponent(res.code);
+    var wrap = document.getElementById("mgr-invite-output-wrap");
+    var inp = document.getElementById("mgr-invite-url");
+    if (inp) inp.value = url;
+    if (wrap) wrap.classList.remove("hidden");
+    if (noteEl) noteEl.value = "";
+    showMsg("mgr-invite-msg", "ok", "Private Agent Registration Link (" + res.code + ") created! Share the URL below with your new agent.");
+    await renderManagerLinks();
+  } catch (err) {
+    showMsg("mgr-invite-msg", "err", err.message || "Could not generate private registration link.");
+  }
+}
+
+// Helper `copyManagerInviteUrl`: Copies the generated private agent registration URL to clipboard
+function copyManagerInviteUrl() {
+  var inp = document.getElementById("mgr-invite-url");
+  if (!inp || !inp.value) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(inp.value);
+  } else {
+    inp.select();
+    document.execCommand("copy");
+  }
+  showAlert("Copied", "Private Agent Registration Link copied to clipboard.");
+}
+
+// Action Handler `createAgentFromManager`: Creates an Agent account directly from the Manager Portal
+async function createAgentFromManager() {
+  var fname = (document.getElementById("mgr-ag-fname").value || "").trim();
+  var mname = (document.getElementById("mgr-ag-mname").value || "").trim();
+  var lname = (document.getElementById("mgr-ag-lname").value || "").trim();
+  var username = (document.getElementById("mgr-ag-username").value || "").trim().toLowerCase();
+  var email = (document.getElementById("mgr-ag-email").value || "").trim().toLowerCase();
+  var pass = document.getElementById("mgr-ag-pass").value;
+
+  if (!fname || !lname || !username || !email || !pass) {
+    showMsg("mgr-create-agent-msg", "err", "Please complete First Name, Last Name, Username, Official Email (@pigem.ph), and Password.");
+    return;
+  }
+  if (!isValidUsername(username)) {
+    showMsg("mgr-create-agent-msg", "err", "Username must be 3-30 characters using letters, numbers, underscores, dots, or hyphens.");
+    return;
+  }
+  if (!isStaffBusinessEmail(email)) {
+    showMsg("mgr-create-agent-msg", "err", "Agent accounts must use an official @pigem.ph email address.");
+    return;
+  }
+  if (!isStrongPassword(pass)) {
+    showMsg("mgr-create-agent-msg", "err", PASSWORD_REQUIREMENT_TEXT);
+    return;
+  }
+
+  var fullName = [fname, mname, lname].filter(Boolean).join(" ");
+  try {
+    await dbCreateUserAccount(fullName, email, pass, "agent", username);
+    if (currentManager) {
+      await dbAddLog(currentManager.email, "Manager created Agent account: " + email + " (@" + username + ")");
+    }
+    document.getElementById("mgr-ag-fname").value = "";
+    document.getElementById("mgr-ag-mname").value = "";
+    document.getElementById("mgr-ag-lname").value = "";
+    document.getElementById("mgr-ag-username").value = "";
+    document.getElementById("mgr-ag-email").value = "";
+    document.getElementById("mgr-ag-pass").value = "";
+    showMsg("mgr-create-agent-msg", "ok", "Agent account created for " + fullName + " (@" + username + ").");
+    await refreshManagerData();
+  } catch (err) {
+    showMsg("mgr-create-agent-msg", "err", err.message || "Could not create Agent account.");
+  }
+}
+
+// UI Renderer `renderManagerLinks`: Builds and updates DOM elements for manager links and private agent registration invites.
 async function renderManagerLinks() {
   var body = document.getElementById("mgr-links-body");
   if (!body) return;
   var links = await dbListAgentLinks();
   if (links.length === 0) {
-    body.innerHTML = '<tr><td colspan="4" class="muted">No referral links created yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="muted">No agent registration invites or referral links created yet.</td></tr>';
     return;
   }
   var html = "";
   for (var i = 0; i < links.length; i++) {
     var l = links[i];
+    var isInvite = String(l.code || "").indexOf("INV-") === 0;
+    var typeBadge = "";
+    var noteCol = escapeHtml(l.note || "");
+    if (isInvite) {
+      if (l.active !== false) {
+        typeBadge = '<span class="badge badge-green">Private Agent Invite (Active)</span>';
+        var inviteUrl = getSiteBaseUrl() + "/agent-register.html?invite=" + encodeURIComponent(l.code);
+        noteCol += '<div class="tiny" style="margin-top:4px"><a href="' + escapeHtml(inviteUrl) + '" target="_blank" style="color:#175cd3; text-decoration:underline">' + escapeHtml(inviteUrl) + '</a></div>';
+      } else {
+        typeBadge = '<span class="badge badge-gray">Private Agent Invite (Used)</span>';
+      }
+    } else {
+      typeBadge = '<span class="badge badge-blue">Customer Referral Link</span>';
+    }
     html +=
       '<tr>' +
         '<td><b>' + escapeHtml(l.code) + '</b></td>' +
+        '<td>' + typeBadge + '</td>' +
         '<td>' + escapeHtml(l.agent_email) + '</td>' +
-        '<td>' + escapeHtml(l.note) + '</td>' +
+        '<td>' + noteCol + '</td>' +
         '<td>' + formatDate(l.created_at) + '</td>' +
       '</tr>';
   }
@@ -545,7 +641,7 @@ function ensureFourSlides(slides, fallbackSlides) {
   var arr = (slides || []).slice();
   var fb = fallbackSlides || [];
   while (arr.length < 4) {
-    var nextFb = fb[arr.length] || { tag: "PIGEM FIBER", image: "Banners/home-banner-1.png", title: "Slide " + (arr.length + 1), text: "Update slide description here." };
+    var nextFb = fb[arr.length] || { tag: "PIGEM FIBER", image: "", title: "Slide " + (arr.length + 1), text: "Upload banner from library or enter description." };
     arr.push(Object.assign({}, nextFb));
   }
   return arr.slice(0, 4);
@@ -562,7 +658,7 @@ function loadAllCmsEditors() {
   renderSlideEditorList("cms-home-slides", "home", c.home_slides, lib.Banners || []);
   renderSlideEditorList("cms-about-slides", "about", c.about_slides, lib.Banners || []);
 
-  // 2. Media Assets (Logo, Clients, Vehicles, Permits)
+  // 2. Media Assets (Logos, Clients, Vehicles, Permits)
   renderMediaAssetsEditor(c);
 
   // 3. About Company text
@@ -602,11 +698,11 @@ function renderSlideEditorList(boxId, prefix, slides, savedBanners) {
   var html = "";
   for (var i = 0; i < slides.length; i++) {
     var s = slides[i];
-    var currentImg = s.image || "Banners/home-banner-1.png";
+    var currentImg = s.image || "";
     var allChoices = (savedBanners || []).slice();
-    if (allChoices.indexOf(currentImg) === -1) allChoices.unshift(currentImg);
+    if (currentImg && allChoices.indexOf(currentImg) === -1) allChoices.unshift(currentImg);
 
-    var optionsHtml = "";
+    var optionsHtml = '<option value="">- No Banner Selected -</option>';
     for (var b = 0; b < allChoices.length; b++) {
       var path = allChoices[b];
       var label = path.indexOf("data:") === 0 ? ("Uploaded Image #" + (b + 1)) : path;
@@ -638,19 +734,32 @@ function renderSlideEditorList(boxId, prefix, slides, savedBanners) {
 // UI Renderer `renderMediaAssetsEditor` (params: c): Builds and updates DOM elements for media assets editor.
 function renderMediaAssetsEditor(c) {
   var lib = c.asset_library || DEFAULT_CONTENT.asset_library;
+  var logos = (lib.Logos || ["black-logo-white-mode.png", "white-logo-dark-mode.png"]).slice();
 
-  // 1. Logo selector
+  // 1A. Light Mode Logo selector
   var logoSelect = document.getElementById("cms-active-logo");
   var logoPrev = document.getElementById("cms-logo-preview");
   if (logoSelect && logoPrev) {
-    var logos = (lib.Logos || ["logo.png"]).slice();
-    var activeLogo = c.logo_image || "logo.png";
+    var activeLogo = c.logo_image || "black-logo-white-mode.png";
     if (logos.indexOf(activeLogo) === -1) logos.unshift(activeLogo);
     logoSelect.innerHTML = logos.map(function (p, idx) {
       var lbl = p.indexOf("data:") === 0 ? ("Uploaded Logo #" + (idx + 1)) : p;
       return '<option value="' + escapeHtml(p) + '" ' + (p === activeLogo ? "selected" : "") + '>' + escapeHtml(lbl) + '</option>';
     }).join("");
     logoPrev.src = getImageUrl(activeLogo);
+  }
+
+  // 1B. Dark Mode Logo selector
+  var darkLogoSelect = document.getElementById("cms-active-dark-logo");
+  var darkLogoPrev = document.getElementById("cms-dark-logo-preview");
+  if (darkLogoSelect && darkLogoPrev) {
+    var activeDarkLogo = c.dark_logo_image || "white-logo-dark-mode.png";
+    if (logos.indexOf(activeDarkLogo) === -1) logos.push(activeDarkLogo);
+    darkLogoSelect.innerHTML = logos.map(function (p, idx) {
+      var lbl = p.indexOf("data:") === 0 ? ("Uploaded Logo #" + (idx + 1)) : p;
+      return '<option value="' + escapeHtml(p) + '" ' + (p === activeDarkLogo ? "selected" : "") + '>' + escapeHtml(lbl) + '</option>';
+    }).join("");
+    darkLogoPrev.src = getImageUrl(activeDarkLogo);
   }
 
   // 2. Checkable galleries for Clients, Vehicles, Permits
@@ -719,7 +828,9 @@ async function uploadNewBucketAsset(category, fileInputId, msgId) {
 function saveMediaAssetsCms() {
   var c = getSiteContent();
   var logoSel = document.getElementById("cms-active-logo");
+  var darkLogoSel = document.getElementById("cms-active-dark-logo");
   if (logoSel && logoSel.value) c.logo_image = logoSel.value;
+  if (darkLogoSel && darkLogoSel.value) c.dark_logo_image = darkLogoSel.value;
 
   c.client_images = getCheckedAssetValues("client");
   c.vehicle_images = getCheckedAssetValues("vehicle");
@@ -727,7 +838,7 @@ function saveMediaAssetsCms() {
 
   saveSiteContent(c);
   loadPageImages();
-  dbAddLog(currentManager.email, "Updated active Logo, Clients, Vehicles & Permits in Website Content (CMS)");
+  dbAddLog(currentManager.email, "Updated active Logos, Clients, Vehicles and Permits in Website Content (CMS)");
   showMsg("cms-assets-msg", "ok", "Active Website Assets saved! Click 'Preview Live Website' above to view.");
 }
 
@@ -758,7 +869,7 @@ function saveBannersCms() {
     c.about_slides[j].text = document.getElementById("about-text-" + j).value.trim();
   }
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated 4 Home & 4 About Hero Banners in Website Content (CMS)");
+  dbAddLog(currentManager.email, "Updated 4 Home and 4 About Hero Banners in Website Content (CMS)");
   showMsg("cms-banners-msg", "ok", "4-Slide Hero Banners saved! Click 'Preview Live Website' to inspect.");
 }
 
@@ -773,7 +884,7 @@ function saveAboutCms() {
   c.contact_address = document.getElementById("cms-contact-addr").value.trim();
   saveSiteContent(c);
   dbAddLog(currentManager.email, "Updated About PIGEM text in Website Content (CMS)");
-  showMsg("cms-about-msg", "ok", "About PIGEM & Contact information saved!");
+  showMsg("cms-about-msg", "ok", "About PIGEM and Contact information saved!");
 }
 
 // Action Handler `savePlansCms`: Validates user input and commits state changes to save plans cms.
@@ -889,7 +1000,7 @@ async function sendManagerPromoBroadcast() {
       }
       var res = await apiSendPromotionalEmail(recipient, "Valued Customer", headline, body, activePlans);
       if (res && res.sent) {
-        showMsg("promo-msg", "ok", "Preview announcement email delivered via PIGEM Gmail SMTP to " + recipient + ".");
+        showMsg("promo-msg", "ok", "Preview announcement email delivered via PIGEM Support Services to " + recipient + ".");
       } else {
         showMsg("promo-msg", "error", "Delivery failed: " + ((res && res.reason) || "Email service unavailable"));
       }
@@ -904,7 +1015,7 @@ async function sendManagerPromoBroadcast() {
       siteAll.announcement = { active: true, headline: headline, body: body };
       saveSiteContent(siteAll);
 
-      // Collect opted-in @gmail.com Customer addresses (applications with agree_tu === true, or registered Gmail customers)
+      // Collect opted-in @gmail.com Customer addresses
       var optedEmails = {};
       var optedNames = {};
       for (var aIdx = 0; aIdx < mgrApps.length; aIdx++) {
@@ -935,7 +1046,7 @@ async function sendManagerPromoBroadcast() {
       showMsg(
         "promo-msg",
         "ok",
-        "Announcement published on the website and dispatched via PIGEM Gmail SMTP to " + sentCount + " opted-in @gmail.com Customer(s)."
+        "Announcement published on the website and dispatched via PIGEM Support Services to " + sentCount + " opted-in @gmail.com Customer(s)."
       );
     }
 
@@ -946,6 +1057,6 @@ async function sendManagerPromoBroadcast() {
     showMsg("promo-msg", "error", "Error: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Publish & Dispatch Announcement";
+    btn.textContent = "Publish and Dispatch Announcement";
   }
 }

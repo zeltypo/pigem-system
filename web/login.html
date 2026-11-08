@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <link rel="icon" href="assets/images/logo.png">
+  <link rel="icon" href="assets/images/black-logo-white-mode.png">
   <title>Customer Login | Combined Facilities Support Services</title>
 
   <link rel="stylesheet" href="assets/style.css">
@@ -18,7 +18,7 @@
     <div class="container" style="display:flex; align-items:center; justify-content:space-between; height:64px;">
       <a href="index.html" class="btn btn-small">&#8592; Back</a>
       <div style="display:flex; align-items:center; gap:10px;">
-        <img data-img="logo.png" src="assets/images/logo.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+        <img data-img="black-logo-white-mode.png" src="assets/images/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
       </div>
     </div>
   </header>
@@ -27,21 +27,28 @@
     <div class="card auth-card">
       <div class="center">
         <h2>Customer Login</h2>
-        <p class="small muted mt" style="margin-top:4px;">Sign in using your Customer username or registered Gmail account</p>
+        <p class="small muted mt" style="margin-top:4px;">Sign in using your username or email</p>
       </div>
 
       <form class="mt-big" onsubmit="handleLogin(event)">
         <div>
-          <label for="email">Username or Gmail Address</label>
+          <label for="email">Username or Email</label>
           <input id="email" type="text" autocomplete="username" placeholder="username or yourname@gmail.com" required>
         </div>
 
         <div class="mt">
           <div class="row between">
             <label for="password" style="margin:0">Password</label>
-            <a href="#" class="small" style="color:var(--red); font-weight:600;" onclick="openForgotModal(); return false;">Forgot Password?</a>
+            <a href="#" class="small" style="color:var(--red); font-weight:600;" onclick="openForgotModal(); return false;">Forgot Password or Can't Log In?</a>
           </div>
           <input id="password" type="password" class="mt" placeholder="Enter your password" required>
+        </div>
+
+        <div class="row between mt" style="align-items:center;">
+          <label class="check" style="margin:0; font-weight:500; font-size:13px;">
+            <input id="remember-me" type="checkbox">
+            <span>Remember me</span>
+          </label>
         </div>
 
         <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">

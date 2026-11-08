@@ -23,12 +23,6 @@ window.addEventListener("DOMContentLoaded", async function () {
   await loadMyApplications();
   initDashUI(currentCustomer, myApps, selectMyApp);
 
-  setTimeout(function () {
-    if (typeof POPUP_GUIDE_MANAGER !== "undefined") {
-      POPUP_GUIDE_MANAGER.autoShowForPortal("customer_portal_guide");
-    }
-  }, 200);
-
   // Quietly refresh status in background if customer is not typing in a correction box
   setInterval(async function () {
     var activeTag = document.activeElement ? document.activeElement.tagName : "";

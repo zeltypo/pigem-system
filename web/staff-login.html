@@ -5,8 +5,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <link rel="icon" href="assets/images/logo.png">
-  <title>Staff Business Login | Combined Facilities Support Services</title>
+  <link rel="icon" href="assets/images/black-logo-white-mode.png">
+  <title>Internal Login | Combined Facilities Support Services</title>
 
   <link rel="stylesheet" href="assets/style.css">
 
@@ -16,7 +16,7 @@
 
   <header class="simple-bar">
     <div class="container" style="display:flex; align-items:center; gap:12px;">
-      <img data-img="logo.png" src="assets/images/logo.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+      <img data-img="black-logo-white-mode.png" src="assets/images/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
       <span style="font-weight:700; font-size:16px; cursor:default; user-select:none;">Combined Facilities Support Services</span>
     </div>
   </header>
@@ -24,19 +24,26 @@
   <main class="auth-page">
     <div class="card auth-card">
       <div class="center">
-        <h2>Internal Staff Login</h2>
-        <p class="small muted mt" style="margin-top:4px;">Sign in with your Agent or Manager username or business email</p>
+        <h2>Internal Login</h2>
+        <p class="small muted mt" style="margin-top:4px;">Sign in to Application Management System</p>
       </div>
 
       <form class="mt-big" onsubmit="handleLogin(event)">
         <div>
-          <label for="email">Staff Username or Business Email</label>
-          <input id="email" type="text" autocomplete="username" placeholder="username or name@pigem.com" required>
+          <label for="email">Username or Email</label>
+          <input id="email" type="text" autocomplete="username" placeholder="username or name@pigem.ph" required>
         </div>
 
         <div class="mt">
           <label for="password">Password</label>
           <input id="password" type="password" placeholder="Enter your password" required>
+        </div>
+
+        <div class="row between mt" style="align-items:center;">
+          <label class="check" style="margin:0; font-weight:500; font-size:13px;">
+            <input id="remember-me" type="checkbox">
+            <span>Remember me</span>
+          </label>
         </div>
 
         <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">
@@ -46,10 +53,6 @@
         <div class="mt-big">
           <button id="btn-login" type="submit" class="btn btn-red btn-full">Sign In</button>
         </div>
-
-        <p class="small muted center mt" style="font-size:12px;">
-          Internal business credentials are managed by the System Administrator.
-        </p>
       </form>
     </div>
   </main>

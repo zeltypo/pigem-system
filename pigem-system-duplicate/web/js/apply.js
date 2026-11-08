@@ -1,14 +1,14 @@
 // ============================================================================
 // FILE: web/js/apply.js
-// PURPOSE: 4-Step Customer Fiber Application Wizard Controller
+// PURPOSE: Customer Fiber Application Wizard Controller
 // ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. Google reCAPTCHA v2 (`recaptcha/api.js`) -> Verifies human applicant before submission
-//   2. Leaflet 1.9.4 (`leaflet.js`)             -> Exposes `L` for Dasmarinas map pinning
+// SHARED SCRIPT IMPORTS:
+//   1. Google reCAPTCHA v2 (`recaptcha/api.js`) -> Verifies human applicant
+//   2. Leaflet 1.9.4 (`leaflet.js`)             -> Dasmarinas map pinning
 //   3. web/js/config.js -> Barangay coordinates, plan list, and validation helpers
-//   4. web/js/db.js     -> Saves application row, uploads Front/Back IDs to private bucket,
-//                          verifies Gmail OTP, and generates Customer activation code
-//   5. web/js/api.js    -> Triggers `/api/screen-async` background ID screening and sends
+//   4. web/js/db.js     -> Saves application row, uploads Front/Back IDs,
+//                          and generates secured one-time OTP records (5-min expiry)
+//   5. web/js/api.js    -> Triggers background document screening and sends
 //                          confirmation & OTP emails via `/api/notify`
 // ============================================================================
 
@@ -22,9 +22,11 @@ var leafletMarker = null;
 var selectedFrontFile = null;
 var selectedBackFile = null;
 
-var generatedContactOtp = "";
 var isContactOtpVerified = false;
 var verifiedEmailAddress = "";
+
+var isPhoneOtpVerified = false;
+var verifiedPhoneNumber = "";
 
 var SECTION_TITLES = [
   "Select Your Plan",
@@ -32,10 +34,9 @@ var SECTION_TITLES = [
   "Contact Information",
   "Installation Location",
   "Valid ID Documents",
-  "Subscriber Declaration & Consent"
+  "Subscriber Declaration and Consent"
 ];
 
-// Inline Tooltip Bubble for Asterisk (*) - No underlines, smooth hover
 function showReqTip(el, fieldName, detail) {
   hideReqTip(el);
   var bubble = document.createElement("span");
@@ -44,14 +45,12 @@ function showReqTip(el, fieldName, detail) {
   el.appendChild(bubble);
 }
 
-// UI Interaction `hideReqTip` (params: el): Controls modal/panel visibility to hide req tip.
 function hideReqTip(el) {
   if (!el) return;
   var old = el.querySelector(".req-bubble:not(.error-pop)");
   if (old) old.remove();
 }
 
-// Helper function `flashErrorBubble` (params: fieldId, fieldName, message): Executes portal workflow logic for `flashErrorBubble`.
 function flashErrorBubble(fieldId, fieldName, message) {
   var asterisk = document.querySelector('.req[data-req-for="' + fieldId + '"]');
   if (!asterisk) return;
@@ -69,20 +68,17 @@ function flashErrorBubble(fieldId, fieldName, message) {
   }, 4500);
 }
 
-// Device detection for camera vs desktop QR code
 function setupDeviceUploadUI() {
   var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 768);
   var camBtns = document.querySelectorAll(".phone-only-btn");
   var qrBtn = document.getElementById("btn-phone-qr");
 
   if (!isMobile) {
-    // Desktop: hide camera buttons, show QR Code button
     for (var i = 0; i < camBtns.length; i++) {
       camBtns[i].style.display = "none";
     }
     if (qrBtn) qrBtn.style.display = "inline-flex";
   } else {
-    // Phone: show camera buttons, hide QR Code button
     for (var j = 0; j < camBtns.length; j++) {
       camBtns[j].style.display = "inline-flex";
     }
@@ -90,7 +86,6 @@ function setupDeviceUploadUI() {
   }
 }
 
-// Read ?plan= and ?agent= from URL
 function initApplyPage() {
   var params = new URLSearchParams(window.location.search);
   var urlPlan = params.get("plan");
@@ -102,16 +97,14 @@ function initApplyPage() {
     var banner = document.getElementById("agent-ref-banner");
     if (banner) {
       banner.hidden = false;
-      banner.innerHTML = "<b>Agent Referral Active:</b> Your application is linked to Agent ID <b>" + referralAgentId + "</b>.";
+      banner.innerHTML = "<b>Agent Referral Active:</b> Your application is linked to Agent ID <b>" + escapeHtml(referralAgentId) + "</b>.";
     }
   }
 
   renderPlanChoices();
   setupDeviceUploadUI();
-  // Event Listener: Runs initialization or state sync when `resize` fires
   window.addEventListener("resize", setupDeviceUploadUI);
 
-  // If visitor hasn't verified security CAPTCHA yet, prompt verification now
   if (sessionStorage.getItem("pigem_captcha_verified") !== "true") {
     setTimeout(showApplySecurityCaptchaModal, 150);
   } else {
@@ -122,19 +115,13 @@ function initApplyPage() {
       cCard.classList.add("verified");
       cCheck.innerHTML = "&#10003;";
     }
-    setTimeout(function () {
-      if (typeof POPUP_GUIDE_MANAGER !== "undefined") {
-        POPUP_GUIDE_MANAGER.autoShowForPortal("apply_before_start");
-      }
-    }, 200);
   }
 }
 
-// UI Interaction `showApplySecurityCaptchaModal`: Controls modal/panel visibility to show apply security captcha modal.
 function showApplySecurityCaptchaModal() {
   openPopup(
     '<div class="center" style="padding:10px 4px;">' +
-      '<div style="width:48px;height:48px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;"><img src="assets/images/placeholder.png" data-icon="shield.png" alt="Security" class="icon-placeholder" title="Flaticon placeholder: shield.png" /></div>' +
+      '<div style="width:48px;height:48px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;"><img data-img="icons/shield.png" src="assets/images/icons/shield.png" alt="Security (not available)" class="icon-img" /></div>' +
       '<h3 style="font-size:18px;margin-bottom:4px;">Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
       '<div id="g-apply-recaptcha-wrap" style="display:flex;justify-content:center;margin:16px auto;min-height:78px;">' +
@@ -163,7 +150,7 @@ function showApplySecurityCaptchaModal() {
       grecaptcha.render("g-apply-recaptcha-box", {
         sitekey: CONFIG.RECAPTCHA_SITE_KEY,
         callback: onApplyCaptchaVerified,
-        'error-callback': function () {
+        "error-callback": function () {
           var fb = document.getElementById("apply-captcha-fallback-box");
           if (fb) fb.style.display = "block";
         }
@@ -178,7 +165,6 @@ function showApplySecurityCaptchaModal() {
   }
 }
 
-// Helper function `onApplyCaptchaVerified` (params: token): Executes portal workflow logic for `onApplyCaptchaVerified`.
 async function onApplyCaptchaVerified(token) {
   if (token && typeof apiVerifyCaptcha === "function") {
     var vRes = await apiVerifyCaptcha(token);
@@ -196,15 +182,8 @@ async function onApplyCaptchaVerified(token) {
     cCard.classList.add("verified");
     cCheck.innerHTML = "&#10003;";
   }
-  // Show polite pre-application instruction pop-up right after security verification
-  setTimeout(function () {
-    if (typeof POPUP_GUIDE_MANAGER !== "undefined") {
-      POPUP_GUIDE_MANAGER.autoShowForPortal("apply_before_start");
-    }
-  }, 180);
 }
 
-// Helper function `triggerApplyPopupCaptcha`: Executes portal workflow logic for `triggerApplyPopupCaptcha`.
 function triggerApplyPopupCaptcha() {
   var check = document.getElementById("apply-popup-captcha-check");
   var card = document.getElementById("apply-popup-captcha-card");
@@ -224,7 +203,6 @@ function triggerApplyPopupCaptcha() {
   }, 600);
 }
 
-// Render Red Fiber plans
 function renderPlanChoices() {
   var plans = getActivePlans();
   var box = document.getElementById("plan-choice-box");
@@ -243,18 +221,13 @@ function renderPlanChoices() {
   box.innerHTML = html;
 }
 
-// Helper function `pickPlan` (params: planId): Executes portal workflow logic for `pickPlan`.
 function pickPlan(planId) {
   selectedPlanId = String(planId);
   renderPlanChoices();
 }
 
-// ============================================================
-// Interactive In-Page CAPTCHA Widget (Panel 5)
-// ============================================================
 var applyCaptchaVerified = false;
 
-// Helper function `triggerApplyCaptcha`: Executes portal workflow logic for `triggerApplyCaptcha`.
 function triggerApplyCaptcha() {
   if (applyCaptchaVerified) return;
   var check = document.getElementById("apply-captcha-check");
@@ -273,7 +246,6 @@ function triggerApplyCaptcha() {
   }, 600);
 }
 
-// QR Code Modal for Continuing on Phone
 function openPhoneQrModal() {
   var currentUrl = window.location.href;
   var qrImgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(currentUrl);
@@ -295,20 +267,14 @@ function openPhoneQrModal() {
 }
 
 // ============================================================
-// Contact OTP Verification (Panel 1)
+// Secured One-Time Email OTP & Mobile OTP Verification (Panel 2)
 // ============================================================
 async function sendContactOtp() {
   var email = document.getElementById("email").value.trim().toLowerCase();
-  var phone = document.getElementById("phone").value.trim();
 
   if (!email || !isCustomerGmail(email)) {
     flashErrorBubble("email", "Gmail Address", "Please enter a valid @gmail.com address first.");
     document.getElementById("email").focus();
-    return;
-  }
-  if (!phone || phone.replace(/\D/g, "").length < 10) {
-    flashErrorBubble("phone", "Mobile Number", "Please enter an 11-digit mobile number first.");
-    document.getElementById("phone").focus();
     return;
   }
 
@@ -316,64 +282,151 @@ async function sendContactOtp() {
   btn.disabled = true;
   btn.textContent = "Sending OTP...";
 
-  generatedContactOtp = String(Math.floor(100000 + Math.random() * 900000));
-  isContactOtpVerified = false;
+  var otpRec = typeof generateSecuredOtp === "function"
+    ? generateSecuredOtp("apply_email_" + email)
+    : { code: String(Math.floor(100000 + Math.random() * 900000)), refTag: "VSCF" };
 
-  var emailRes = await apiSendOtpEmail(email, generatedContactOtp, "Contact Verification", "Applicant");
+  isContactOtpVerified = false;
+  var first = (document.getElementById("first_name").value || "").trim();
+  var last = (document.getElementById("last_name").value || "").trim();
+  var applicantName = [first, last].filter(Boolean).join(" ") || "Applicant";
+
+  var emailRes = await apiSendOtpEmail(
+    email,
+    otpRec.code,
+    "verify your email address for your internet service application",
+    applicantName,
+    otpRec.refTag
+  );
 
   var row = document.getElementById("otp-Verify-row");
   if (row) row.hidden = false;
+  var inp = document.getElementById("contact_otp_code");
+  if (inp) {
+    inp.disabled = false;
+    inp.value = "";
+  }
 
   var statusText = document.getElementById("otp-status-text");
   if (statusText) {
     if (emailRes && emailRes.sent) {
       statusText.innerHTML =
-        "<span style='color:var(--good);font-weight:700;'>6-Digit Verification Code sent!</span> Please check your inbox at <b>" +
-        escapeHtml(email) +
-        "</b> (including Spam folder) and enter the 6-digit code below.";
+        "<b>6-Digit Email OTP sent!</b> Check <b>" + escapeHtml(email) +
+        "</b> (Ref no: <b>" + escapeHtml(otpRec.refTag) + "</b>). Valid for 5 minutes.";
     } else {
-      var errDetail = (emailRes && emailRes.offline)
-        ? "Verification email service is temporarily unavailable. Please try again in a moment."
-        : ((emailRes && emailRes.reason) || "Could not deliver verification email right now. Please double-check your email address and try again.");
-      statusText.innerHTML =
-        "<span style='color:#dc2626;font-weight:700;'>Email delivery failed:</span> " +
-        escapeHtml(errDetail);
+      var errDetail = (emailRes && emailRes.reason) || "Could not deliver verification email right now.";
+      statusText.innerHTML = "<span style='color:#dc2626;font-weight:700;'>Email delivery notice:</span> " + escapeHtml(errDetail);
     }
   }
 
   btn.disabled = false;
-  btn.textContent = "Resend OTP";
+  btn.textContent = "Resend Email OTP";
 }
 
-// Helper function `verifyContactOtp`: Executes portal workflow logic for `verifyContactOtp`.
 function verifyContactOtp() {
+  var email = document.getElementById("email").value.trim().toLowerCase();
   var entered = (document.getElementById("contact_otp_code").value || "").trim();
-  if (!generatedContactOtp) {
-    flashErrorBubble("contact_otp", "Contact OTP", "Click 'Send OTP' first to generate your code.");
+  var check = typeof verifySecuredOtp === "function"
+    ? verifySecuredOtp("apply_email_" + email, entered)
+    : { valid: false, reason: "Please request an OTP first." };
+
+  if (!check.valid) {
+    flashErrorBubble("contact_otp", "Email OTP", check.reason || "Incorrect 6-digit OTP code.");
     return;
   }
-  if (entered !== generatedContactOtp) {
-    flashErrorBubble("contact_otp", "Contact OTP", "Incorrect 6-digit OTP code.");
-    return;
-  }
+
   isContactOtpVerified = true;
-  verifiedEmailAddress = document.getElementById("email").value.trim().toLowerCase();
+  verifiedEmailAddress = email;
   var badge = document.getElementById("otp-badge");
   if (badge) {
     badge.hidden = false;
     badge.className = "badge status-approved";
-    badge.textContent = "Verified";
+    badge.textContent = "Email Verified";
   }
   var input = document.getElementById("contact_otp_code");
   if (input) input.disabled = true;
 
   var statusText = document.getElementById("otp-status-text");
   if (statusText) {
-    statusText.innerHTML = "<span style='color:var(--good);font-weight:700;'>Email and Mobile Number successfully verified! Click 'Next' to proceed.</span>";
+    statusText.innerHTML = "<span style='color:var(--good);font-weight:700;'>Email address verified (Ref no: " + escapeHtml(check.refTag || "VSCF") + ").</span>";
   }
 }
 
-// Smart ID Format Hint
+function sendPhoneOtp() {
+  var phone = document.getElementById("phone").value.trim();
+  var cleanDigits = phone.replace(/\D/g, "");
+  if (cleanDigits.length !== 11 || cleanDigits.indexOf("09") !== 0) {
+    flashErrorBubble("phone", "Mobile Number", "Please enter a valid 11-digit mobile number starting with 09.");
+    document.getElementById("phone").focus();
+    return;
+  }
+
+  var btn = document.getElementById("btn-send-phone-otp");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Sending SMS OTP...";
+  }
+
+  var otpRec = typeof generateSecuredOtp === "function"
+    ? generateSecuredOtp("apply_phone_" + cleanDigits)
+    : { code: String(Math.floor(100000 + Math.random() * 900000)), refTag: "VSCF" };
+
+  isPhoneOtpVerified = false;
+
+  setTimeout(function () {
+    var row = document.getElementById("phone-otp-verify-row");
+    if (row) row.hidden = false;
+    var inp = document.getElementById("phone_otp_code");
+    if (inp) {
+      inp.disabled = false;
+      inp.value = "";
+    }
+    var statusText = document.getElementById("phone-otp-status-text");
+    if (statusText) {
+      statusText.innerHTML =
+        "<b>SMS Message Sent to " + escapeHtml(cleanDigits) + ":</b><br>" +
+        "<span style='font-size:12px;color:var(--text);'>" +
+        "NEVER SHARE YOUR OTP especially on social media and SMS or email links. Your code is for your eyes only. " +
+        "Your OTP to verify your mobile number is <b>" + escapeHtml(otpRec.code) + "</b>. " +
+        "Ref no: <b>" + escapeHtml(otpRec.refTag) + "</b>. Code will expire in 5 minutes." +
+        "</span>";
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Resend Mobile OTP";
+    }
+  }, 350);
+}
+
+function verifyPhoneOtp() {
+  var phone = document.getElementById("phone").value.trim().replace(/\D/g, "");
+  var entered = (document.getElementById("phone_otp_code").value || "").trim();
+  var check = typeof verifySecuredOtp === "function"
+    ? verifySecuredOtp("apply_phone_" + phone, entered)
+    : { valid: false, reason: "Please click Send Mobile OTP first." };
+
+  if (!check.valid) {
+    flashErrorBubble("phone_otp", "Mobile OTP", check.reason || "Incorrect 6-digit Mobile OTP.");
+    return;
+  }
+
+  isPhoneOtpVerified = true;
+  verifiedPhoneNumber = phone;
+  var badge = document.getElementById("phone-otp-badge");
+  if (badge) {
+    badge.hidden = false;
+    badge.className = "badge status-approved";
+    badge.textContent = "Mobile Verified";
+  }
+  var input = document.getElementById("phone_otp_code");
+  if (input) input.disabled = true;
+
+  var statusText = document.getElementById("phone-otp-status-text");
+  if (statusText) {
+    statusText.innerHTML = "<span style='color:var(--good);font-weight:700;'>Primary mobile number verified (Ref no: " + escapeHtml(check.refTag || "VSCF") + ").</span>";
+  }
+}
+
 function updateIdFormatHint() {
   var type = document.getElementById("id_type").value;
   var hintEl = document.getElementById("id-format-hint");
@@ -392,15 +445,26 @@ function updateIdFormatHint() {
   hintEl.textContent = hints[type] || "";
 }
 
-// Handle Valid ID File Selection (Front and Back)
+// Handle Valid ID File Selection (Front and Back) with Immediate Duplicate File Detection
 function handleIdFileSelect(side, inputEl) {
   var file = inputEl && inputEl.files && inputEl.files[0];
   if (!file) return;
 
+  var otherFile = side === "front" ? selectedBackFile : selectedFrontFile;
+  if (otherFile && otherFile.size === file.size && otherFile.name === file.name) {
+    inputEl.value = "";
+    showAlert(
+      "Duplicate ID Image Detected",
+      "You selected the exact same image file (" + escapeHtml(file.name) + ") for both the Front and Back of your Valid ID. Please upload two distinct photos showing the Front side and the Back side of your ID.",
+      "warn"
+    );
+    return;
+  }
+
   if (side === "front") {
     selectedFrontFile = file;
     var fnFront = document.getElementById("id-front-filename");
-    if (fnFront) fnFront.innerHTML = "<b style='color:var(--good)'>Selected:</b> " + file.name;
+    if (fnFront) fnFront.innerHTML = "<b style='color:var(--good)'>Selected:</b> " + escapeHtml(file.name);
     var boxF = document.getElementById("id-front-preview-box");
     var imgF = document.getElementById("id-front-preview");
     if (boxF && imgF) {
@@ -410,7 +474,7 @@ function handleIdFileSelect(side, inputEl) {
   } else {
     selectedBackFile = file;
     var fnBack = document.getElementById("id-back-filename");
-    if (fnBack) fnBack.innerHTML = "<b style='color:var(--good)'>Selected:</b> " + file.name;
+    if (fnBack) fnBack.innerHTML = "<b style='color:var(--good)'>Selected:</b> " + escapeHtml(file.name);
     var boxB = document.getElementById("id-back-preview-box");
     var imgB = document.getElementById("id-back-preview");
     if (boxB && imgB) {
@@ -420,7 +484,6 @@ function handleIdFileSelect(side, inputEl) {
   }
 }
 
-// Step Navigation
 function showPanel(index) {
   currentPanel = index;
   for (var i = 0; i < TOTAL_PANELS; i++) {
@@ -441,11 +504,9 @@ function showPanel(index) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// Validate Current Panel - Triggers Bubbles on Missing Fields (No Modal Alert)
 function validateCurrentPanel() {
   var firstInvalidEl = null;
 
-  // Helper function `markInvalid` (params: fieldId, name, msg, elToFocus): Executes portal workflow logic for `markInvalid`.
   function markInvalid(fieldId, name, msg, elToFocus) {
     flashErrorBubble(fieldId, name, msg);
     if (!firstInvalidEl) {
@@ -453,7 +514,6 @@ function validateCurrentPanel() {
     }
   }
 
-  // Panel 0: Plan Selection
   if (currentPanel === 0) {
     if (!selectedPlanId) {
       markInvalid("plan", "Plan Selection", "Please pick an internet plan.");
@@ -462,7 +522,6 @@ function validateCurrentPanel() {
     return true;
   }
 
-  // Panel 1: Personal Information
   if (currentPanel === 1) {
     var first = document.getElementById("first_name").value.trim();
     var middle = document.getElementById("middle_name").value.trim();
@@ -470,7 +529,6 @@ function validateCurrentPanel() {
     var birth = document.getElementById("birth_date").value;
 
     if (!first) markInvalid("first_name", "First Name", "Please enter your first name.");
-    // Middle Name is optional; automatically default to N/A if blank
     if (!middle) {
       middle = "N/A";
       document.getElementById("middle_name").value = "N/A";
@@ -486,15 +544,17 @@ function validateCurrentPanel() {
     return true;
   }
 
-  // Panel 2: Contact Information (with OTP)
   if (currentPanel === 2) {
     var email = document.getElementById("email").value.trim().toLowerCase();
-    var phone = document.getElementById("phone").value.trim();
+    var phone = document.getElementById("phone").value.trim().replace(/\D/g, "");
 
     if (!email || !isCustomerGmail(email)) markInvalid("email", "Gmail Address", "Enter a valid @gmail.com address.");
-    if (!phone || phone.replace(/\D/g, "").length < 10) markInvalid("phone", "Mobile Number", "Enter an 11-digit mobile number.");
+    if (!phone || phone.length !== 11) markInvalid("phone", "Mobile Number", "Enter an 11-digit mobile number.");
     if (!isContactOtpVerified || verifiedEmailAddress !== email) {
-      markInvalid("contact_otp", "Contact OTP", "Please send and verify your 6-digit OTP code.", document.getElementById("btn-send-otp"));
+      markInvalid("contact_otp", "Email OTP", "Please send and verify your 6-digit Email OTP code.", document.getElementById("btn-send-otp"));
+    }
+    if (!isPhoneOtpVerified || verifiedPhoneNumber !== phone) {
+      markInvalid("phone_otp", "Mobile OTP", "Please send and verify your 6-digit Mobile OTP code.", document.getElementById("btn-send-phone-otp"));
     }
 
     if (firstInvalidEl) {
@@ -505,7 +565,6 @@ function validateCurrentPanel() {
     return true;
   }
 
-  // Panel 3: Installation Location Map & Address
   if (currentPanel === 3) {
     var house = document.getElementById("house_no").value.trim();
     var bldg = document.getElementById("building_name").value.trim();
@@ -533,7 +592,6 @@ function validateCurrentPanel() {
     return true;
   }
 
-  // Panel 4: Valid ID Documents (Front & Back)
   if (currentPanel === 4) {
     var idType = document.getElementById("id_type").value;
     var idNumber = document.getElementById("id_number").value.trim();
@@ -551,7 +609,6 @@ function validateCurrentPanel() {
     return true;
   }
 
-  // Panel 5: Subscriber Certificate & Terms
   if (currentPanel === 5) {
     if (!document.getElementById("agree_sub").checked) {
       markInvalid("agree_sub", "Terms Agreement", "Please check to accept the Subscriber Certificate.");
@@ -574,7 +631,6 @@ function validateCurrentPanel() {
   return true;
 }
 
-// Helper function `nextPanel`: Executes portal workflow logic for `nextPanel`.
 function nextPanel() {
   if (!validateCurrentPanel()) return;
   if (currentPanel < TOTAL_PANELS - 1) {
@@ -582,7 +638,6 @@ function nextPanel() {
   }
 }
 
-// Helper function `prevPanel`: Executes portal workflow logic for `prevPanel`.
 function prevPanel() {
   if (currentPanel > 0) {
     showPanel(currentPanel - 1);
@@ -620,7 +675,6 @@ function initMapPin() {
   }, 150);
 }
 
-// Action Handler `updatePinAndAddress` (params: lat, lng): Validates user input and commits state changes to update pin and address.
 async function updatePinAndAddress(lat, lng) {
   document.getElementById("lat").value = lat.toFixed(6);
   document.getElementById("lng").value = lng.toFixed(6);
@@ -628,7 +682,6 @@ async function updatePinAndAddress(lat, lng) {
   statusEl.textContent = "Looking up address for pinned location...";
 
   var data = null;
-  // 1. Primary OpenStreetMap Reverse Geocoding via LocationIQ API
   if (CONFIG.LOCATIONIQ_API_KEY) {
     try {
       var liqUrl =
@@ -646,7 +699,6 @@ async function updatePinAndAddress(lat, lng) {
     }
   }
 
-  // 2. Automatic Fallback to OpenStreetMap Nominatim if LocationIQ is unreachable
   if (!data) {
     try {
       var nomUrl = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + lat + "&lon=" + lng;
@@ -680,7 +732,6 @@ async function updatePinAndAddress(lat, lng) {
   }
 }
 
-// Helper function `searchMapAddress`: Executes portal workflow logic for `searchMapAddress`.
 async function searchMapAddress() {
   var q = document.getElementById("map-search").value.trim();
   if (!q) return;
@@ -724,7 +775,6 @@ async function searchMapAddress() {
   await updatePinAndAddress(lat, lng);
 }
 
-// Helper function `useCurrentLocation`: Executes portal workflow logic for `useCurrentLocation`.
 function useCurrentLocation() {
   initMapPin();
   var statusEl = document.getElementById("map-status");
@@ -741,11 +791,10 @@ function useCurrentLocation() {
   }
   if (statusEl) statusEl.textContent = "Detecting current GPS location...";
 
-  // Helper function `onGeoSuccess` (params: pos): Executes portal workflow logic for `onGeoSuccess`.
   function onGeoSuccess(pos) {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<img src="assets/images/placeholder.png" data-icon="location.png" alt="Location" class="icon-placeholder" title="Flaticon placeholder: location.png"> Use My Location';
+      btn.innerHTML = '<img data-img="icons/location.png" src="assets/images/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location';
     }
     var lat = pos.coords.latitude;
     var lng = pos.coords.longitude;
@@ -757,14 +806,13 @@ function useCurrentLocation() {
     updatePinAndAddress(lat, lng);
   }
 
-  // Helper function `onGeoError`: Executes portal workflow logic for `onGeoError`.
   function onGeoError() {
     navigator.geolocation.getCurrentPosition(
       onGeoSuccess,
-      function (err) {
+      function () {
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = '<img src="assets/images/placeholder.png" data-icon="location.png" alt="Location" class="icon-placeholder" title="Flaticon placeholder: location.png"> Use My Location';
+          btn.innerHTML = '<img data-img="icons/location.png" src="assets/images/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location';
         }
         var msg = "Location permission denied or unavailable. Please search your street/barangay in the box above.";
         if (statusEl) statusEl.textContent = msg;
@@ -781,10 +829,10 @@ function useCurrentLocation() {
 }
 
 // ============================================================
-// Realistic Loading Animation Screen & Submission
+// Customer Submission Progress (3 Steps) & Post-Submission Notice
 // ============================================================
 function advanceLoadingStep(stepNum) {
-  for (var i = 1; i <= 4; i++) {
+  for (var i = 1; i <= 3; i++) {
     var el = document.getElementById("step-ld-" + i);
     if (!el) continue;
     if (i < stepNum) {
@@ -800,7 +848,6 @@ function advanceLoadingStep(stepNum) {
   }
 }
 
-// Action Handler `submitRegistration`: Validates user input and commits state changes to submit registration.
 async function submitRegistration() {
   if (!validateCurrentPanel()) return;
 
@@ -814,7 +861,6 @@ async function submitRegistration() {
   var idNumber = document.getElementById("id_number").value.trim();
   var p = getPlanById(selectedPlanId);
 
-  // Switch to realistic loading screen
   for (var i = 0; i < TOTAL_PANELS; i++) {
     var pEl = document.getElementById("panel-" + i);
     if (pEl) pEl.hidden = true;
@@ -828,24 +874,21 @@ async function submitRegistration() {
     advanceLoadingStep(1);
     await new Promise(function (r) { setTimeout(r, 350); });
 
-    // Step 2: Upload Valid ID Front and Back directly to Supabase 'documents' bucket
+    // Step 2: Uploading Valid ID to Secure Storage
     advanceLoadingStep(2);
     var accountInfo = await dbCreateAccountFromApplication(fullName, email);
     var frontPath = await dbUploadDocument(selectedFrontFile, accountInfo.user.id || "public", "id-front");
     var backPath = await dbUploadDocument(selectedBackFile, accountInfo.user.id || "public", "id-back");
 
-    // Step 3: Queue background document screening (Customer does NOT wait for screening to finish)
-    advanceLoadingStep(3);
     var screening = {
       preliminary: true,
       state: getSystemSettings().ai_enabled ? "queued" : "paused",
       phase: getSystemSettings().ai_enabled ? "Queued for Screening" : "Manual Review Active",
       eta_seconds: getSystemSettings().ai_enabled ? 35 : 0,
       advisory: getSystemSettings().ai_enabled
-        ? "Screening in progress (~30-40 seconds remaining). Original submission is available below."
+        ? "Screening in progress. Original submission is available below."
         : "Manual document review is active."
     };
-    await new Promise(function (r) { setTimeout(r, 350); });
 
     var addrData = {
       house_no: document.getElementById("house_no").value.trim(),
@@ -862,7 +905,8 @@ async function submitRegistration() {
       landmark: document.getElementById("landmark").value.trim()
     };
 
-    // Save application with correct column names (id_front_path and id_back_path)
+    // Step 3: Generating Official Reference Number
+    advanceLoadingStep(3);
     var saved = await dbCreateApplication(Object.assign({}, addrData, {
       customer_id: accountInfo.user.id,
       agent_id: referralAgentId,
@@ -872,6 +916,7 @@ async function submitRegistration() {
       middle_name: middle,
       last_name: last,
       full_name: fullName,
+      customer_name: fullName,
       birth_date: birth,
       phone: document.getElementById("phone").value.trim(),
       phone_alt: document.getElementById("phone_alt").value.trim(),
@@ -881,6 +926,8 @@ async function submitRegistration() {
       lng: parseFloat(document.getElementById("lng").value),
       id_type: idType,
       id_number: idNumber,
+      id_image_url: frontPath,
+      id_back_image_url: backPath,
       id_front_path: frontPath,
       id_back_path: backPath,
       remarks: document.getElementById("remarks").value.trim(),
@@ -888,7 +935,6 @@ async function submitRegistration() {
       screening: screening
     }));
 
-    // Trigger non-blocking cloud serverless screening in the background so the customer gets their Reference Number right away.
     var screeningActive = Boolean(getSystemSettings().ai_enabled);
     if (!screeningActive) {
       var pausedScreening = Object.assign({}, screening, {
@@ -905,7 +951,7 @@ async function submitRegistration() {
       }
     } else if (typeof apiStartBackgroundScreening === "function") {
       apiStartBackgroundScreening(saved.id).then(async function (bgRes) {
-        if (!bgRes || !bgRes.queued) {
+        if (!bgRes || (!bgRes.queued && !bgRes.screened)) {
           var fallbackScreening = Object.assign({}, screening, {
             state: "unavailable",
             phase: "Original Copy Ready (Manual Review)",
@@ -915,34 +961,20 @@ async function submitRegistration() {
             advisory: "Auto-screening is currently unavailable. Original uploaded ID copies are ready for manual verification."
           });
           await dbUpdateApplication(saved.id, { screening: fallbackScreening });
-          if (typeof dbNotifyScreeningUnavailable === "function") {
-            await dbNotifyScreeningUnavailable(saved.ref_no, fullName, "Original uploaded ID copies are ready for manual verification.");
-          }
         }
       });
     }
 
-    // Step 4: Generating Reference Number
-    advanceLoadingStep(4);
-    await new Promise(function (r) { setTimeout(r, 350); });
+    await new Promise(function (r) { setTimeout(r, 300); });
 
-    // Send Professional Business Email & Notification
     var subject = "PIGEM Application Confirmation - Reference No. " + saved.ref_no;
     var body =
       "Dear " + fullName + ",\n\n" +
       "Thank you for submitting your internet service application with PIGEM Combined Facilities Support Services.\n\n" +
-      "APPLICATION DETAILS\n" +
-      "- Reference Number: " + saved.ref_no + "\n" +
-      "- Plan: Red Fiber " + p.name + " (" + p.speed + " Mbps - " + formatPeso(p.price) + "/mo)\n" +
-      "- Installation Address: " + formatAddress(addrData) + "\n" +
-      "- Status: Processing\n\n" +
-      (accountInfo.status === "active"
-        ? "CUSTOMER ACCOUNT\nYour application has been linked to your existing account (" + email + "). You may log in anytime to monitor progress.\n\n"
-        : "ACCOUNT ACTIVATION\nTo monitor your application online and track verification status, please activate your Customer Account using the link below:\n" +
-          "- Activation Link: " + window.location.origin + "/activate.html?email=" + encodeURIComponent(email) + "&code=" + encodeURIComponent(accountInfo.code) + "\n" +
-          "- One-Time Activation Code: " + accountInfo.code + "\n\n") +
-      "Sincerely,\n" +
-      "PIGEM Combined Facilities Support Services";
+      "Reference Number: " + saved.ref_no + "\n" +
+      "Plan: Red Fiber " + p.name + " (" + p.speed + " Mbps - " + formatPeso(p.price) + "/mo)\n" +
+      "Status: Processing\n\n" +
+      "Please check your email notification for your 6-digit Activation OTP Code and Account Activation link.";
 
     await dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body });
     await dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no });
@@ -950,8 +982,7 @@ async function submitRegistration() {
     await apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);
     await dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")");
 
-    // Complete all step icons
-    for (var k = 1; k <= 4; k++) {
+    for (var k = 1; k <= 3; k++) {
       var item = document.getElementById("step-ld-" + k);
       if (item) {
         item.className = "reg-step-item done";
@@ -959,40 +990,23 @@ async function submitRegistration() {
       }
     }
 
-    // Show Reference Number Popup
-    if (accountInfo.status === "active") {
-      openPopup(
-        '<div class="center">' +
-          '<h3>Application Submitted!</h3>' +
-          '<p class="small muted mt">Your Application Reference Number is:</p>' +
-          '<div class="big-ref">' + saved.ref_no + '</div>' +
-          '<div class="notice good mt">' +
-            'Your application has been submitted and added to your existing Customer Account.' +
-          '</div>' +
-          '<div class="row mt-big" style="justify-content:center">' +
-            '<a class="btn btn-red" href="login.html">Continue to Customer Login</a>' +
-          '</div>' +
-        '</div>'
-      );
-    } else {
-      var actUrl = "activate.html?email=" + encodeURIComponent(email) + (accountInfo.code ? "&code=" + encodeURIComponent(accountInfo.code) : "");
-      openPopup(
-        '<div class="center">' +
-          '<h3>Application Submitted!</h3>' +
-          '<p class="small muted mt">Your Application Reference Number is:</p>' +
-          '<div class="big-ref">' + saved.ref_no + '</div>' +
-          '<div class="notice mt" style="text-align:left;">' +
-            '<b>Account Activation Notice:</b><br>' +
-            'We sent an activation notice to <b>' + email + '</b>' +
-            '' +
-            '. Please check your inbox or spam folder to complete account activation.' +
-          '</div>' +
-          '<div class="row mt-big" style="justify-content:center">' +
-            '<a class="btn btn-red" href="' + actUrl + '" target="_blank">Open Account Activation</a>' +
-          '</div>' +
-        '</div>'
-      );
-    }
+    // Post-submission popup WITHOUT a direct redirect button to activate.html;
+    // the customer must open the activation link sent to their email notification.
+    openPopup(
+      '<div class="center">' +
+        '<h3>Application Submitted!</h3>' +
+        '<p class="small muted mt">Your Application Reference Number is:</p>' +
+        '<div class="big-ref">' + escapeHtml(saved.ref_no) + '</div>' +
+        '<div class="notice mt" style="text-align:left;">' +
+          '<b>Check Your Email Notification:</b><br>' +
+          'We sent your confirmation details, 6-digit Activation OTP code, and Account Activation link to <b>' + escapeHtml(email) + '</b>. ' +
+          'Please open your email inbox (or Spam folder) and use the activation link inside the email to activate your Customer Account.' +
+        '</div>' +
+        '<div class="row mt-big" style="justify-content:center">' +
+          '<a class="btn btn-red" href="index.html">Return to Home</a>' +
+        '</div>' +
+      '</div>'
+    );
   } catch (err) {
     if (loadingScreen) loadingScreen.hidden = true;
     showPanel(5);

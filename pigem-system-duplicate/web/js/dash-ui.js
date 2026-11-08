@@ -19,16 +19,27 @@ function initDashUI(user, apps, onSelectAppCallback) {
   dashSearchApps = apps || [];
   dashOnSelectApp = onSelectAppCallback || null;
 
+  if (user && user.email) {
+    try {
+      sessionStorage.setItem("pigem_user_cache", JSON.stringify({ email: user.email, role: user.role }));
+    } catch (e) {}
+  }
+
   // Apply saved theme immediately
   var savedTheme = readSaved("pigem_theme", "light");
   setThemeMode(savedTheme);
 
-  // Fade out splash screen
+  // Fade out splash screen and launch first-time user bubble tutorial in dashboards
   var splash = document.getElementById("splash");
   if (splash) {
     setTimeout(function () {
       splash.classList.add("hide");
+      if (user && user.role && typeof startDashboardTour === "function") {
+        setTimeout(function () { startDashboardTour(user.role, false); }, 350);
+      }
     }, 1200);
+  } else if (user && user.role && typeof startDashboardTour === "function") {
+    setTimeout(function () { startDashboardTour(user.role, false); }, 500);
   }
 
   // Render avatar button & drawer content
@@ -63,6 +74,9 @@ function setThemeMode(mode) {
     document.documentElement.setAttribute("data-theme", "dark");
   } else {
     document.documentElement.removeAttribute("data-theme");
+  }
+  if (typeof loadPageImages === "function") {
+    loadPageImages();
   }
 
   // Highlight active theme button inside drawer
@@ -231,9 +245,9 @@ function renderProfileDrawer(user) {
     '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
       '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Appearance / Theme</div>' +
       '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px">' +
-        '<button type="button" data-theme-btn="light" class="btn btn-sm ' + (savedTheme === "light" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'light\')"><img src="assets/images/placeholder.png" data-icon="sun.png" alt="Light" class="icon-placeholder" title="Flaticon placeholder: sun.png" />Light</button>' +
-        '<button type="button" data-theme-btn="dark" class="btn btn-sm ' + (savedTheme === "dark" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'dark\')"><img src="assets/images/placeholder.png" data-icon="moon.png" alt="Dark" class="icon-placeholder" title="Flaticon placeholder: moon.png" />Dark</button>' +
-        '<button type="button" data-theme-btn="device" class="btn btn-sm ' + (savedTheme === "device" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'device\')"><img src="assets/images/placeholder.png" data-icon="monitor.png" alt="Device" class="icon-placeholder" title="Flaticon placeholder: monitor.png" />Device</button>' +
+        '<button type="button" data-theme-btn="light" class="btn btn-sm ' + (savedTheme === "light" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'light\')"><img data-img="icons/sun.png" src="assets/images/icons/sun.png" alt="Light (not available)" class="icon-img" />Light</button>' +
+        '<button type="button" data-theme-btn="dark" class="btn btn-sm ' + (savedTheme === "dark" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'dark\')"><img data-img="icons/moon.png" src="assets/images/icons/moon.png" alt="Dark (not available)" class="icon-img" />Dark</button>' +
+        '<button type="button" data-theme-btn="device" class="btn btn-sm ' + (savedTheme === "device" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'device\')"><img data-img="icons/monitor.png" src="assets/images/icons/monitor.png" alt="Device (not available)" class="icon-img" />Device</button>' +
       '</div>' +
     '</div>' +
 
@@ -255,7 +269,7 @@ function renderProfileDrawer(user) {
       '<button type="button" class="btn btn-outline btn-sm" style="width:100%" onclick="sendProfilePwOtp()">Send 6-Digit Code to ' + escapeHtml(user.email) + '</button>' +
       '<div id="prof-pw-step2" class="hidden" style="margin-top:10px">' +
         '<div class="field"><label>6-Digit Code</label><input id="prof-pw-code" type="text" maxlength="6" /></div>' +
-        '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" /></div>' +
+        '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" /></div>' +
         '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmProfilePwOtp()">Update Password</button>' +
       '</div>' +
     '</div>' +
@@ -333,6 +347,10 @@ async function confirmProfilePwOtp() {
   if (!dashCurrentUser) return;
   var code = document.getElementById("prof-pw-code").value.trim();
   var newPw = document.getElementById("prof-pw-new").value;
+  if (typeof isStrongPassword === "function" && !isStrongPassword(newPw)) {
+    showMsg("prof-pw-msg", "error", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+    return;
+  }
   try {
     await dbFinishPasswordReset(dashCurrentUser.email, code, newPw);
     document.getElementById("prof-pw-step2").classList.add("hidden");

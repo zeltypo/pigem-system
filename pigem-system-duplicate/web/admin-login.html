@@ -1,53 +1,51 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     FILE OVERVIEW: System Administrator Sign-In Portal (web/admin-login.html)
-     PURPOSE: Dedicated high-security sign-in gateway exclusively for the single System Administrator account.
-     HOSTING: Deployed as static cloud frontend on Vercel with Supabase & /api/*
+     FILE OVERVIEW: System Administrator Sign-In Page (web/admin-login.html)
+     PURPOSE: Authenticates the System Administrator account using Username or
+              Official Email (@pigem.ph) and Remember Me.
      ========================================================================== -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
-  <link rel="icon" href="assets/images/logo.png">
-  <title>Admin Console Login | Combined Facilities Support Services</title>
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (responsive layout, cards, forms, and dark mode) -->
+  <link rel="icon" href="assets/images/black-logo-white-mode.png">
+  <title>Admin Login | Combined Facilities Support Services</title>
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
   <link rel="stylesheet" href="assets/style.css">
-  <!-- IMPORT: Google reCAPTCHA v2 client widget script for anti-bot form and sign-in protection -->
+  <!-- IMPORT: Google reCAPTCHA v2 client script -->
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
 
-  <!-- SECTION: Top Navigation Header & Brand Identity Bar -->
+  <!-- Simple Top Bar -->
   <header class="simple-bar">
     <div class="container" style="display:flex; align-items:center; gap:12px;">
-      <img data-img="logo.png" src="assets/images/logo.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+      <img data-img="black-logo-white-mode.png" src="assets/images/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
       <span style="font-weight:700; font-size:16px; cursor:default; user-select:none;">Combined Facilities Support Services</span>
     </div>
   </header>
 
-  <!-- SECTION: Main Page Content Container -->
+  <!-- Main Sign-In Card -->
   <main class="auth-page">
     <div class="card auth-card">
       <div class="center">
-        <h2>Admin Console Login</h2>
-        <p class="small muted mt" style="margin-top:4px;">Protected single-administrator business console</p>
+        <h2>Admin Login</h2>
+        <p class="small muted mt" style="margin-top:4px;">Sign in to Technical Management System</p>
       </div>
 
-      <!-- Shown automatically ONLY before the single System Administrator account is provisioned -->
       <div id="admin-provision-box" class="notice mt" hidden>
         <b style="display:block; margin-bottom:4px;">First-Time System Setup</b>
-        No System Administrator account has been provisioned yet. Register the single Admin business account first to initialize staff accounts.
+        No System Administrator account has been provisioned yet. Register the single Administrator account first to initialize internal accounts.
         <div class="mt">
           <a href="setup-accounts.html" class="btn btn-dark btn-full btn-small">Provision Admin Account &rarr;</a>
         </div>
       </div>
 
-      <!-- FORM: Interactive User Input Form -->
       <form class="mt-big" onsubmit="handleLogin(event)">
         <div>
-          <label for="email">Admin Username or Business Email</label>
-          <input id="email" type="text" autocomplete="username" placeholder="admin username or admin@pigem.com" required>
+          <label for="email">Username or Email</label>
+          <input id="email" type="text" autocomplete="username" placeholder="admin username or admin@pigem.ph" required>
         </div>
 
         <div class="mt">
@@ -55,7 +53,13 @@
           <input id="password" type="password" placeholder="Enter your password" required>
         </div>
 
-        <!-- Google reCAPTCHA v2 Widget -->
+        <div class="row between mt" style="align-items:center;">
+          <label class="check" style="margin:0; font-weight:500; font-size:13px;">
+            <input id="remember-me" type="checkbox">
+            <span>Remember me</span>
+          </label>
+        </div>
+
         <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">
           <div id="login-captcha-box" style="min-width:304px; min-height:78px;"></div>
         </div>
@@ -67,17 +71,18 @@
     </div>
   </main>
 
-  <!-- INLINE SCRIPT: Page-specific portal configuration and startup logic -->
-  <script>window.SYSTEM = "admin";</script>
-  <!-- IMPORT: Official Supabase JavaScript SDK v2 for PostgreSQL database queries, Auth JWTs, and private ID Storage -->
+  <script>
+window.SYSTEM = "admin";
+  </script>
+  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- IMPORT: Global cloud configuration, Dasmarinas barangay directory, plan defaults, and UI popup helpers -->
+  <!-- IMPORT: Global cloud configuration and UI helpers -->
   <script src="js/config.js"></script>
-  <!-- IMPORT: Cloud database & storage data-access layer wrapping Supabase Auth, RLS tables, and audit logging -->
+  <!-- IMPORT: Cloud database & authentication layer -->
   <script src="js/db.js"></script>
-  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for reCAPTCHA verification, ID screening, and Gmail SMTP emails -->
+  <!-- IMPORT: Cloud backend service client -->
   <script src="js/api.js"></script>
-  <!-- IMPORT: Shared authentication controller handling role-based login, failed-attempt lockout, and OTP password reset -->
+  <!-- IMPORT: Unified sign-in controller -->
   <script src="js/login.js"></script>
 </body>
 </html>

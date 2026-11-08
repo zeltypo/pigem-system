@@ -193,20 +193,6 @@ CREATE TABLE public.system_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE public.popup_guides (
-  id TEXT PRIMARY KEY,
-  portal TEXT NOT NULL,
-  audience_tone TEXT NOT NULL DEFAULT 'polite',
-  title TEXT NOT NULL,
-  intro TEXT NOT NULL,
-  steps JSONB NOT NULL DEFAULT '[]'::jsonb,
-  footer_note TEXT NOT NULL DEFAULT '',
-  button_label TEXT NOT NULL DEFAULT 'Got It',
-  auto_show BOOLEAN NOT NULL DEFAULT true,
-  active BOOLEAN NOT NULL DEFAULT true,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 
@@ -223,7 +209,6 @@ ALTER TABLE public.provider_updates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.login_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.popup_guides ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow all on users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on plans" ON public.plans FOR ALL USING (true) WITH CHECK (true);
@@ -238,7 +223,6 @@ CREATE POLICY "Allow all on provider_updates" ON public.provider_updates FOR ALL
 CREATE POLICY "Allow all on notifications" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on login_history" ON public.login_history FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on system_logs" ON public.system_logs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all on popup_guides" ON public.popup_guides FOR ALL USING (true) WITH CHECK (true);
 
 INSERT INTO storage.buckets (id, name, public) VALUES
   ('website-assets', 'website-assets', true),
@@ -275,94 +259,9 @@ ON CONFLICT (id) DO UPDATE SET
 
 INSERT INTO public.website_content (id, data) VALUES (
   'main',
-  '{"logo_image": "logo.png", "area_text": "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.", "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
+  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "area_text": "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.", "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
-
-INSERT INTO public.popup_guides (id, portal, audience_tone, title, intro, steps, footer_note, button_label, auto_show, active) VALUES
-  (
-    'home_welcome',
-    'public',
-    'polite',
-    'How to Apply for Red Fiber Internet Online',
-    'Welcome to PIGEM Combined Facilities Support Services. Applying for home fiber internet takes only a few minutes:',
-    '["Choose the monthly Red Fiber plan that fits your household.", "Prepare an active Gmail address, your mobile number, and one valid government ID.", "Pin your house location on the map so our local team can check fiber availability.", "Submit your form to receive your official Reference Number right away."]'::jsonb,
-    'Have an existing application? Click Customer Login anytime to check your status.',
-    'Got It',
-    false,
-    true
-  ),
-  (
-    'apply_before_start',
-    'apply',
-    'polite',
-    'Welcome! Quick Instructions Before You Apply',
-    'Thank you for applying with PIGEM Combined Facilities Support Services. To make your registration smooth and accurate, please keep these simple reminders in mind:',
-    '["Select Your Plan & Enter Legal Name: Type your name and birth date exactly as printed on your valid government ID.", "Verify Your Contact Details: Click Send OTP to receive a 6-digit code in your Gmail inbox and confirm your Gmail address and mobile number.", "Pin Your Installation Address: Drag the map pin to your exact house or building and include a nearby landmark.", "Upload Clear Front & Back ID Photos: Place your original ID flat in a bright area with all 4 corners visible and no flash glare."]'::jsonb,
-    'Once submitted, your official Reference Number appears immediately while our team reviews your application.',
-    'Start My Application',
-    true,
-    true
-  ),
-  (
-    'customer_portal_guide',
-    'customer',
-    'polite',
-    'Welcome to Your Customer Portal',
-    'Here you can comfortably monitor your internet service application from submission to installation:',
-    '["Processing: Your application is actively being reviewed and coordinated by our team.", "Needs Correction (Inside Processing): If a detail or ID photo needs a quick update, a clear update form will appear right inside your application card.", "Approved or Rejected: Once finalized, you will receive a Gmail notice and see your final status here."]'::jsonb,
-    'You can reopen this guide anytime using the Guide button in the top navigation bar.',
-    'Continue to My Applications',
-    true,
-    true
-  ),
-  (
-    'agent_workspace_guide',
-    'agent',
-    'professional',
-    'Agent Workspace Quick Guide',
-    'Welcome to Application Handling Management. Follow this clean 4-step workflow for every customer application:',
-    '["Claim from Queue: Open Application Queue to claim incoming customer applications.", "Check Screening & ID Copies: Inspect the Cropped & Enhanced Copy alongside the Original Uploaded Photo. If Auto-Screening is unavailable, proceed directly using the Original Uploaded Photo.", "Forward for Encoding: Once verified, set status to Encoding when forwarding the application to the Provider Validator.", "Record Validator Decision: Update status to Approved or Rejected based on the Validator result, or use the optional Request Correction panel only if customer updates are needed."]'::jsonb,
-    'Customers only ever see three main statuses: Processing, Approved, and Rejected.',
-    'Open Workspace',
-    true,
-    true
-  ),
-  (
-    'manager_dashboard_guide',
-    'manager',
-    'professional',
-    'Manager Monitoring & CMS Guide',
-    'Welcome to Application Monitoring Management. Your dashboard organizes daily operations and public content cleanly:',
-    '["Queue & Override Monitoring: Track all customer applications, reassign agents, or update application statuses when needed.", "Verification Team Monitoring: Monitor active agent workloads and referral links (internal staff business accounts are provisioned by the System Administrator).", "Website Content Management System (CMS): Update hero banners, logos, plans, company profile, and FAQs safely without interrupting the live public website.", "Customer Announcements: Publish website announcements and dispatch promotional offers via PIGEM Gmail SMTP exclusively to opted-in @gmail.com Customers."]'::jsonb,
-    'Internal system notices appear directly in your dashboard notifications whenever Maintenance Mode or Auto-Screening status changes.',
-    'Continue to Dashboard',
-    true,
-    true
-  ),
-  (
-    'admin_technical_guide',
-    'admin',
-    'technical',
-    'Technical Management System - Cloud Architecture & Controls',
-    'Administrator diagnostic reference for Vercel Serverless FastAPI endpoints, OpenCV + Google Gemini Vision screening, account governance, and in-system status alerts:',
-    '["Vercel Serverless FastAPI (/api): Hosts REST endpoints (/api/health, /api/verify-captcha, /api/screen-async, /api/screen, /api/notify, /api/polite-remark) serving all external and internal web portals.", "Two-Stage OpenCV + Gemini Vision Pipeline: Stage 1 runs OpenCV blur, glare, brightness, and contrast diagnostics; Stage 2 generates a 4-corner perspective-cropped working copy in documents/cropped/ and executes Google Gemini Vision OCR + deterministic field comparison for human Agent confirmation.", "Account & Username Governance: Every Customer, Agent, Manager, and Admin account holds a unique username alongside its role-governed email address; Customers receive Gmail SMTP notifications while internal staff receive in-system website notifications.", "Protected System Switches: Maintenance Mode, AI Screening toggles, and Popup Guides (public.popup_guides) require explicit admin confirmation and broadcast status notifications to internal dashboards."]'::jsonb,
-    'All administrative actions and login sessions are recorded in public.system_logs and public.login_history.',
-    'Proceed to Console',
-    true,
-    true
-  )
-ON CONFLICT (id) DO UPDATE SET
-  portal = EXCLUDED.portal,
-  audience_tone = EXCLUDED.audience_tone,
-  title = EXCLUDED.title,
-  intro = EXCLUDED.intro,
-  steps = EXCLUDED.steps,
-  footer_note = EXCLUDED.footer_note,
-  button_label = EXCLUDED.button_label,
-  auto_show = EXCLUDED.auto_show,
-  active = EXCLUDED.active,
-  updated_at = now();
 
 NOTIFY pgrst, 'reload schema';
 SELECT 'Database setup complete.' AS result;

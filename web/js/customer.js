@@ -10,12 +10,6 @@ window.addEventListener("DOMContentLoaded", async function () {
   await loadMyApplications();
   initDashUI(currentCustomer, myApps, selectMyApp);
 
-  setTimeout(function () {
-    if (typeof POPUP_GUIDE_MANAGER !== "undefined") {
-      POPUP_GUIDE_MANAGER.autoShowForPortal("customer_portal_guide");
-    }
-  }, 200);
-
   setInterval(async function () {
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
     if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") return;

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
      FILE OVERVIEW: System Administrator Governance & Cloud Diagnostics Console (web/admin.html)
-     PURPOSE: Controls staff accounts, maintenance mode, automated screening toggle, cloud API health checks, and system logs.
+     PURPOSE: Controls staff accounts, private agent registration invites, maintenance mode, automated screening toggle, cloud API health checks, and system logs.
      HOSTING: Deployed as static cloud frontend on Vercel with Supabase & /api/*
      ========================================================================== -->
 <html lang="en">
@@ -10,7 +10,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Technical Management System - PIGEM Admin Console</title>
   <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
-  <link rel="icon" type="image/png" href="assets/images/logo.png" />
+  <link rel="icon" type="image/png" href="assets/images/black-logo-white-mode.png" />
   <!-- IMPORT: Unified PIGEM corporate design system stylesheet (responsive layout, cards, forms, and dark mode) -->
   <link rel="stylesheet" href="assets/style.css" />
 </head>
@@ -18,7 +18,7 @@
 
   <!-- SPLASH SCREEN -->
   <div id="splash" class="splash">
-    <img src="assets/images/logo.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
+    <img src="assets/images/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
     <b>Technical Management System</b>
     <span class="muted" style="font-size:13px">PIGEM System Administration</span>
   </div>
@@ -28,7 +28,7 @@
     <!-- SIDEBAR -->
     <aside class="dash-side">
       <div class="brand">
-        <img src="assets/images/logo.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
+        <img src="assets/images/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
         <div>
           <b>Technical System</b>
           <span>Admin Console</span>
@@ -36,31 +36,31 @@
       </div>
 
       <button id="nav-overview" data-nav-label="Overview" data-nav-target="overview" class="active" onclick="showTab('overview')">
-        <span><img src="assets/images/placeholder.png" data-icon="overview.png" alt="Overview" class="icon-placeholder" title="Flaticon placeholder: overview.png" />Overview</span>
+        <span><img data-img="icons/overview.png" src="assets/images/icons/overview.png" alt="Overview (not available)" class="icon-img" />Overview</span>
       </button>
       <button id="nav-maintenance" data-nav-label="Maintenance" data-nav-target="maintenance" onclick="showTab('maintenance')">
-        <span><img src="assets/images/placeholder.png" data-icon="maintenance.png" alt="Maintenance" class="icon-placeholder" title="Flaticon placeholder: maintenance.png" />Maintenance</span>
+        <span><img data-img="icons/maintenance.png" src="assets/images/icons/maintenance.png" alt="Maintenance (not available)" class="icon-img" />Maintenance</span>
       </button>
       <button id="nav-ai" data-nav-label="AI Screening Control" data-nav-target="ai" onclick="showTab('ai')">
-        <span><img src="assets/images/placeholder.png" data-icon="ai-engine.png" alt="AI" class="icon-placeholder" title="Flaticon placeholder: ai-engine.png" />AI</span>
+        <span><img data-img="icons/ai-engine.png" src="assets/images/icons/ai-engine.png" alt="AI (not available)" class="icon-img" />AI</span>
       </button>
-      <button id="nav-apis" data-nav-label="APIs & Services" data-nav-target="apis" onclick="showTab('apis')">
-        <span><img src="assets/images/placeholder.png" data-icon="api-plug.png" alt="APIs" class="icon-placeholder" title="Flaticon placeholder: api-plug.png" />APIs</span>
+      <button id="nav-apis" data-nav-label="APIs and Services" data-nav-target="apis" onclick="showTab('apis')">
+        <span><img data-img="icons/api-plug.png" src="assets/images/icons/api-plug.png" alt="APIs (not available)" class="icon-img" />APIs</span>
       </button>
-      <button id="nav-accounts" data-nav-label="Accounts & Roles" data-nav-target="accounts" onclick="showTab('accounts')">
-        <span><img src="assets/images/placeholder.png" data-icon="users.png" alt="Accounts" class="icon-placeholder" title="Flaticon placeholder: users.png" />Accounts</span>
+      <button id="nav-accounts" data-nav-label="Accounts and Roles" data-nav-target="accounts" onclick="showTab('accounts')">
+        <span><img data-img="icons/users.png" src="assets/images/icons/users.png" alt="Accounts (not available)" class="icon-img" />Accounts</span>
       </button>
-      <button id="nav-logs" data-nav-label="Audit & Login Logs" data-nav-target="logs" onclick="showTab('logs')">
-        <span><img src="assets/images/placeholder.png" data-icon="logs.png" alt="Logs" class="icon-placeholder" title="Flaticon placeholder: logs.png" />Logs</span>
+      <button id="nav-logs" data-nav-label="Audit and Login Logs" data-nav-target="logs" onclick="showTab('logs')">
+        <span><img data-img="icons/logs.png" src="assets/images/icons/logs.png" alt="Logs (not available)" class="icon-img" />Logs</span>
       </button>
       <button id="nav-calendar" data-nav-label="System Calendar" data-nav-target="calendar" onclick="showTab('calendar')">
-        <span><img src="assets/images/placeholder.png" data-icon="calendar.png" alt="Calendar" class="icon-placeholder" title="Flaticon placeholder: calendar.png" />Calendar</span>
+        <span><img data-img="icons/calendar.png" src="assets/images/icons/calendar.png" alt="Calendar (not available)" class="icon-img" />Calendar</span>
       </button>
-      <button id="nav-reports" data-nav-label="Reports & Export" data-nav-target="reports" onclick="showTab('reports')">
-        <span><img src="assets/images/placeholder.png" data-icon="reports.png" alt="Reports" class="icon-placeholder" title="Flaticon placeholder: reports.png" />Reports</span>
+      <button id="nav-reports" data-nav-label="Reports and Export" data-nav-target="reports" onclick="showTab('reports')">
+        <span><img data-img="icons/reports.png" src="assets/images/icons/reports.png" alt="Reports (not available)" class="icon-img" />Reports</span>
       </button>
-      <button type="button" data-nav-label="Settings & Theme" data-nav-target="settings" onclick="toggleProfileDrawer()">
-        <span><img src="assets/images/placeholder.png" data-icon="settings.png" alt="Settings" class="icon-placeholder" title="Flaticon placeholder: settings.png" />Settings</span>
+      <button type="button" data-nav-label="Settings and Theme" data-nav-target="settings" onclick="toggleProfileDrawer()">
+        <span><img data-img="icons/settings.png" src="assets/images/icons/settings.png" alt="Settings (not available)" class="icon-img" />Settings</span>
       </button>
 
       <div class="side-foot">© 2026 All Rights Reserved</div>
@@ -82,11 +82,11 @@
         </div>
 
         <div class="top-actions">
-          <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('admin_technical_guide')">Technical Guide</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('admin_technical_guide')">Tutorial</button>
           <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
-            <img src="assets/images/placeholder.png" data-icon="bell.png" alt="Notifications" class="icon-placeholder" title="Flaticon placeholder: bell.png" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+            <img data-img="icons/bell.png" src="assets/images/icons/bell.png" alt="Notifications (not available)" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
           </button>
-          <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account & Theme">AD</button>
+          <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">AD</button>
         </div>
       </div>
 
@@ -116,10 +116,10 @@
         </div>
       </section>
 
-      <!-- TAB: MAINTENANCE & POP-UP GUIDES -->
+      <!-- TAB: MAINTENANCE MODE -->
       <section id="tab-maintenance" class="hidden">
         <div class="card" style="margin-bottom:18px">
-          <h2 style="font-size:20px; margin-bottom:6px">Website &amp; Form Maintenance Mode</h2>
+          <h2 style="font-size:20px; margin-bottom:6px">Website and Form Maintenance Mode</h2>
           <p class="muted" style="font-size:13px; margin-bottom:16px">When Maintenance Mode is enabled (with explicit confirmation), public visitors attempting to access the website or submit new applications see a maintenance notice while internal staff continue working.</p>
           <div id="maint-msg" class="msg"></div>
           <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--soft); margin-bottom:14px; flex-wrap:wrap; gap:10px">
@@ -128,25 +128,6 @@
               <div id="maint-status-label" class="muted" style="font-size:13px">Currently OFF (Public website is accepting applications)</div>
             </div>
             <button id="btn-toggle-maint" type="button" class="btn btn-red" onclick="toggleMaintMode()">Enable Maintenance Mode</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 style="margin-bottom:6px">System-Wide Pop-up Instructions &amp; Portal Guides (<code>public.popup_guides</code>)</h3>
-          <p class="muted" style="font-size:13px; margin-bottom:14px">Manage polite instruction pop-ups across external &amp; internal portals (Customer, Agent, Manager) and technical reference pop-ups for Admin.</p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Guide ID / Portal</th>
-                  <th>Audience Tone</th>
-                  <th>Title</th>
-                  <th>Auto-Show on Entry</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="admin-popup-guides-body"></tbody>
-            </table>
           </div>
         </div>
       </section>
@@ -158,7 +139,7 @@
           <p class="muted" style="font-size:13px; margin-bottom:16px">Control the Cloud Python FastAPI + OpenCV + Google Gemini Vision ID screening engine. When disabled, staff queues switch cleanly to manual document verification.</p>
           <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">
             <div>
-              <b>AI ID Readability &amp; Vision OCR Screening</b>
+              <b>AI ID Readability, Duplicate Check, and Vision OCR Screening</b>
               <div id="ai-status-label" class="muted" style="font-size:13px">Currently ENABLED</div>
             </div>
             <button id="btn-toggle-ai" type="button" class="btn btn-red" onclick="toggleAiMode()">Disable AI Screening</button>
@@ -166,17 +147,17 @@
         </div>
 
         <div class="card">
-          <h3 style="margin-bottom:12px">Recent AI Screening &amp; Verification Activity</h3>
+          <h3 style="margin-bottom:12px">Recent AI Screening and Verification Activity</h3>
           <div id="admin-ai-log-list" class="chat-log"></div>
         </div>
       </section>
 
-      <!-- TAB: APIS & SERVICES -->
+      <!-- TAB: APIS AND SERVICES -->
       <section id="tab-apis" class="hidden">
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
             <div>
-              <h2 style="font-size:20px">Connected APIs &amp; Cloud Services</h2>
+              <h2 style="font-size:20px">Connected APIs and Cloud Services</h2>
               <p class="muted" style="font-size:13px">Live connection status for Vercel FastAPI Serverless, Google Gemini Vision, OpenCV, Google reCAPTCHA v2, LocationIQ + OpenStreetMap, Supabase, and Gmail SMTP.</p>
             </div>
             <button type="button" class="btn btn-outline btn-sm" onclick="checkApiHealth()">Check Live Health</button>
@@ -184,14 +165,14 @@
           <div id="api-health-list" class="grid-2"></div>
         </div>
 
-        <!-- GMAIL SMTP EMAIL TEMPLATE DISPATCHER & TESTER -->
+        <!-- GMAIL SMTP EMAIL TEMPLATE DISPATCHER AND TESTER -->
         <div class="card" style="margin-top:20px">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
-            <h3 style="font-size:18px">Gmail SMTP Email Delivery &amp; Template Tester</h3>
+            <h3 style="font-size:18px">PIGEM Support Services Email Delivery and Template Tester</h3>
             <span id="smtp-status-badge" class="badge badge-green">Gmail SMTP Engine</span>
           </div>
           <p class="muted" style="font-size:13px; margin-bottom:16px">
-            Test live customer email templates (6-Digit OTP, Application Confirmation, Privacy-Safe Correction Notice, Status Update, and Promotional Announcement) delivered exclusively to @gmail.com Customer accounts via Gmail SMTP.
+            Test live customer email templates (6-Digit OTP, Application Confirmation, Privacy-Safe Correction Notice, Status Update, and Promotional Announcement) delivered exclusively to @gmail.com Customer accounts.
           </p>
           <div id="test-email-msg" class="msg"></div>
           <div class="grid-3" style="margin-bottom:14px">
@@ -203,8 +184,8 @@
             <div class="field">
               <label>Email Template</label>
               <select id="test-email-type">
-                <option value="otp">6-Digit Security OTP (Contact &amp; PW Reset)</option>
-                <option value="application_confirmation">Application Confirmation (Ref No &amp; Specs)</option>
+                <option value="otp">6-Digit Security OTP (5-Min Validity)</option>
+                <option value="application_confirmation">Application Confirmation (Ref No and Specs)</option>
                 <option value="correction_notice">Correction Notice (RA 10173 Privacy Safe)</option>
                 <option value="status_update">Application Status Update (Approved / Encoded)</option>
                 <option value="promotional">Promotional Announcement (Community Offers)</option>
@@ -212,7 +193,7 @@
             </div>
             <div class="field" style="display:flex; align-items:flex-end">
               <button type="button" class="btn btn-red" id="btn-test-email" style="width:100%" onclick="adminSendTestEmail()">
-                Send Live Email via Gmail SMTP
+                Send Live Email
               </button>
             </div>
           </div>
@@ -221,28 +202,54 @@
 
       <!-- TAB: ACCOUNTS -->
       <section id="tab-accounts" class="hidden">
-        <div class="card" style="margin-bottom:18px">
-          <h3 style="margin-bottom:6px">Provision Internal Business Account (Agent or Manager)</h3>
-          <p class="muted" style="font-size:13px; margin-bottom:12px">
-            Internal staff sign in using their unique username or business email (such as <code>agent1@pigem.com</code> or <code>manager@pigem.com</code>). Customer accounts use <code>@gmail.com</code> with a unique username and are created automatically upon application submission. Only one System Administrator account exists in the system.
-          </p>
-          <div id="acc-msg" class="msg"></div>
-          <div class="grid-3">
-            <div class="field"><label>Full Name</label><input id="new-acc-name" type="text" placeholder="Maria Santos" /></div>
-            <div class="field"><label>Username</label><input id="new-acc-username" type="text" minlength="3" maxlength="30" placeholder="maria.santos" /></div>
-            <div class="field"><label>Business Account Email</label><input id="new-acc-email" type="email" placeholder="maria@pigem.com" /></div>
+        <div class="grid-2" style="margin-bottom:18px">
+          <!-- CARD 1: CREATE INTERNAL STAFF ACCOUNT -->
+          <div class="card">
+            <h3 style="margin-bottom:6px">Create Internal Staff Account (Agent or Manager)</h3>
+            <p class="muted" style="font-size:13px; margin-bottom:12px">
+              Internal staff sign in using their unique username or official email (`@pigem.ph`). Customer accounts use `@gmail.com` with a unique username.
+            </p>
+            <div id="acc-msg" class="msg"></div>
+            <div class="grid-3">
+              <div class="field"><label>First Name <span class="req">*</span></label><input id="new-acc-fname" type="text" placeholder="Maria" /></div>
+              <div class="field"><label>Middle Name</label><input id="new-acc-mname" type="text" placeholder="Reyes" /></div>
+              <div class="field"><label>Last Name <span class="req">*</span></label><input id="new-acc-lname" type="text" placeholder="Santos" /></div>
+            </div>
+            <div class="grid-2">
+              <div class="field"><label>Username <span class="req">*</span></label><input id="new-acc-username" type="text" minlength="3" maxlength="30" placeholder="maria_santos" /></div>
+              <div class="field"><label>Official Email (@pigem.ph) <span class="req">*</span></label><input id="new-acc-email" type="email" placeholder="maria@pigem.ph" /></div>
+            </div>
+            <div class="grid-2">
+              <div class="field"><label>Password <span class="req">*</span></label><input id="new-acc-pw" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" /></div>
+              <div class="field">
+                <label>Internal Role</label>
+                <select id="new-acc-role">
+                  <option value="agent">Agent (Application Handling)</option>
+                  <option value="manager">Manager (Monitoring and Content)</option>
+                </select>
+              </div>
+            </div>
+            <button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="adminCreateUser()">+ Create Staff Account</button>
           </div>
-          <div class="grid-2">
-            <div class="field"><label>Initial Password</label><input id="new-acc-pw" type="password" placeholder="Min. 6 characters" /></div>
+
+          <!-- CARD 2: GENERATE PRIVATE ONE-TIME AGENT REGISTRATION LINK -->
+          <div class="card">
+            <h3 style="margin-bottom:6px">Generate Private Agent Registration Link</h3>
+            <p class="muted" style="font-size:13px; margin-bottom:12px">
+              Generate a private one-time registration link (`agent-register.html?invite=INV-...`) so a new verification agent can register their basic details, username, and `@pigem.ph` account. Nobody can visit the page without an active invite token.
+            </p>
+            <div id="adm-invite-msg" class="msg"></div>
             <div class="field">
-              <label>Internal Role</label>
-              <select id="new-acc-role">
-                <option value="agent">Agent (Application Handling)</option>
-                <option value="manager">Manager (Monitoring &amp; Content)</option>
-              </select>
+              <label>Invite Label / Note</label>
+              <input id="adm-invite-note" type="text" placeholder="e.g. Verification Agent - Cavite Field Team" />
+            </div>
+            <button type="button" class="btn btn-outline" style="width:100%" onclick="adminGenerateAgentInvite()">Generate Private Agent Registration Link</button>
+            <div id="adm-invite-output-wrap" class="hidden" style="margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">
+              <div class="tiny muted" style="font-weight:700; margin-bottom:4px">Private One-Time Registration URL:</div>
+              <input id="adm-invite-url" type="text" readonly style="margin-bottom:8px; font-size:12px" />
+              <button type="button" class="btn btn-outline btn-sm" onclick="adminCopyInviteUrl()">Copy Registration Link</button>
             </div>
           </div>
-          <button type="button" class="btn btn-red btn-sm" onclick="adminCreateUser()">+ Create Business Account</button>
         </div>
 
         <div class="card">
@@ -278,7 +285,7 @@
             </div>
           </div>
           <div class="card">
-            <h3 style="margin-bottom:12px">Login &amp; Logout History</h3>
+            <h3 style="margin-bottom:12px">Login and Logout History</h3>
             <div class="table-wrap">
               <table>
                 <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Event</th></tr></thead>
@@ -300,12 +307,11 @@
       <!-- TAB: REPORTS -->
       <section id="tab-reports" class="hidden">
         <div class="card" style="margin-bottom:18px">
-          <h2 style="font-size:20px; margin-bottom:6px">System Reports &amp; CSV Export</h2>
+          <h2 style="font-size:20px; margin-bottom:6px">System Reports and CSV Export</h2>
           <p class="muted" style="font-size:13px; margin-bottom:14px">Export all application records to CSV (opens in Microsoft Excel or Google Sheets) or print a formatted summary report.</p>
           <div style="display:flex; gap:10px; flex-wrap:wrap">
-            <button type="button" class="btn btn-red" onclick="exportApplicationsCsv()"><img src="assets/images/placeholder.png" data-icon="download.png" alt="Download" class="icon-placeholder" title="Flaticon placeholder: download.png" />Download Applications CSV</button>
-            <button type="button" class="btn btn-outline" onclick="window.print()"><img src="assets/images/placeholder.png" data-icon="printer.png" alt="Print" class="icon-placeholder" title="Flaticon placeholder: printer.png" />Print Summary Report</button>
-            
+            <button type="button" class="btn btn-red" onclick="exportApplicationsCsv()"><img data-img="icons/download.png" src="assets/images/icons/download.png" alt="Download (not available)" class="icon-img" />Download Applications CSV</button>
+            <button type="button" class="btn btn-outline" onclick="window.print()"><img data-img="icons/printer.png" src="assets/images/icons/printer.png" alt="Print (not available)" class="icon-img" />Print Summary Report</button>
           </div>
         </div>
       </section>
@@ -328,7 +334,7 @@
   <div id="profile-drawer" class="drawer hidden" onclick="if(event.target===this) toggleProfileDrawer()">
     <div class="drawer-panel">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
-        <b>Admin Account &amp; Theme</b>
+        <b>Admin Account and Theme</b>
         <button type="button" class="btn btn-outline btn-sm" onclick="toggleProfileDrawer()">Close</button>
       </div>
       <div id="profile-drawer-body"></div>
