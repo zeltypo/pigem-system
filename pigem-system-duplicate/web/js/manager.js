@@ -374,10 +374,10 @@ function openMgrAppModal(appId) {
   if (app.cropped_id_url || app.id_front_url) {
     docLinksHtml = '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">';
     if (app.cropped_id_url) {
-      docLinksHtml += '<a href="' + escapeHtml(app.cropped_id_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="assets/images/icons/preview.png" alt="Cropped ID (not available)" class="icon-img" />View Cropped and Enhanced ID</a>';
+      docLinksHtml += '<a href="' + escapeHtml(app.cropped_id_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/preview.png" alt="Cropped ID (not available)" class="icon-img" />View Cropped and Enhanced ID</a>';
     }
     if (app.id_front_url) {
-      docLinksHtml += '<a href="' + escapeHtml(app.id_front_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/camera.png" src="assets/images/icons/camera.png" alt="Original ID (not available)" class="icon-img" />View Original Uploaded ID</a>';
+      docLinksHtml += '<a href="' + escapeHtml(app.id_front_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Original ID (not available)" class="icon-img" />View Original Uploaded ID</a>';
     }
     docLinksHtml += '</div>';
   }

@@ -193,7 +193,7 @@ async function checkApiHealth() {
   var geminiOk = Boolean(pyOk && data && data.gemini);
   var opencvOk = Boolean(pyOk && data && data.opencv);
   var recaptchaOk = Boolean(pyOk && data && data.recaptcha);
-  var smtpOk = Boolean(pyOk && data && (data.smtp || data.resend));
+  var smtpOk = Boolean(pyOk && data && data.smtp);
   var locationIqOk = Boolean(CONFIG.LOCATIONIQ_API_KEY);
   var supaOk = !IS_DEMO_MODE;
 

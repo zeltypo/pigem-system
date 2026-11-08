@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<!-- ==========================================================================
+     FILE OVERVIEW: Customer Portal Sign-In Page (web/login.html)
+     PURPOSE: Authenticates Customer accounts using Username or Gmail, Remember Me,
+              Google reCAPTCHA v2, and a 3-Tab Account Recovery Modal
+              (Password, Username, Email Address) with 6-square OTP PIN verification.
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+  <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
+  <title>Customer Login | Combined Facilities Support Services</title>
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
+  <link rel="stylesheet" href="../style.css">
+  <!-- IMPORT: Google reCAPTCHA v2 client script -->
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+</head>
+<body class="public-page">
+
+  <!-- Simple Top Bar -->
+  <header class="site-header">
+    <div class="container" style="display:flex; align-items:center; justify-content:space-between; height:64px;">
+      <a href="../index.html" class="btn btn-small">&#8592; Back</a>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Sign-In Card -->
+  <main class="auth-page">
+    <div class="card auth-card">
+      <div class="center">
+        <h2>Customer Login</h2>
+        <p class="small muted mt" style="margin-top:4px;">Sign in using your username or email</p>
+      </div>
+
+      <form class="mt-big" onsubmit="handleLogin(event)">
+        <div>
+          <label for="email">Username or Email</label>
+          <input id="email" type="text" autocomplete="username" placeholder="username or yourname@gmail.com" required>
+        </div>
+
+        <div class="mt">
+          <div class="row between">
+            <label for="password" style="margin:0">Password</label>
+            <a href="#" class="small" style="color:var(--red); font-weight:600;" onclick="openForgotModal(); return false;">Forgot Password or Can't Log In?</a>
+          </div>
+          <input id="password" type="password" class="mt" placeholder="Enter your password" required>
+        </div>
+
+        <div class="row between mt" style="align-items:center;">
+          <label class="check" style="margin:0; font-weight:500; font-size:13px;">
+            <input id="remember-me" type="checkbox">
+            <span>Remember me</span>
+          </label>
+        </div>
+
+        <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">
+          <div id="login-captcha-box" style="min-width:304px; min-height:78px;"></div>
+        </div>
+
+        <div class="mt-big">
+          <button id="btn-login" type="submit" class="btn btn-red btn-full">Sign In</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script>
+window.SYSTEM = "customer";
+  </script>
+  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- IMPORT: Global cloud configuration and UI helpers -->
+  <script src="../js/config.js"></script>
+  <!-- IMPORT: Cloud database & authentication layer -->
+  <script src="../js/db.js"></script>
+  <!-- IMPORT: Cloud backend service client -->
+  <script src="../js/api.js"></script>
+  <!-- IMPORT: Unified sign-in and 3-tab account recovery controller -->
+  <script src="../js/login.js"></script>
+</body>
+</html>

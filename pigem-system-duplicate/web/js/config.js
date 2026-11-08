@@ -139,29 +139,14 @@ var DEFAULT_CONTENT = {
 
 function getImageUrl(filePath) {
   if (!filePath) return "";
-  if (filePath.indexOf("data:") === 0 || filePath.indexOf("http") === 0) return filePath;
-  if (CONFIG.ASSET_SOURCE === "supabase" && CONFIG.SUPABASE_URL !== "") {
-    return CONFIG.SUPABASE_URL + "/storage/v1/object/public/website-assets/" + filePath;
-  }
-  if (CONFIG.ASSET_SOURCE === "server" && CONFIG.API_URL !== "") {
-    return CONFIG.API_URL + "/assets/images/" + filePath;
-  }
-  return ROOT + "assets/images/" + filePath;
+  if (filePath.indexOf("data:") === 0 || filePath.indexOf("http://") === 0 || filePath.indexOf("https://") === 0) return filePath;
+  var clean = String(filePath).replace(/^\/+/, "").replace(/^assets\/images\//, "");
+  var base = (CONFIG.SUPABASE_URL || "https://wuunqfxyejxwrawtjdrf.supabase.co").replace(/\/+$/, "");
+  return base + "/storage/v1/object/public/website-assets/" + clean;
 }
-
-var cloudAssetFailures = 0;
 
 function imageFallback(img, filePath) {
   img.onerror = null;
-  var nameLower = String(filePath || "").toLowerCase();
-  if (nameLower.indexOf("logo") !== -1) {
-    img.src = ROOT + "assets/images/" + (filePath || "black-logo-white-mode.png");
-    img.onerror = function () {
-      img.onerror = null;
-      img.src = ROOT + "assets/images/black-logo-white-mode.png";
-    };
-    return;
-  }
 }
 
 function showSystemMaintenanceNotice(customMsg) {

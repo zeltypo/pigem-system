@@ -102,8 +102,6 @@ def health():
 
         "smtp": smtp_ok,
 
-        "resend": smtp_ok,
-
         "supabase_check": _auth.is_configured(),
 
         "active_screenings": 0,

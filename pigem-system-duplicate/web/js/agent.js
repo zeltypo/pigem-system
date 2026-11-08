@@ -703,7 +703,7 @@ async function renderDetailModalContent() {
       '</div>';
   }
 
-  var rawFrontUrl = viewData.id_image_url || app.id_image_url || app.id_front_path || "assets/images/black-logo-white-mode.png";
+  var rawFrontUrl = viewData.id_image_url || app.id_image_url || app.id_front_path || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
   var croppedUrl = (activeCopyMode === "latest" && (app.cropped_id_url || app.id_cropped_url)) ? (app.cropped_id_url || app.id_cropped_url) : "";
   var displayedFrontUrl = (croppedUrl && activeIdImgMode === "cropped") ? croppedUrl : rawFrontUrl;
   var idBackPhotoUrl = viewData.id_back_image_url || viewData.id_back_path || app.id_back_image_url || app.id_back_path || "";
@@ -1066,7 +1066,7 @@ function downloadApplicantId() {
   if (!app) return;
   var url = (activeIdImgMode === "cropped" && app.cropped_id_url)
     ? app.cropped_id_url
-    : (app.id_image_url || app.id_front_path || "assets/images/black-logo-white-mode.png");
+    : (app.id_image_url || app.id_front_path || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png");
   var suffix = (activeIdImgMode === "cropped" && app.cropped_id_url) ? "-ID-Cropped.jpg" : "-ID.png";
   var a = document.createElement("a");
   a.href = url;

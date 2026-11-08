@@ -19,20 +19,24 @@
       "destination": "/web/index.html"
     },
     {
-      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts)\\.html",
-      "destination": "/web/$1.html"
-    },
-    {
-      "source": "/(about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts)",
-      "destination": "/web/$1.html"
-    },
-    {
-      "source": "/assets/(.*)",
-      "destination": "/web/assets/$1"
+      "source": "/style.css",
+      "destination": "/web/style.css"
     },
     {
       "source": "/js/(.*)",
       "destination": "/web/js/$1"
+    },
+    {
+      "source": "/html/(.*)",
+      "destination": "/web/html/$1"
+    },
+    {
+      "source": "/(about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts)\\.html",
+      "destination": "/web/html/$1.html"
+    },
+    {
+      "source": "/(about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts)",
+      "destination": "/web/html/$1.html"
     }
   ]
 }

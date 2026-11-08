@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<!-- ==========================================================================
+     FILE OVERVIEW: Customer Account Activation Page (web/activate.html)
+     PURPOSE: Accessed exclusively via the Customer's email notification link.
+              All input fields start completely empty so the Customer manually
+              enters their Gmail address, preferred Username, 6-digit OTP code,
+              and strong password.
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+  <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
+  <title>Customer Account Activation | Combined Facilities Support Services</title>
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="gray-bg">
+
+  <!-- Simple Top Bar -->
+  <header class="simple-bar">
+    <div class="container" style="display:flex; align-items:center; gap:12px;">
+      <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+      <span style="font-weight:700; font-size:16px; cursor:default; user-select:none;">Customer Account Activation</span>
+    </div>
+  </header>
+
+  <main class="auth-page" style="min-height:calc(100vh - 62px);">
+    <div class="card auth-card">
+      <div class="auth-head">
+        <h2>Activate Your Account</h2>
+        <p>Enter your registered Gmail address, preferred username, the 6-digit OTP code from your email notification, and create your password.</p>
+      </div>
+
+      <div id="already-active-box" class="notice warn mt" hidden>
+        <b>Account Already Activated:</b> This email address has already activated its Customer Account. You can sign in directly to track your application.
+        <div class="mt">
+          <a href="login.html" class="btn btn-red btn-full">Go to Customer Login</a>
+        </div>
+      </div>
+
+      <!-- All fields intentionally start empty so the Customer enters them from their email notification -->
+      <form id="activate-form" class="mt" autocomplete="off" onsubmit="submitActivation(event)">
+        <div>
+          <label for="act-email">Gmail Address</label>
+          <input id="act-email" type="email" value="" required placeholder="Enter your registered @gmail.com address">
+        </div>
+        <div class="mt">
+          <label for="act-username">Customer Username</label>
+          <input id="act-username" type="text" value="" minlength="3" maxlength="30" required placeholder="Choose your username (e.g. juan_delacruz)">
+          <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores).</div>
+        </div>
+        <div class="mt">
+          <label for="act-code">6-Digit OTP / Activation Code</label>
+          <input id="act-code" type="text" value="" maxlength="6" required placeholder="Enter 6-digit code from your email">
+        </div>
+        <div class="mt">
+          <label for="act-pass">Create Password</label>
+          <input id="act-pass" type="password" value="" data-pw-check="1" minlength="8" required placeholder="Create strong password">
+        </div>
+        <div class="mt">
+          <label for="act-pass2">Confirm Password</label>
+          <input id="act-pass2" type="password" value="" minlength="8" required placeholder="Repeat password">
+        </div>
+        <button type="submit" class="btn btn-red btn-full mt-big">Activate Account</button>
+      </form>
+    </div>
+  </main>
+
+  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- IMPORT: Global cloud configuration and UI helpers -->
+  <script src="../js/config.js"></script>
+  <!-- IMPORT: Cloud database & authentication layer -->
+  <script src="../js/db.js"></script>
+  <script>
+    function initActivatePage() {
+      var ids = ["act-email", "act-username", "act-code", "act-pass", "act-pass2"];
+      for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        if (el) el.value = "";
+      }
+      if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles();
+    }
+
+    async function submitActivation(event) {
+      event.preventDefault();
+      var email = document.getElementById("act-email").value.trim().toLowerCase();
+      var username = document.getElementById("act-username").value.trim().toLowerCase();
+      var code = document.getElementById("act-code").value.trim();
+      var pass = document.getElementById("act-pass").value;
+      var pass2 = document.getElementById("act-pass2").value;
+
+      if (typeof isValidUsername === "function" && !isValidUsername(username)) {
+        showAlert("Invalid Username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).", "warn");
+        return;
+      }
+      if (typeof isStrongPassword === "function" && !isStrongPassword(pass)) {
+        showAlert("Weak Password", "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.", "warn");
+        return;
+      }
+      if (pass !== pass2) {
+        showAlert("Password Mismatch", "Your password and confirm password do not match.", "bad");
+        return;
+      }
+
+      try {
+        var activatedUser = await dbActivateCustomerAccount(email, code, pass, username);
+        var unameLabel = (activatedUser && activatedUser.username) ? (" (@" + activatedUser.username + ")") : "";
+        openPopup(
+          "<h3>Account Activated!</h3>" +
+          '<div class="notice good mt">Your Customer Account' + escapeHtml(unameLabel) + " is now active. You can now sign in and monitor your internet service application.</div>" +
+          '<div class="row mt" style="justify-content:flex-end">' +
+            '<a class="btn btn-red" href="customer.html">Open My Customer Account</a>' +
+          "</div>"
+        );
+      } catch (err) {
+        showAlert("Activation Error", err.message, "bad");
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", initActivatePage);
+  </script>
+</body>
+</html>

@@ -151,7 +151,6 @@ def health():
         "auto_screening_ready": bool(opencv_ok and gemini_ok),
         "recaptcha": recaptcha_ok,
         "smtp": smtp_ok,
-        "resend": smtp_ok,
         "supabase_check": _auth.is_configured(),
         "active_screenings": 0,
     }

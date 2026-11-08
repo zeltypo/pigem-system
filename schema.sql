@@ -5,6 +5,8 @@ CREATE TABLE public.users (
   full_name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'customer'
     CHECK (role IN ('admin', 'manager', 'agent', 'customer')),
+  phone TEXT,
+  password_hash TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
   activated BOOLEAN NOT NULL DEFAULT true,
   activation_code TEXT,
@@ -69,6 +71,7 @@ CREATE TABLE public.applications (
   middle_name TEXT DEFAULT 'N/A',
   last_name TEXT,
   full_name TEXT NOT NULL,
+  customer_name TEXT,
   birth_date TEXT,
   phone TEXT NOT NULL,
   phone_alt TEXT,
@@ -95,7 +98,11 @@ CREATE TABLE public.applications (
   id_front_path TEXT,
   id_back_path TEXT,
   id_image_url TEXT,
+  id_back_image_url TEXT,
   cropped_id_path TEXT,
+  id_cropped_url TEXT,
+  id_back_cropped_url TEXT,
+  cropped_id_url TEXT,
   remarks TEXT,
   agree_tu BOOLEAN NOT NULL DEFAULT false,
   original_copy JSONB,
@@ -125,8 +132,14 @@ CREATE INDEX idx_applications_created_at ON public.applications (created_at DESC
 CREATE TABLE public.documents (
   id BIGSERIAL PRIMARY KEY,
   application_id TEXT NOT NULL REFERENCES public.applications(id) ON DELETE CASCADE,
-  doc_type TEXT NOT NULL,
-  file_path TEXT NOT NULL,
+  id_type TEXT,
+  id_number TEXT,
+  front_image_url TEXT,
+  back_image_url TEXT,
+  cropped_front_url TEXT,
+  cropped_back_url TEXT,
+  doc_type TEXT,
+  file_path TEXT,
   version TEXT NOT NULL DEFAULT 'original',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -134,6 +147,16 @@ CREATE TABLE public.documents (
 CREATE TABLE public.screenings (
   id BIGSERIAL PRIMARY KEY,
   application_id TEXT NOT NULL REFERENCES public.applications(id) ON DELETE CASCADE,
+  document_id BIGINT REFERENCES public.documents(id) ON DELETE SET NULL,
+  quality_passed BOOLEAN DEFAULT true,
+  overall_match BOOLEAN DEFAULT true,
+  blur_score DOUBLE PRECISION DEFAULT 0,
+  brightness DOUBLE PRECISION DEFAULT 0,
+  glare_pct DOUBLE PRECISION DEFAULT 0,
+  extracted_fields JSONB DEFAULT '{}'::jsonb,
+  field_comparisons JSONB DEFAULT '{}'::jsonb,
+  notes JSONB DEFAULT '[]'::jsonb,
+  summary TEXT,
   quality JSONB,
   ocr JSONB,
   comparisons JSONB,
@@ -262,6 +285,3 @@ INSERT INTO public.website_content (id, data) VALUES (
   '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "area_text": "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.", "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
-
-NOTIFY pgrst, 'reload schema';
-SELECT 'Database setup complete.' AS result;

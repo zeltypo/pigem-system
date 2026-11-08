@@ -345,18 +345,16 @@ async function startRecoveryVerification() {
   try {
     var info = await dbFindAccountForRecovery(query, _recoveryState.tab);
     _recoveryState.account = info;
-    _recoveryState.channel = _recoveryState.tab === "email" ? "mobile" : "email";
+    _recoveryState.channel = "email";
     _recoveryState.remainingSec = 300;
 
-    if (_recoveryState.channel === "email") {
-      await apiSendOtpEmail(
-        info.email,
-        info.code,
-        "recover your " + _recoveryState.tab,
-        info.fullName,
-        info.refTag
-      );
-    }
+    await apiSendOtpEmail(
+      info.email,
+      info.code,
+      "recover your " + _recoveryState.tab,
+      info.fullName,
+      info.refTag
+    );
     renderRecoveryOtpPinModal();
   } catch (err) {
     if (btn) {
@@ -371,31 +369,13 @@ function renderRecoveryOtpPinModal() {
   var info = _recoveryState.account;
   if (!info) return;
 
-  var isMobile = _recoveryState.channel === "mobile";
-  var maskedTarget = isMobile ? info.maskedPhone : info.maskedEmail;
-  var sentLine = isMobile
-    ? "We've sent a verification code to your mobile number <b>" + escapeHtml(maskedTarget) + "</b>"
-    : "We've sent a verification code to your email <b>" + escapeHtml(maskedTarget) + "</b>";
-
-  var smsSampleNotice = isMobile
-    ? '<div class="notice mt" style="font-size:12px; background:var(--bg-soft);">' +
-        '<b>SMS Verification Preview (Ref no: ' + escapeHtml(info.refTag) + '):</b><br>' +
-        'NEVER SHARE YOUR OTP especially on social media and SMS or email links. Your code is for your eyes only. ' +
-        'Your OTP to verify your mobile number is <b>' + escapeHtml(info.code) + '</b>. Ref no: <b>' + escapeHtml(info.refTag) + '</b>. Code will expire in 5 minutes.' +
-      '</div>'
-    : '<div class="small muted mt" style="font-size:12px;">Ref no: <b>' + escapeHtml(info.refTag) + '</b>. Code will expire in 5 minutes.</div>';
-
-  var switchChannelBtn = isMobile
-    ? '<button type="button" class="btn btn-small btn-outline" onclick="switchRecoveryChannel(\'email\')">Verify via email address instead (' + escapeHtml(info.maskedEmail) + ')</button>'
-    : '<button type="button" class="btn btn-small btn-outline" onclick="switchRecoveryChannel(\'mobile\')">Verify via mobile number instead (' + escapeHtml(info.maskedPhone) + ')</button>';
-
   openPopup(
     '<div class="row between" style="margin-bottom:6px;">' +
       '<h3 style="margin:0;">Verification Code</h3>' +
       '<button type="button" class="btn btn-small" onclick="stopRecoveryCountdown(); renderRecoveryStep1();">&larr; Back</button>' +
     '</div>' +
-    '<p class="small" style="color:var(--text); line-height:1.5;">' + sentLine + '</p>' +
-    smsSampleNotice +
+    '<p class="small" style="color:var(--text); line-height:1.5;">We\'ve sent a verification code to your email <b>' + escapeHtml(info.maskedEmail) + '</b></p>' +
+    '<div class="small muted mt" style="font-size:12px;">Ref no: <b>' + escapeHtml(info.refTag) + '</b>. Code will expire in 5 minutes.</div>' +
     '<div class="otp-squares mt-big" id="recovery-otp-squares">' +
       '<input type="text" maxlength="1" inputmode="numeric" class="otp-sq" data-sq="0" oninput="handleOtpSquareInput(this, 0)" onkeydown="handleOtpSquareKey(event, 0)">' +
       '<input type="text" maxlength="1" inputmode="numeric" class="otp-sq" data-sq="1" oninput="handleOtpSquareInput(this, 1)" onkeydown="handleOtpSquareKey(event, 1)">' +
@@ -407,9 +387,6 @@ function renderRecoveryOtpPinModal() {
     '<div class="center mt" id="recovery-timer-box" style="font-size:13px; min-height:22px;"></div>' +
     '<div class="mt-big">' +
       '<button type="button" id="btn-verify-pin" class="btn btn-red btn-full" onclick="verifyRecoveryPinCode()">Continue</button>' +
-    '</div>' +
-    '<div class="center mt">' +
-      switchChannelBtn +
     '</div>' +
     '<div class="small muted mt-big" style="border-top:1px solid var(--line); padding-top:10px; font-size:12px; text-align:center;">' +
       'Outdated email address? Call our hotline at <b>(046) 458-0908</b> or <b>101-733 (RED)</b> for assistance.' +
@@ -488,40 +465,19 @@ async function resendRecoveryOtpCode() {
     var info = await dbFindAccountForRecovery(_recoveryState.account.email, _recoveryState.tab);
     _recoveryState.account = info;
     _recoveryState.remainingSec = 300;
-    if (_recoveryState.channel === "email") {
-      await apiSendOtpEmail(
-        info.email,
-        info.code,
-        "recover your " + _recoveryState.tab,
-        info.fullName,
-        info.refTag
-      );
-    }
+    await apiSendOtpEmail(
+      info.email,
+      info.code,
+      "recover your " + _recoveryState.tab,
+      info.fullName,
+      info.refTag
+    );
     renderRecoveryOtpPinModal();
   } catch (err) {
     if (box) {
       box.innerHTML = '<a href="#" class="resend-otp-link" onclick="resendRecoveryOtpCode(); return false;">Resend OTP</a>';
     }
   }
-}
-
-async function switchRecoveryChannel(newChannel) {
-  _recoveryState.channel = newChannel;
-  _recoveryState.remainingSec = 300;
-  if (_recoveryState.account) {
-    var info = await dbFindAccountForRecovery(_recoveryState.account.email, _recoveryState.tab);
-    _recoveryState.account = info;
-    if (newChannel === "email") {
-      await apiSendOtpEmail(
-        info.email,
-        info.code,
-        "recover your " + _recoveryState.tab,
-        info.fullName,
-        info.refTag
-      );
-    }
-  }
-  renderRecoveryOtpPinModal();
 }
 
 function verifyRecoveryPinCode() {

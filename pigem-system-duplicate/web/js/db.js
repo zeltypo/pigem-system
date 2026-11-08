@@ -797,7 +797,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09171234567",
     id_type: "Philippine Driver's License",
     id_number: "N01-23-456789",
-    id_image_url: "assets/images/logo.png",
+    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/logo.png",
     building_name: "Greenwoods Subd.",
     street: "Blk 4 Lot 12 Sampaguita St.",
     subdivision: "Greenwoods Executive",
@@ -839,7 +839,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09189876543",
     id_type: "National ID",
     id_number: "1234-5678-9012-3456",
-    id_image_url: "assets/images/logo.png",
+    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/logo.png",
     building_name: "Villa Luisa",
     street: "24 Mabini St.",
     subdivision: "Villa Luisa Homes",
@@ -883,7 +883,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09223334455",
     id_type: "Philippine Passport",
     id_number: "P1234567A",
-    id_image_url: "assets/images/logo.png",
+    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/logo.png",
     building_name: "St. Charbel",
     street: "88 Aguinaldo Hwy",
     subdivision: "St. Charbel South",
@@ -904,7 +904,7 @@ var DEFAULT_DEMO_APPS = [
       id_type: "Philippine Passport",
       id_number: "P1234567",
       street: "Aguinaldo Hwy",
-      id_image_url: "assets/images/logo.png"
+      id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/logo.png"
     },
     ai_result: {
       overall_status: "Verified",

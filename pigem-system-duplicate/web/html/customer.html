@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<!-- ==========================================================================
+     FILE OVERVIEW: Customer Application Tracking & Self-Service Correction Portal (web/customer.html)
+     PURPOSE: Displays simplified application status (Processing, Approved, Rejected) and lets customers submit requested updates.
+     HOSTING: Deployed as static cloud frontend on Vercel with Supabase & /api/*
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Applications - PIGEM Customer Portal</title>
+  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+  <link rel="icon" type="image/png" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" />
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (responsive layout, cards, forms, and dark mode) -->
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand" style="display:flex; align-items:center; gap:10px;">
+        <img src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
+        <div><b style="cursor:default; user-select:none;">Combined Facilities Support Services</b></div>
+      </div>
+      <!-- SECTION: Primary Navigation Links -->
+      <nav class="nav-links">
+        <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('customer_portal_guide')">Tutorial</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
+          <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications (not available)" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+        </button>
+        <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="My Account">CU</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- SECTION: Main Page Content Container -->
+  <main class="container" style="padding:32px 20px 64px">
+    <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; margin-bottom:20px">
+      <div>
+        <h1 style="font-size:24px">Welcome, <span id="cust-name">Customer</span></h1>
+        <p class="muted" style="font-size:14px; margin-top:4px">Select an application below to check its status (<b>Processing</b>, <b>Approved</b>, or <b>Rejected</b>).</p>
+      </div>
+    </div>
+
+    <!-- SUMMARY CARDS (Strictly 3 Customer Statuses: Processing, Approved, Rejected) -->
+    <div class="grid-4" style="margin-bottom:22px">
+      <div class="stat"><div class="num" id="st-total">0</div><div class="lbl">My Applications</div></div>
+      <div class="stat"><div class="num" id="st-proc">0</div><div class="lbl">Processing</div></div>
+      <div class="stat"><div class="num" id="st-done">0</div><div class="lbl">Approved</div></div>
+      <div class="stat"><div class="num" id="st-rej">0</div><div class="lbl">Rejected</div></div>
+    </div>
+
+    <!-- TWO COLUMN: APPLICATION LIST + SELECTED DETAILS -->
+    <div class="grid-2" style="align-items:start">
+      <div class="card">
+        <h3 style="margin-bottom:12px">My Submitted Applications</h3>
+        <div id="cust-app-list"></div>
+      </div>
+
+      <div id="cust-detail-box" class="card">
+        <p class="muted">Select an application on the left to view its status and details.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- NOTIFICATIONS MODAL -->
+  <div id="notif-modal" class="modal hidden">
+    <div class="modal-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+        <h3>My Notifications</h3>
+        <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">Close</button>
+      </div>
+      <div id="notif-list"></div>
+    </div>
+  </div>
+
+  <!-- PROFILE DRAWER -->
+  <div id="profile-drawer" class="drawer hidden" onclick="if(event.target===this) toggleProfileDrawer()">
+    <div class="drawer-panel">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+        <b>Customer Account</b>
+        <button type="button" class="btn btn-outline btn-sm" onclick="toggleProfileDrawer()">Close</button>
+      </div>
+      <div id="profile-drawer-body"></div>
+    </div>
+  </div>
+
+  <!-- INLINE SCRIPT: Page-specific portal configuration and startup logic -->
+  <script>window.SYSTEM = "customer";</script>
+  <!-- IMPORT: Official Supabase JavaScript SDK v2 for PostgreSQL database queries, Auth JWTs, and private ID Storage -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- IMPORT: Global cloud configuration, Dasmarinas barangay directory, plan defaults, and UI popup helpers -->
+  <script src="../js/config.js"></script>
+  <!-- IMPORT: Cloud database & storage data-access layer wrapping Supabase Auth, RLS tables, and audit logging -->
+  <script src="../js/db.js"></script>
+  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for reCAPTCHA verification, ID screening, and Gmail SMTP emails -->
+  <script src="../js/api.js"></script>
+  <!-- IMPORT: Shared dashboard shell controller (sidebar navigation, theme toggle, notifications bell, and profile menu) -->
+  <script src="../js/dash-ui.js"></script>
+  <!-- IMPORT: Customer portal controller loading personal applications and submitting requested field/ID corrections -->
+  <script src="../js/customer.js"></script>
+</body>
+</html>

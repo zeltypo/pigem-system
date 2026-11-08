@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<!-- ==========================================================================
+     FILE OVERVIEW: One-Time System Administrator Provisioning (web/setup-accounts.html)
+     PURPOSE: Allows provisioning the sole System Administrator account with
+              separated First Name, Middle Name, Last Name, Username, Official
+              Email (@pigem.ph), and Strong Password Regex validation.
+     ========================================================================== -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+  <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
+  <title>Admin Account Provisioning | Combined Facilities Support Services</title>
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+  <!-- Simple Top Bar -->
+  <header class="simple-bar">
+    <div class="container" style="display:flex; align-items:center; gap:12px;">
+      <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+      <span style="font-weight:700; font-size:16px; cursor:default; user-select:none;">Combined Facilities Support Services &mdash; Admin Provisioning</span>
+    </div>
+  </header>
+
+  <main class="auth-page">
+    <div class="card auth-card" style="max-width:480px;">
+
+      <div id="provision-locked-box" hidden>
+        <div class="center">
+          <span class="badge" style="background:#101828; color:#fff; font-weight:700; margin-bottom:8px;">PROVISIONING COMPLETE</span>
+          <h2>Administrator Already Registered</h2>
+        </div>
+        <div class="notice mt" style="font-size:13.5px; line-height:1.55;">
+          Only <b>one (1) System Administrator</b> account is permitted in the system, and provisioning has already been completed. Sign in to the Admin Console to manage operational accounts.
+        </div>
+        <div class="mt-big">
+          <a href="admin-login.html" class="btn btn-red btn-full">Proceed to Admin Login &rarr;</a>
+        </div>
+      </div>
+
+      <div id="provision-form-box" hidden>
+        <div class="center">
+          <span class="badge" style="background:#c8102e; color:#fff; font-weight:700; margin-bottom:8px;">ONE-TIME PROVISIONING</span>
+          <h2>Register System Administrator</h2>
+          <p class="small muted mt" style="margin-top:4px;">Create the sole Administrator account to manage internal staff credentials.</p>
+        </div>
+
+        <form class="mt-big" onsubmit="registerSingleAdmin(event)">
+          <div class="form-grid three">
+            <div>
+              <label for="adm-first-name">First Name</label>
+              <input id="adm-first-name" type="text" placeholder="Juan" required>
+            </div>
+            <div>
+              <label for="adm-middle-name">Middle Name</label>
+              <input id="adm-middle-name" type="text" placeholder="Santos (or N/A)" required>
+            </div>
+            <div>
+              <label for="adm-last-name">Last Name</label>
+              <input id="adm-last-name" type="text" placeholder="Dela Cruz" required>
+            </div>
+          </div>
+          <div class="mt">
+            <label for="adm-username">Administrator Username</label>
+            <input id="adm-username" type="text" minlength="3" maxlength="30" placeholder="pigem_admin" required>
+            <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores).</div>
+          </div>
+          <div class="mt">
+            <label for="adm-email">Admin Email</label>
+            <input id="adm-email" type="email" placeholder="admin@pigem.ph" required>
+            <div class="small muted" style="font-size:11.5px; margin-top:4px;">Use an official internal domain such as <b>admin@pigem.ph</b>.</div>
+          </div>
+          <div class="mt">
+            <label for="adm-pw">Password</label>
+            <input id="adm-pw" type="password" data-pw-check="1" minlength="8" placeholder="Create strong password" required>
+          </div>
+          <div class="mt">
+            <label for="adm-pw2">Confirm Password</label>
+            <input id="adm-pw2" type="password" minlength="8" placeholder="Repeat password" required>
+          </div>
+
+          <button type="submit" id="btn-save-admin" class="btn btn-red btn-full mt-big">
+            Provision Admin Account
+          </button>
+        </form>
+      </div>
+
+      <div id="provision-loading-box" class="center muted small" style="padding:20px 0;">
+        Checking administrator provisioning status...
+      </div>
+
+      <div class="row between mt-big" style="border-top:1px solid var(--line); padding-top:14px;">
+        <a href="../index.html" class="btn btn-small">&larr; Home</a>
+        <a href="admin-login.html" class="btn btn-small">Admin Login &rarr;</a>
+      </div>
+    </div>
+  </main>
+
+  <script>
+window.SYSTEM = "admin";
+  </script>
+  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- IMPORT: Global cloud configuration and UI helpers -->
+  <script src="../js/config.js"></script>
+  <!-- IMPORT: Cloud database & authentication layer -->
+  <script src="../js/db.js"></script>
+  <script>
+    async function initProvisioningPage() {
+      var loadingEl = document.getElementById("provision-loading-box");
+      var lockedEl = document.getElementById("provision-locked-box");
+      var formEl = document.getElementById("provision-form-box");
+
+      var hasAdmin = await dbHasAdminAccount();
+      if (loadingEl) loadingEl.hidden = true;
+
+      if (hasAdmin) {
+        lockedEl.hidden = false;
+        formEl.hidden = true;
+      } else {
+        lockedEl.hidden = true;
+        formEl.hidden = false;
+        if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles();
+      }
+    }
+
+    async function registerSingleAdmin(event) {
+      event.preventDefault();
+      var first = document.getElementById("adm-first-name").value.trim();
+      var middle = document.getElementById("adm-middle-name").value.trim();
+      var last = document.getElementById("adm-last-name").value.trim();
+      var fullName = [first, middle && middle.toUpperCase() !== "N/A" ? middle : "", last].filter(Boolean).join(" ").trim();
+      var username = document.getElementById("adm-username").value.trim().toLowerCase();
+      var email = document.getElementById("adm-email").value.trim().toLowerCase();
+      var pw = document.getElementById("adm-pw").value;
+      var pw2 = document.getElementById("adm-pw2").value;
+      var btn = document.getElementById("btn-save-admin");
+
+      if (!first || !last || !username || !email || !pw) {
+        showAlert("Missing Fields", "Please complete First Name, Middle Name, Last Name, Username, Email, and Password.", "warn");
+        return;
+      }
+      if (typeof isValidUsername === "function" && !isValidUsername(username)) {
+        showAlert("Invalid Username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).", "warn");
+        return;
+      }
+      if (!isStaffBusinessEmail(email)) {
+        showAlert("Official Email Required", "Admin provisioning requires an internal email address (such as admin@pigem.ph). Gmail addresses are reserved for Customers.", "warn");
+        return;
+      }
+      if (typeof isStrongPassword === "function" && !isStrongPassword(pw)) {
+        showAlert("Weak Password", "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.", "warn");
+        return;
+      }
+      if (pw !== pw2) {
+        showAlert("Password Mismatch", "Password and Confirm Password do not match.", "warn");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Provisioning Admin...";
+      try {
+        await dbCreateUserAccount(fullName, email, pw, "admin", username);
+        await initProvisioningPage();
+        showAlert("Admin Provisioned", "System Administrator account (@" + username + " / " + email + ") is ready. You can now sign in to the Admin Console.", "good");
+      } catch (err) {
+        showAlert("Provisioning Failed", err.message || "Could not provision Admin account.", "bad");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Provision Admin Account";
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", initProvisioningPage);
+  </script>
+</body>
+</html>

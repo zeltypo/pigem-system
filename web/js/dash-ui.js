@@ -213,9 +213,9 @@ function renderProfileDrawer(user) {
     '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
       '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Appearance / Theme</div>' +
       '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px">' +
-        '<button type="button" data-theme-btn="light" class="btn btn-sm ' + (savedTheme === "light" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'light\')"><img data-img="icons/sun.png" src="assets/images/icons/sun.png" alt="Light (not available)" class="icon-img" />Light</button>' +
-        '<button type="button" data-theme-btn="dark" class="btn btn-sm ' + (savedTheme === "dark" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'dark\')"><img data-img="icons/moon.png" src="assets/images/icons/moon.png" alt="Dark (not available)" class="icon-img" />Dark</button>' +
-        '<button type="button" data-theme-btn="device" class="btn btn-sm ' + (savedTheme === "device" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'device\')"><img data-img="icons/monitor.png" src="assets/images/icons/monitor.png" alt="Device (not available)" class="icon-img" />Device</button>' +
+        '<button type="button" data-theme-btn="light" class="btn btn-sm ' + (savedTheme === "light" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'light\')"><img data-img="icons/sun.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/sun.png" alt="Light (not available)" class="icon-img" />Light</button>' +
+        '<button type="button" data-theme-btn="dark" class="btn btn-sm ' + (savedTheme === "dark" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'dark\')"><img data-img="icons/moon.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/moon.png" alt="Dark (not available)" class="icon-img" />Dark</button>' +
+        '<button type="button" data-theme-btn="device" class="btn btn-sm ' + (savedTheme === "device" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'device\')"><img data-img="icons/monitor.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/monitor.png" alt="Device (not available)" class="icon-img" />Device</button>' +
       '</div>' +
     '</div>' +
 

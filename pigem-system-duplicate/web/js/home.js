@@ -24,7 +24,7 @@ function openApplyWithCaptcha(planId) {
 function showGoogleCaptchaPopup() {
   openPopup(
     '<div class="center" style="padding:10px 4px;">' +
-      '<div style="width:48px;height:48px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;"><img data-img="icons/shield.png" src="assets/images/icons/shield.png" alt="Security (not available)" class="icon-img" /></div>' +
+      '<div style="width:48px;height:48px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;"><img data-img="icons/shield.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/shield.png" alt="Security (not available)" class="icon-img" /></div>' +
       '<h3 style="font-size:18px;margin-bottom:4px;">Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
       '<div id="g-recaptcha-wrap" style="display:flex;justify-content:center;margin:16px auto;min-height:78px;">' +

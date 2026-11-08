@@ -11,9 +11,6 @@ var selectedBackFile = null;
 var isContactOtpVerified = false;
 var verifiedEmailAddress = "";
 
-var isPhoneOtpVerified = false;
-var verifiedPhoneNumber = "";
-
 var SECTION_TITLES = [
   "Select Your Plan",
   "Personal Information",
@@ -107,7 +104,7 @@ function initApplyPage() {
 function showApplySecurityCaptchaModal() {
   openPopup(
     '<div class="center" style="padding:10px 4px;">' +
-      '<div style="width:48px;height:48px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;"><img data-img="icons/shield.png" src="assets/images/icons/shield.png" alt="Security (not available)" class="icon-img" /></div>' +
+      '<div style="width:48px;height:48px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;"><img data-img="icons/shield.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/shield.png" alt="Security (not available)" class="icon-img" /></div>' +
       '<h3 style="font-size:18px;margin-bottom:4px;">Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
       '<div id="g-apply-recaptcha-wrap" style="display:flex;justify-content:center;margin:16px auto;min-height:78px;">' +
@@ -335,81 +332,6 @@ function verifyContactOtp() {
   }
 }
 
-function sendPhoneOtp() {
-  var phone = document.getElementById("phone").value.trim();
-  var cleanDigits = phone.replace(/\D/g, "");
-  if (cleanDigits.length !== 11 || cleanDigits.indexOf("09") !== 0) {
-    flashErrorBubble("phone", "Mobile Number", "Please enter a valid 11-digit mobile number starting with 09.");
-    document.getElementById("phone").focus();
-    return;
-  }
-
-  var btn = document.getElementById("btn-send-phone-otp");
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Sending SMS OTP...";
-  }
-
-  var otpRec = typeof generateSecuredOtp === "function"
-    ? generateSecuredOtp("apply_phone_" + cleanDigits)
-    : { code: String(Math.floor(100000 + Math.random() * 900000)), refTag: "VSCF" };
-
-  isPhoneOtpVerified = false;
-
-  setTimeout(function () {
-    var row = document.getElementById("phone-otp-verify-row");
-    if (row) row.hidden = false;
-    var inp = document.getElementById("phone_otp_code");
-    if (inp) {
-      inp.disabled = false;
-      inp.value = "";
-    }
-    var statusText = document.getElementById("phone-otp-status-text");
-    if (statusText) {
-      statusText.innerHTML =
-        "<b>SMS Message Sent to " + escapeHtml(cleanDigits) + ":</b><br>" +
-        "<span style='font-size:12px;color:var(--text);'>" +
-        "NEVER SHARE YOUR OTP especially on social media and SMS or email links. Your code is for your eyes only. " +
-        "Your OTP to verify your mobile number is <b>" + escapeHtml(otpRec.code) + "</b>. " +
-        "Ref no: <b>" + escapeHtml(otpRec.refTag) + "</b>. Code will expire in 5 minutes." +
-        "</span>";
-    }
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Resend Mobile OTP";
-    }
-  }, 350);
-}
-
-function verifyPhoneOtp() {
-  var phone = document.getElementById("phone").value.trim().replace(/\D/g, "");
-  var entered = (document.getElementById("phone_otp_code").value || "").trim();
-  var check = typeof verifySecuredOtp === "function"
-    ? verifySecuredOtp("apply_phone_" + phone, entered)
-    : { valid: false, reason: "Please click Send Mobile OTP first." };
-
-  if (!check.valid) {
-    flashErrorBubble("phone_otp", "Mobile OTP", check.reason || "Incorrect 6-digit Mobile OTP.");
-    return;
-  }
-
-  isPhoneOtpVerified = true;
-  verifiedPhoneNumber = phone;
-  var badge = document.getElementById("phone-otp-badge");
-  if (badge) {
-    badge.hidden = false;
-    badge.className = "badge status-approved";
-    badge.textContent = "Mobile Verified";
-  }
-  var input = document.getElementById("phone_otp_code");
-  if (input) input.disabled = true;
-
-  var statusText = document.getElementById("phone-otp-status-text");
-  if (statusText) {
-    statusText.innerHTML = "<span style='color:var(--good);font-weight:700;'>Primary mobile number verified (Ref no: " + escapeHtml(check.refTag || "VSCF") + ").</span>";
-  }
-}
-
 function updateIdFormatHint() {
   var type = document.getElementById("id_type").value;
   var hintEl = document.getElementById("id-format-hint");
@@ -534,9 +456,6 @@ function validateCurrentPanel() {
     if (!phone || phone.length !== 11) markInvalid("phone", "Mobile Number", "Enter an 11-digit mobile number.");
     if (!isContactOtpVerified || verifiedEmailAddress !== email) {
       markInvalid("contact_otp", "Email OTP", "Please send and verify your 6-digit Email OTP code.", document.getElementById("btn-send-otp"));
-    }
-    if (!isPhoneOtpVerified || verifiedPhoneNumber !== phone) {
-      markInvalid("phone_otp", "Mobile OTP", "Please send and verify your 6-digit Mobile OTP code.", document.getElementById("btn-send-phone-otp"));
     }
 
     if (firstInvalidEl) {
@@ -773,7 +692,7 @@ function useCurrentLocation() {
   function onGeoSuccess(pos) {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<img data-img="icons/location.png" src="assets/images/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location';
+      btn.innerHTML = '<img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location';
     }
     var lat = pos.coords.latitude;
     var lng = pos.coords.longitude;
@@ -791,7 +710,7 @@ function useCurrentLocation() {
       function () {
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = '<img data-img="icons/location.png" src="assets/images/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location';
+          btn.innerHTML = '<img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location';
         }
         var msg = "Location permission denied or unavailable. Please search your street/barangay in the box above.";
         if (statusEl) statusEl.textContent = msg;
