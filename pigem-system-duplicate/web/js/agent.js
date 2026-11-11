@@ -1,17 +1,12 @@
 // ============================================================================
 // FILE: web/js/agent.js
-// PURPOSE: Agent Verification & Encoding Workspace Controller
+// PURPOSE: Agent Verification, Queue Claiming (Username) & Encoding Controller
 // ----------------------------------------------------------------------------
-// KEY FEATURES:
-//   1. Separated 1-Click Status Navigation (Queue, Claimed, Encoding,
-//      Needs Correction, Approved, Rejected) with zero "&" in UI labels.
-//   2. Visual Animated Automated Screening Progress Panel in Section 2 so the
-//      Agent visually sees Stage 1 (Readability & 4-Corner ID Crop), Stage 2
-//      (Duplicate ID Image Check), and Stage 3 (Printed ID Text OCR & Field
-//      Comparison) running in real time.
-//   3. Duplicate ID Image Detection (Front == Back or unchanged re-upload).
-//   4. Common Validator Status Instructions & Remarks Presets for Encoding,
-//      Approved, and Rejected (while allowing custom typing).
+// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
+//   1. web/js/config.js  -> `getStaffIdentifier`, `isAssignedToStaff` & popup dialogs
+//   2. web/js/db.js      -> Application queue fetching, signed ID URLs & audit logging
+//   3. web/js/api.js     -> Screening status checks, polite remark drafting & status emails
+//   4. web/js/dash-ui.js -> Sub-nav visibility, Overview charts & notifications bell
 // ============================================================================
 
 var currentAgent = null;
@@ -38,6 +33,7 @@ var FIELD_SUMMARY_LABELS = {
   address: "Complete Installation Address / Landmark"
 };
 
+// Validator/Check `checkAgentScreeningService`: Evaluates rule (check agent screening service) and returns result.
 async function checkAgentScreeningService() {
   var banner = document.getElementById("agent-screening-banner");
   if (!isAiEnabled()) {
@@ -58,7 +54,6 @@ async function checkAgentScreeningService() {
   return true;
 }
 
-// Common Validator & Preliminary Screening Presets for Needs Correction (Section 4)
 var VALIDATOR_PRESETS = [
   { label: "-- Select a Common Validator / Screening Remark --", raw: "", field: "auto", msg: "" },
   { label: "[Duplicate] Front and Back ID Photos are Identical", raw: "Uploaded Front ID and Back ID are the exact same photo", field: "id_photo", msg: "We noticed that the same photo was uploaded for both the Front and Back of your Valid ID. Please sign in to your Customer Account and upload a clear photo of the actual Front side and Back side of your Valid ID." },
@@ -75,7 +70,6 @@ var VALIDATOR_PRESETS = [
   { label: "[Validator] Address Incomplete / Missing Nearest Landmark", raw: "Installation address missing street detail or landmark", field: "address", msg: "Please add a clearer street detail, house description, or nearest landmark to help our field team locate your installation address." }
 ];
 
-// Common Instructions for Encoding, Approved, and Rejected (Section 3)
 var STATUS_INSTRUCTION_PRESETS = {
   "Under Agent Review": [
     { label: "Standard In-Review Instruction", text: "Your application and Valid ID requirements are currently being reviewed by our verification team." }
@@ -97,6 +91,7 @@ var STATUS_INSTRUCTION_PRESETS = {
   ]
 };
 
+// UI Renderer `renderStatusInstructionPresetOptions` (params: statusValue): Builds and updates DOM elements for status instruction preset options.
 function renderStatusInstructionPresetOptions(statusValue) {
   var list = STATUS_INSTRUCTION_PRESETS[statusValue] || STATUS_INSTRUCTION_PRESETS["Encoding"];
   var html = '<option value="">-- Optional: Select a Common Instruction for ' + escapeHtml(statusValue) + ' (or type below) --</option>';
@@ -106,6 +101,7 @@ function renderStatusInstructionPresetOptions(statusValue) {
   return html;
 }
 
+// Helper `onStatusSelectChange`: Executes workflow logic for `onStatusSelectChange`.
 function onStatusSelectChange() {
   var stEl = document.getElementById("det-status-select");
   var presetEl = document.getElementById("det-status-preset");
@@ -113,6 +109,7 @@ function onStatusSelectChange() {
   presetEl.innerHTML = renderStatusInstructionPresetOptions(stEl.value);
 }
 
+// Helper `onStatusInstructionPresetChange` (params: idxStr): Executes workflow logic for `onStatusInstructionPresetChange`.
 function onStatusInstructionPresetChange(idxStr) {
   var stEl = document.getElementById("det-status-select");
   var remEl = document.getElementById("det-remarks");
@@ -124,6 +121,7 @@ function onStatusInstructionPresetChange(idxStr) {
   }
 }
 
+// UI Renderer `renderValidatorPresetOptions` (params: filterText): Builds and updates DOM elements for validator preset options.
 function renderValidatorPresetOptions(filterText) {
   var term = String(filterText || "").toLowerCase().trim();
   var optionsHtml = "<option value=''>-- Select Common Validator / Screening Remark --</option>";
@@ -139,6 +137,7 @@ function renderValidatorPresetOptions(filterText) {
   return optionsHtml;
 }
 
+// Helper `onValidatorPresetChange` (params: val): Executes workflow logic for `onValidatorPresetChange`.
 function onValidatorPresetChange(val) {
   var idx = parseInt(val, 10);
   if (isNaN(idx) || idx <= 0 || idx >= VALIDATOR_PRESETS.length) return;
@@ -153,11 +152,13 @@ function onValidatorPresetChange(val) {
   if (corrMsgEl) corrMsgEl.value = p.msg;
 }
 
+// Validator/Check `isScreeningActiveOnApp` (params: app): Evaluates rule (is screening active on app) and returns result.
 function isScreeningActiveOnApp(app) {
   var scr = (app && app.screening) || {};
   return scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running" || visualScreeningRunningAppId === (app && app.id);
 }
 
+// Utility `formatEtaLabel` (params: seconds): Normalizes or transforms values (format eta label).
 function formatEtaLabel(seconds) {
   var sec = Number(seconds || 0);
   if (!sec || sec <= 0) return "";
@@ -168,6 +169,7 @@ function formatEtaLabel(seconds) {
   return "~" + sec + "s left";
 }
 
+// Utility `cleanScreeningText` (params: str): Normalizes or transforms values (clean screening text).
 function cleanScreeningText(str) {
   return String(str || "")
     .replace(/\bAI Screening Engine\b/gi, "Application Screening")
@@ -176,6 +178,7 @@ function cleanScreeningText(str) {
     .replace(/\bScreening\s+Screening\b/gi, "Screening");
 }
 
+// Helper `detectClientSideDuplicateId` (params: app): Executes workflow logic for `detectClientSideDuplicateId`.
 function detectClientSideDuplicateId(app) {
   if (!app) return { isDup: false, reason: "" };
   var scr = app.screening || {};
@@ -199,6 +202,7 @@ function detectClientSideDuplicateId(app) {
   return { isDup: false, reason: "" };
 }
 
+// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   currentAgent = await requireLogin(["agent", "manager", "admin"]);
   if (!currentAgent) return;
@@ -234,6 +238,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   }, 4500);
 });
 
+// Data Accessor `refreshAgentData` (params: silent): Retrieves or refreshes data to refresh agent data.
 async function refreshAgentData(silent) {
   allApps = await dbListAllApplications();
   updateDashSearchApps(allApps);
@@ -251,7 +256,7 @@ async function refreshAgentData(silent) {
     var st = a.status || "Pending Review";
 
     if (!a.assigned_agent && st === "Pending Review") unclaimed++;
-    if (a.assigned_agent === currentAgent.email && (st === "Pending Review" || st === "Under Agent Review")) myClaimed++;
+    if (isAssignedToStaff(a.assigned_agent, currentAgent) && (st === "Pending Review" || st === "Under Agent Review")) myClaimed++;
     if (st === "Encoding") encodingCount++;
     if (st === "Needs Correction") fix++;
     if (st === "Approved") approvedCount++;
@@ -283,6 +288,14 @@ async function refreshAgentData(silent) {
   setTxt("st-rejected", rejectedCount);
 
   if (!silent) {
+    renderPieChart("chart-agent-pie", [
+      { label: "Unclaimed", value: unclaimed, color: "#64748b" },
+      { label: "Claimed", value: myClaimed, color: "#2563eb" },
+      { label: "Encoding", value: encodingCount, color: "#0284c7" },
+      { label: "Needs Correction", value: fix, color: "#d97706" },
+      { label: "Approved", value: approvedCount, color: "#15803d" },
+      { label: "Rejected", value: rejectedCount, color: "#b91c1c" }
+    ], "Queue");
     renderBars("chart-agent-bars", [
       { label: "Unclaimed", value: unclaimed, color: "#64748b" },
       { label: "Claimed", value: myClaimed, color: "#2563eb" },
@@ -303,6 +316,7 @@ async function refreshAgentData(silent) {
   renderAgentCards();
 }
 
+// UI State Controller `showTab` (params: branch): Updates modal, tab, or panel state to show tab.
 function showTab(branch) {
   if (branch === "encoded") branch = "encoding";
   activeBranch = branch;
@@ -315,8 +329,12 @@ function showTab(branch) {
   var pills = document.querySelectorAll("[data-pill]");
   for (var p = 0; p < pills.length; p++) {
     var isMatch = pills[p].getAttribute("data-pill") === branch;
-    pills[p].classList.toggle("btn-red", isMatch);
-    pills[p].classList.toggle("btn-outline", !isMatch);
+    if (pills[p].classList.contains("sub-nav-btn")) {
+      pills[p].classList.toggle("active", isMatch);
+    } else {
+      pills[p].classList.toggle("btn-red", isMatch);
+      pills[p].classList.toggle("btn-outline", !isMatch);
+    }
   }
 
   document.getElementById("tab-overview").classList.toggle("hidden", branch !== "overview");
@@ -331,6 +349,7 @@ function showTab(branch) {
     branch === "rejected"
   );
   document.getElementById("tab-apps").classList.toggle("hidden", !isAppBranch);
+  updateOverviewOnlyVisibility(branch === "overview");
 
   if (isAppBranch) {
     var titles = {
@@ -347,6 +366,7 @@ function showTab(branch) {
   }
 }
 
+// Data Accessor `getScreeningCardBadge` (params: app): Retrieves or refreshes data to get screening card badge.
 function getScreeningCardBadge(app) {
   var dup = detectClientSideDuplicateId(app);
   if (dup.isDup) {
@@ -379,6 +399,7 @@ function getScreeningCardBadge(app) {
   return '<span class="badge badge-gray">Screening Checked</span>';
 }
 
+// Data Accessor `getScreeningQuickSummary` (params: app): Retrieves or refreshes data to get screening quick summary.
 function getScreeningQuickSummary(app) {
   var dup = detectClientSideDuplicateId(app);
   if (dup.isDup) {
@@ -399,6 +420,7 @@ function getScreeningQuickSummary(app) {
   return '<span class="muted">' + escapeHtml(note) + '</span>';
 }
 
+// UI Renderer `renderAgentCards`: Builds and updates DOM elements for agent cards.
 function renderAgentCards() {
   var box = document.getElementById("agent-cards-box");
   if (!box) return;
@@ -410,7 +432,7 @@ function renderAgentCards() {
     var st = a.status || "Pending Review";
 
     if (activeBranch === "queue" && (a.assigned_agent || st !== "Pending Review")) continue;
-    if (activeBranch === "claimed" && !(a.assigned_agent === currentAgent.email && (st === "Pending Review" || st === "Under Agent Review"))) continue;
+    if (activeBranch === "claimed" && !(isAssignedToStaff(a.assigned_agent, currentAgent) && (st === "Pending Review" || st === "Under Agent Review"))) continue;
     if (activeBranch === "encoding" && st !== "Encoding") continue;
     if (activeBranch === "correction" && st !== "Needs Correction") continue;
     if (activeBranch === "approved" && st !== "Approved") continue;
@@ -431,7 +453,7 @@ function renderAgentCards() {
   var html = "";
   for (var j = 0; j < filtered.length; j++) {
     var app = filtered[j];
-    var isClaimedByMe = app.assigned_agent === currentAgent.email;
+    var isClaimedByMe = isAssignedToStaff(app.assigned_agent, currentAgent);
     var claimBtn = "";
 
     if (!app.assigned_agent) {
@@ -479,26 +501,30 @@ function renderAgentCards() {
   box.innerHTML = html;
 }
 
+// UI State Controller `toggleCardMore` (params: elId): Updates modal, tab, or panel state to toggle card more.
 function toggleCardMore(elId) {
   var el = document.getElementById(elId);
   if (el) el.classList.toggle("hidden");
 }
 
+// Helper `claimApplication` (params: appId): Executes workflow logic for `claimApplication`.
 async function claimApplication(appId) {
   var app = findAppById(appId);
   var keepCorrection = app && app.status === "Needs Correction";
+  var staffId = getStaffIdentifier(currentAgent);
   await dbUpdateApplication(appId, {
-    assigned_agent: currentAgent.email,
+    assigned_agent: staffId,
     status: keepCorrection ? "Needs Correction" : "Under Agent Review"
   });
   if (app) {
     await dbAddAiLog(app.id, app.reference_no, "Agent (" + currentAgent.full_name + ")", "Claimed application from queue.");
-    await dbAddLog(currentAgent.email, "Claimed application " + app.reference_no);
+    await dbAddLog(staffId, "Claimed application " + app.reference_no);
   }
   await refreshAgentData();
   showTab(keepCorrection ? "correction" : "claimed");
 }
 
+// Data Accessor `findAppById` (params: id): Retrieves or refreshes data to find app by id.
 function findAppById(id) {
   for (var i = 0; i < allApps.length; i++) {
     if (allApps[i].id === id) return allApps[i];
@@ -506,6 +532,7 @@ function findAppById(id) {
   return null;
 }
 
+// UI State Controller `openAppDetail` (params: appId): Updates modal, tab, or panel state to open app detail.
 async function openAppDetail(appId) {
   activeDetailAppId = appId;
   activeCopyMode = "latest";
@@ -515,28 +542,29 @@ async function openAppDetail(appId) {
   await renderDetailModalContent();
   document.getElementById("app-detail-modal").classList.remove("hidden");
 
-  // If the application is still queued for screening and auto-screening is enabled,
-  // automatically run the visual step-by-step screening animation for the Agent!
   if (app && app.screening && app.screening.state === "queued" && isAiEnabled() && isScreeningServiceOnline) {
     retriggerAgentScreening(appId);
   }
 }
 
+// UI State Controller `closeDetailModal`: Updates modal, tab, or panel state to close detail modal.
 function closeDetailModal() {
   document.getElementById("app-detail-modal").classList.add("hidden");
 }
 
+// Helper `switchCopyMode` (params: mode): Executes workflow logic for `switchCopyMode`.
 function switchCopyMode(mode) {
   activeCopyMode = mode;
   renderDetailModalContent();
 }
 
+// Helper `switchIdImgMode` (params: mode): Executes workflow logic for `switchIdImgMode`.
 function switchIdImgMode(mode) {
   activeIdImgMode = mode;
   renderDetailModalContent();
 }
 
-// Visual Step-by-Step Automated Document Screening Runner in Agent Workspace
+// Helper `retriggerAgentScreening` (params: appId): Executes workflow logic for `retriggerAgentScreening`.
 async function retriggerAgentScreening(appId) {
   if (!appId || !isAiEnabled()) return;
   visualScreeningRunningAppId = appId;
@@ -588,6 +616,7 @@ async function retriggerAgentScreening(appId) {
   }
 }
 
+// UI Renderer `renderVisualScreeningProgressBox` (params: app): Builds and updates DOM elements for visual screening progress box.
 function renderVisualScreeningProgressBox(app) {
   if (visualScreeningRunningAppId !== app.id) return "";
   var stg = visualScreeningStage || 1;
@@ -627,6 +656,7 @@ function renderVisualScreeningProgressBox(app) {
   );
 }
 
+// UI Renderer `renderDetailModalContent`: Builds and updates DOM elements for detail modal content.
 async function renderDetailModalContent() {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
@@ -753,7 +783,6 @@ async function renderDetailModalContent() {
       '<div class="card" style="padding:10px 14px"><div class="tiny muted">Assigned Agent</div><div style="margin-top:4px; font-weight:700; font-size:13px">' + escapeHtml(app.assigned_agent || "Unclaimed") + '</div></div>' +
     '</div>' +
 
-    // SECTION 1: APPLICANT INFORMATION AND SERVICE ADDRESS
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">1</span>Applicant Profile and Installation Address</div>' +
@@ -784,7 +813,6 @@ async function renderDetailModalContent() {
       '</div>' +
     '</div>' +
 
-    // SECTION 2: VALID ID PHOTOS AND AUTOMATED DOCUMENT CHECK
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos and Document Check</div>' +
@@ -818,7 +846,6 @@ async function renderDetailModalContent() {
       '</details>' +
     '</div>' +
 
-    // SECTION 3: UPDATE APPLICATION STATUS AND VALIDATOR INSTRUCTIONS
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">3</span>Application Status and Validator Decision</div>' +
@@ -859,7 +886,6 @@ async function renderDetailModalContent() {
       '</div>' +
     '</div>' +
 
-    // SECTION 4: REQUEST CUSTOMER UPDATE (NEEDS CORRECTION)
     '<details' + isCorrectionOpen + ' class="section-card" style="background:var(--soft)">' +
       '<summary style="cursor:pointer; font-weight:700; font-size:14.5px; color:var(--text); display:flex; align-items:center; gap:8px">' +
         '<span class="step-badge" style="background:#d97706">4</span>' +
@@ -912,12 +938,14 @@ async function renderDetailModalContent() {
     '</details>';
 }
 
+// Action Handler `saveSelectedStatus`: Validates inputs and persists changes to save selected status.
 function saveSelectedStatus() {
   var sel = document.getElementById("det-status-select");
   var chosen = sel ? sel.value : "Encoding";
   saveAgentDecision(chosen);
 }
 
+// Helper `convertValidatorToPoliteRemark`: Executes workflow logic for `convertValidatorToPoliteRemark`.
 async function convertValidatorToPoliteRemark() {
   var rawEl = document.getElementById("det-validator-raw");
   var corrEl = document.getElementById("det-correction-message");
@@ -960,6 +988,7 @@ async function convertValidatorToPoliteRemark() {
   }
 }
 
+// Helper `onEncodingProofPick` (params: inputEl): Executes workflow logic for `onEncodingProofPick`.
 function onEncodingProofPick(inputEl) {
   var file = inputEl.files && inputEl.files[0];
   if (!file) return;
@@ -970,6 +999,7 @@ function onEncodingProofPick(inputEl) {
   reader.readAsDataURL(file);
 }
 
+// Action Handler `saveAgentDecision` (params: newStatus): Validates inputs and persists changes to save agent decision.
 async function saveAgentDecision(newStatus) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
@@ -1014,9 +1044,10 @@ async function saveAgentDecision(newStatus) {
     validator_raw_remark: rawValidator
   });
 
+  var staffId = getStaffIdentifier(currentAgent);
   await dbUpdateApplication(app.id, {
     status: newStatus,
-    assigned_agent: currentAgent.email,
+    assigned_agent: staffId,
     agent_remarks: remarks,
     correction_note: remarks,
     customer_instruction: remarks,
@@ -1054,13 +1085,14 @@ async function saveAgentDecision(newStatus) {
     }
   }
 
-  await dbAddLog(currentAgent.email, "Set application " + app.reference_no + " status to " + newStatus);
+  await dbAddLog(staffId, "Set application " + app.reference_no + " status to " + newStatus);
 
   closeDetailModal();
   await refreshAgentData();
   showAlert("Status Updated", "Application " + app.reference_no + " is now marked as " + newStatus + "." + emailNoticeNote);
 }
 
+// Helper `downloadApplicantId`: Executes workflow logic for `downloadApplicantId`.
 function downloadApplicantId() {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
@@ -1077,17 +1109,20 @@ function downloadApplicantId() {
   document.body.removeChild(a);
 }
 
+// Helper `printApplicantCopy`: Executes workflow logic for `printApplicantCopy`.
 function printApplicantCopy() {
   window.print();
 }
 
+// Action Handler `createNewAgentLink`: Validates inputs and persists changes to create new agent link.
 async function createNewAgentLink() {
   var note = document.getElementById("link-note").value.trim() || "Walk-in / Assisted Customer";
-  await dbCreateAgentLink(currentAgent.email, note);
+  await dbCreateAgentLink(getStaffIdentifier(currentAgent), note);
   document.getElementById("link-note").value = "";
   await renderAgentLinks();
 }
 
+// UI Renderer `renderAgentLinks`: Builds and updates DOM elements for agent links.
 async function renderAgentLinks() {
   var body = document.getElementById("agent-links-body");
   if (!body) return;

@@ -1,8 +1,15 @@
 function _getPortalBaseUrl() {
+  var origin = "https://pigem-system-web.vercel.app";
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
-    return window.location.origin;
+    origin = window.location.origin;
+  } else if (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) {
+    origin = CONFIG.PUBLIC_URL;
   }
-  return (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) ? CONFIG.PUBLIC_URL : "https://pigem-system-web.vercel.app";
+  if (typeof window !== "undefined" && window.location && window.location.pathname) {
+    var p = window.location.pathname;
+    if (p.indexOf("/web/html/") !== -1) return origin + "/web/html";
+  }
+  return origin;
 }
 
 function _apiEndpoint(path) {
@@ -216,11 +223,15 @@ async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo,
   var p = planObj || {};
   var tag = generateOtpRefTag();
   var subj = "PIGEM Application Received - Reference No. " + refNo + " (Ref no: " + tag + ")";
-  var msg = "Thank you for applying. Reference No: " + refNo;
-  var isExisting = accountInfo && accountInfo.status === "active";
-  var actCode = accountInfo && accountInfo.code ? accountInfo.code : "";
+  var isExisting = Boolean(accountInfo && accountInfo.status === "active");
+  var actCode = (accountInfo && accountInfo.code) ? String(accountInfo.code) : "";
+  var username = (accountInfo && accountInfo.user && accountInfo.user.username) ? String(accountInfo.user.username) : "";
   var baseUrl = _getPortalBaseUrl();
-  var actLink = baseUrl + "/activate.html?invite=1";
+  var actLink = baseUrl + "/activate.html?email=" + encodeURIComponent(toEmail) + (actCode ? "&code=" + encodeURIComponent(actCode) : "") + (username ? "&username=" + encodeURIComponent(username) : "");
+  var portalLink = baseUrl + "/login.html";
+  var msg = isExisting
+    ? ("Thank you for applying. Reference No: " + refNo + ". Sign in to check your status at " + portalLink)
+    : ("Thank you for applying. Reference No: " + refNo + ". One-Time Activation Code: " + actCode + ". Create your password once at " + actLink);
 
   return await apiSendEmail(toEmail, subj, msg, {
     template_type: "activation",
@@ -228,11 +239,14 @@ async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo,
       ref_no: refNo,
       ref_tag: tag,
       customer_name: customerName || "Valued Subscriber",
+      customer_email: toEmail,
+      username: username,
       plan_name: p.name ? ("Red Fiber " + p.name) : "Red Fiber Plan",
       speed: p.speed ? (p.speed + " Mbps") : "Standard Speed",
       price: p.price ? ("₱" + Number(p.price).toLocaleString("en-PH")) : "₱1,400",
       address: addressStr || "Dasmariñas City, Cavite",
       activation_link: actLink,
+      portal_link: portalLink,
       activation_code: actCode,
       is_existing_account: isExisting
     }

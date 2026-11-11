@@ -1,16 +1,16 @@
 // ============================================================================
 // FILE: web/js/home.js
-// PURPOSE: Public Home Page Controller (Fiber Plan Cards & Apply Gatekeeper)
+// PURPOSE: Public Home Page Controller (Fiber Plans, Announcements & CMS Render)
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
 //   1. Google reCAPTCHA v2 (`recaptcha/api.js`) -> Exposes global `grecaptcha`
-//   2. @supabase/supabase-js@2 + web/js/db.js   -> Loads live fiber plans & CMS text
-//   3. web/js/config.js                         -> `CONFIG.RECAPTCHA_SITE_KEY` & plan defaults
+//   2. @supabase/supabase-js@2 + web/js/db.js   -> Loads live plans & CMS data
+//   3. web/js/config.js                         -> Plan defaults & asset URL resolvers
 // ============================================================================
 
 var pendingApplyPlanId = null;
 
-// `openApplyWithCaptcha` (params: planId): Saves the chosen fiber plan ID and prompts human verification before opening apply.html.
+// UI State Controller `openApplyWithCaptcha` (params: planId): Updates modal, tab, or panel state to open apply with captcha.
 function openApplyWithCaptcha(planId) {
   pendingApplyPlanId = planId || "";
   if (sessionStorage.getItem("pigem_captcha_verified") === "true") {
@@ -20,7 +20,7 @@ function openApplyWithCaptcha(planId) {
   showGoogleCaptchaPopup();
 }
 
-// `showGoogleCaptchaPopup`: Opens a modal containing the Google reCAPTCHA v2 challenge before starting an application.
+// UI State Controller `showGoogleCaptchaPopup`: Updates modal, tab, or panel state to show google captcha popup.
 function showGoogleCaptchaPopup() {
   openPopup(
     '<div class="center" style="padding:10px 4px;">' +
@@ -68,7 +68,7 @@ function showGoogleCaptchaPopup() {
   }
 }
 
-// `onGoogleCaptchaPassed` (params: token): Callback fired by Google reCAPTCHA upon verification; redirects the visitor to the application wizard.
+// Helper `onGoogleCaptchaPassed` (params: token): Executes workflow logic for `onGoogleCaptchaPassed`.
 async function onGoogleCaptchaPassed(token) {
   if (token && typeof apiVerifyCaptcha === "function") {
     var checkRes = await apiVerifyCaptcha(token);
@@ -83,7 +83,7 @@ async function onGoogleCaptchaPassed(token) {
   window.location.href = targetUrl;
 }
 
-// `triggerHomeCaptcha`: Verifies the landing-page reCAPTCHA state and navigates to apply.html with the selected plan.
+// Helper `triggerHomeCaptcha`: Executes workflow logic for `triggerHomeCaptcha`.
 function triggerHomeCaptcha() {
   var check = document.getElementById("home-captcha-check");
   var card = document.getElementById("home-captcha-card");
@@ -103,7 +103,7 @@ function triggerHomeCaptcha() {
   }, 600);
 }
 
-// Build one Red Fiber plan card (opens apply.html in a new tab)
+// UI Renderer `buildPlanCard` (params: plan): Builds and updates DOM elements for plan card.
 function buildPlanCard(plan) {
   var borderClass = plan.featured ? "card plan red-border" : "card plan";
   var buttonClass = plan.featured ? "btn btn-red btn-full" : "btn btn-full";
@@ -125,11 +125,10 @@ function buildPlanCard(plan) {
   );
 }
 
-// Render Hero Slider, Plans, Announcement Banner, and FAQs on load
+// Helper `initHomePage`: Executes workflow logic for `initHomePage`.
 function initHomePage() {
   var content = getWebsiteContent();
 
-  // 0. Optional Public Announcement Strip
   var annBar = document.getElementById("site-announcement-bar");
   if (annBar) {
     if (content.announcement && content.announcement.active && content.announcement.headline) {
@@ -143,16 +142,13 @@ function initHomePage() {
     }
   }
 
-  // 1. Start auto-sliding Hero Banner
   startSlider("home-slider", content.hero_slides || DEFAULT_CONTENT.hero_slides);
 
-  // 2. Service area strip text
   var areaBar = document.getElementById("area-bar");
   if (areaBar && content.area_text) {
     areaBar.textContent = content.area_text;
   }
 
-  // 3. Render Internet Plans
   var plans = getActivePlans();
   var planBox = document.getElementById("plan-cards");
   if (planBox) {
@@ -163,7 +159,6 @@ function initHomePage() {
     planBox.innerHTML = html;
   }
 
-  // 4. Render FAQs (all closed on page load/refresh)
   var faqBox = document.getElementById("faq-list");
   if (faqBox && content.faqs) {
     var faqHtml = "";
@@ -177,12 +172,11 @@ function initHomePage() {
     faqBox.innerHTML = faqHtml;
   }
 
-  // 5. Render Client / Partner logos if a .logos container exists on the page
   var logosBox = document.querySelector(".logos");
   var clientImgs = content.client_images || DEFAULT_CONTENT.client_images;
   if (logosBox && clientImgs && clientImgs.length) {
-    logosBox.innerHTML = clientImgs.map(function (imgPath, idx) {
-      return '<img data-img="' + imgPath + '" src="' + getImageUrl(imgPath) + '" alt="Partner ' + (idx + 1) + '" onerror="imageFallback(this, \'' + imgPath + '\')" onclick="previewImage(\'' + imgPath + '\', \'Partner ' + (idx + 1) + '\')">';
+    logosBox.innerHTML = clientImgs.map(function (imgPath) {
+      return '<img data-img="' + imgPath + '" src="' + getImageUrl(imgPath) + '" alt="Client Partner" onerror="imageFallback(this, \'' + imgPath + '\')" onclick="previewImage(\'' + imgPath + '\', \'\')">';
     }).join("");
   }
 }

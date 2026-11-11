@@ -8,36 +8,36 @@ Ang study guide na ito ay ginawa para sa buong Capstone team upang madaling main
 
 Ang buong system—kasama ang **Public Website**, **Customer Portal**, **Internal Staff Portals (Agent at Manager)**, **Technical Admin Console**, at **Python FastAPI Backend**—ay naka-host nang buo sa cloud gamit ang **Vercel** at **Supabase**:
 
-1. **Frontend Web Portals (`web/*.html`, `web/assets/style.css`, `web/js/*.js`):**
+1. **Frontend Web Portals (`web/html/*.html`, `web/style.css`, `web/js/*.js`):**
    - Purong **HTML5**, **CSS3** (clean minimalist UI na may kumpletong smooth UX animations at responsive Grid/Flexbox), at **Vanilla JavaScript** na may **OOP Validator at Guide Classes**.
-   - **Leaflet.js + OpenStreetMap + LocationIQ API**: Ginagamit sa `apply.html` para sa interactive map pinning at reverse geocoding, na may automatic fallback sa OpenStreetMap Nominatim.
+   - **Leaflet.js + OpenStreetMap + LocationIQ API**: Ginagamit sa `web/html/apply.html` para sa interactive map pinning at reverse geocoding, na may automatic fallback sa OpenStreetMap Nominatim.
    - **Google reCAPTCHA v2 ("I'm not a robot" Checkbox)**: Pinoprotektahan ang application form at login pages laban sa bots, na bini-verify sa server-side gamit ang `/api/verify-captcha` (`SiteVerify`).
 2. **Cloud Database, Auth, at Storage (`Supabase`):**
    - **PostgreSQL (13 Tables)**: Nagtatago ng `users`, `plans`, `system_settings`, `website_content`, `agent_links`, `applications`, `documents`, `screenings`, `corrections`, `notifications`, `login_history`, `system_logs`, at `popup_guides`.
-   - **Supabase Storage Buckets**: Dalawang buckets—`website-assets` para sa banners/logos/permits/vehicles, at `documents` para sa in-upload na Valid IDs (front at back) at ang **OpenCV cropped working copies** (`documents/cropped/`).
+   - **Supabase Storage Buckets**: Dalawang buckets—`website-assets` para sa banners/logos/icons/permits/vehicles, at `documents` para sa in-upload na Valid IDs (front at back), mobile QR scan uploads (`documents/qr-sessions/`), at ang **OpenCV cropped working copies** (`documents/cropped/`).
 3. **Serverless Python Backend (`api/index.py` at helper modules sa Vercel Python Runtime):**
    - **`api/index.py`**: Ang FastAPI entrypoint na nagbibigay ng cloud REST endpoints (`/api/health`, `/api/verify-captcha`, `/api/screen-async`, `/api/screen`, `/api/notify`, `/api/polite-remark`).
    - **`api/_quality.py` (`OpenCV`)**: Sinusuri ang image sharpness (Laplacian variance), brightness, glare, at contrast, at gumagawa ng 4-corner perspective-cropped at CLAHE-enhanced working copy nang hindi binabago ang original uploaded ID ng customer.
-   - **`api/_gemini.py` (`Google Gemini API` + `FieldComparisonEngine`)**: Gumagamit ng `gemini-flash-latest` multimodal Vision OCR para basahin ang pangalan, petsa ng kapanganakan, at ID number sa Philippine Valid IDs. Pagkatapos, ang deterministic Python `FieldComparisonEngine` ang nagko-compare ng customer-entered fields laban sa nabasang text bago gumawa ang Gemini ng **preliminary findings** at **polite plain-language correction draft**.
+   - **`api/_gemini.py` (`Google Gemini API` + `FieldComparisonEngine`)**: Gumagamit ng `gemini-flash-latest` multimodal Vision OCR para basahin ang document validity (`is_valid_government_id`), pangalan, petsa ng kapanganakan, at ID number sa Philippine Valid IDs. Pagkatapos, ang deterministic Python `FieldComparisonEngine` ang nagko-compare ng customer-entered fields laban sa nabasang text bago gumawa ang Gemini ng **preliminary findings** at **polite plain-language correction draft**.
    - **`api/_screening.py` (`CloudScreeningCoordinator`)**: Tinitiyak ang **Human-in-the-Loop** rule ng manuscript—ang AI findings ay **preliminary** lamang at laging dumadaan sa **Agent review at confirmation** bago ma-markahan ng `Needs Correction` ang application. Kapag naka-disable o unavailable ang AI, automatic ang fallback sa manual review gamit ang original uploaded ID photos.
-   - **`api/_mailer.py` (`Gmail SMTP` over TLS Port 587)**: Gumagamit ng OOP `BaseEmailTemplateRenderer` at `CustomerEmailRenderer` upang magpadala ng simple, malinis, at propesyonal na HTML emails **eksklusibo sa `@gmail.com` Customer accounts lamang** (6-digit OTP codes, application confirmation na may Reference Number at activation link, RA 10173 privacy-safe correction notices, status updates, at opted-in promotional broadcasts). Automatic nitong ini-skip ang internal `@pigem.com` business accounts dahil **in-system website notifications** (`public.notifications`) ang gamit ng Agents at Manager.
+   - **`api/_mailer.py` (`Gmail SMTP` over TLS Port 587)**: Gumagamit ng OOP `BaseEmailTemplateRenderer` at `CustomerEmailRenderer` upang magpadala ng simple, malinis, at propesyonal na HTML emails **eksklusibo sa `@gmail.com` Customer accounts lamang** (6-digit OTP codes, application confirmation na may Reference Number at one-time activation link, RA 10173 privacy-safe correction notices, status updates, at opted-in promotional broadcasts). Automatic nitong ini-skip ang username-only internal accounts dahil **in-system website notifications** (`public.notifications`) ang gamit ng Agents at Manager.
 
 ---
 
 ## 2. Account Identity, Notifications, at Announcements Architecture
 
 1. **Customers (`@gmail.com` Only):**
-   - Tanging valid `@gmail.com` email address lamang ang tinatanggap sa Application Form (`apply.html`), Account Activation (`activate.html`), at Customer Login (`login.html`).
+   - Tanging valid `@gmail.com` email address lamang ang tinatanggap sa Application Form (`web/html/apply.html`), One-Time Account Activation (`web/html/activate.html`), at Customer Login (`web/html/login.html` gamit ang Gmail o username).
    - Sa Customer Login lang may **6-digit Gmail OTP Forgot Password** recovery.
-2. **Internal Staff at Single Provisioned Admin (`@pigem.com` Business Accounts):**
-   - Ang **Agent**, **Manager**, at **Admin** ay gumagamit ng **internal business accounts** (halimbawa `admin@pigem.com`, `manager@pigem.com`, `agent1@pigem.com`) na pang-login lamang sa `/staff-login` at `/admin-login`.
-   - **Isa (1) lang ang Admin sa buong system:** Sa unang bukas ng `/admin-login` (kapag wala pang Admin sa `public.users`), lalabas ang **First-Time System Setup** button papuntang `/setup-accounts` upang i-register nang isang beses ang sole Admin business account. Pagkatapos ma-provision ang 1 Admin, permanenteng naka-lock na ang `/setup-accounts`.
-   - **Admin Sole Account Handler:** Ang Admin lamang sa `/admin` (`Accounts` tab) ang gumagawa, nag-e-enable/disable, at nagre-reset ng password ng Manager at Agent business accounts.
+2. **Internal Staff at Single Provisioned Admin (`username`-Only Internal Accounts):**
+   - Ang **Agent**, **Manager**, at **Admin** ay gumagamit ng **unique username only** (halimbawa `@pigem_admin`, `@manager_cavite`, `@agent_juan`) na walang external email column sa `public.users`, pang-login lamang sa `/staff-login` at `/admin-login`.
+   - **Isa (1) lang ang Admin sa buong system:** Sa unang bukas ng `/admin-login` (kapag wala pang Admin sa `public.users`), lalabas ang **First-Time System Setup** button papuntang `/setup-accounts` upang i-register nang isang beses ang sole Admin username account. Pagkatapos ma-provision ang 1 Admin, permanenteng naka-lock na ang `/setup-accounts`.
+   - **Admin at Manager Staff Provisioning:** Ang Admin sa `/admin` (`Accounts` tab) ang gumagawa, nag-e-edit, nag-e-enable/disable, nagde-delete, at nagre-reset ng password ng Manager, Agent, at Customer accounts, at may access din ang Manager sa `/manager` upang gumawa at mag-manage ng Agent accounts. Kung makalimutan ng Agent o Manager ang password, pwedeng mag-submit ng **Forgot Password Request** papunta sa Admin mula sa `/staff-login`.
 3. **In-System Website Notifications vs. Customer Emails:**
-   - Walang external email na ipinapadala sa Agent, Manager, o Admin dahil business login credentials lang ang `@pigem.com`.
+   - Walang external email na ipinapadala sa Agent, Manager, o Admin dahil username-only internal accounts ang gamit nila.
    - Kapag may bagong application o customer update, o kapag in-off/in-on ng Admin ang **AI Screening** o **Website Maintenance Mode**, lumalabas agad ito bilang **in-system website notification** at status banner sa Agent Workspace at Manager Dashboard.
-4. **Website Announcements at Promotional Offers (`manager.html` + `index.html`):**
-   - Sa Manager CMS (`Announcements & Promos`), pwedeng i-publish ng Manager ang isang **Public Website Announcement Banner** na makikita agad sa tuktok ng `index.html` at sa Customer Portal notifications, at sabay na magpadala ng malinis na promo email mula sa official PIGEM Gmail SMTP sender (`SMTP_FROM`) **para lamang sa `@gmail.com` Customers na nag-check ng marketing consent (`promo_opt_in`)**.
+4. **Website Announcements at Promotional Offers (`web/html/manager.html` + `web/html/index.html`):**
+   - Sa Manager CMS (`Announcements & Promos`), pwedeng i-publish ng Manager ang isang **Public Website Announcement Banner** na makikita agad sa tuktok ng `web/html/index.html` at sa Customer Portal notifications, at sabay na magpadala ng malinis na promo email mula sa official PIGEM Gmail SMTP sender (`SMTP_FROM`) **para lamang sa `@gmail.com` Customers na nag-check ng marketing consent (`promo_opt_in`)**.
 
 ---
 
@@ -54,9 +54,10 @@ Ang buong system—kasama ang **Public Website**, **Customer Portal**, **Interna
   - `_screening.py` — OOP `BaseCloudGateway`, `SupabaseApplicationGateway`, at `CloudScreeningCoordinator`.
   - `_mailer.py` — Transactional HTML email builder at Gmail SMTP TLS sender.
 - `web/`
-  - **Public at Customer Pages**: `index.html`, `about.html`, `apply.html`, `privacy.html`, `login.html`, `activate.html`, `customer.html`
-  - **Internal Staff at Admin Pages**: `staff-login.html`, `agent.html`, `manager.html`, `admin-login.html`, `admin.html`, `setup-accounts.html`
-  - **Shared Stylesheet**: `web/assets/style.css`
+  - **HTML Portals (`web/html/`)**:
+    - **Public at Customer Pages**: `index.html`, `about.html`, `apply.html`, `privacy.html`, `login.html`, `activate.html`, `customer.html`
+    - **Internal Staff at Admin Pages**: `staff-login.html`, `agent.html`, `agent-register.html`, `manager.html`, `admin-login.html`, `admin.html`, `setup-accounts.html`
+  - **Shared Stylesheet**: `web/style.css` (all icons & images fetched from Supabase Storage `website-assets`)
   - **JavaScript Modules (`web/js/`)**: `config.js`, `db.js`, `api.js`, `home.js`, `apply.js`, `login.js`, `customer.js`, `agent.js`, `manager.js`, `admin.js`, `dash-ui.js`
 
 ---
@@ -124,7 +125,7 @@ DROP POLICY IF EXISTS "Allow public access to website-assets" ON storage.objects
 DROP POLICY IF EXISTS "Allow access to documents" ON storage.objects;
 ```
 
-Pagkatapos patakbuhin ang reset script sa itaas, kopyahin at i-run nang buo ang laman ng `schema.sql` sa Supabase SQL Editor. Pagkatapos, buksan ang `/admin-login` -> pindutin ang **Provision Admin Account** (`/setup-accounts`) upang i-register ang nag-iisang Admin business account (halimbawa `admin@pigem.com`), at mag-sign in sa `/admin` upang gawin ang Manager (`manager@pigem.com`) at Agent (`agent1@pigem.com`) business accounts.
+Pagkatapos patakbuhin ang reset script sa itaas, kopyahin at i-run nang buo ang laman ng `schema.sql` sa Supabase SQL Editor. Pagkatapos, buksan ang `/admin-login` -> pindutin ang **Provision Admin Account** (`/setup-accounts`) upang i-register ang nag-iisang Admin username account (halimbawa `pigem_admin`), at mag-sign in sa `/admin` upang gawin ang Manager at Agent accounts gamit ang kani-kanilang username.
 
 ---
 
@@ -148,5 +149,5 @@ Pagkatapos patakbuhin ang reset script sa itaas, kopyahin at i-run nang buo ang 
 6. **Tanong ng Panel: "Paano gumagana ang map pinning sa Application Form?"**  
    **Sagot:** Gumagamit po kami ng **Leaflet.js** na nagre-render ng **OpenStreetMap** tiles, at konektado ito sa **LocationIQ Geocoding API** bilang primary reverse-geocoding service na may automatic fallback sa OpenStreetMap Nominatim. Kapag nag-drag ng pin o gumamit ng GPS ang customer, automatic na napupunan ang street, barangay, city, at province habang nase-save ang eksaktong latitude at longitude coordinates para sa installation team ng PIGEM.
 
-7. **Tanong ng Panel: "Bakit `@gmail.com` lang ang sa Customer habang internal business accounts (`@pigem.com`) ang sa Agent, Manager, at Admin?"**  
-   **Sagot:** Upang magkaroon ng malinaw na **role-based identity separation**. Ang Customers ay kailangang may tunay at aktibong `@gmail.com` inbox para matanggap ang 6-digit OTP verification, Reference Number, RA 10173 privacy-safe correction alerts, at opted-in promos. Samantala, ang Agents, Manager, at ang nag-iisang System Administrator ay gumagamit ng internal business credentials (`@pigem.com`) na pang-dashboard sign-in lamang—ang sole Admin ay nagrerehistro nang isang beses sa One-Time Admin Provisioning (`/setup-accounts`) at siya lamang ang humahawak ng lahat ng Manager at Agent business accounts, habang ang lahat ng internal status alerts (gaya ng kapag naka-off ang AI Screening o naka-Maintenance Mode ang site) ay lumalabas nang direkta bilang in-system notifications sa website dashboards.
+7. **Tanong ng Panel: "Bakit `@gmail.com` lang ang sa Customer habang username-only internal credentials naman ang sa Agent, Manager, at Admin?"**  
+   **Sagot:** Upang magkaroon ng malinaw na **role-based identity separation**. Ang Customers ay kailangang may tunay at aktibong `@gmail.com` inbox para matanggap ang 6-digit OTP verification, Reference Number, one-time account activation link, RA 10173 privacy-safe correction alerts, at opted-in promos. Samantala, ang Agents, Manager, at ang nag-iisang System Administrator ay gumagamit ng unique username-only internal credentials na walang naka-store na external email address—ang sole Admin ay nagrerehistro nang isang beses sa One-Time Admin Provisioning (`/setup-accounts`) at humahawak sa Manager, Agent, at Customer accounts (habang ang Manager ay nakakagawa rin ng Agents), at ang lahat ng internal status alerts ay lumalabas nang direkta bilang in-system notifications sa website dashboards.

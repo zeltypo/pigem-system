@@ -21,12 +21,10 @@
   <div class="dash-wrap">
 
     <aside class="dash-side">
-      <div class="brand">
+      <div class="brand brand-stacked">
         <img src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
-        <div>
-          <b>PIGEM Manager</b>
-          <span>Monitoring and Content</span>
-        </div>
+        <span class="brand-org">COMBINED FACILITIES SUPPORT SERVICES</span>
+        <span class="brand-sys">OPERATIONS MANAGEMENT SYSTEM</span>
       </div>
 
       <button id="nav-overview" data-nav-label="Overview" data-nav-target="overview" class="active" onclick="showTab('overview')">
@@ -111,21 +109,15 @@
 
       <div class="dash-top">
         <div>
-          <b style="font-size:16px">Application Monitoring Management</b>
+          <b style="font-size:16px">Operations Management System</b>
           <div class="muted" style="font-size:12px">Signed in as <span id="top-user-name">Manager</span></div>
         </div>
 
-        <div class="top-search">
-          <input type="text" placeholder="Search sections, applications, or agents..." oninput="onTopSearchInput(this)" />
-          <div id="top-search-results" class="search-drop hidden"></div>
-        </div>
-
         <div class="top-actions">
-          <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('manager_dashboard_guide')">Tutorial</button>
-          <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
+          <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
             <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications (not available)" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
           </button>
-          <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">MG</button>
+          <button id="avatar-btn" type="button" class="avatar-btn overview-only-avatar" onclick="toggleProfileDrawer()" title="Account and Theme">MG</button>
         </div>
       </div>
 
@@ -137,6 +129,13 @@
       </div>
 
       <section id="tab-overview">
+        <div class="overview-hero">
+          <div>
+            <h2>Operations Overview</h2>
+            <p>Real-time application volume, pipeline distribution, turnaround activity, and plan analytics.</p>
+          </div>
+        </div>
+
         <div class="grid-4" style="margin-bottom:20px">
           <div class="stat"><div class="num" id="st-total">0</div><div class="lbl">Total Applications</div></div>
           <div class="stat"><div class="num" id="st-pending">0</div><div class="lbl">Pending / Encoding</div></div>
@@ -144,9 +143,10 @@
           <div class="stat"><div class="num" id="st-approved">0</div><div class="lbl">Approved</div></div>
         </div>
 
-        <div class="grid-2" style="margin-bottom:20px">
+        <div class="report-charts-grid" style="margin-bottom:20px">
           <div class="card">
             <h3 style="margin-bottom:12px">Pipeline Status Distribution</h3>
+            <div id="chart-mgr-pie" style="margin-bottom:14px"></div>
             <div id="chart-mgr-bars"></div>
           </div>
           <div class="card">
@@ -171,12 +171,12 @@
             <input id="mgr-filter" type="text" placeholder="Filter by applicant, ref no., or agent..." oninput="renderManagerApps()" style="max-width:260px" />
           </div>
 
-          <div style="display:flex; gap:8px; flex-wrap:wrap">
-            <button type="button" class="btn btn-outline btn-sm" onclick="showTab('app-all')">All</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="showTab('app-encoding')">Encoding</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="showTab('app-override')">Needs Correction</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="showTab('app-approved')">Approved</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="showTab('app-rejected')">Rejected</button>
+          <div class="sub-nav" role="tablist">
+            <button type="button" class="sub-nav-btn active" id="mgr-sub-app-all" onclick="showTab('app-all')">All Applications</button>
+            <button type="button" class="sub-nav-btn" id="mgr-sub-app-encoding" onclick="showTab('app-encoding')">Encoding</button>
+            <button type="button" class="sub-nav-btn" id="mgr-sub-app-override" onclick="showTab('app-override')">Needs Correction</button>
+            <button type="button" class="sub-nav-btn" id="mgr-sub-app-approved" onclick="showTab('app-approved')">Approved</button>
+            <button type="button" class="sub-nav-btn" id="mgr-sub-app-rejected" onclick="showTab('app-rejected')">Rejected</button>
           </div>
         </div>
         <div id="mgr-apps-list"></div>
@@ -186,21 +186,28 @@
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
             <div>
-              <h2 style="font-size:20px; margin-bottom:4px">Agent Workload and Performance</h2>
-              <p class="muted" style="font-size:13px; margin:0">Live summary of applications claimed, encoded, and pending per verification agent.</p>
+              <h2 style="font-size:20px; margin-bottom:4px">Agent Workload and Team Accounts</h2>
+              <p class="muted" style="font-size:13px; margin:0">Live verification metrics and account controls for all Agents (username-only login).</p>
             </div>
-            <button type="button" class="btn btn-red btn-sm" onclick="showTab('agent-links')">+ Create Agent or Registration Link</button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-red btn-sm" onclick="openManagerAddAgentModal()">+ Add Agent</button>
+              <button type="button" class="btn btn-outline btn-sm" onclick="openManagerInviteModal()">Generate Private Invite</button>
+            </div>
+          </div>
+          <div class="section-toolbar">
+            <input id="mgr-agent-search" type="text" class="section-search-input" placeholder="Search verification agents by name or @username..." oninput="renderAgentPerformance()" />
           </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Agent Name</th>
-                  <th>Email</th>
+                  <th>Username</th>
                   <th>Active Claimed</th>
                   <th>Needs Correction</th>
                   <th>Encoding / Approved</th>
                   <th>Total Handled</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="mgr-agent-body"></tbody>
@@ -210,67 +217,17 @@
       </section>
 
       <section id="tab-agent-links" class="hidden">
-        <div class="grid-2" style="margin-bottom:18px">
-
-          <div class="card">
-            <h3 style="font-size:18px; margin-bottom:6px">Generate Private Agent Registration Link</h3>
-            <p class="muted" style="font-size:13px; margin-bottom:14px">
-              Generate a private one-time registration link (`agent-register.html?invite=INV-...`) for a new verification agent. No one can access the Agent Registration page without an active link generated by a Manager or Admin.
-            </p>
-            <div id="mgr-invite-msg" class="msg"></div>
-            <div class="field">
-              <label>Assigned Agent Note / Label</label>
-              <input id="mgr-invite-note" type="text" placeholder="e.g. New Verification Agent - Dasmariñas Team" />
-            </div>
-            <button type="button" class="btn btn-red" style="width:100%" onclick="generateManagerAgentInvite()">Generate Private Registration Link</button>
-            <div id="mgr-invite-output-wrap" class="hidden" style="margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">
-              <div class="tiny muted" style="font-weight:700; margin-bottom:4px">Private One-Time Registration URL:</div>
-              <input id="mgr-invite-url" type="text" readonly style="margin-bottom:8px; font-size:12px" />
-              <button type="button" class="btn btn-outline btn-sm" onclick="copyManagerInviteUrl()">Copy Registration Link</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <h3 style="font-size:18px; margin-bottom:6px">Create Agent Account Directly</h3>
-            <p class="muted" style="font-size:13px; margin-bottom:14px">
-              Or create the verification agent's username and official `@pigem.ph` account credentials directly here.
-            </p>
-            <div id="mgr-create-agent-msg" class="msg"></div>
-            <div class="grid-3">
-              <div class="field">
-                <label>First Name <span class="req">*</span></label>
-                <input id="mgr-ag-fname" type="text" placeholder="Juan" />
-              </div>
-              <div class="field">
-                <label>Middle Name</label>
-                <input id="mgr-ag-mname" type="text" placeholder="Santos" />
-              </div>
-              <div class="field">
-                <label>Last Name <span class="req">*</span></label>
-                <input id="mgr-ag-lname" type="text" placeholder="Dela Cruz" />
-              </div>
-            </div>
-            <div class="grid-2">
-              <div class="field">
-                <label>Agent Username <span class="req">*</span></label>
-                <input id="mgr-ag-username" type="text" placeholder="e.g. agent_juan" />
-              </div>
-              <div class="field">
-                <label>Official Email (@pigem.ph) <span class="req">*</span></label>
-                <input id="mgr-ag-email" type="email" placeholder="agent@pigem.ph" />
-              </div>
-            </div>
-            <div class="field">
-              <label>Password <span class="req">*</span></label>
-              <input id="mgr-ag-pass" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" />
-            </div>
-            <button type="button" class="btn btn-outline" style="width:100%" onclick="createAgentFromManager()">Create Agent Account</button>
-          </div>
-        </div>
-
         <div class="card">
-          <h2 style="font-size:20px; margin-bottom:6px">Private Agent Registration Invites and Referral Links</h2>
-          <p class="muted" style="font-size:13px; margin-bottom:14px">Track active one-time `INV-...` agent registration links and customer referral links.</p>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+            <div>
+              <h2 style="font-size:20px; margin-bottom:4px">Agent Registration Invites and Referral Links</h2>
+              <p class="muted" style="font-size:13px; margin:0">Create an Agent account directly or generate a one-time private registration URL (`agent-register.html?invite=INV-...`).</p>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-red btn-sm" onclick="openManagerAddAgentModal()">+ Add Agent</button>
+              <button type="button" class="btn btn-dark btn-sm" onclick="openManagerInviteModal()">Generate Private Registration Link</button>
+            </div>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -300,7 +257,7 @@
             </p>
           </div>
           <div style="display:flex; gap:8px; flex-wrap:wrap">
-            <a href="../index.html?preview_cms=1" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/preview.png" alt="Preview (not available)" class="icon-img" />Preview Live Website</a>
+            <a href="index.html?preview_cms=1" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/preview.png" alt="Preview (not available)" class="icon-img" />Preview Live Website</a>
             <button type="button" id="cms-maint-toggle-btn" class="btn btn-outline btn-sm" onclick="finishCmsAndDisableMaintenance()">Enable Maintenance Mode</button>
           </div>
         </div>

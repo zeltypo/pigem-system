@@ -278,6 +278,7 @@ function openPopup(htmlContent, isWide) {
   back.innerHTML = '<div class="popup' + (isWide ? " wide" : "") + '">' + htmlContent + "</div>";
   document.body.appendChild(back);
   if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles(back);
+  if (typeof attachEnterKeyNavigation === "function") attachEnterKeyNavigation(back);
 }
 
 function closePopup() {
@@ -294,9 +295,12 @@ function showAlert(title, message, type) {
 }
 
 function previewImage(filePath, titleText) {
+  var headerHtml = titleText
+    ? '<div class="row between"><h3>' + escapeHtml(titleText) + '</h3><button class="btn btn-small" onclick="closePopup()">Close</button></div>'
+    : '<div class="row" style="justify-content:flex-end"><button class="btn btn-small" onclick="closePopup()">Close</button></div>';
   openPopup(
-    '<div class="row between"><h3>' + titleText + '</h3><button class="btn btn-small" onclick="closePopup()">Close</button></div>' +
-    '<img class="mt" src="' + getImageUrl(filePath) + '" onerror="imageFallback(this, \'' + filePath + '\')" style="margin:12px auto 0; max-height:70vh; border-radius:10px;">',
+    headerHtml +
+    '<img class="mt" src="' + getImageUrl(filePath) + '" onerror="imageFallback(this, \'' + filePath + '\')" style="margin:12px auto 0; max-height:74vh; border-radius:10px;">',
     true
   );
 }
@@ -366,10 +370,12 @@ var stripTimers = {};
 function buildStrip(stripId, files, titlePrefix) {
   var box = document.getElementById(stripId);
   if (!box) return;
+  var altLabel = titlePrefix ? String(titlePrefix) : "Gallery Image";
+  var popupTitle = titlePrefix ? String(titlePrefix) : "";
   var html = "";
   for (var round = 0; round < 2; round++) {
     for (var i = 0; i < files.length; i++) {
-      html += '<img draggable="false" src="' + getImageUrl(files[i]) + '" onerror="imageFallback(this, \'' + files[i] + '\')" alt="' + titlePrefix + " " + (i + 1) + '" onclick="if(!window._stripDragged) previewImage(\'' + files[i] + "', '" + titlePrefix + " " + (i + 1) + '\')">';
+      html += '<img draggable="false" src="' + getImageUrl(files[i]) + '" onerror="imageFallback(this, \'' + files[i] + '\')" alt="' + altLabel + '" onclick="if(!window._stripDragged) previewImage(\'' + files[i] + "', '" + popupTitle + '\')">';
     }
   }
   box.innerHTML = '<div class="strip-track">' + html + "</div>";
@@ -458,7 +464,10 @@ function attachPasswordRegexChecklist(inputEl) {
     id === "ag-reg-pw" ||
     id === "m-ag-pw" ||
     id === "adm-new-pw" ||
+    id === "adm-reset-pw" ||
+    id === "mgr-ag-pass" ||
     id === "prof-new-pw" ||
+    id === "prof-pw-new" ||
     id === "rec-new-pw";
 
   if (!needsChecklist) return;
@@ -467,7 +476,7 @@ function attachPasswordRegexChecklist(inputEl) {
   var box = document.createElement("div");
   box.className = "pw-regex-box";
   box.innerHTML =
-    '<div class="pw-regex-title">Password Requirements:</div>' +
+    '<div class="pw-regex-title">Remaining Password Requirements:</div>' +
     '<div class="pw-regex-grid">' +
       '<span data-rule="length">&#9675; At least 8 characters</span>' +
       '<span data-rule="upper">&#9675; 1 uppercase letter (A-Z)</span>' +
@@ -482,15 +491,18 @@ function attachPasswordRegexChecklist(inputEl) {
   }
 
   function refreshRules() {
-    var rules = evaluatePasswordRules(inputEl.value);
+    var val = String(inputEl.value || "");
+    var rules = evaluatePasswordRules(val);
     var items = box.querySelectorAll("[data-rule]");
+    var pendingCount = 0;
     for (var i = 0; i < items.length; i++) {
       var key = items[i].getAttribute("data-rule");
       var passed = Boolean(rules[key]);
+      items[i].style.display = passed ? "none" : "block";
       items[i].classList.toggle("passed", passed);
-      var labelText = items[i].textContent.replace(/^[\u2713\u25CB\s]+/, "");
-      items[i].innerHTML = (passed ? "&#10003; " : "&#9675; ") + labelText;
+      if (!passed) pendingCount++;
     }
+    box.style.display = pendingCount === 0 ? "none" : "block";
   }
 
   inputEl.addEventListener("input", refreshRules);
@@ -632,6 +644,9 @@ function checkPublicMaintenance() {
 window.addEventListener("DOMContentLoaded", async function () {
   if (typeof initPasswordEyeToggles === "function") {
     initPasswordEyeToggles();
+  }
+  if (typeof attachEnterKeyNavigation === "function") {
+    attachEnterKeyNavigation(document);
   }
   if (typeof dbSyncLiveSettingsAndContent === "function") {
     await dbSyncLiveSettingsAndContent();
@@ -852,7 +867,7 @@ var DASHBOARD_TUTORIAL_STEPS = {
     {
       selector: "#nav-accounts",
       title: "Step 4: Accounts and Private Agent Links",
-      text: "Create Manager or Agent accounts (@pigem.ph) or generate private one-time Agent registration links."
+      text: "Create Manager or Agent accounts using usernames or generate private one-time Agent registration links."
     },
     {
       selector: "#nav-logs",
@@ -1020,4 +1035,136 @@ function runPendingConfirmAction() {
   window._pendingConfirmAction = null;
   closePopup();
   if (typeof fn === "function") fn();
+}
+
+function validatePersonName(name, fieldLabel, allowNA) {
+  var label = fieldLabel || "Name";
+  var clean = String(name || "").trim();
+  if (!clean) {
+    return { valid: false, message: label + " is required." };
+  }
+  if (allowNA && /^(n\/a|na|none)$/i.test(clean)) {
+    return { valid: true, message: "" };
+  }
+  if (/\d/.test(clean)) {
+    return { valid: false, message: label + " must contain letters only and cannot include numbers." };
+  }
+  if (!/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\s.'-]*$/.test(clean) || !/[A-Za-z\u00C0-\u024F]/.test(clean)) {
+    return { valid: false, message: label + " must contain valid letters only without invalid symbols." };
+  }
+  return { valid: true, message: "" };
+}
+
+function isValidPersonName(name, allowNA) {
+  return validatePersonName(name, "Name", allowNA).valid;
+}
+
+function getMaxAdultBirthDate(minAge) {
+  var years = typeof minAge === "number" ? minAge : 18;
+  var now = new Date();
+  var y = now.getFullYear() - years;
+  var m = String(now.getMonth() + 1).padStart(2, "0");
+  var d = String(now.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + d;
+}
+
+function validateAdultBirthDate(dateStr, minAge) {
+  var years = typeof minAge === "number" ? minAge : 18;
+  var clean = String(dateStr || "").trim();
+  if (!clean) {
+    return { valid: false, message: "Please select your Date of Birth." };
+  }
+  var match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return { valid: false, message: "Please enter a valid Date of Birth." };
+  }
+  var y = parseInt(match[1], 10);
+  var m = parseInt(match[2], 10);
+  var day = parseInt(match[3], 10);
+  var dob = new Date(y, m - 1, day);
+  if (dob.getFullYear() !== y || dob.getMonth() !== m - 1 || dob.getDate() !== day || y < 1900) {
+    return { valid: false, message: "The Date of Birth entered is not a valid calendar date." };
+  }
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dob.setHours(0, 0, 0, 0);
+  if (dob > today) {
+    return { valid: false, message: "Date of Birth cannot be today or a future date." };
+  }
+  var age = today.getFullYear() - y;
+  var monthDiff = (today.getMonth() + 1) - m;
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < day)) {
+    age -= 1;
+  }
+  if (age < years) {
+    return {
+      valid: false,
+      age: age,
+      message: "Applicant must be at least " + years + " years old to apply (calculated age: " + Math.max(0, age) + ")."
+    };
+  }
+  return { valid: true, age: age, message: "" };
+}
+
+function getStaffIdentifier(user) {
+  if (!user) return "";
+  if (user.username) {
+    return "@" + String(user.username).replace(/^@/, "").trim();
+  }
+  return String(user.email || user.full_name || "").trim();
+}
+
+function isAssignedToStaff(assignedVal, staffUser) {
+  var val = String(assignedVal || "").trim().toLowerCase();
+  if (!val || !staffUser) return false;
+  var uname = String(staffUser.username || "").replace(/^@/, "").trim().toLowerCase();
+  var email = String(staffUser.email || "").trim().toLowerCase();
+  if (uname && (val === uname || val === "@" + uname)) return true;
+  if (email && val === email) return true;
+  return false;
+}
+
+function attachEnterKeyNavigation(rootEl) {
+  if (window.__pigemEnterNavBound) return;
+  window.__pigemEnterNavBound = true;
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.altKey) return;
+    var el = e.target;
+    if (!el || !el.tagName) return;
+    var tag = el.tagName.toUpperCase();
+    if (tag !== "INPUT" && tag !== "SELECT") return;
+    var inputType = String(el.type || "text").toLowerCase();
+    if (inputType === "submit" || inputType === "button" || inputType === "reset" || inputType === "file" || inputType === "checkbox" || inputType === "radio") {
+      return;
+    }
+    if (el.classList && el.classList.contains("no-enter-jump")) return;
+    var scope = el.closest(".popup, form, .panel, .auth-card, main, body") || document.body;
+    var rawFields = scope.querySelectorAll('input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([disabled]):not([readonly]), select:not([disabled])');
+    var visibleFields = [];
+    for (var i = 0; i < rawFields.length; i++) {
+      var f = rawFields[i];
+      if (f.offsetParent !== null && !f.closest("[hidden]")) {
+        visibleFields.push(f);
+      }
+    }
+    var idx = visibleFields.indexOf(el);
+    if (idx === -1) return;
+    if (idx < visibleFields.length - 1) {
+      e.preventDefault();
+      var nextEl = visibleFields[idx + 1];
+      nextEl.focus();
+      if (typeof nextEl.select === "function" && nextEl.tagName.toUpperCase() === "INPUT" && nextEl.type !== "date") {
+        try { nextEl.select(); } catch (err) {}
+      }
+      return;
+    }
+    var panel = el.closest(".panel");
+    if (panel) {
+      var nextBtn = panel.querySelector("[data-next]");
+      if (nextBtn && nextBtn.offsetParent !== null) {
+        e.preventDefault();
+        nextBtn.focus();
+      }
+    }
+  });
 }

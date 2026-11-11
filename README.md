@@ -4,19 +4,20 @@ Cloud-hosted Web-Based Internet Service Application System with AI-Assisted Requ
 
 ## Live Cloud Architecture
 
-- **Frontend Portals (`web/`)**: Plain HTML5, CSS3 (Grid/Flexbox responsive layout), and Vanilla JavaScript (OOP validators, Leaflet.js + OpenStreetMap + LocationIQ map pinning, and Google reCAPTCHA v2).
-- **Cloud Database, Auth & Storage (`Supabase`)**: 13 PostgreSQL tables (`schema.sql`), strict identity separation (`@gmail.com` Customer accounts vs. `@pigem.com` internal business accounts), and two cloud storage buckets (`website-assets` and `documents`).
+- **Frontend Portals (`web/html/*.html`, `web/style.css`, `web/js/*.js`)**: Plain HTML5, CSS3 (Grid/Flexbox responsive layout), and Vanilla JavaScript (OOP validators, Leaflet.js + OpenStreetMap + LocationIQ map pinning, mobile QR ID capture, and Google reCAPTCHA v2).
+- **Cloud Database, Auth & Storage (`Supabase`)**: 13 PostgreSQL tables (`schema.sql`), strict identity separation (`@gmail.com` Customer accounts vs. username-only internal accounts without email for Admin/Manager/Agent), and two cloud storage buckets (`website-assets` and `documents`).
 - **Serverless Python Backend (`api/index.py`)**: FastAPI serverless endpoints hosted on Vercel (`/api/health`, `/api/verify-captcha`, `/api/screen-async`, `/api/screen`, `/api/notify`, `/api/polite-remark`) powered by **OpenCV** (`opencv-python-headless`), **Google Gemini API** (`gemini-flash-latest`), and **Gmail SMTP** (STARTTLS port 587 delivering clean HTML emails exclusively to `@gmail.com` Customer accounts).
 
 ## Portal Routes on Vercel
 
-- `/` or `/index.html` — Public Home, Announcements Banner & Fiber Plans
+- `/` or `/index` (`web/html/index.html`) — Public Home, Announcements Banner & Fiber Plans
 - `/about` — Company Profile, Fleet & Permits
-- `/apply` — Guided 6-Panel Online Application Form (`@gmail.com` OTP verified)
-- `/login` & `/customer` — Customer Login (`@gmail.com` + 6-Digit OTP Recovery) & Application Monitoring Portal
-- `/staff-login`, `/agent`, `/manager` — Internal Agent Workspace & Manager Dashboard / CMS (`@pigem.com` business credentials)
+- `/apply` — Guided 6-Panel Online Application Form (`@gmail.com` OTP verified + QR mobile ID upload + pre-submit ID screening)
+- `/activate` — One-time Customer Password Setup & Account Activation link
+- `/login` & `/customer` — Customer Login (`@gmail.com` or username + 6-Digit OTP Recovery) & Application Monitoring Portal
+- `/staff-login`, `/agent`, `/manager` — Internal Agent Workspace & Manager Operations / CMS (`username`-only credentials)
 - `/setup-accounts` — One-Time Single System Administrator Provisioning (locks permanently once 1 Admin exists)
-- `/admin-login` & `/admin` — Technical Management System & Internal Business Account Provisioning Console
+- `/admin-login` & `/admin` — Technical Management System, Staff Account Provisioning (`username`-only) & Reports Console
 
 ## Required Vercel Environment Variables
 

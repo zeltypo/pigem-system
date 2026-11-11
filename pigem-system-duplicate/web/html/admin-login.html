@@ -1,24 +1,28 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     FILE OVERVIEW: System Administrator Sign-In Page (web/admin-login.html)
-     PURPOSE: Authenticates the System Administrator account using Username or
-              Official Email (@pigem.ph) and Remember Me.
+     FILE OVERVIEW: System Administrator Sign-In Portal (web/html/admin-login.html)
+     PURPOSE: Dedicated high-security username-only sign-in gateway for the single System Administrator account (no wrong-password lockout).
+     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
      ========================================================================== -->
+
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+
+  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Admin Login | Combined Facilities Support Services</title>
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
+
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
-  <!-- IMPORT: Google reCAPTCHA v2 client script -->
+
+  <!-- IMPORT: Google reCAPTCHA v2 client widget script for anti-bot protection -->
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
 
-  <!-- Simple Top Bar -->
+  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="simple-bar">
     <div class="container" style="display:flex; align-items:center; gap:12px;">
       <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
@@ -26,7 +30,7 @@
     </div>
   </header>
 
-  <!-- Main Sign-In Card -->
+  <!-- SECTION: Main Page Content Container -->
   <main class="auth-page">
     <div class="card auth-card">
       <div class="center">
@@ -42,10 +46,13 @@
         </div>
       </div>
 
+      <div id="login-attempt-banner" class="notice bad mt" hidden></div>
+
+      <!-- FORM: Interactive User Input Form -->
       <form class="mt-big" onsubmit="handleLogin(event)">
         <div>
-          <label for="email">Username or Email</label>
-          <input id="email" type="text" autocomplete="username" placeholder="admin username or admin@pigem.ph" required>
+          <label for="email">Administrator Username</label>
+          <input id="email" type="text" autocomplete="username" placeholder="Enter admin username (e.g. pigem_admin)" required>
         </div>
 
         <div class="mt">
@@ -71,18 +78,24 @@
     </div>
   </main>
 
+  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
 window.SYSTEM = "admin";
   </script>
-  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
+
+  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- IMPORT: Global cloud configuration and UI helpers -->
+
+  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
-  <!-- IMPORT: Cloud database & authentication layer -->
+
+  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
-  <!-- IMPORT: Cloud backend service client -->
+
+  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for captcha verification, ID screening & Gmail SMTP emails -->
   <script src="../js/api.js"></script>
-  <!-- IMPORT: Unified sign-in controller -->
+
+  <!-- IMPORT: Role-based authentication controller for Customers, Staff (username-only), and Admin -->
   <script src="../js/login.js"></script>
 </body>
 </html>

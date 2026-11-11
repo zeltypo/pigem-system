@@ -16,7 +16,15 @@
     },
     {
       "source": "/",
-      "destination": "/web/index.html"
+      "destination": "/web/html/index.html"
+    },
+    {
+      "source": "/html/style.css",
+      "destination": "/web/style.css"
+    },
+    {
+      "source": "/html/js/(.*)",
+      "destination": "/web/js/$1"
     },
     {
       "source": "/style.css",
@@ -31,11 +39,11 @@
       "destination": "/web/html/$1"
     },
     {
-      "source": "/(about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts)\\.html",
+      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register)\\.html",
       "destination": "/web/html/$1.html"
     },
     {
-      "source": "/(about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts)",
+      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register)",
       "destination": "/web/html/$1.html"
     }
   ]

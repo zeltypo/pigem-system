@@ -28,10 +28,12 @@
         <p class="small muted mt" style="margin-top:4px;">Sign in to Application Management System</p>
       </div>
 
+      <div id="login-attempt-banner" class="notice bad mt" hidden></div>
+
       <form class="mt-big" onsubmit="handleLogin(event)">
         <div>
-          <label for="email">Username or Email</label>
-          <input id="email" type="text" autocomplete="username" placeholder="username or name@pigem.ph" required>
+          <label for="email">Staff Username</label>
+          <input id="email" type="text" autocomplete="username" placeholder="Enter your internal username (e.g. maria_santos)" required>
         </div>
 
         <div class="mt">
@@ -44,6 +46,7 @@
             <input id="remember-me" type="checkbox">
             <span>Remember me</span>
           </label>
+          <a href="#" style="font-size:13px; color:var(--red); font-weight:600;" onclick="openStaffResetRequestModal(); return false;">Forgot Password?</a>
         </div>
 
         <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">
@@ -54,6 +57,10 @@
           <button id="btn-login" type="submit" class="btn btn-red btn-full">Sign In</button>
         </div>
       </form>
+
+      <div class="notice mt" style="font-size:12.5px; line-height:1.5;">
+        <b>Internal Access Support:</b> Internal Agents and Managers sign in by Username only. Forgot your password or locked out? Contact System Admin at Tel: <b>(046) 458-0908</b> / Hotline: <b>101-733</b> or click <b>Forgot Password?</b> above.
+      </div>
     </div>
   </main>
 

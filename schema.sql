@@ -1,7 +1,7 @@
 CREATE TABLE public.users (
   id TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
-  email TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE,
   full_name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'customer'
     CHECK (role IN ('admin', 'manager', 'agent', 'customer')),

@@ -582,10 +582,12 @@ class GeminiScreeningService(BaseLanguageClient):
 
     _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-    # Strict JSON response schema guaranteeing consistent OCR field extraction
+    # Strict JSON response schema guaranteeing consistent OCR field extraction & government ID check
     _OCR_RESPONSE_SCHEMA = {
         "type": "OBJECT",
         "properties": {
+            "is_valid_government_id": {"type": "BOOLEAN"},
+            "detected_document_type": {"type": "STRING"},
             "extracted_name": {"type": "STRING"},
             "extracted_first_name": {"type": "STRING"},
             "extracted_middle_name": {"type": "STRING"},
@@ -602,6 +604,8 @@ class GeminiScreeningService(BaseLanguageClient):
             },
         },
         "required": [
+            "is_valid_government_id",
+            "detected_document_type",
             "extracted_name",
             "extracted_first_name",
             "extracted_middle_name",
@@ -756,7 +760,8 @@ class GeminiScreeningService(BaseLanguageClient):
             "4. For `extracted_id_number`, extract the primary card/license/ID number exactly as printed. "
             "If a secondary number is also printed on the front or back (for example PhilSys 16-digit PCN and 12-digit PSN, "
             "or CRN and serial number), include all secondary numbers in `alternate_id_numbers`.\n"
-            "5. Put every readable text line from the card in `lines`."
+            "5. Put every readable text line from the card in `lines`.\n"
+            "6. Set `is_valid_government_id` to `true` ONLY if the image clearly shows a physical or digital official Philippine government-issued ID card (or official paper/ePhilID); set `false` for selfies, landscapes, blank images, receipts, random screenshots, or unreadable pictures, and summarize what is shown in `detected_document_type`."
         )
         parts.append({"text": prompt})
 
@@ -789,6 +794,9 @@ class GeminiScreeningService(BaseLanguageClient):
             alt_nums = [str(x).strip() for x in (parsed.get("alternate_id_numbers") or []) if str(x).strip()]
             return {
                 "available": True,
+                # Pre-submit screening checks this boolean before creating an application row
+                "is_valid_government_id": bool(parsed.get("is_valid_government_id", True)),
+                "detected_document_type": str(parsed.get("detected_document_type") or "").strip(),
                 "lines": clean_lines,
                 "line_count": len(clean_lines),
                 "extracted_name": str(parsed.get("extracted_name") or "").strip(),

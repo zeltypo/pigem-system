@@ -7,7 +7,7 @@
 CREATE TABLE public.users (
   id TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
-  email TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE,
   full_name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'customer'
     CHECK (role IN ('admin', 'manager', 'agent', 'customer')),
@@ -21,6 +21,9 @@ CREATE TABLE public.users (
   intro TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration helper for existing databases where email was previously NOT NULL:
+-- ALTER TABLE public.users ALTER COLUMN email DROP NOT NULL;
 
 CREATE UNIQUE INDEX idx_users_username_lower ON public.users (lower(username));
 CREATE UNIQUE INDEX idx_users_single_admin ON public.users (role) WHERE role = 'admin';

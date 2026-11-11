@@ -21,12 +21,10 @@
   <div class="dash-wrap">
 
     <aside class="dash-side">
-      <div class="brand">
+      <div class="brand brand-stacked">
         <img src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
-        <div>
-          <b>Technical System</b>
-          <span>Admin Console</span>
-        </div>
+        <span class="brand-org">COMBINED FACILITIES SUPPORT SERVICES</span>
+        <span class="brand-sys">TECHNICAL MANAGEMENT SYSTEM</span>
       </div>
 
       <button id="nav-overview" data-nav-label="Overview" data-nav-target="overview" class="active" onclick="showTab('overview')">
@@ -68,21 +66,21 @@
           <div class="muted" style="font-size:12px">Signed in as <span id="top-user-name">Admin</span></div>
         </div>
 
-        <div class="top-search">
-          <input type="text" placeholder="Search admin tools, accounts, or applications..." oninput="onTopSearchInput(this)" />
-          <div id="top-search-results" class="search-drop hidden"></div>
-        </div>
-
         <div class="top-actions">
-          <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('admin_technical_guide')">Tutorial</button>
-          <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
+          <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
             <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications (not available)" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
           </button>
-          <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">AD</button>
         </div>
       </div>
 
       <section id="tab-overview">
+        <div class="overview-hero">
+          <div>
+            <h2>Admin Overview</h2>
+            <p>Real-time system performance, API readiness, account distribution, and application metrics.</p>
+          </div>
+        </div>
+
         <div class="grid-4" style="margin-bottom:20px">
           <div class="stat"><div class="num" id="st-users">0</div><div class="lbl">User Accounts</div></div>
           <div class="stat"><div class="num" id="st-apps">0</div><div class="lbl">Total Applications</div></div>
@@ -90,13 +88,15 @@
           <div class="stat"><div class="num" id="st-maint">OFF</div><div class="lbl">Maintenance Mode</div></div>
         </div>
 
-        <div class="grid-2" style="margin-bottom:20px">
+        <div class="report-charts-grid" style="margin-bottom:20px">
           <div class="card">
-            <h3 style="margin-bottom:12px">Accounts by Role</h3>
+            <h3 style="margin-bottom:12px">Accounts Distribution</h3>
+            <div id="chart-admin-role-pie" style="margin-bottom:14px"></div>
             <div id="chart-admin-bars"></div>
           </div>
           <div class="card">
             <h3 style="margin-bottom:12px">Application Status Overview</h3>
+            <div id="chart-admin-app-pie" style="margin-bottom:14px"></div>
             <div id="chart-admin-cols"></div>
           </div>
         </div>
@@ -143,12 +143,12 @@
 
       <section id="tab-apis" class="hidden">
         <div class="card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px">
             <div>
               <h2 style="font-size:20px">Connected APIs and Cloud Services</h2>
               <p class="muted" style="font-size:13px">Live connection status for Vercel FastAPI Serverless, Google Gemini Vision, OpenCV, Google reCAPTCHA v2, LocationIQ + OpenStreetMap, Supabase, and Gmail SMTP.</p>
             </div>
-            <button type="button" class="btn btn-outline btn-sm" onclick="checkApiHealth()">Check Live Health</button>
+            <span class="badge badge-blue">Live Status Monitor</span>
           </div>
           <div id="api-health-list" class="grid-2"></div>
         </div>
@@ -188,64 +188,38 @@
       </section>
 
       <section id="tab-accounts" class="hidden">
-        <div class="grid-2" style="margin-bottom:18px">
-
-          <div class="card">
-            <h3 style="margin-bottom:6px">Create Internal Staff Account (Agent or Manager)</h3>
-            <p class="muted" style="font-size:13px; margin-bottom:12px">
-              Internal staff sign in using their unique username or official email (`@pigem.ph`). Customer accounts use `@gmail.com` with a unique username.
-            </p>
-            <div id="acc-msg" class="msg"></div>
-            <div class="grid-3">
-              <div class="field"><label>First Name <span class="req">*</span></label><input id="new-acc-fname" type="text" placeholder="Maria" /></div>
-              <div class="field"><label>Middle Name</label><input id="new-acc-mname" type="text" placeholder="Reyes" /></div>
-              <div class="field"><label>Last Name <span class="req">*</span></label><input id="new-acc-lname" type="text" placeholder="Santos" /></div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="row between" style="align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px">
+            <div>
+              <h2 style="font-size:20px; margin-bottom:4px">User Accounts and Internal Staff</h2>
+              <p class="muted" style="font-size:13px">Manage internal staff accounts (username-only sign-in), one-time Agent registration invites, and Customer Gmail accounts.</p>
             </div>
-            <div class="grid-2">
-              <div class="field"><label>Username <span class="req">*</span></label><input id="new-acc-username" type="text" minlength="3" maxlength="30" placeholder="maria_santos" /></div>
-              <div class="field"><label>Official Email (@pigem.ph) <span class="req">*</span></label><input id="new-acc-email" type="email" placeholder="maria@pigem.ph" /></div>
-            </div>
-            <div class="grid-2">
-              <div class="field"><label>Password <span class="req">*</span></label><input id="new-acc-pw" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" /></div>
-              <div class="field">
-                <label>Internal Role</label>
-                <select id="new-acc-role">
-                  <option value="agent">Agent (Application Handling)</option>
-                  <option value="manager">Manager (Monitoring and Content)</option>
-                </select>
-              </div>
-            </div>
-            <button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="adminCreateUser()">+ Create Staff Account</button>
-          </div>
-
-          <div class="card">
-            <h3 style="margin-bottom:6px">Generate Private Agent Registration Link</h3>
-            <p class="muted" style="font-size:13px; margin-bottom:12px">
-              Generate a private one-time registration link (`agent-register.html?invite=INV-...`) so a new verification agent can register their basic details, username, and `@pigem.ph` account. Nobody can visit the page without an active invite token.
-            </p>
-            <div id="adm-invite-msg" class="msg"></div>
-            <div class="field">
-              <label>Invite Label / Note</label>
-              <input id="adm-invite-note" type="text" placeholder="e.g. Verification Agent - Cavite Field Team" />
-            </div>
-            <button type="button" class="btn btn-outline" style="width:100%" onclick="adminGenerateAgentInvite()">Generate Private Agent Registration Link</button>
-            <div id="adm-invite-output-wrap" class="hidden" style="margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">
-              <div class="tiny muted" style="font-weight:700; margin-bottom:4px">Private One-Time Registration URL:</div>
-              <input id="adm-invite-url" type="text" readonly style="margin-bottom:8px; font-size:12px" />
-              <button type="button" class="btn btn-outline btn-sm" onclick="adminCopyInviteUrl()">Copy Registration Link</button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap">
+              <button type="button" class="btn btn-red btn-sm" onclick="openAddStaffModal('agent')">+ Add Agent</button>
+              <button type="button" class="btn btn-dark btn-sm" onclick="openAddStaffModal('manager')">+ Add Manager</button>
+              <button type="button" class="btn btn-outline btn-sm" onclick="openAdminInviteModal()">Generate Agent Invite</button>
             </div>
           </div>
-        </div>
 
-        <div class="card">
-          <h3 style="margin-bottom:12px">All Registered Accounts</h3>
-          <div class="table-wrap">
+          <div class="sub-nav" role="tablist">
+            <button type="button" class="sub-nav-btn active" id="acc-sub-all" onclick="setAccountSubTab('all')">All Accounts <span class="sub-nav-count" id="acc-cnt-all">0</span></button>
+            <button type="button" class="sub-nav-btn" id="acc-sub-agent" onclick="setAccountSubTab('agent')">Agents <span class="sub-nav-count" id="acc-cnt-agent">0</span></button>
+            <button type="button" class="sub-nav-btn" id="acc-sub-manager" onclick="setAccountSubTab('manager')">Managers <span class="sub-nav-count" id="acc-cnt-manager">0</span></button>
+            <button type="button" class="sub-nav-btn" id="acc-sub-customer" onclick="setAccountSubTab('customer')">Customers <span class="sub-nav-count" id="acc-cnt-customer">0</span></button>
+            <button type="button" class="sub-nav-btn" id="acc-sub-requests" onclick="setAccountSubTab('requests')">Password Reset Requests <span class="sub-nav-count" id="acc-cnt-requests">0</span></button>
+          </div>
+
+          <div id="acc-search-toolbar" class="section-toolbar">
+            <input id="acc-search-input" type="text" class="section-search-input" placeholder="Search accounts by name, @username, or email..." oninput="renderAdminUsers()" />
+          </div>
+
+          <div id="acc-table-panel" class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Full Name</th>
                   <th>Username</th>
-                  <th>Email</th>
+                  <th>Account Type / Email</th>
                   <th>Role</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -254,28 +228,69 @@
               <tbody id="admin-users-body"></tbody>
             </table>
           </div>
+
+          <div id="acc-requests-panel" class="hidden">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Requested At</th>
+                    <th>Request Title</th>
+                    <th>Details</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-reset-req-body"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
 
       <section id="tab-logs" class="hidden">
-        <div class="grid-2">
-          <div class="card">
-            <h3 style="margin-bottom:12px">System Activity Logs</h3>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Time</th><th>Actor</th><th>Action</th></tr></thead>
-                <tbody id="admin-logs-body"></tbody>
-              </table>
+        <div class="card">
+          <div class="row between" style="align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px">
+            <div>
+              <h2 style="font-size:20px; margin-bottom:4px">Audit Logs and Activity Monitor</h2>
+              <p class="muted" style="font-size:13px">Chronological system audit trail, staff and customer sign-in events, and AI screening activity.</p>
             </div>
           </div>
-          <div class="card">
-            <h3 style="margin-bottom:12px">Login and Logout History</h3>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Time</th><th>User</th><th>Role</th><th>Event</th></tr></thead>
-                <tbody id="admin-login-history-body"></tbody>
-              </table>
-            </div>
+
+          <div class="sub-nav" role="tablist">
+            <button type="button" class="sub-nav-btn active" id="log-sub-activity" onclick="setLogSubTab('activity')">System Activity Logs <span class="sub-nav-count" id="log-cnt-activity">0</span></button>
+            <button type="button" class="sub-nav-btn" id="log-sub-login" onclick="setLogSubTab('login')">Login and Logout History <span class="sub-nav-count" id="log-cnt-login">0</span></button>
+            <button type="button" class="sub-nav-btn" id="log-sub-ai" onclick="setLogSubTab('ai')">AI Screening Logs <span class="sub-nav-count" id="log-cnt-ai">0</span></button>
+          </div>
+
+          <div class="section-toolbar">
+            <input id="logs-search-input" type="text" class="section-search-input" placeholder="Filter logs by actor, @username, action, or detail..." oninput="renderAdminLogs()" />
+            <select id="logs-role-filter" style="width:auto; min-width:160px" onchange="renderAdminLogs()">
+              <option value="all">All Categories</option>
+              <option value="auth">Sign-In &amp; Passwords</option>
+              <option value="accounts">Accounts &amp; Roles</option>
+              <option value="system">System &amp; AI</option>
+            </select>
+          </div>
+
+          <div id="log-panel-activity" class="table-wrap">
+            <table>
+              <thead><tr><th>Timestamp</th><th>Actor</th><th>Event / Action</th></tr></thead>
+              <tbody id="admin-logs-body"></tbody>
+            </table>
+          </div>
+
+          <div id="log-panel-login" class="table-wrap hidden">
+            <table>
+              <thead><tr><th>Timestamp</th><th>User</th><th>Role</th><th>Event</th></tr></thead>
+              <tbody id="admin-login-history-body"></tbody>
+            </table>
+          </div>
+
+          <div id="log-panel-ai" class="table-wrap hidden">
+            <table>
+              <thead><tr><th>Timestamp</th><th>Reference No.</th><th>Pipeline Stage</th><th>Findings / Message</th></tr></thead>
+              <tbody id="admin-ai-logs-table-body"></tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -289,11 +304,72 @@
 
       <section id="tab-reports" class="hidden">
         <div class="card" style="margin-bottom:18px">
-          <h2 style="font-size:20px; margin-bottom:6px">System Reports and CSV Export</h2>
-          <p class="muted" style="font-size:13px; margin-bottom:14px">Export all application records to CSV (opens in Microsoft Excel or Google Sheets) or print a formatted summary report.</p>
-          <div style="display:flex; gap:10px; flex-wrap:wrap">
-            <button type="button" class="btn btn-red" onclick="exportApplicationsCsv()"><img data-img="icons/download.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/download.png" alt="Download (not available)" class="icon-img" />Download Applications CSV</button>
-            <button type="button" class="btn btn-outline" onclick="window.print()"><img data-img="icons/printer.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/printer.png" alt="Print (not available)" class="icon-img" />Print Summary Report</button>
+          <div class="row between" style="align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px">
+            <div>
+              <h2 style="font-size:20px; margin-bottom:4px">System Reports and Analytics</h2>
+              <p class="muted" style="font-size:13px">Review operational health, user account coverage, and customer applications with interactive charts and filtered exports.</p>
+            </div>
+          </div>
+
+          <div class="sub-nav no-print" role="tablist">
+            <button type="button" class="sub-nav-btn active" id="rep-sub-api" onclick="setReportSubTab('api')">API Health Report</button>
+            <button type="button" class="sub-nav-btn" id="rep-sub-accounts" onclick="setReportSubTab('accounts')">Accounts Report</button>
+            <button type="button" class="sub-nav-btn" id="rep-sub-applications" onclick="setReportSubTab('applications')">Applications Report</button>
+          </div>
+
+          <div class="report-controls no-print">
+            <div class="field">
+              <label for="rep-timeframe">Timeframe</label>
+              <select id="rep-timeframe" onchange="onReportTimeframeChange()">
+                <option value="all">All Time</option>
+                <option value="daily">Daily Report</option>
+                <option value="monthly">Monthly Report</option>
+              </select>
+            </div>
+            <div class="field hidden" id="rep-date-wrap">
+              <label for="rep-date">Select Date</label>
+              <input id="rep-date" type="date" onchange="renderAdminReport()" />
+            </div>
+            <div class="field hidden" id="rep-month-wrap">
+              <label for="rep-month">Select Month</label>
+              <input id="rep-month" type="month" onchange="renderAdminReport()" />
+            </div>
+            <div class="field">
+              <label for="rep-filter-status">Filter</label>
+              <select id="rep-filter-status" onchange="renderAdminReport()">
+                <option value="all">All Records</option>
+              </select>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
+              <button type="button" class="btn btn-outline btn-sm" onclick="window.print()">
+                <img data-img="icons/printer.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/printer.png" alt="Print (not available)" class="icon-img" />Print Report
+              </button>
+              <button type="button" class="btn btn-dark btn-sm" onclick="downloadFormattedAdminReport()">
+                <img data-img="icons/download.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/download.png" alt="Report (not available)" class="icon-img" />Download Report
+              </button>
+              <button type="button" class="btn btn-red btn-sm" onclick="exportActiveReportCsv()">
+                <img data-img="icons/download.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/download.png" alt="CSV (not available)" class="icon-img" />Download CSV
+              </button>
+            </div>
+          </div>
+
+          <div id="rep-summary-header" class="notice mt" style="margin-bottom:16px"></div>
+
+          <div class="report-charts-grid">
+            <div class="card" style="background:var(--bg-soft)">
+              <h3 id="rep-pie-title" style="margin-bottom:10px; font-size:15px">Distribution</h3>
+              <div id="chart-report-pie"></div>
+            </div>
+            <div class="card" style="background:var(--bg-soft)">
+              <h3 id="rep-bar-title" style="margin-bottom:10px; font-size:15px">Breakdown</h3>
+              <div id="chart-report-bars"></div>
+            </div>
+          </div>
+
+          <div class="table-wrap" id="report-table-wrap"></div>
+
+          <div class="row no-print" style="justify-content:flex-end; margin-top:14px">
+            <button id="btn-report-reset" type="button" class="btn btn-outline btn-sm" onclick="resetAdminReportFilters()">Reset Filters</button>
           </div>
         </div>
       </section>

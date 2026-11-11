@@ -137,6 +137,15 @@ async function refreshManagerData() {
   document.getElementById("st-fix").textContent = fix;
   document.getElementById("st-approved").textContent = approved;
 
+  if (typeof renderPieChart === "function") {
+    renderPieChart("chart-mgr-pie", [
+      { label: "Pending / Encoding", value: pending, color: "#2563eb" },
+      { label: "Needs Correction", value: fix, color: "#d97706" },
+      { label: "Approved", value: approved, color: "#15803d" },
+      { label: "Rejected", value: rejected, color: "#dc2626" }
+    ], "Apps");
+  }
+
   renderBars("chart-mgr-bars", [
     { label: "Pending / Encoding", value: pending, color: "#2563eb" },
     { label: "Needs Correction", value: fix, color: "#d97706" },
@@ -209,7 +218,15 @@ function showTab(tab) {
       "app-rejected": "Rejected Applications"
     };
     document.getElementById("mgr-apps-title").textContent = headings[tab] || "All Customer Applications";
+    var subTabs = ["app-all", "app-encoding", "app-override", "app-approved", "app-rejected"];
+    for (var s = 0; s < subTabs.length; s++) {
+      var sb = document.getElementById("mgr-sub-" + subTabs[s]);
+      if (sb) sb.classList.toggle("active", subTabs[s] === tab);
+    }
     renderManagerApps();
+  }
+  if (typeof updateOverviewOnlyVisibility === "function") {
+    updateOverviewOnlyVisibility(tab === "overview");
   }
 }
 
@@ -238,7 +255,7 @@ function finishCmsAndDisableMaintenance() {
       "Yes, Make Website Live",
       async function () {
         setMaintenanceOn(false);
-        if (currentManager) await dbAddLog(currentManager.email, "Disabled Maintenance Mode from Website Content (CMS)");
+        if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Disabled Maintenance Mode from Website Content (CMS)");
         await dbAddNotification(null, "agent", "Website Restored to Live", "Public Maintenance Mode has been disabled. Customer website and application form are live.");
         updateCmsMaintenanceBarUI();
         showAlert("Website is Live", "Maintenance Mode is now OFF. Customers can browse plans and submit applications.");
@@ -252,7 +269,7 @@ function finishCmsAndDisableMaintenance() {
       "Yes, Enable Maintenance Mode",
       async function () {
         setMaintenanceOn(true);
-        if (currentManager) await dbAddLog(currentManager.email, "Enabled Maintenance Mode from Website Content (CMS)");
+        if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Enabled Maintenance Mode from Website Content (CMS)");
         await dbAddNotification(null, "agent", "Website Maintenance Mode Enabled", "Public Maintenance Mode is active while website content is being updated.");
         updateCmsMaintenanceBarUI();
       },
@@ -337,8 +354,9 @@ function openMgrAppModal(appId) {
   var agentOpts = '<option value="">- Unassigned -</option>';
   for (var j = 0; j < agents.length; j++) {
     var ag = agents[j];
-    var sel = app.assigned_agent === ag.email ? "selected" : "";
-    agentOpts += '<option value="' + escapeHtml(ag.email) + '" ' + sel + '>' + escapeHtml(ag.full_name + " (" + ag.email + ")") + '</option>';
+    var agId = getStaffIdentifier(ag);
+    var sel = isAssignedToStaff(app.assigned_agent, ag) ? "selected" : "";
+    agentOpts += '<option value="' + escapeHtml(agId) + '" ' + sel + '>' + escapeHtml(ag.full_name + " (" + agId + ")") + '</option>';
   }
 
   var scr = app.screening || {};
@@ -418,15 +436,17 @@ async function saveMgrOverride() {
   }
 
   await dbAddAiLog(app.id, app.reference_no, "Manager (" + currentManager.full_name + ")", "Manager set status to " + newStatus + " (Agent: " + (agentEmail || "Unassigned") + ")");
-  await dbAddLog(currentManager.email, "Manager updated " + app.reference_no + " -> " + newStatus);
+  await dbAddLog(getStaffIdentifier(currentManager), "Manager updated " + app.reference_no + " -> " + newStatus);
 
   if (agentEmail && agentEmail !== app.assigned_agent) {
-    await dbAddNotification(
-      agentEmail,
-      "agent",
-      "Application Assigned: " + app.reference_no,
-      "Manager " + currentManager.full_name + " assigned application " + app.reference_no + " to your workspace queue."
-    );
+    var targetAg = mgrUsers.find(function (u) { return isAssignedToStaff(agentEmail, u); });
+    await dbAddNotification({
+      user_id: targetAg ? targetAg.id : null,
+      email: targetAg ? targetAg.email : null,
+      role: "agent",
+      title: "Application Assigned: " + app.reference_no,
+      message: "Manager " + currentManager.full_name + " assigned application " + app.reference_no + " (" + agentEmail + ") to your workspace queue."
+    });
   }
 
   var shouldNotifyCust = (newStatus === "Needs Correction") || (newStatus !== app.status && (newStatus === "Approved" || newStatus === "Rejected"));
@@ -460,38 +480,255 @@ async function saveMgrOverride() {
 function renderAgentPerformance() {
   var body = document.getElementById("mgr-agent-body");
   if (!body) return;
+  var q = (document.getElementById("mgr-agent-search") ? document.getElementById("mgr-agent-search").value : "").trim().toLowerCase();
   var html = "";
   for (var i = 0; i < mgrUsers.length; i++) {
     var u = mgrUsers[i];
     if (u.role !== "agent") continue;
+    if (q) {
+      var hay = [u.full_name, u.username, u.email].join(" ").toLowerCase();
+      if (hay.indexOf(q) === -1) continue;
+    }
     var active = 0, fix = 0, done = 0, total = 0;
     for (var j = 0; j < mgrApps.length; j++) {
       var a = mgrApps[j];
-      if (a.assigned_agent === u.email) {
+      if (isAssignedToStaff(a.assigned_agent, u)) {
         total++;
         if (a.status === "Pending Review" || a.status === "Under Agent Review") active++;
         else if (a.status === "Needs Correction") fix++;
         else if (a.status === "Encoding" || a.status === "Approved" || a.status === "Submitted to Provider") done++;
       }
     }
+    var unameLabel = "@" + (u.username || u.full_name || "agent");
+    var statusBadgeHtml = u.active !== false
+      ? '<span class="badge badge-green" style="margin-left:6px">Active</span>'
+      : '<span class="badge badge-red" style="margin-left:6px">Disabled</span>';
     html +=
       '<tr>' +
-        '<td><b>' + escapeHtml(u.full_name) + '</b>' + (u.username ? '<div class="tiny muted">@' + escapeHtml(u.username) + '</div>' : '') + '</td>' +
-        '<td>' + escapeHtml(u.email) + '</td>' +
+        '<td><b>' + escapeHtml(u.full_name) + '</b>' + statusBadgeHtml + '</td>' +
+        '<td><code>' + escapeHtml(unameLabel) + '</code></td>' +
         '<td><span class="badge badge-blue">' + active + '</span></td>' +
         '<td><span class="badge badge-yellow">' + fix + '</span></td>' +
         '<td><span class="badge badge-green">' + done + '</span></td>' +
         '<td><b>' + total + '</b></td>' +
+        '<td>' +
+          '<div style="display:flex; gap:6px; flex-wrap:wrap">' +
+            '<button type="button" class="btn btn-outline btn-sm" onclick="openManagerEditAgentModal(\'' + escapeHtml(u.id) + '\')">Edit</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" onclick="managerOpenResetAgentPwModal(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(unameLabel) + '\')">Reset PW</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" onclick="managerToggleAgentActive(\'' + escapeHtml(u.id) + '\', ' + (!u.active) + ')">' + (u.active !== false ? "Disable" : "Enable") + '</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" style="color:var(--bad);border-color:#fecdca;" onclick="managerDeleteAgent(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(u.full_name || unameLabel) + '\')">Delete</button>' +
+          '</div>' +
+        '</td>' +
       '</tr>';
   }
-  body.innerHTML = html || '<tr><td colspan="6" class="muted">No agents found.</td></tr>';
+  body.innerHTML = html || '<tr><td colspan="7" class="muted">No agents found.</td></tr>';
+}
+
+function openManagerAddAgentModal() {
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Add Verification Agent Account</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<p class="small muted">Create a new Verification Agent account using Username &amp; Password only (no email needed).</p>' +
+    '<form class="mt" onsubmit="submitManagerAddAgent(event)">' +
+      '<div class="grid-3">' +
+        '<div class="field"><label>First Name *</label><input id="mgr-modal-ag-fname" type="text" placeholder="Juan" required /></div>' +
+        '<div class="field"><label>Middle Name</label><input id="mgr-modal-ag-mname" type="text" placeholder="Santos (or N/A)" /></div>' +
+        '<div class="field"><label>Last Name *</label><input id="mgr-modal-ag-lname" type="text" placeholder="Dela Cruz" required /></div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="field"><label>Agent Username *</label><input id="mgr-modal-ag-username" type="text" minlength="3" maxlength="30" placeholder="agent_juan" required /></div>' +
+        '<div class="field"><label>Password *</label><input id="mgr-modal-ag-pass" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" required /></div>' +
+      '</div>' +
+      '<div id="mgr-modal-ag-err" class="notice bad mt" hidden></div>' +
+      '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
+        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+        '<button type="submit" id="btn-mgr-add-agent" class="btn btn-red">+ Create Agent Account</button>' +
+      '</div>' +
+    '</form>',
+    true
+  );
+}
+
+async function submitManagerAddAgent(event) {
+  event.preventDefault();
+  var errBox = document.getElementById("mgr-modal-ag-err");
+  if (errBox) errBox.hidden = true;
+  var fname = (document.getElementById("mgr-modal-ag-fname").value || "").trim();
+  var mname = (document.getElementById("mgr-modal-ag-mname").value || "").trim();
+  var lname = (document.getElementById("mgr-modal-ag-lname").value || "").trim();
+  var username = (document.getElementById("mgr-modal-ag-username").value || "").trim().toLowerCase().replace(/^@/, "");
+  var pass = (document.getElementById("mgr-modal-ag-pass").value || "").trim();
+
+  var fChk = validatePersonName(fname, "First Name", false);
+  var mChk = mname ? validatePersonName(mname, "Middle Name", true) : { valid: true };
+  var lChk = validatePersonName(lname, "Last Name", false);
+  if (!fChk.valid || !mChk.valid || !lChk.valid) {
+    if (errBox) { errBox.textContent = [fChk.message, mChk.message, lChk.message].filter(Boolean).join(" "); errBox.hidden = false; }
+    return;
+  }
+  if (!isValidUsername(username)) {
+    if (errBox) { errBox.textContent = "Username must be 3-30 characters using letters, numbers, dots (.), or underscores (_)."; errBox.hidden = false; }
+    return;
+  }
+  if (!isStrongPassword(pass)) {
+    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
+    return;
+  }
+
+  var fullName = [fname, (mname && mname.toUpperCase() !== "N/A") ? mname : "", lname].filter(Boolean).join(" ");
+  var btn = document.getElementById("btn-mgr-add-agent");
+  btn.disabled = true;
+  btn.textContent = "Creating...";
+  try {
+    await dbCreateUserAccount(fullName, null, pass, "agent", username);
+    if (currentManager) {
+      await dbAddLog(getStaffIdentifier(currentManager), "Manager created Agent account: @" + username);
+    }
+    closePopup();
+    await refreshManagerData();
+    showAlert("Agent Created", "Agent account for <b>" + escapeHtml(fullName) + "</b> (@" + escapeHtml(username) + ") is ready.", "good");
+  } catch (err) {
+    if (errBox) { errBox.textContent = err.message || "Could not create Agent account."; errBox.hidden = false; }
+    btn.disabled = false;
+    btn.textContent = "+ Create Agent Account";
+  }
+}
+
+function openManagerEditAgentModal(userId) {
+  var u = mgrUsers.find(function (x) { return x.id === userId; });
+  if (!u) return;
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Edit Agent (@' + escapeHtml(u.username || u.full_name) + ')</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<form class="mt" onsubmit="submitManagerEditAgent(event, \'' + escapeHtml(u.id) + '\')">' +
+      '<div class="field"><label>Full Name *</label><input id="mgr-edit-ag-name" type="text" value="' + escapeHtml(u.full_name || "") + '" required /></div>' +
+      '<div class="field"><label>Username *</label><input id="mgr-edit-ag-user" type="text" minlength="3" maxlength="30" value="' + escapeHtml(u.username || "") + '" required /></div>' +
+      '<div class="field"><label>New Password (Optional - leave blank to keep current)</label><input id="mgr-edit-ag-pw" type="password" data-pw-check="1" placeholder="Leave blank if unchanged" /></div>' +
+      '<div id="mgr-edit-ag-err" class="notice bad mt" hidden></div>' +
+      '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
+        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+        '<button type="submit" id="btn-mgr-edit-agent" class="btn btn-red">Save Changes</button>' +
+      '</div>' +
+    '</form>'
+  );
+}
+
+async function submitManagerEditAgent(event, userId) {
+  event.preventDefault();
+  var errBox = document.getElementById("mgr-edit-ag-err");
+  if (errBox) errBox.hidden = true;
+  var fullName = (document.getElementById("mgr-edit-ag-name").value || "").trim();
+  var username = (document.getElementById("mgr-edit-ag-user").value || "").trim().toLowerCase().replace(/^@/, "");
+  var pw = (document.getElementById("mgr-edit-ag-pw").value || "").trim();
+  var nChk = validatePersonName(fullName, "Full Name", false);
+  if (!nChk.valid) {
+    if (errBox) { errBox.textContent = nChk.message; errBox.hidden = false; }
+    return;
+  }
+  if (pw && !isStrongPassword(pw)) {
+    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
+    return;
+  }
+  var changes = { full_name: fullName, username: username };
+  if (pw) changes.new_password = pw;
+  var btn = document.getElementById("btn-mgr-edit-agent");
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+  try {
+    await dbAdminUpdateStaffAccount(userId, changes);
+    if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Manager updated Agent @" + username);
+    closePopup();
+    await refreshManagerData();
+    showAlert("Agent Updated", "Updated Agent @" + escapeHtml(username) + ".", "good");
+  } catch (err) {
+    if (errBox) { errBox.textContent = err.message || "Could not update Agent."; errBox.hidden = false; }
+    btn.disabled = false;
+    btn.textContent = "Save Changes";
+  }
+}
+
+function managerOpenResetAgentPwModal(userId, unameLabel) {
+  window._mgrResetAgentId = userId;
+  window._mgrResetAgentLabel = unameLabel;
+  openPopup(
+    '<h3>Reset Agent Password</h3>' +
+    '<p class="small muted mt">Set a new sign-in password for <b>' + escapeHtml(unameLabel) + '</b>.</p>' +
+    '<div class="mt"><label for="mgr-reset-ag-pw">New Password</label><input id="mgr-reset-ag-pw" type="password" data-pw-check="1" placeholder="Enter strong password" /></div>' +
+    '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
+      '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+      '<button type="button" class="btn btn-red" onclick="managerConfirmResetAgentPw()">Update Password</button>' +
+    '</div>'
+  );
+}
+
+async function managerConfirmResetAgentPw() {
+  var newPw = (document.getElementById("mgr-reset-ag-pw").value || "").trim();
+  if (!isStrongPassword(newPw)) {
+    showAlert("Password Requirement", PASSWORD_REQUIREMENT_TEXT, "warn");
+    return;
+  }
+  try {
+    await dbAdminResetUserPassword(window._mgrResetAgentId, newPw);
+    if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Manager reset password for " + window._mgrResetAgentLabel);
+    closePopup();
+    await refreshManagerData();
+    showAlert("Password Updated", "Updated password for " + escapeHtml(window._mgrResetAgentLabel) + ".", "good");
+  } catch (err) {
+    showAlert("Update Failed", err.message || "Could not reset password.", "bad");
+  }
+}
+
+async function managerToggleAgentActive(userId, nextState) {
+  await dbUpdateUser(userId, { active: nextState });
+  if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), (nextState ? "Enabled" : "Disabled") + " Agent " + userId);
+  await refreshManagerData();
+}
+
+function managerDeleteAgent(userId, label) {
+  openConfirmPopup(
+    "Delete Agent Account?",
+    "Permanently delete Agent <b>" + escapeHtml(label) + "</b>? This cannot be undone.",
+    "Delete Agent",
+    async function () {
+      try {
+        await dbDeleteUserAccount(userId);
+        await refreshManagerData();
+        showAlert("Agent Deleted", escapeHtml(label) + " has been removed.", "good");
+      } catch (err) {
+        showAlert("Delete Failed", err.message || "Could not delete agent.", "bad");
+      }
+    },
+    true
+  );
+}
+
+function openManagerInviteModal() {
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Generate Private Agent Registration Link</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<p class="small muted">Generate a one-time URL (<code>agent-register.html?invite=INV-...</code>) so an Agent can self-register their Name, Username, and Password.</p>' +
+    '<div class="field mt"><label>Assigned Agent Note / Label</label><input id="mgr-invite-note" type="text" placeholder="e.g. Verification Agent - Cavite Team" /></div>' +
+    '<button type="button" class="btn btn-red" style="width:100%" onclick="generateManagerAgentInvite()">Generate Private Registration Link</button>' +
+    '<div id="mgr-invite-msg" class="msg mt"></div>' +
+    '<div id="mgr-invite-output-wrap" class="hidden" style="margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">' +
+      '<div class="tiny muted" style="font-weight:700; margin-bottom:4px">Private One-Time Registration URL:</div>' +
+      '<input id="mgr-invite-url" type="text" readonly style="margin-bottom:8px; font-size:12px" />' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="copyManagerInviteUrl()">Copy Registration Link</button>' +
+    '</div>'
+  );
 }
 
 async function generateManagerAgentInvite() {
   var noteEl = document.getElementById("mgr-invite-note");
   var note = noteEl ? noteEl.value.trim() : "";
   try {
-    var res = await dbCreateAgentInviteLink(currentManager ? currentManager.email : "manager@pigem.ph", note || "Manager Private Agent Registration Invite");
+    var res = await dbCreateAgentInviteLink(getStaffIdentifier(currentManager), note || "Manager Private Agent Registration Invite");
     var url = getSiteBaseUrl() + "/agent-register.html?invite=" + encodeURIComponent(res.code);
     var wrap = document.getElementById("mgr-invite-output-wrap");
     var inp = document.getElementById("mgr-invite-url");
@@ -501,7 +738,7 @@ async function generateManagerAgentInvite() {
     showMsg("mgr-invite-msg", "ok", "Private Agent Registration Link (" + res.code + ") created! Share the URL below with your new agent.");
     await renderManagerLinks();
   } catch (err) {
-    showMsg("mgr-invite-msg", "err", err.message || "Could not generate private registration link.");
+    showMsg("mgr-invite-msg", "error", err.message || "Could not generate private registration link.");
   }
 }
 
@@ -515,50 +752,6 @@ function copyManagerInviteUrl() {
     document.execCommand("copy");
   }
   showAlert("Copied", "Private Agent Registration Link copied to clipboard.");
-}
-
-async function createAgentFromManager() {
-  var fname = (document.getElementById("mgr-ag-fname").value || "").trim();
-  var mname = (document.getElementById("mgr-ag-mname").value || "").trim();
-  var lname = (document.getElementById("mgr-ag-lname").value || "").trim();
-  var username = (document.getElementById("mgr-ag-username").value || "").trim().toLowerCase();
-  var email = (document.getElementById("mgr-ag-email").value || "").trim().toLowerCase();
-  var pass = document.getElementById("mgr-ag-pass").value;
-
-  if (!fname || !lname || !username || !email || !pass) {
-    showMsg("mgr-create-agent-msg", "err", "Please complete First Name, Last Name, Username, Official Email (@pigem.ph), and Password.");
-    return;
-  }
-  if (!isValidUsername(username)) {
-    showMsg("mgr-create-agent-msg", "err", "Username must be 3-30 characters using letters, numbers, underscores, dots, or hyphens.");
-    return;
-  }
-  if (!isStaffBusinessEmail(email)) {
-    showMsg("mgr-create-agent-msg", "err", "Agent accounts must use an official @pigem.ph email address.");
-    return;
-  }
-  if (!isStrongPassword(pass)) {
-    showMsg("mgr-create-agent-msg", "err", PASSWORD_REQUIREMENT_TEXT);
-    return;
-  }
-
-  var fullName = [fname, mname, lname].filter(Boolean).join(" ");
-  try {
-    await dbCreateUserAccount(fullName, email, pass, "agent", username);
-    if (currentManager) {
-      await dbAddLog(currentManager.email, "Manager created Agent account: " + email + " (@" + username + ")");
-    }
-    document.getElementById("mgr-ag-fname").value = "";
-    document.getElementById("mgr-ag-mname").value = "";
-    document.getElementById("mgr-ag-lname").value = "";
-    document.getElementById("mgr-ag-username").value = "";
-    document.getElementById("mgr-ag-email").value = "";
-    document.getElementById("mgr-ag-pass").value = "";
-    showMsg("mgr-create-agent-msg", "ok", "Agent account created for " + fullName + " (@" + username + ").");
-    await refreshManagerData();
-  } catch (err) {
-    showMsg("mgr-create-agent-msg", "err", err.message || "Could not create Agent account.");
-  }
 }
 
 async function renderManagerLinks() {
@@ -785,7 +978,7 @@ function saveMediaAssetsCms() {
 
   saveSiteContent(c);
   loadPageImages();
-  dbAddLog(currentManager.email, "Updated active Logos, Clients, Vehicles and Permits in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated active Logos, Clients, Vehicles and Permits in Website Content (CMS)");
   showMsg("cms-assets-msg", "ok", "Active Website Assets saved! Click 'Preview Live Website' above to view.");
 }
 
@@ -814,7 +1007,7 @@ function saveBannersCms() {
     c.about_slides[j].text = document.getElementById("about-text-" + j).value.trim();
   }
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated 4 Home and 4 About Hero Banners in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated 4 Home and 4 About Hero Banners in Website Content (CMS)");
   showMsg("cms-banners-msg", "ok", "4-Slide Hero Banners saved! Click 'Preview Live Website' to inspect.");
 }
 
@@ -827,7 +1020,7 @@ function saveAboutCms() {
   c.contact_phone = document.getElementById("cms-contact-phone").value.trim();
   c.contact_address = document.getElementById("cms-contact-addr").value.trim();
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated About PIGEM text in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated About PIGEM text in Website Content (CMS)");
   showMsg("cms-about-msg", "ok", "About PIGEM and Contact information saved!");
 }
 
@@ -845,7 +1038,7 @@ function savePlansCms() {
     c.plans[i].features = cleanFeats;
   }
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated Red Fiber Plans in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated Red Fiber Plans in Website Content (CMS)");
   showMsg("cms-plans-msg", "ok", "Internet Plans saved!");
 }
 
@@ -887,7 +1080,7 @@ function saveFaqsCms() {
   var c = getSiteContent();
   c.faqs = currentEditingFaqs.filter(function (item) { return item.q !== ""; });
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated FAQs in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated FAQs in Website Content (CMS)");
   showMsg("cms-faqs-msg", "ok", "FAQs saved!");
 }
 
@@ -901,7 +1094,7 @@ function clearSiteAnnouncement() {
   var c = getSiteContent();
   c.announcement = { active: false, headline: "", body: "" };
   saveSiteContent(c);
-  if (currentManager) dbAddLog(currentManager.email, "Cleared public website announcement banner");
+  if (currentManager) dbAddLog(getStaffIdentifier(currentManager), "Cleared public website announcement banner");
   showMsg("promo-msg", "ok", "Public website announcement banner has been cleared.");
 }
 
@@ -987,7 +1180,7 @@ async function sendManagerPromoBroadcast() {
     }
 
     if (currentManager) {
-      await dbAddLog(currentManager.email, "Published Announcement: '" + headline + "' (" + target + ")");
+      await dbAddLog(getStaffIdentifier(currentManager), "Published Announcement: '" + headline + "' (" + target + ")");
     }
   } catch (err) {
     showMsg("promo-msg", "error", "Error: " + err.message);

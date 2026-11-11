@@ -1,22 +1,25 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     FILE OVERVIEW: Data Privacy Notice Page - RA 10173 Compliance (web/privacy.html)
+     FILE OVERVIEW: Data Privacy Notice Page - RA 10173 Compliance (web/html/privacy.html)
      PURPOSE: Explains how applicant personal data and valid ID uploads are protected, encrypted, and retained.
-     HOSTING: Deployed as static cloud frontend on Vercel with Supabase & /api/*
+     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
      ========================================================================== -->
+
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+
+  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Privacy Policy Notice | PIGEM</title>
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (responsive layout, cards, forms, and dark mode) -->
+
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
 </head>
 <body class="gray-bg">
 
-  <!-- Header: Logo Only (Clicking Logo Refreshes Current Page) -->
+  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="site-header">
     <div class="container" style="display:flex; align-items:center; height:64px;">
       <div style="display:flex; align-items:center; gap:10px;">
@@ -43,12 +46,12 @@
     </div>
   </main>
 
-  <!-- SECTION: Corporate Footer & Quick Links -->
+  <!-- SECTION: Corporate Footer & Links -->
   <footer style="padding:16px 20px; text-align:center; font-size:12px; color:var(--muted); border-top:1px solid var(--line); background:#fff;">
     <span>All rights reserved &copy; 2026</span>
   </footer>
 
-  <!-- IMPORT: Global cloud configuration, Dasmarinas barangay directory, plan defaults, and UI popup helpers -->
+  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
 </body>
 </html>

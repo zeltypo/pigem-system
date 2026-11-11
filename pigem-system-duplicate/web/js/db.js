@@ -1,26 +1,21 @@
 // ============================================================================
 // FILE: web/js/db.js
-// PURPOSE: Supabase Cloud Database, Authentication & Private Storage Layer
+// PURPOSE: Supabase Cloud Database, Username/Email Auth & Storage Layer
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
 //   1. @supabase/supabase-js@2 (CDN) -> Exposes global `window.supabase` client SDK
-//   2. web/js/config.js              -> Exposes `CONFIG.SUPABASE_URL` & `CONFIG.SUPABASE_KEY`
-//   3. Browser Web Crypto API        -> `crypto.subtle.digest("SHA-256", ...)` for hashing
-//   4. HTML5 Canvas API              -> Compresses high-res ID photos before cloud upload
+//   2. web/js/config.js              -> Exposes `CONFIG.SUPABASE_URL`, validators & session helpers
+//   3. Browser Web Crypto & Canvas   -> SHA-256 hashing and ID image compression before upload
 // ============================================================================
 
 var SYSTEM = window.SYSTEM || "customer";
 
-// Roles allowed to sign in to each system
 var SYSTEM_ROLES = {
   customer: ["customer"],
   staff: ["agent", "manager"],
   admin: ["admin"]
 };
 
-// Each system keeps its own login session so they never mix.
-// Staff and admin use sessionStorage (one session per browser tab), so two agents,
-// or an agent and the manager, can work in different tabs without replacing each other.
 var SESSION_KEY = "pigem_session_" + SYSTEM;
 var sessionStore = SYSTEM === "customer" ? localStorage : sessionStorage;
 
@@ -28,15 +23,13 @@ var IS_DEMO_MODE = (CONFIG.SUPABASE_URL === "" || CONFIG.SUPABASE_ANON_KEY === "
 var supabaseClient = null;
 
 if (!IS_DEMO_MODE && window.supabase) {
-  // Connect to Supabase with a separate saved session for each system
+
   supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
     auth: { storageKey: "pigem-" + SYSTEM, storage: sessionStore }
   });
 }
 
-// Demo accounts (password: demo123)
-
-// SHA-256 Client-Side Password Hasher
+// Validator/Check `hashPassword` (params: plainText): Evaluates rule (hash password) and returns result.
 async function hashPassword(plainText) {
   if (!plainText) return "";
   try {
@@ -51,11 +44,11 @@ async function hashPassword(plainText) {
 
 var DEFAULT_DEMO_USERS = [];
 
-// Data Accessor `getDemoUsers`: Retrieves or refreshes state to get demo users.
+// Data Accessor `getDemoUsers`: Retrieves or refreshes data to get demo users.
 function getDemoUsers() {
   var users = readSaved("pigem_users", []);
   if (!Array.isArray(users)) users = [];
-  // Purge any lingering demo accounts from local cache
+
   var clean = users.filter(function (u) {
     return u && u.id && u.id.indexOf("demo-") !== 0 && (u.email || "").indexOf("@demo.test") === -1;
   });
@@ -65,7 +58,7 @@ function getDemoUsers() {
   return clean;
 }
 
-// Data Accessor `findDemoUserByEmail` (params: email): Retrieves or refreshes state to find demo user by email.
+// Data Accessor `findDemoUserByEmail` (params: email): Retrieves or refreshes data to find demo user by email.
 function findDemoUserByEmail(email) {
   var target = String(email || "").trim().toLowerCase();
   var users = getDemoUsers();
@@ -75,7 +68,7 @@ function findDemoUserByEmail(email) {
   return null;
 }
 
-// Data Accessor `findDemoUserByUsername` (params: username): Finds a locally cached user record by case-insensitive username.
+// Data Accessor `findDemoUserByUsername` (params: username): Retrieves or refreshes data to find demo user by username.
 function findDemoUserByUsername(username) {
   var target = String(username || "").trim().toLowerCase();
   if (!target) return null;
@@ -86,7 +79,7 @@ function findDemoUserByUsername(username) {
   return null;
 }
 
-// Validation/Database helper `dbIsUsernameTaken` (params: username, excludeUserId): Checks if a username is already owned by another account.
+// Database/Storage helper `dbIsUsernameTaken` (params: username, excludeUserId): Performs Supabase cloud operation to is username taken.
 async function dbIsUsernameTaken(username, excludeUserId) {
   var clean = String(username || "").trim().toLowerCase();
   if (!clean) return false;
@@ -107,7 +100,7 @@ async function dbIsUsernameTaken(username, excludeUserId) {
   return false;
 }
 
-// Helper function `dbGenerateUniqueUsername` (params: fullName, email, preferredUsername): Produces a guaranteed-unique valid username.
+// Database/Storage helper `dbGenerateUniqueUsername` (params: fullName, email, preferredUsername): Performs Supabase cloud operation to generate unique username.
 async function dbGenerateUniqueUsername(fullName, email, preferredUsername) {
   var seed = String(preferredUsername || "").trim().toLowerCase();
   if (!seed || (typeof isValidUsername === "function" && !isValidUsername(seed))) {
@@ -133,7 +126,7 @@ async function dbGenerateUniqueUsername(fullName, email, preferredUsername) {
   return (seed.slice(0, 22) + "_" + String(Date.now()).slice(-6));
 }
 
-// Data Accessor `dbGetSuggestedUsername` (params: email): Returns the existing assigned username or a clean suggested username for activation.
+// Database/Storage helper `dbGetSuggestedUsername` (params: email): Performs Supabase cloud operation to get suggested username.
 async function dbGetSuggestedUsername(email) {
   var cleanEmail = String(email || "").trim().toLowerCase();
   var local = findDemoUserByEmail(cleanEmail);
@@ -148,20 +141,16 @@ async function dbGetSuggestedUsername(email) {
   return await dbGenerateUniqueUsername("", cleanEmail);
 }
 
-// Address of the login page for this system
+// Data Accessor `getLoginPage`: Retrieves or refreshes data to get login page.
 function getLoginPage() {
   if (SYSTEM === "staff") return ROOT + "staff-login.html";
   if (SYSTEM === "admin") return ROOT + "admin-login.html";
   return ROOT + "login.html";
 }
 
-// ============================================================
-// 1. Login and accounts
-// ============================================================
-
-// Get the user signed in to THIS system
+// Database/Storage helper `dbGetCurrentUser`: Performs Supabase cloud operation to get current user.
 async function dbGetCurrentUser() {
-  // Check tab/system session first (works for built-in staff/demo accounts and local sessions)
+
   var currentId = sessionStore.getItem(SESSION_KEY);
   if (currentId) {
     var localUsers = getDemoUsers();
@@ -180,7 +169,6 @@ async function dbGetCurrentUser() {
   var session = sessionRes.data.session;
   if (!session) return null;
 
-  // Read the role from the "users" table (create a customer row on first login)
   var authUser = session.user;
   var res = await supabaseClient.from("users").select("*").eq("email", authUser.email).maybeSingle();
   if (!res.data) {
@@ -202,79 +190,143 @@ async function dbGetCurrentUser() {
   return res.data;
 }
 
-// Sign in using either Username or Email Address. Role and portal domain rules are strictly enforced.
+// Database/Storage helper `dbSignIn` (params: identifier, password): Performs Supabase cloud operation to sign in.
 async function dbSignIn(identifier, password) {
   var cleanInput = String(identifier || "").trim().toLowerCase();
-  if (!cleanInput) throw new Error("Please enter your username or email address.");
+  if (!cleanInput) {
+    throw new Error((SYSTEM === "staff" || SYSTEM === "admin") ? "Please enter your username." : "Please enter your username or email address.");
+  }
+
+  var enteredHash = await hashPassword(password);
+
+  if (SYSTEM === "staff" || SYSTEM === "admin") {
+    if (cleanInput.indexOf("@") !== -1) {
+      throw new Error("Internal accounts sign in using Username only. Email login is not used for Admin, Manager, or Agent accounts.");
+    }
+    var cleanStaffUser = cleanInput.replace(/^@/, "");
+    if (typeof isValidUsername === "function" && !isValidUsername(cleanStaffUser)) {
+      throw new Error("Please enter a valid username (3-30 characters).");
+    }
+
+    var staffUser = findDemoUserByUsername(cleanStaffUser);
+    if (!staffUser && !IS_DEMO_MODE && supabaseClient) {
+      var staffRes = await supabaseClient.from("users").select("*").ilike("username", cleanStaffUser).maybeSingle();
+      if (staffRes.data) staffUser = staffRes.data;
+    }
+
+    if (!staffUser) {
+      throw new Error("Invalid username or password.");
+    }
+    if (!staffUser.active) {
+      throw new Error("This account is disabled. Please contact the System Administrator.");
+    }
+    if (SYSTEM_ROLES[SYSTEM].indexOf(staffUser.role) === -1) {
+      throw new Error("This account cannot sign in on this portal.");
+    }
+
+    var passMatched = Boolean(
+      (staffUser.password_hash && staffUser.password_hash === enteredHash) ||
+      (staffUser.password && (staffUser.password === password || staffUser.password === enteredHash)) ||
+      (staffUser.activation_code && (
+        staffUser.activation_code === ("PW:" + enteredHash) ||
+        staffUser.activation_code === ("PW:" + password) ||
+        staffUser.activation_code === password
+      ))
+    );
+
+    if (!passMatched && staffUser.email && !IS_DEMO_MODE && supabaseClient) {
+      var legacyAuth = await supabaseClient.auth.signInWithPassword({ email: staffUser.email, password: password });
+      if (!legacyAuth.error) {
+        passMatched = true;
+      }
+    }
+
+    if (!passMatched) {
+      throw new Error("Invalid username or password.");
+    }
+
+    sessionStore.setItem(SESSION_KEY, staffUser.id);
+    await dbAddLoginHistory(staffUser, "login");
+    return staffUser;
+  }
 
   var cleanEmail = "";
   var preloadedDbRow = null;
 
   if (cleanInput.indexOf("@") !== -1) {
     cleanEmail = cleanInput;
-    if (SYSTEM === "customer" && typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
+    if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
       throw new Error("Customer Login accepts @gmail.com accounts or Customer usernames only.");
     }
-    if ((SYSTEM === "staff" || SYSTEM === "admin") && typeof isCustomerGmail === "function" && isCustomerGmail(cleanEmail)) {
-      throw new Error("Internal portals require an internal staff email (such as @pigem.ph) or staff username, not a Gmail account.");
-    }
   } else {
-    if (typeof isValidUsername === "function" && !isValidUsername(cleanInput)) {
-      throw new Error("Please enter a valid username (3-30 characters) or email address.");
+    var cleanCustUser = cleanInput.replace(/^@/, "");
+    if (typeof isValidUsername === "function" && !isValidUsername(cleanCustUser)) {
+      throw new Error("Please enter a valid username (3-30 characters) or @gmail.com email address.");
     }
-    var localByUser = findDemoUserByUsername(cleanInput);
+    var localByUser = findDemoUserByUsername(cleanCustUser);
     if (localByUser) {
+      preloadedDbRow = localByUser;
       cleanEmail = String(localByUser.email || "").trim().toLowerCase();
     }
     if (!cleanEmail && !IS_DEMO_MODE && supabaseClient) {
-      var uRes = await supabaseClient.from("users").select("*").ilike("username", cleanInput).maybeSingle();
+      var uRes = await supabaseClient.from("users").select("*").ilike("username", cleanCustUser).maybeSingle();
       if (uRes.data) {
         preloadedDbRow = uRes.data;
         cleanEmail = String(uRes.data.email || "").trim().toLowerCase();
       }
     }
+    if (preloadedDbRow && preloadedDbRow.role && preloadedDbRow.role !== "customer") {
+      throw new Error("This username belongs to an internal staff account. Please use the Staff or Admin Login page.");
+    }
     if (!cleanEmail) {
       throw new Error("Invalid username or password.");
     }
-    if (SYSTEM === "customer" && typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
+    if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
       throw new Error("This username belongs to an internal staff account. Please use the Staff or Admin Login page.");
-    }
-    if ((SYSTEM === "staff" || SYSTEM === "admin") && typeof isCustomerGmail === "function" && isCustomerGmail(cleanEmail)) {
-      throw new Error("Customer accounts must sign in on the Customer Login page.");
     }
   }
 
   var user = null;
-
-  // 1. Check built-in/local accounts first (so Agent, Manager, Admin, and Demo accounts always work)
   var found = findDemoUserByEmail(cleanEmail);
-  var enteredHash = await hashPassword(password);
   if (found && (found.password === password || found.password_hash === enteredHash || found.password === enteredHash)) {
     if (found.role === "customer" && !found.activated) {
-      throw new Error("Please activate your account first using the link sent to your email.");
+      throw new Error("Please activate your account first using the activation link sent to your email.");
     }
     if (!found.active) throw new Error("This account is disabled. Please contact PIGEM.");
     if (!found.username) {
       found.username = await dbGenerateUniqueUsername(found.full_name, found.email);
     }
     user = found;
-    if (!IS_DEMO_MODE) {
-      await supabaseClient.from("users").upsert({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        full_name: user.full_name,
-        role: user.role,
-        active: user.active,
-        activated: true
-      }, { onConflict: "email" });
-    }
-  } else if (!IS_DEMO_MODE) {
-    // 2. Check if password was reset/stored in public.users or sign in via Supabase Authentication
+  } else if (!IS_DEMO_MODE && supabaseClient) {
     var dbRow = preloadedDbRow ? { data: preloadedDbRow } : await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
-    if (dbRow.data && (dbRow.data.activation_code === ("PW:" + password) || dbRow.data.activation_code === ("PW:" + enteredHash) || dbRow.data.activation_code === password)) {
-      if (!dbRow.data.active) throw new Error("This account is disabled. Please contact PIGEM.");
-      user = dbRow.data;
+    var rowData = dbRow.data;
+    if (rowData) {
+      if (rowData.role && rowData.role !== "customer") {
+        throw new Error("Internal accounts must sign in on the Staff or Admin Login page.");
+      }
+      if (rowData.role === "customer" && !rowData.activated) {
+        throw new Error("Please create your password first using the one-time activation link sent to your Gmail.");
+      }
+      if (!rowData.active) throw new Error("This account is disabled. Please contact PIGEM.");
+
+      var rowMatch = Boolean(
+        (rowData.password_hash && rowData.password_hash === enteredHash) ||
+        (rowData.activation_code && (
+          rowData.activation_code === ("PW:" + enteredHash) ||
+          rowData.activation_code === ("PW:" + password) ||
+          rowData.activation_code === password
+        ))
+      );
+
+      if (rowMatch) {
+        user = rowData;
+      } else if (!rowData.password_hash) {
+        var authRes = await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: password });
+        if (authRes.error) throw new Error("Invalid username/email or password.");
+        user = (await dbGetCurrentUser()) || rowData;
+      } else {
+        throw new Error("Invalid username/email or password.");
+      }
     } else {
       var res = await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: password });
       if (res.error) throw new Error(res.error.message);
@@ -286,7 +338,7 @@ async function dbSignIn(identifier, password) {
   }
 
   if (SYSTEM_ROLES[SYSTEM].indexOf(user.role) === -1) {
-    if (!IS_DEMO_MODE) await supabaseClient.auth.signOut();
+    if (!IS_DEMO_MODE && supabaseClient) await supabaseClient.auth.signOut();
     throw new Error("This account cannot sign in here.");
   }
 
@@ -295,7 +347,7 @@ async function dbSignIn(identifier, password) {
   return user;
 }
 
-// Sign out of this system only
+// Database/Storage helper `dbSignOut`: Performs Supabase cloud operation to sign out.
 async function dbSignOut() {
   var user = await dbGetCurrentUser();
   if (user) await dbAddLoginHistory(user, "logout");
@@ -305,21 +357,21 @@ async function dbSignOut() {
   }
 }
 
-// Send a password reset email (Supabase Authentication)
+// Database/Storage helper `dbResetPassword` (params: email): Performs Supabase cloud operation to reset password.
 async function dbResetPassword(email) {
   if (IS_DEMO_MODE) return;
   var res = await supabaseClient.auth.resetPasswordForEmail(email.trim().toLowerCase());
   if (res.error) throw new Error(res.error.message);
 }
 
-// Token sent to the Python server so it knows who is calling
+// Database/Storage helper `dbGetToken`: Performs Supabase cloud operation to get token.
 async function dbGetToken() {
   if (IS_DEMO_MODE) return "";
   var res = await supabaseClient.auth.getSession();
   return res.data.session ? res.data.session.access_token : "";
 }
 
-// Stop the page if the signed-in user does not have the right role
+// Validator/Check `checkPageAccess` (params: allowedRoles): Evaluates rule (check page access) and returns result.
 async function checkPageAccess(allowedRoles) {
   if (typeof allowedRoles === "string") allowedRoles = [allowedRoles];
   var user = await dbGetCurrentUser();
@@ -330,9 +382,7 @@ async function checkPageAccess(allowedRoles) {
   return user;
 }
 
-// Create a customer account when an application is submitted, assigning a unique username.
-// Returns status "new" (activation email sent), "pending" (not yet activated, email sent again),
-// or "active" (already has an account, just log in).
+// Database/Storage helper `dbCreateAccountFromApplication` (params: fullName, email, preferredUsername): Performs Supabase cloud operation to create account from application.
 async function dbCreateAccountFromApplication(fullName, email, preferredUsername) {
   var cleanEmail = email.trim().toLowerCase();
   if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
@@ -370,7 +420,6 @@ async function dbCreateAccountFromApplication(fullName, email, preferredUsername
     return { user: newUser, status: "new", code: code };
   }
 
-  // Live mode: if the email already has an activated account, do not send activation again
   var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
   if (existing.data && existing.data.activated) {
     return { user: existing.data, status: "active", code: "" };
@@ -380,7 +429,6 @@ async function dbCreateAccountFromApplication(fullName, email, preferredUsername
     ? existing.data.username
     : (await dbGenerateUniqueUsername(fullName, cleanEmail, preferredUsername));
 
-  // Save pending customer row with unique username and 6-digit activation_code (emailed via Gmail SMTP by apply.js)
   var pendingRow = {
     id: (existing.data && existing.data.id) || ("cust-" + Date.now()),
     username: assignedUsername,
@@ -395,7 +443,49 @@ async function dbCreateAccountFromApplication(fullName, email, preferredUsername
   return { user: pendingRow, status: "new", code: code };
 }
 
-// Activate a customer account ONE time (code from email + chosen username + new password)
+// `dbCheckActivationLinkStatus` (params: email, code): Checks whether a customer's one-time activation code/link is valid, unused, or already activated.
+async function dbCheckActivationLinkStatus(email, code) {
+  var cleanEmail = String(email || "").trim().toLowerCase();
+  var cleanCode = String(code || "").trim();
+  if (!cleanEmail) {
+    return { valid: false, alreadyActivated: false, reason: "Missing customer email in activation link." };
+  }
+  var record = null;
+  if (IS_DEMO_MODE) {
+    record = findDemoUserByEmail(cleanEmail);
+  } else if (supabaseClient) {
+    var res = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
+    record = res.data || null;
+  }
+  if (!record) {
+    return { valid: false, alreadyActivated: false, reason: "No pending customer application was found for " + cleanEmail + "." };
+  }
+  if (record.activated) {
+    return {
+      valid: false,
+      alreadyActivated: true,
+      username: record.username || "",
+      full_name: record.full_name || "",
+      reason: "This one-time activation link has already been used and your account is active. Please sign in on the Customer Login page."
+    };
+  }
+  if (cleanCode && String(record.activation_code || "").trim() !== cleanCode) {
+    return {
+      valid: false,
+      alreadyActivated: false,
+      reason: "This activation link or code is no longer valid or has expired."
+    };
+  }
+  return {
+    valid: true,
+    alreadyActivated: false,
+    username: record.username || "",
+    full_name: record.full_name || "",
+    code: record.activation_code || ""
+  };
+}
+
+// Database/Storage helper `dbActivateCustomerAccount` (params: email, code, newPassword, chosenUsername): Performs Supabase cloud operation to activate customer account.
 async function dbActivateCustomerAccount(email, code, newPassword, chosenUsername) {
   var cleanEmail = email.trim().toLowerCase();
   if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
@@ -406,12 +496,16 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     throw new Error("Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
   }
 
+  var pwHash = await hashPassword(newPassword);
+
   if (IS_DEMO_MODE) {
     var users = getDemoUsers();
     for (var i = 0; i < users.length; i++) {
       if (users[i].email === cleanEmail) {
-        if (users[i].activated) throw new Error("This account is already activated. Please log in.");
-        if (users[i].activation_code !== code.trim()) throw new Error("The activation code is not correct.");
+        if (users[i].activated) throw new Error("This one-time activation link has already been used. Your account is already active.");
+        if (!users[i].activation_code || users[i].activation_code !== code.trim()) {
+          throw new Error("The 6-digit activation code is invalid or has already been used.");
+        }
         if (cleanChosenUser) {
           if (await dbIsUsernameTaken(cleanChosenUser, users[i].id)) {
             throw new Error("That username is already taken. Please choose another username.");
@@ -420,7 +514,8 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
         } else if (!users[i].username) {
           users[i].username = await dbGenerateUniqueUsername(users[i].full_name, cleanEmail);
         }
-        users[i].password = newPassword;
+        users[i].password_hash = pwHash;
+        delete users[i].password;
         users[i].activated = true;
         users[i].activation_code = "";
         writeSaved("pigem_users", users);
@@ -432,12 +527,11 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     throw new Error("No application was found for this email.");
   }
 
-  // Live Supabase mode: check activation_code in public.users, validate username, then register in Supabase Auth
   var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
   if (!existing.data) throw new Error("No application was found for this email.");
-  if (existing.data.activated) throw new Error("This account is already activated. Please log in.");
-  if (String(existing.data.activation_code || "").trim() !== code.trim()) {
-    throw new Error("The 6-digit activation code is not correct.");
+  if (existing.data.activated) throw new Error("This one-time activation link has already been used. Please log in instead.");
+  if (!existing.data.activation_code || String(existing.data.activation_code || "").trim() !== code.trim()) {
+    throw new Error("The 6-digit activation code is invalid or has already been used.");
   }
 
   var finalUsername = existing.data.username || "";
@@ -450,31 +544,41 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     finalUsername = await dbGenerateUniqueUsername(existing.data.full_name, cleanEmail);
   }
 
-  var signUpRes = await supabaseClient.auth.signUp({
-    email: cleanEmail,
-    password: newPassword,
-    options: { data: { full_name: existing.data.full_name, username: finalUsername } }
-  });
-  if (signUpRes.error && signUpRes.error.message.toLowerCase().indexOf("already registered") === -1) {
-    throw new Error(signUpRes.error.message);
-  }
+  var authUserId = existing.data.id;
+  try {
+    var signUpRes = await supabaseClient.auth.signUp({
+      email: cleanEmail,
+      password: newPassword,
+      options: { data: { full_name: existing.data.full_name, username: finalUsername } }
+    });
+    if (signUpRes.data && signUpRes.data.user && signUpRes.data.user.id) {
+      authUserId = signUpRes.data.user.id;
+    }
+  } catch (authErr) {}
 
-  var authUserId = (signUpRes.data && signUpRes.data.user && signUpRes.data.user.id) || existing.data.id;
-  await supabaseClient.from("users").update({
+  var upRes = await supabaseClient.from("users").update({
     id: authUserId,
     username: finalUsername,
+    password_hash: pwHash,
     activated: true,
-    activation_code: "PW:" + newPassword
-  }).eq("email", cleanEmail);
+    activation_code: null
+  }).eq("email", cleanEmail).select("*").maybeSingle();
 
-  await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
+  if (upRes.error) {
+    throw new Error(upRes.error.message);
+  }
+
+  try {
+    await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
+  } catch (e) {}
+
   sessionStore.setItem(SESSION_KEY, authUserId);
-  var user = await dbGetCurrentUser();
+  var user = (upRes.data) || (await dbGetCurrentUser()) || existing.data;
   if (user) await dbAddLoginHistory(user, "account_activated");
-  return user || existing.data;
+  return user;
 }
 
-// Check if an email already activated its account (used by activate.html)
+// Database/Storage helper `dbIsAccountActivated` (params: email): Performs Supabase cloud operation to is account activated.
 async function dbIsAccountActivated(email) {
   var cleanEmail = String(email || "").trim().toLowerCase();
   if (IS_DEMO_MODE) {
@@ -485,25 +589,22 @@ async function dbIsAccountActivated(email) {
   return Boolean(res.data && res.data.activated);
 }
 
-// System Administrator helper to create an Agent account with a unique username
+// Database/Storage helper `dbCreateAgentAccount` (params: fullName, email, password, username): Performs Supabase cloud operation to create agent account.
 async function dbCreateAgentAccount(fullName, email, password, username) {
   return await dbCreateUserAccount(fullName, email, password, "agent", username);
 }
 
-// Update the signed-in user's own profile (name, username, photo, intro)
+// Database/Storage helper `dbUpdateMyProfile` (params: userId, changes): Performs Supabase cloud operation to update my profile.
 async function dbUpdateMyProfile(userId, changes) {
   return await dbUpdateProfile(userId, changes);
 }
 
-// ============================================================
-// 2. login_history table
-// ============================================================
-
+// Database/Storage helper `dbAddLoginHistory` (params: user, action): Performs Supabase cloud operation to add login history.
 async function dbAddLoginHistory(user, action) {
   var row = {
     user_id: user.id,
     username: user.username || null,
-    email: user.email,
+    email: user.email || (user.username ? "@" + user.username : ""),
     role: user.role,
     action: action,
     created_at: new Date().toISOString()
@@ -517,18 +618,14 @@ async function dbAddLoginHistory(user, action) {
   await supabaseClient.from("login_history").insert(row);
 }
 
-// Database/Storage helper `dbListLoginHistory`: Performs cloud Supabase operation to list login history.
+// Database/Storage helper `dbListLoginHistory`: Performs Supabase cloud operation to list login history.
 async function dbListLoginHistory() {
   if (IS_DEMO_MODE) return readSaved("pigem_login_history", []);
   var res = await supabaseClient.from("login_history").select("*").order("created_at", { ascending: false }).limit(200);
   return res.data || [];
 }
 
-// ============================================================
-// 3. applications table
-// ============================================================
-
-// Customers only see their own applications (matched by email). Staff see all.
+// Database/Storage helper `dbListApplications` (params: user): Performs Supabase cloud operation to list applications.
 async function dbListApplications(user) {
   if (IS_DEMO_MODE) {
     var all = readSaved("pigem_applications", []);
@@ -544,7 +641,7 @@ async function dbListApplications(user) {
   return res.data || [];
 }
 
-// Database/Storage helper `dbGetApplication` (params: appId): Performs cloud Supabase operation to get application.
+// Database/Storage helper `dbGetApplication` (params: appId): Performs Supabase cloud operation to get application.
 async function dbGetApplication(appId) {
   if (IS_DEMO_MODE) {
     var all = readSaved("pigem_applications", []);
@@ -557,7 +654,7 @@ async function dbGetApplication(appId) {
   return res.data;
 }
 
-// Save a new application. A copy of what the customer first sent is kept in original_copy.
+// Database/Storage helper `dbCreateApplication` (params: appData): Performs Supabase cloud operation to create application.
 async function dbCreateApplication(appData) {
   var now = new Date().toISOString();
   var refNo = "PIGEM-" + String(Date.now()).slice(-6) + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -587,7 +684,7 @@ async function dbCreateApplication(appData) {
   return res.data;
 }
 
-// Update an application (claim, status, correction, encoding, provider result)
+// Database/Storage helper `dbUpdateApplication` (params: appId, changes): Performs Supabase cloud operation to update application.
 async function dbUpdateApplication(appId, changes) {
   changes.updated_at = new Date().toISOString();
   if (IS_DEMO_MODE) {
@@ -606,7 +703,7 @@ async function dbUpdateApplication(appId, changes) {
   return res.data;
 }
 
-// Add one line to the AI activity of an application (shown to agents like a chat)
+// Database/Storage helper `dbAddAiLog` (params: appId, who, text): Performs Supabase cloud operation to add ai log.
 async function dbAddAiLog(appId, who, text) {
   var app = await dbGetApplication(appId);
   if (!app) return;
@@ -615,18 +712,13 @@ async function dbAddAiLog(appId, who, text) {
   await dbUpdateApplication(appId, { ai_log: log });
 }
 
-// ============================================================
-// 4. File storage (documents bucket)
-// ============================================================
-
-// Upload an ID picture or encoding screenshot directly to Supabase Storage Bucket (documents)
+// Database/Storage helper `dbUploadDocument` (params: file, folder, label): Performs Supabase cloud operation to upload document.
 async function dbUploadDocument(file, folder, label) {
   if (!file) return null;
   var ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   var fileName = Date.now() + "-" + (label || "doc") + "." + ext;
   var path = (folder || "ids") + "/" + fileName;
 
-  // 1. Direct Cloud Bucket Upload to Supabase 'documents' bucket
   if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
     try {
       var res = await supabaseClient.storage.from("documents").upload(path, file, {
@@ -644,7 +736,6 @@ async function dbUploadDocument(file, folder, label) {
     }
   }
 
-  // 2. Fallback to base64 Data URL so customer application NEVER fails
   return await new Promise(function (resolve, reject) {
     var reader = new FileReader();
     reader.onload = function () { resolve(reader.result); };
@@ -653,7 +744,7 @@ async function dbUploadDocument(file, folder, label) {
   });
 }
 
-// Get a short-lived link to view a private file
+// Database/Storage helper `dbGetDocumentLink` (params: path): Performs Supabase cloud operation to get document link.
 async function dbGetDocumentLink(path) {
   if (!path) return null;
   if (path.indexOf("data:") === 0 || path.indexOf("http") === 0 || IS_DEMO_MODE) return path;
@@ -661,18 +752,20 @@ async function dbGetDocumentLink(path) {
   return res.error ? null : res.data.signedUrl;
 }
 
-// ============================================================
-// 5. notifications and system_logs tables
-// ============================================================
-
-// Save a notification. Send to one person (user_id / email) or to everyone with a role (role: "agent").
-async function dbAddNotification(note) {
+// Database/Storage helper `dbAddNotification` (params: note, roleArg, titleArg, messageArg): Performs Supabase cloud operation to add notification.
+async function dbAddNotification(note, roleArg, titleArg, messageArg) {
+  var payload = (note && typeof note === "object") ? note : {
+    email: typeof note === "string" ? note : null,
+    role: roleArg || null,
+    title: titleArg || "Notification",
+    message: messageArg || ""
+  };
   var row = {
-    user_id: note.user_id || null,
-    email: note.email || null,
-    role: note.role || null,
-    title: note.title || note.subject || "Notification",
-    message: note.message || note.body || "",
+    user_id: payload.user_id || null,
+    email: payload.email || null,
+    role: payload.role || null,
+    title: payload.title || payload.subject || "Notification",
+    message: payload.message || payload.body || "",
     is_read: false,
     created_at: new Date().toISOString()
   };
@@ -686,25 +779,33 @@ async function dbAddNotification(note) {
   await supabaseClient.from("notifications").insert(row);
 }
 
-// Database/Storage helper `dbListMyNotifications` (params: user): Performs cloud Supabase operation to list my notifications.
+// Database/Storage helper `dbListMyNotifications` (params: user): Performs Supabase cloud operation to list my notifications.
 async function dbListMyNotifications(user) {
+  if (!user) return [];
   if (IS_DEMO_MODE) {
     return readSaved("pigem_notifications", []).filter(function (n) {
-      return n.user_id === user.id || n.email === user.email || n.role === user.role;
+      return (n.user_id && n.user_id === user.id) ||
+        (user.email && n.email && n.email === user.email) ||
+        (n.role && n.role === user.role);
     });
   }
+  var orParts = [];
+  if (user.id) orParts.push("user_id.eq." + user.id);
+  if (user.email) orParts.push("email.eq." + user.email);
+  if (user.role) orParts.push("role.eq." + user.role);
+  if (orParts.length === 0) return [];
   var res = await supabaseClient.from("notifications").select("*")
-    .or("user_id.eq." + user.id + ",email.eq." + user.email + ",role.eq." + user.role)
+    .or(orParts.join(","))
     .order("created_at", { ascending: false }).limit(50);
   return res.data || [];
 }
 
-// Database/Storage helper `dbAddActivity` (params: action, detail): Performs cloud Supabase operation to add activity.
+// Database/Storage helper `dbAddActivity` (params: action, detail): Performs Supabase cloud operation to add activity.
 async function dbAddActivity(action, detail) {
   var user = await dbGetCurrentUser();
   var row = {
     actor_username: user && user.username ? user.username : null,
-    actor_email: user ? user.email : "public",
+    actor_email: user ? (user.email || (user.username ? "@" + user.username : "staff")) : "public",
     action: action,
     detail: String(detail || ""),
     created_at: new Date().toISOString()
@@ -718,24 +819,21 @@ async function dbAddActivity(action, detail) {
   await supabaseClient.from("system_logs").insert(row);
 }
 
-// Database/Storage helper `dbListActivity`: Performs cloud Supabase operation to list activity.
+// Database/Storage helper `dbListActivity`: Performs Supabase cloud operation to list activity.
 async function dbListActivity() {
   if (IS_DEMO_MODE) return readSaved("pigem_activity", []);
   var res = await supabaseClient.from("system_logs").select("*").order("created_at", { ascending: false }).limit(200);
   return res.data || [];
 }
 
-// ============================================================
-// 6. users table
-// ============================================================
-
+// Database/Storage helper `dbListProfiles`: Performs Supabase cloud operation to list profiles.
 async function dbListProfiles() {
   if (IS_DEMO_MODE) return getDemoUsers();
   var res = await supabaseClient.from("users").select("*").order("created_at", { ascending: false });
   return res.data || [];
 }
 
-// Database/Storage helper `dbUpdateProfile` (params: userId, changes): Updates user profile fields including validated unique username.
+// Database/Storage helper `dbUpdateProfile` (params: userId, changes): Performs Supabase cloud operation to update profile.
 async function dbUpdateProfile(userId, changes) {
   var safeChanges = Object.assign({}, changes || {});
   if (safeChanges.username != null) {
@@ -768,18 +866,13 @@ async function dbUpdateProfile(userId, changes) {
   return res.data;
 }
 
-// Clear all Demo Mode records
+// Database/Storage helper `dbResetDemoData`: Performs Supabase cloud operation to reset demo data.
 function dbResetDemoData() {
   var keys = ["pigem_users", "pigem_applications", "pigem_notifications", "pigem_activity", "pigem_login_history",
     "pigem_provider_updates", "pigem_plans", "pigem_website_content", "pigem_system_settings", "pigem_session_customer"];
   for (var i = 0; i < keys.length; i++) localStorage.removeItem(keys[i]);
   sessionStorage.clear();
 }
-
-
-// ============================================================
-// 7. Convenience helpers & Demo Seed Data for Dashboards
-// ============================================================
 
 var DEFAULT_DEMO_APPS = [
   {
@@ -922,7 +1015,7 @@ var DEFAULT_DEMO_APPS = [
   }
 ];
 
-// Helper function `normalizeAppRecord` (params: a): Executes portal workflow logic for `normalizeAppRecord`.
+// Utility `normalizeAppRecord` (params: a): Normalizes or transforms values (normalize app record).
 function normalizeAppRecord(a) {
   if (!a) return a;
   if (!a.reference_no && a.ref_no) a.reference_no = a.ref_no;
@@ -980,7 +1073,7 @@ function normalizeAppRecord(a) {
   return a;
 }
 
-// Helper function `ensureDemoSeedApps`: Executes portal workflow logic for `ensureDemoSeedApps`.
+// Helper `ensureDemoSeedApps`: Executes workflow logic for `ensureDemoSeedApps`.
 function ensureDemoSeedApps() {
   var apps = readSaved("pigem_applications", null);
   if (!apps || apps.length === 0) {
@@ -991,7 +1084,7 @@ function ensureDemoSeedApps() {
   return apps;
 }
 
-// Formatter/Utility `escapeHtml` (params: str): Transforms or sanitizes data (escape html).
+// Utility `escapeHtml` (params: str): Normalizes or transforms values (escape html).
 function escapeHtml(str) {
   return String(str == null ? "" : str)
     .replace(/&/g, "&amp;")
@@ -1001,7 +1094,7 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-// UI Interaction `showMsg` (params: id, type, text): Controls modal/panel visibility to show msg.
+// UI State Controller `showMsg` (params: id, type, text): Updates modal, tab, or panel state to show msg.
 function showMsg(id, type, text) {
   var el = document.getElementById(id);
   if (!el) return;
@@ -1009,7 +1102,7 @@ function showMsg(id, type, text) {
   el.textContent = text;
 }
 
-// UI Interaction `hideMsg` (params: id): Controls modal/panel visibility to hide msg.
+// UI State Controller `hideMsg` (params: id): Updates modal, tab, or panel state to hide msg.
 function hideMsg(id) {
   var el = document.getElementById(id);
   if (!el) return;
@@ -1017,7 +1110,7 @@ function hideMsg(id) {
   el.textContent = "";
 }
 
-// Build a colored status badge for application status display
+// Helper `statusBadge` (params: status): Executes workflow logic for `statusBadge`.
 function statusBadge(status) {
   var st = status || "Pending Review";
   var cls = "badge-gray";
@@ -1029,14 +1122,14 @@ function statusBadge(status) {
   return '<span class="badge ' + cls + '">' + escapeHtml(st) + '</span>';
 }
 
-// Customer-facing 3-status mapper: ONLY "Processing", "Approved", or "Rejected"
+// Data Accessor `getCustomerStatus` (params: rawStatus): Retrieves or refreshes data to get customer status.
 function getCustomerStatus(rawStatus) {
   if (rawStatus === "Approved") return "Approved";
   if (rawStatus === "Rejected") return "Rejected";
   return "Processing";
 }
 
-// Customer badge: always shows one of the 3 main statuses, plus the "Needs Correction" branch tag ONLY when needed
+// Helper `customerStatusBadge` (params: rawStatus): Executes workflow logic for `customerStatusBadge`.
 function customerStatusBadge(rawStatus) {
   var vis = getCustomerStatus(rawStatus);
   var cls = vis === "Approved" ? "badge-green" : (vis === "Rejected" ? "badge-red" : "badge-blue");
@@ -1047,31 +1140,31 @@ function customerStatusBadge(rawStatus) {
   return html;
 }
 
-// Validation/State check `isAiEnabled`: Evaluates condition (is ai enabled) and returns status.
+// Validator/Check `isAiEnabled`: Evaluates rule (is ai enabled) and returns result.
 function isAiEnabled() {
   return Boolean(getSystemSettings().ai_enabled);
 }
 
-// Helper function `setAiEnabled` (params: val): Executes portal workflow logic for `setAiEnabled`.
+// UI State Controller `setAiEnabled` (params: val): Updates modal, tab, or panel state to set ai enabled.
 function setAiEnabled(val) {
   var s = getSystemSettings();
   s.ai_enabled = Boolean(val);
   saveSystemSettings(s);
 }
 
-// Validation/State check `isMaintenanceOn`: Evaluates condition (is maintenance on) and returns status.
+// Validator/Check `isMaintenanceOn`: Evaluates rule (is maintenance on) and returns result.
 function isMaintenanceOn() {
   return Boolean(getSystemSettings().maintenance_mode);
 }
 
-// Helper function `setMaintenanceOn` (params: val): Executes portal workflow logic for `setMaintenanceOn`.
+// UI State Controller `setMaintenanceOn` (params: val): Updates modal, tab, or panel state to set maintenance on.
 function setMaintenanceOn(val) {
   var s = getSystemSettings();
   s.maintenance_mode = Boolean(val);
   saveSystemSettings(s);
 }
 
-// Data Accessor `getSiteContent`: Retrieves or refreshes state to get site content.
+// Data Accessor `getSiteContent`: Retrieves or refreshes data to get site content.
 function getSiteContent() {
   var wc = getWebsiteContent();
   var plans = getActivePlans();
@@ -1103,7 +1196,7 @@ function getSiteContent() {
   };
 }
 
-// Action Handler `saveSiteContent` (params: c): Validates user input and commits state changes to save site content.
+// Action Handler `saveSiteContent` (params: c): Validates inputs and persists changes to save site content.
 function saveSiteContent(c) {
   var wc = getWebsiteContent();
   if (c.logo_image) wc.logo_image = c.logo_image;
@@ -1141,22 +1234,19 @@ function saveSiteContent(c) {
   }
 }
 
-// Helper function `requireLogin` (params: roles): Executes portal workflow logic for `requireLogin`.
+// Helper `requireLogin` (params: roles): Executes workflow logic for `requireLogin`.
 async function requireLogin(roles) {
   return await checkPageAccess(roles);
 }
 
-// Helper function `signOutAndGoLogin`: Executes portal workflow logic for `signOutAndGoLogin`.
+// Helper `signOutAndGoLogin`: Executes workflow logic for `signOutAndGoLogin`.
 async function signOutAndGoLogin() {
   var page = getLoginPage();
   await dbSignOut();
   window.location.href = page;
 }
 
-// ============================================================
-// Masking, Secured One-Time OTP (5-Min Expiry) & 3-Tab Recovery Helpers
-// ============================================================
-
+// Helper `maskEmailAddress` (params: email): Executes workflow logic for `maskEmailAddress`.
 function maskEmailAddress(email) {
   var clean = String(email || "").trim().toLowerCase();
   if (clean.indexOf("@") === -1) return "******@gmail.com";
@@ -1167,6 +1257,7 @@ function maskEmailAddress(email) {
   return "******" + tail + "@" + domain;
 }
 
+// Helper `maskPhoneNumber` (params: phone): Executes workflow logic for `maskPhoneNumber`.
 function maskPhoneNumber(phone) {
   var digits = String(phone || "").replace(/\D/g, "");
   if (digits.length < 4) return "09********00";
@@ -1175,6 +1266,7 @@ function maskPhoneNumber(phone) {
   return prefix + "********" + suffix;
 }
 
+// Helper `generateSecuredOtp` (params: targetKey): Executes workflow logic for `generateSecuredOtp`.
 function generateSecuredOtp(targetKey) {
   var key = "pigem_otp_" + String(targetKey || "default").toLowerCase().replace(/[^a-z0-9@._-]/g, "_");
   var randArr = new Uint32Array(1);
@@ -1200,6 +1292,7 @@ function generateSecuredOtp(targetKey) {
   return record;
 }
 
+// Helper `verifySecuredOtp` (params: targetKey, enteredCode): Executes workflow logic for `verifySecuredOtp`.
 function verifySecuredOtp(targetKey, enteredCode) {
   var key = "pigem_otp_" + String(targetKey || "default").toLowerCase().replace(/[^a-z0-9@._-]/g, "_");
   var raw = sessionStorage.getItem(key);
@@ -1226,6 +1319,7 @@ function verifySecuredOtp(targetKey, enteredCode) {
   }
 }
 
+// Database/Storage helper `dbFindAccountForRecovery` (params: queryValue, recoveryMode): Performs Supabase cloud operation to find account for recovery.
 async function dbFindAccountForRecovery(queryValue, recoveryMode) {
   var q = String(queryValue || "").trim();
   if (!q) throw new Error("Please enter the required account detail.");
@@ -1346,17 +1440,18 @@ async function dbFindAccountForRecovery(queryValue, recoveryMode) {
   };
 }
 
-// Database/Storage helper `dbStartPasswordReset` (params: email): Performs cloud Supabase operation to start password reset.
+// Database/Storage helper `dbStartPasswordReset` (params: email): Performs Supabase cloud operation to start password reset.
 async function dbStartPasswordReset(email) {
   var info = await dbFindAccountForRecovery(email, "password");
   return info.code;
 }
 
-// Database/Storage helper `dbFinishPasswordReset` (params: email, code, newPw): Performs cloud Supabase operation to finish password reset.
+// Database/Storage helper `dbFinishPasswordReset` (params: email, code, newPw): Performs Supabase cloud operation to finish password reset.
 async function dbFinishPasswordReset(email, code, newPw) {
-  if (!newPw || newPw.length < 6) throw new Error("Password must be at least 6 characters.");
+  if (!newPw || newPw.length < 8) throw new Error("Password must be at least 8 characters.");
   var clean = String(email || "").trim().toLowerCase();
   var cleanCode = String(code || "").trim();
+  var pwHash = await hashPassword(newPw);
   var users = getDemoUsers();
   var updatedLocal = false;
 
@@ -1365,8 +1460,10 @@ async function dbFinishPasswordReset(email, code, newPw) {
       if (users[i].reset_code && users[i].reset_code !== cleanCode) {
         throw new Error("Invalid 6-digit verification code.");
       }
-      users[i].password = newPw;
+      users[i].password_hash = pwHash;
+      delete users[i].password;
       users[i].activated = true;
+      users[i].activation_code = "";
       users[i].reset_code = "";
       writeSaved("pigem_users", users);
       updatedLocal = true;
@@ -1382,16 +1479,16 @@ async function dbFinishPasswordReset(email, code, newPw) {
       }
       await supabaseClient.from("users").update({
         activated: true,
-        activation_code: "PW:" + newPw
+        password_hash: pwHash,
+        activation_code: null
       }).eq("email", clean);
 
-      // Sync to local cache as well so sign-in is instant
       if (!updatedLocal) {
         users.push({
           id: existing.data.id,
           username: existing.data.username || (await dbGenerateUniqueUsername(existing.data.full_name || clean, clean)),
           email: clean,
-          password: newPw,
+          password_hash: pwHash,
           full_name: existing.data.full_name || clean,
           role: existing.data.role || "customer",
           active: existing.data.active !== false,
@@ -1407,7 +1504,7 @@ async function dbFinishPasswordReset(email, code, newPw) {
   throw new Error("Account not found.");
 }
 
-// Database/Storage helper `dbListAllApplications`: Performs cloud Supabase operation to list all applications.
+// Database/Storage helper `dbListAllApplications`: Performs Supabase cloud operation to list all applications.
 async function dbListAllApplications() {
   if (IS_DEMO_MODE) {
     return ensureDemoSeedApps();
@@ -1416,19 +1513,19 @@ async function dbListAllApplications() {
   return list.map(normalizeAppRecord);
 }
 
-// Database/Storage helper `dbListApplicationsForCustomer` (params: email): Performs cloud Supabase operation to list applications for customer.
+// Database/Storage helper `dbListApplicationsForCustomer` (params: email): Performs Supabase cloud operation to list applications for customer.
 async function dbListApplicationsForCustomer(email) {
   var all = await dbListAllApplications();
   var clean = String(email || "").trim().toLowerCase();
   return all.filter(function (a) { return String(a.email || "").toLowerCase() === clean; });
 }
 
-// Database/Storage helper `dbUploadIdPhoto` (params: file, label): Performs cloud Supabase operation to upload id photo.
+// Database/Storage helper `dbUploadIdPhoto` (params: file, label): Performs Supabase cloud operation to upload id photo.
 async function dbUploadIdPhoto(file, label) {
   return await dbUploadDocument(file, "ids", label || "id");
 }
 
-// Database/Storage helper `dbListNotifications` (params: email, role): Performs cloud Supabase operation to list notifications.
+// Database/Storage helper `dbListNotifications` (params: email, role): Performs Supabase cloud operation to list notifications.
 async function dbListNotifications(email, role) {
   var u = await dbGetCurrentUser();
   var list = await dbListMyNotifications(u || { id: "", email: email, role: role });
@@ -1472,7 +1569,7 @@ dbAddAiLog = async function (appId, arg2, arg3, arg4) {
   writeSaved("pigem_ai_logs", globalAi.slice(0, 200));
 };
 
-// Database/Storage helper `dbListAiLogs` (params: appId): Performs cloud Supabase operation to list ai logs.
+// Database/Storage helper `dbListAiLogs` (params: appId): Performs Supabase cloud operation to list ai logs.
 async function dbListAiLogs(appId) {
   if (appId) {
     var app = await dbGetApplication(appId);
@@ -1501,12 +1598,12 @@ async function dbListAiLogs(appId) {
   return merged;
 }
 
-// Database/Storage helper `dbAddLog` (params: actorEmail, actionText): Performs cloud Supabase operation to add log.
+// Database/Storage helper `dbAddLog` (params: actorEmail, actionText): Performs Supabase cloud operation to add log.
 async function dbAddLog(actorEmail, actionText) {
   await dbAddActivity(actionText, actorEmail);
 }
 
-// Database/Storage helper `dbListLogs`: Performs cloud Supabase operation to list logs.
+// Database/Storage helper `dbListLogs`: Performs Supabase cloud operation to list logs.
 async function dbListLogs() {
   var list = await dbListActivity();
   return list.map(function (r) {
@@ -1519,7 +1616,7 @@ async function dbListLogs() {
   });
 }
 
-// Database/Storage helper `dbRecordProviderUpdate` (params: appId, providerRef, providerStatus, providerRemark, customerInstruction): Records a provider validation or encoding event in public.provider_updates.
+// Database/Storage helper `dbRecordProviderUpdate` (params: appId, providerRef, providerStatus, providerRemark, customerInstruction): Performs Supabase cloud operation to record provider update.
 async function dbRecordProviderUpdate(appId, providerRef, providerStatus, providerRemark, customerInstruction) {
   if (!appId || !providerStatus) return null;
   var currentUser = await dbGetCurrentUser();
@@ -1548,7 +1645,7 @@ async function dbRecordProviderUpdate(appId, providerRef, providerStatus, provid
   return row;
 }
 
-// Database/Storage helper `dbListProviderUpdates` (params: appId): Lists recorded provider validation updates for an application.
+// Database/Storage helper `dbListProviderUpdates` (params: appId): Performs Supabase cloud operation to list provider updates.
 async function dbListProviderUpdates(appId) {
   if (IS_DEMO_MODE) {
     var all = readSaved("pigem_provider_updates", []);
@@ -1561,7 +1658,7 @@ async function dbListProviderUpdates(appId) {
   return res.data || [];
 }
 
-// Database/Storage helper `dbCreateAgentLink` (params: agentEmail, note): Performs cloud Supabase operation to create agent link.
+// Database/Storage helper `dbCreateAgentLink` (params: agentEmail, note): Performs Supabase cloud operation to create agent link.
 async function dbCreateAgentLink(agentEmail, note) {
   var code = "REF-" + Math.random().toString(36).slice(2, 7).toUpperCase();
   var item = {
@@ -1580,13 +1677,13 @@ async function dbCreateAgentLink(agentEmail, note) {
   return item;
 }
 
-// Private One-Time Agent Registration Link Generator (for Manager & Admin)
-async function dbCreateAgentInviteLink(creatorEmail, note) {
+// Database/Storage helper `dbCreateAgentInviteLink` (params: creatorRef, note): Performs Supabase cloud operation to create agent invite link.
+async function dbCreateAgentInviteLink(creatorRef, note) {
   var randPart = Math.random().toString(36).slice(2, 8).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
   var code = "INV-" + randPart;
   var item = {
     code: code,
-    agent_email: creatorEmail || "manager@pigem.ph",
+    agent_email: creatorRef || "@manager",
     note: note || "Private One-Time Agent Registration Link",
     active: true,
     created_at: new Date().toISOString()
@@ -1601,7 +1698,7 @@ async function dbCreateAgentInviteLink(creatorEmail, note) {
   return item;
 }
 
-// Verify that a Private One-Time Agent Registration Link (`?invite=INV-...`) is valid and active
+// Database/Storage helper `dbVerifyAgentInviteLink` (params: code): Performs Supabase cloud operation to verify agent invite link.
 async function dbVerifyAgentInviteLink(code) {
   var clean = String(code || "").trim().toUpperCase();
   if (!clean || clean.indexOf("INV-") !== 0) return null;
@@ -1623,7 +1720,7 @@ async function dbVerifyAgentInviteLink(code) {
   return null;
 }
 
-// Consume a Private One-Time Agent Registration Link after the Agent completes registration
+// Database/Storage helper `dbConsumeAgentInviteLink` (params: code, registeredAgentEmail): Performs Supabase cloud operation to consume agent invite link.
 async function dbConsumeAgentInviteLink(code, registeredAgentEmail) {
   var clean = String(code || "").trim().toUpperCase();
   if (!clean) return;
@@ -1645,7 +1742,7 @@ async function dbConsumeAgentInviteLink(code, registeredAgentEmail) {
   }
 }
 
-// Database/Storage helper `dbListAgentLinks`: Performs cloud Supabase operation to list agent links.
+// Database/Storage helper `dbListAgentLinks`: Performs Supabase cloud operation to list agent links.
 async function dbListAgentLinks() {
   if (!IS_DEMO_MODE && supabaseClient) {
     var res = await supabaseClient.from("agent_links").select("*").order("created_at", { ascending: false });
@@ -1656,17 +1753,17 @@ async function dbListAgentLinks() {
   ]);
 }
 
-// Database/Storage helper `dbListUsers`: Performs cloud Supabase operation to list users.
+// Database/Storage helper `dbListUsers`: Performs Supabase cloud operation to list users.
 async function dbListUsers() {
   return await dbListProfiles();
 }
 
-// Database/Storage helper `dbGetUsers`: Performs cloud Supabase operation to get users.
+// Database/Storage helper `dbGetUsers`: Performs Supabase cloud operation to get users.
 async function dbGetUsers() {
   return await dbListProfiles();
 }
 
-// Database/Storage helper `dbHasAdminAccount`: Performs cloud Supabase operation to has admin account.
+// Database/Storage helper `dbHasAdminAccount`: Performs Supabase cloud operation to has admin account.
 async function dbHasAdminAccount() {
   if (IS_DEMO_MODE) {
     var demoList = getDemoUsers();
@@ -1683,19 +1780,20 @@ async function dbHasAdminAccount() {
   }
 }
 
-// Database/Storage helper `dbCreateUserAccount` (params: fullName, email, password, role, username): Provisions an Admin, Manager, Agent, or Customer account with a unique username.
+// Database/Storage helper `dbCreateUserAccount` (params: fullName, email, password, role, username): Performs Supabase cloud operation to create user account.
 async function dbCreateUserAccount(fullName, email, password, role, username) {
-  var cleanEmail = email.trim().toLowerCase();
   var targetRole = role || "agent";
-  var cleanUsername = String(username || "").trim().toLowerCase();
+  var cleanEmail = email ? String(email).trim().toLowerCase() : null;
+  var cleanUsername = String(username || "").trim().toLowerCase().replace(/^@/, "");
 
   if (targetRole === "customer") {
-    if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
+    if (!cleanEmail || (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail))) {
       throw new Error("Customer accounts must use a valid @gmail.com email address.");
     }
   } else {
-    if (typeof isStaffBusinessEmail === "function" && !isStaffBusinessEmail(cleanEmail)) {
-      throw new Error("Internal Agent, Manager, and Admin accounts must use an official internal email (such as name@pigem.ph), not a Gmail address.");
+    cleanEmail = null;
+    if (!cleanUsername) {
+      throw new Error("Username is required for internal Admin, Manager, and Agent accounts.");
     }
   }
 
@@ -1707,7 +1805,7 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
       throw new Error("Username '@" + cleanUsername + "' is already taken. Please choose another username.");
     }
   } else {
-    cleanUsername = await dbGenerateUniqueUsername(fullName, cleanEmail);
+    cleanUsername = await dbGenerateUniqueUsername(fullName, cleanEmail || fullName);
   }
 
   if (targetRole === "admin") {
@@ -1722,12 +1820,12 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
   var pwHash = await hashPassword(password || "");
 
   if (!IS_DEMO_MODE && supabaseClient) {
-    var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
-    if (existing.data) throw new Error("Account email is already registered in the database.");
+    if (cleanEmail) {
+      var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
+      if (existing.data) throw new Error("Account email is already registered in the database.");
+    }
 
-    // Internal business accounts (@pigem.com) authenticate via SHA-256 credential hash in public.users
-    // without triggering external GoTrue confirmation emails or replacing the Admin's active browser session.
-    if (targetRole === "customer") {
+    if (targetRole === "customer" && cleanEmail) {
       try {
         var signUpRes = await supabaseClient.auth.signUp({
           email: cleanEmail,
@@ -1746,14 +1844,22 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
       email: cleanEmail,
       full_name: fullName,
       role: targetRole,
+      password_hash: pwHash,
       active: true,
       activated: true,
-      activation_code: "PW:" + pwHash
+      activation_code: null
     };
-    var upRes = await supabaseClient.from("users").upsert(dbRow, { onConflict: "email" });
+    var upRes = cleanEmail
+      ? await supabaseClient.from("users").upsert(dbRow, { onConflict: "email" })
+      : await supabaseClient.from("users").insert(dbRow);
     if (upRes.error) throw new Error(upRes.error.message);
   } else {
-    if (findDemoUserByEmail(cleanEmail)) throw new Error("Account email is already registered.");
+    if (cleanEmail && findDemoUserByEmail(cleanEmail)) {
+      throw new Error("Account email is already registered.");
+    }
+    if (findDemoUserByUsername(cleanUsername)) {
+      throw new Error("Username '@" + cleanUsername + "' is already registered.");
+    }
   }
 
   var u = {
@@ -1764,26 +1870,28 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
     full_name: fullName,
     role: targetRole,
     active: true,
-    activated: true,
-    activation_code: "PW:" + pwHash
+    activated: true
   };
-  var filtered = users.filter(function (x) { return x.email !== cleanEmail; });
+  var filtered = users.filter(function (x) {
+    return (cleanEmail ? x.email !== cleanEmail : true) && String(x.username || "").toLowerCase() !== cleanUsername;
+  });
   filtered.push(u);
   writeSaved("pigem_users", filtered);
-  await dbAddActivity("user_registered", fullName + " (@" + cleanUsername + " / " + cleanEmail + " - " + targetRole + ")");
+  await dbAddActivity("user_registered", fullName + " (@" + cleanUsername + (cleanEmail ? " / " + cleanEmail : "") + " - " + targetRole + ")");
   return u;
 }
 
-// Database/Storage helper `dbAdminResetUserPassword` (params: userId, newPassword): Performs cloud Supabase operation to admin reset user password.
+// Database/Storage helper `dbAdminResetUserPassword` (params: userId, newPassword): Performs Supabase cloud operation to admin reset user password.
 async function dbAdminResetUserPassword(userId, newPassword) {
-  if (!newPassword || newPassword.length < 6) {
-    throw new Error("New password must be at least 6 characters.");
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error("New password must be at least 8 characters.");
   }
   var pwHash = await hashPassword(newPassword);
   if (!IS_DEMO_MODE && supabaseClient) {
     var res = await supabaseClient.from("users").update({
       activated: true,
-      activation_code: "PW:" + pwHash
+      password_hash: pwHash,
+      activation_code: null
     }).eq("id", userId).select("*").single();
     if (res.error) throw new Error(res.error.message);
   }
@@ -1792,22 +1900,149 @@ async function dbAdminResetUserPassword(userId, newPassword) {
     if (users[i].id === userId) {
       users[i].password_hash = pwHash;
       delete users[i].password;
-      users[i].activation_code = "PW:" + pwHash;
+      users[i].activation_code = "";
     }
   }
   writeSaved("pigem_users", users);
+  await dbAddActivity("password_reset_by_admin", "Updated password for user ID " + userId);
   return true;
 }
 
-// Database/Storage helper `dbUpdateUser` (params: userId, changes): Performs cloud Supabase operation to update user.
+// Database/Storage helper `dbUpdateUser` (params: userId, changes): Performs Supabase cloud operation to update user.
 async function dbUpdateUser(userId, changes) {
   return await dbUpdateProfile(userId, changes);
 }
 
-// ============================================================
-// 8. Live Supabase Sync for Website Content, Plans, Settings & Bucket Assets
-// ============================================================
+// `dbAdminUpdateStaffAccount` (params: userId, changes): Updates a staff user's full name, username, role, or password hash cleanly via Admin/Manager CRUD.
+async function dbAdminUpdateStaffAccount(userId, changes) {
+  var updates = {};
+  if (changes.full_name != null) updates.full_name = String(changes.full_name).trim();
+  if (changes.username != null) {
+    var cleanU = String(changes.username).trim().toLowerCase().replace(/^@/, "");
+    if (typeof isValidUsername === "function" && !isValidUsername(cleanU)) {
+      throw new Error("Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+    }
+    if (await dbIsUsernameTaken(cleanU, userId)) {
+      throw new Error("Username '@" + cleanU + "' is already taken.");
+    }
+    updates.username = cleanU;
+  }
+  if (changes.role != null) {
+    if (changes.role === "admin") {
+      throw new Error("Cannot promote an additional account to System Administrator.");
+    }
+    updates.role = changes.role;
+  }
+  if (changes.new_password) {
+    if (typeof validatePasswordStrength === "function") {
+      var pwCheck = validatePasswordStrength(changes.new_password);
+      if (!pwCheck.valid) throw new Error(pwCheck.message);
+    }
+    updates.password_hash = await hashPassword(changes.new_password);
+    updates.activation_code = null;
+  }
+  var updated = await dbUpdateProfile(userId, updates);
+  await dbAddActivity("staff_account_updated", (updates.username ? "@" + updates.username : userId) + " updated");
+  return updated;
+}
 
+// `dbDeleteUserAccount` (params: userId): Removes a non-admin user account row from `public.users` and records an audit trail entry.
+async function dbDeleteUserAccount(userId) {
+  if (!userId) throw new Error("Missing user ID.");
+  var target = null;
+  var users = getDemoUsers();
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].id === userId) {
+      target = users[i];
+      break;
+    }
+  }
+  if (!IS_DEMO_MODE && supabaseClient && !target) {
+    var lookup = await supabaseClient.from("users").select("*").eq("id", userId).maybeSingle();
+    target = lookup.data;
+  }
+  if (target && target.role === "admin") {
+    throw new Error("The primary System Administrator account cannot be deleted.");
+  }
+  if (!IS_DEMO_MODE && supabaseClient) {
+    var delRes = await supabaseClient.from("users").delete().eq("id", userId);
+    if (delRes.error) throw new Error(delRes.error.message);
+  }
+  writeSaved("pigem_users", users.filter(function (u) { return u.id !== userId; }));
+  await dbAddActivity("user_deleted", (target && target.username ? "@" + target.username : userId));
+  return true;
+}
+
+// `dbChangeStaffPasswordDirect` (params: userId, currentPassword, newPassword): Allows an authenticated internal staff user to update their own password directly without OTP.
+async function dbChangeStaffPasswordDirect(userId, currentPassword, newPassword) {
+  if (!userId) throw new Error("Missing user ID.");
+  if (typeof validatePasswordStrength === "function") {
+    var pwCheck = validatePasswordStrength(newPassword);
+    if (!pwCheck.valid) throw new Error(pwCheck.message);
+  }
+  var userObj = null;
+  if (IS_DEMO_MODE) {
+    var list = getDemoUsers();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === userId) { userObj = list[i]; break; }
+    }
+  } else if (supabaseClient) {
+    var res = await supabaseClient.from("users").select("*").eq("id", userId).maybeSingle();
+    userObj = res.data;
+  }
+  if (!userObj) throw new Error("Account not found.");
+  var curHash = await hashPassword(currentPassword || "");
+  var matched = Boolean(
+    (userObj.password_hash && userObj.password_hash === curHash) ||
+    (userObj.password && (userObj.password === currentPassword || userObj.password === curHash)) ||
+    (userObj.activation_code && (
+      userObj.activation_code === ("PW:" + curHash) ||
+      userObj.activation_code === ("PW:" + currentPassword)
+    ))
+  );
+  if (!matched) {
+    throw new Error("Current password is incorrect.");
+  }
+  var nextHash = await hashPassword(newPassword);
+  await dbUpdateProfile(userId, { password_hash: nextHash, activation_code: null });
+  await dbAddActivity("password_changed_self", "@" + (userObj.username || userId));
+  return true;
+}
+
+// `dbRequestStaffPasswordReset` (params: username, note): Logs an in-system password reset request notification from a Manager or Agent to the System Administrator.
+async function dbRequestStaffPasswordReset(username, note) {
+  var clean = String(username || "").trim().toLowerCase().replace(/^@/, "");
+  if (!clean) throw new Error("Please enter your staff username.");
+  var found = findDemoUserByUsername(clean);
+  if (!found && !IS_DEMO_MODE && supabaseClient) {
+    var res = await supabaseClient.from("users").select("*").ilike("username", clean).maybeSingle();
+    found = res.data || null;
+  }
+  if (!found) {
+    throw new Error("No staff account was found with username '@" + clean + "'.");
+  }
+  if (found.role === "admin") {
+    throw new Error("System Administrator credentials cannot be reset via staff request.");
+  }
+  if (found.role === "customer") {
+    throw new Error("Customer accounts should use the Customer Login Forgot Password option.");
+  }
+  var detailMsg = "Staff user " + (found.full_name || "@" + clean) + " (@" + clean + ", " + String(found.role || "").toUpperCase() + ") requested a password reset." +
+    (note ? " Note: " + note : "");
+  await dbAddNotification({
+    role: "admin",
+    title: "Password Reset Request: @" + clean,
+    message: detailMsg
+  });
+  await dbAddActivity("staff_password_reset_requested", "@" + clean + (note ? " - " + note : ""));
+  return {
+    username: clean,
+    role: found.role,
+    full_name: found.full_name || clean
+  };
+}
+
+// Database/Storage helper `dbSaveLiveWebsiteContent` (params: content): Performs Supabase cloud operation to save live website content.
 async function dbSaveLiveWebsiteContent(content) {
   if (IS_DEMO_MODE || !supabaseClient) return;
   try {
@@ -1819,7 +2054,7 @@ async function dbSaveLiveWebsiteContent(content) {
   } catch (e) {}
 }
 
-// Database/Storage helper `dbSaveLivePlans` (params: plans): Performs cloud Supabase operation to save live plans.
+// Database/Storage helper `dbSaveLivePlans` (params: plans): Performs Supabase cloud operation to save live plans.
 async function dbSaveLivePlans(plans) {
   if (IS_DEMO_MODE || !supabaseClient || !Array.isArray(plans)) return;
   try {
@@ -1838,7 +2073,7 @@ async function dbSaveLivePlans(plans) {
   } catch (e) {}
 }
 
-// Database/Storage helper `dbSaveLiveSystemSettings` (params: settings): Performs cloud Supabase operation to save live system settings.
+// Database/Storage helper `dbSaveLiveSystemSettings` (params: settings): Performs Supabase cloud operation to save live system settings.
 async function dbSaveLiveSystemSettings(settings) {
   if (IS_DEMO_MODE || !supabaseClient) return;
   try {
@@ -1852,8 +2087,7 @@ async function dbSaveLiveSystemSettings(settings) {
   } catch (e) {}
 }
 
-// Upload a banner, logo, client logo, vehicle photo, or permit image to the `website-assets` bucket
-// and keep it saved in website_content.asset_library[category] so the Manager can switch between saved images anytime!
+// Database/Storage helper `dbUploadWebsiteAsset` (params: file, category): Performs Supabase cloud operation to upload website asset.
 async function dbUploadWebsiteAsset(file, category) {
   if (!file) throw new Error("Please select an image file first.");
   var folder = category || "Banners";
@@ -1885,7 +2119,7 @@ async function dbUploadWebsiteAsset(file, category) {
   return savedPath;
 }
 
-// Sync live Supabase website_content, plans, and system_settings into localStorage on page load
+// Database/Storage helper `dbSyncLiveSettingsAndContent`: Performs Supabase cloud operation to sync live settings and content.
 async function dbSyncLiveSettingsAndContent() {
   if (IS_DEMO_MODE || !supabaseClient) return;
   try {
@@ -1918,19 +2152,22 @@ async function dbSyncLiveSettingsAndContent() {
   }
 }
 
+// Database/Storage helper `dbSyncPopupGuides`: Performs Supabase cloud operation to sync popup guides.
 async function dbSyncPopupGuides() {
   return [];
 }
 
+// Database/Storage helper `dbListPopupGuides`: Performs Supabase cloud operation to list popup guides.
 async function dbListPopupGuides() {
   return [];
 }
 
+// Database/Storage helper `dbSavePopupGuide` (params: guideRow): Performs Supabase cloud operation to save popup guide.
 async function dbSavePopupGuide(guideRow) {
   return true;
 }
 
-// Notify both Agents and Managers when Auto-Screening is unavailable and original ID copy is used
+// Database/Storage helper `dbNotifyScreeningUnavailable` (params: refNo, customerName, detailText): Performs Supabase cloud operation to notify screening unavailable.
 async function dbNotifyScreeningUnavailable(refNo, customerName, detailText) {
   var dedupKey = "pigem_unavail_alert_" + (refNo || "session");
   if (sessionStorage.getItem(dedupKey) === "1") return;
@@ -1949,12 +2186,12 @@ async function dbNotifyScreeningUnavailable(refNo, customerName, detailText) {
   } catch (e) {}
 }
 
-// Event Listener: Runs initialization or state sync when `DOMContentLoaded` fires
+// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 document.addEventListener("DOMContentLoaded", function () {
   dbSyncLiveSettingsAndContent();
 });
 
-// Helper function `apiCheckIdPhoto` (params: file, details): Executes portal workflow logic for `apiCheckIdPhoto`.
+// Helper `apiCheckIdPhoto` (params: file, details): Executes workflow logic for `apiCheckIdPhoto`.
 async function apiCheckIdPhoto(file, details) {
   var res = await apiRunScreening(file, details);
   return {
@@ -2022,4 +2259,80 @@ if (typeof apiSendStatusEmail === "undefined") {
       }
     });
   };
+}
+
+// `dbUploadQrSessionFile` (params: sid, side, file): Uploads a mobile QR-captured Valid ID image to Supabase `documents/qr-sessions/` for desktop polling.
+async function dbUploadQrSessionFile(sid, side, file) {
+  var cleanSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!cleanSid || !file) throw new Error("Missing QR upload session or file.");
+  var cleanSide = side === "back" ? "back" : "front";
+  var ext = (file.name && file.name.split(".").pop()) || "jpg";
+  var url = "";
+
+  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
+    try {
+      var storagePath = "qr_sessions/" + cleanSid + "/" + cleanSide + "-" + Date.now() + "." + ext;
+      var upRes = await supabaseClient.storage.from("documents").upload(storagePath, file, {
+        cacheControl: "60",
+        upsert: true
+      });
+      if (!upRes.error) {
+        var pub = supabaseClient.storage.from("documents").getPublicUrl(storagePath);
+        if (pub && pub.data && pub.data.publicUrl) {
+          url = pub.data.publicUrl;
+        }
+      }
+    } catch (err) {}
+  }
+
+  if (!url) {
+    url = await new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  var cached = readSaved("pigem_qr_" + cleanSid, {});
+  if (cleanSide === "front") cached.frontUrl = url;
+  else cached.backUrl = url;
+  cached.updatedAt = Date.now();
+  writeSaved("pigem_qr_" + cleanSid, cached);
+  return url;
+}
+
+// `dbListQrSessionFiles` (params: sid): Polls Supabase Storage for Front/Back ID photos uploaded from a linked mobile QR capture session.
+async function dbListQrSessionFiles(sid) {
+  var cleanSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!cleanSid) return { frontUrl: "", backUrl: "" };
+  var result = { frontUrl: "", backUrl: "" };
+
+  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
+    try {
+      var res = await supabaseClient.storage.from("documents").list("qr_sessions/" + cleanSid, {
+        limit: 20,
+        sortBy: { column: "created_at", order: "desc" }
+      });
+      if (!res.error && Array.isArray(res.data)) {
+        for (var i = 0; i < res.data.length; i++) {
+          var item = res.data[i];
+          if (!item || !item.name) continue;
+          if (!result.frontUrl && item.name.indexOf("front-") === 0) {
+            var p1 = supabaseClient.storage.from("documents").getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
+            if (p1 && p1.data) result.frontUrl = p1.data.publicUrl;
+          }
+          if (!result.backUrl && item.name.indexOf("back-") === 0) {
+            var p2 = supabaseClient.storage.from("documents").getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
+            if (p2 && p2.data) result.backUrl = p2.data.publicUrl;
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  var local = readSaved("pigem_qr_" + cleanSid, {});
+  if (!result.frontUrl && local.frontUrl) result.frontUrl = local.frontUrl;
+  if (!result.backUrl && local.backUrl) result.backUrl = local.backUrl;
+  return result;
 }

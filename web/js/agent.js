@@ -233,7 +233,7 @@ async function refreshAgentData(silent) {
     var st = a.status || "Pending Review";
 
     if (!a.assigned_agent && st === "Pending Review") unclaimed++;
-    if (a.assigned_agent === currentAgent.email && (st === "Pending Review" || st === "Under Agent Review")) myClaimed++;
+    if (isAssignedToStaff(a.assigned_agent, currentAgent) && (st === "Pending Review" || st === "Under Agent Review")) myClaimed++;
     if (st === "Encoding") encodingCount++;
     if (st === "Needs Correction") fix++;
     if (st === "Approved") approvedCount++;
@@ -265,6 +265,14 @@ async function refreshAgentData(silent) {
   setTxt("st-rejected", rejectedCount);
 
   if (!silent) {
+    renderPieChart("chart-agent-pie", [
+      { label: "Unclaimed", value: unclaimed, color: "#64748b" },
+      { label: "Claimed", value: myClaimed, color: "#2563eb" },
+      { label: "Encoding", value: encodingCount, color: "#0284c7" },
+      { label: "Needs Correction", value: fix, color: "#d97706" },
+      { label: "Approved", value: approvedCount, color: "#15803d" },
+      { label: "Rejected", value: rejectedCount, color: "#b91c1c" }
+    ], "Queue");
     renderBars("chart-agent-bars", [
       { label: "Unclaimed", value: unclaimed, color: "#64748b" },
       { label: "Claimed", value: myClaimed, color: "#2563eb" },
@@ -297,8 +305,12 @@ function showTab(branch) {
   var pills = document.querySelectorAll("[data-pill]");
   for (var p = 0; p < pills.length; p++) {
     var isMatch = pills[p].getAttribute("data-pill") === branch;
-    pills[p].classList.toggle("btn-red", isMatch);
-    pills[p].classList.toggle("btn-outline", !isMatch);
+    if (pills[p].classList.contains("sub-nav-btn")) {
+      pills[p].classList.toggle("active", isMatch);
+    } else {
+      pills[p].classList.toggle("btn-red", isMatch);
+      pills[p].classList.toggle("btn-outline", !isMatch);
+    }
   }
 
   document.getElementById("tab-overview").classList.toggle("hidden", branch !== "overview");
@@ -313,6 +325,7 @@ function showTab(branch) {
     branch === "rejected"
   );
   document.getElementById("tab-apps").classList.toggle("hidden", !isAppBranch);
+  updateOverviewOnlyVisibility(branch === "overview");
 
   if (isAppBranch) {
     var titles = {
@@ -392,7 +405,7 @@ function renderAgentCards() {
     var st = a.status || "Pending Review";
 
     if (activeBranch === "queue" && (a.assigned_agent || st !== "Pending Review")) continue;
-    if (activeBranch === "claimed" && !(a.assigned_agent === currentAgent.email && (st === "Pending Review" || st === "Under Agent Review"))) continue;
+    if (activeBranch === "claimed" && !(isAssignedToStaff(a.assigned_agent, currentAgent) && (st === "Pending Review" || st === "Under Agent Review"))) continue;
     if (activeBranch === "encoding" && st !== "Encoding") continue;
     if (activeBranch === "correction" && st !== "Needs Correction") continue;
     if (activeBranch === "approved" && st !== "Approved") continue;
@@ -413,7 +426,7 @@ function renderAgentCards() {
   var html = "";
   for (var j = 0; j < filtered.length; j++) {
     var app = filtered[j];
-    var isClaimedByMe = app.assigned_agent === currentAgent.email;
+    var isClaimedByMe = isAssignedToStaff(app.assigned_agent, currentAgent);
     var claimBtn = "";
 
     if (!app.assigned_agent) {
@@ -469,13 +482,14 @@ function toggleCardMore(elId) {
 async function claimApplication(appId) {
   var app = findAppById(appId);
   var keepCorrection = app && app.status === "Needs Correction";
+  var staffId = getStaffIdentifier(currentAgent);
   await dbUpdateApplication(appId, {
-    assigned_agent: currentAgent.email,
+    assigned_agent: staffId,
     status: keepCorrection ? "Needs Correction" : "Under Agent Review"
   });
   if (app) {
     await dbAddAiLog(app.id, app.reference_no, "Agent (" + currentAgent.full_name + ")", "Claimed application from queue.");
-    await dbAddLog(currentAgent.email, "Claimed application " + app.reference_no);
+    await dbAddLog(staffId, "Claimed application " + app.reference_no);
   }
   await refreshAgentData();
   showTab(keepCorrection ? "correction" : "claimed");
@@ -989,9 +1003,10 @@ async function saveAgentDecision(newStatus) {
     validator_raw_remark: rawValidator
   });
 
+  var staffId = getStaffIdentifier(currentAgent);
   await dbUpdateApplication(app.id, {
     status: newStatus,
-    assigned_agent: currentAgent.email,
+    assigned_agent: staffId,
     agent_remarks: remarks,
     correction_note: remarks,
     customer_instruction: remarks,
@@ -1029,7 +1044,7 @@ async function saveAgentDecision(newStatus) {
     }
   }
 
-  await dbAddLog(currentAgent.email, "Set application " + app.reference_no + " status to " + newStatus);
+  await dbAddLog(staffId, "Set application " + app.reference_no + " status to " + newStatus);
 
   closeDetailModal();
   await refreshAgentData();
@@ -1058,7 +1073,7 @@ function printApplicantCopy() {
 
 async function createNewAgentLink() {
   var note = document.getElementById("link-note").value.trim() || "Walk-in / Assisted Customer";
-  await dbCreateAgentLink(currentAgent.email, note);
+  await dbCreateAgentLink(getStaffIdentifier(currentAgent), note);
   document.getElementById("link-note").value = "";
   await renderAgentLinks();
 }

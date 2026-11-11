@@ -1,13 +1,35 @@
 var currentAdmin = null;
 var adminApps = [];
 var adminUsers = [];
+var adminNotifs = [];
 var activeAdminTab = "overview";
+var activeAccountSubTab = "all";
+var activeLogSubTab = "activity";
+var activeReportSubTab = "api";
+var lastHealthData = null;
+var lastApiReportRows = [];
+
+function getLocalTodayIso() {
+  var d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+function getLocalMonthIso() {
+  var d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
 
 window.addEventListener("DOMContentLoaded", async function () {
   currentAdmin = await requireLogin(["admin"]);
   if (!currentAdmin) return;
 
   document.getElementById("top-user-name").textContent = currentAdmin.full_name;
+  var dEl = document.getElementById("rep-date");
+  var mEl = document.getElementById("rep-month");
+  if (dEl && !dEl.value) dEl.value = getLocalTodayIso();
+  if (mEl && !mEl.value) mEl.value = getLocalMonthIso();
+
+  populateReportStatusFilter("api");
   await refreshAdminData();
   initDashUI(currentAdmin, adminApps, function () { showTab("reports"); });
 });
@@ -15,6 +37,7 @@ window.addEventListener("DOMContentLoaded", async function () {
 async function refreshAdminData() {
   adminApps = await dbListAllApplications();
   adminUsers = await dbListUsers();
+  adminNotifs = await dbListMyNotifications(currentAdmin);
   updateDashSearchApps(adminApps);
 
   var aiOn = isAiEnabled();
@@ -40,6 +63,22 @@ async function refreshAdminData() {
     else if (st === "Rejected") rejected++;
   }
 
+  if (typeof renderPieChart === "function") {
+    renderPieChart("chart-admin-role-pie", [
+      { label: "Customers", value: rCounts.customer, color: "#64748b" },
+      { label: "Agents", value: rCounts.agent, color: "#2563eb" },
+      { label: "Managers", value: rCounts.manager, color: "#d97706" },
+      { label: "Admin", value: rCounts.admin, color: "#c8102e" }
+    ], "Accounts");
+
+    renderPieChart("chart-admin-app-pie", [
+      { label: "Pending / Encoding", value: pending, color: "#2563eb" },
+      { label: "Needs Correction", value: fix, color: "#d97706" },
+      { label: "Approved", value: approved, color: "#15803d" },
+      { label: "Rejected", value: rejected, color: "#dc2626" }
+    ], "Apps");
+  }
+
   renderBars("chart-admin-bars", [
     { label: "Customers", value: rCounts.customer, color: "#64748b" },
     { label: "Agents", value: rCounts.agent, color: "#2563eb" },
@@ -61,6 +100,7 @@ async function refreshAdminData() {
   await checkApiHealth();
   renderAdminUsers();
   await renderAdminLogs();
+  renderAdminReport();
 }
 
 function showTab(tab) {
@@ -71,6 +111,9 @@ function showTab(tab) {
     if (btn) btn.classList.toggle("active", tabs[i] === tab);
     var sec = document.getElementById("tab-" + tabs[i]);
     if (sec) sec.classList.toggle("hidden", tabs[i] !== tab);
+  }
+  if (typeof updateOverviewOnlyVisibility === "function") {
+    updateOverviewOnlyVisibility(tab === "overview");
   }
 }
 
@@ -95,7 +138,7 @@ function toggleMaintMode() {
     next ? "Enable Maintenance Mode" : "Disable Maintenance Mode",
     async function () {
       setMaintenanceOn(next);
-      await dbAddLog(currentAdmin.email, "Set Maintenance Mode to " + (next ? "ON" : "OFF"));
+      await dbAddLog(getStaffIdentifier(currentAdmin), "Set Maintenance Mode to " + (next ? "ON" : "OFF"));
       var maintTitle = next ? "Website Maintenance Mode Enabled" : "Website Restored to Live";
       var maintBody = next
         ? "System Administrator enabled public Maintenance Mode. Public application submissions are temporarily paused while internal dashboards remain operational."
@@ -107,8 +150,6 @@ function toggleMaintMode() {
     next
   );
 }
-
-var lastHealthData = null;
 
 async function renderAiState() {
   var on = isAiEnabled();
@@ -170,7 +211,7 @@ function toggleAiMode() {
     next ? "Enable AI Screening" : "Disable AI Screening",
     async function () {
       setAiEnabled(next);
-      await dbAddLog(currentAdmin.email, "Set AI Screening Engine to " + (next ? "ENABLED" : "DISABLED"));
+      await dbAddLog(getStaffIdentifier(currentAdmin), "Set AI Screening Engine to " + (next ? "ENABLED" : "DISABLED"));
       if (!next) {
         await dbAddNotification(null, "agent", "Auto-Screening Paused", "System Administrator paused automated document screening. Customer applications continue normally using original uploaded ID copies for manual review.");
         await dbAddNotification(null, "manager", "Auto-Screening Paused", "System Administrator paused automated document screening. Customer applications continue normally using original uploaded ID copies for manual review.");
@@ -186,8 +227,6 @@ function toggleAiMode() {
 
 async function checkApiHealth() {
   var box = document.getElementById("api-health-list");
-  if (!box) return;
-
   var data = await apiCheckHealth();
   var pyOk = Boolean(data && data.api);
   var geminiOk = Boolean(pyOk && data && data.gemini);
@@ -203,62 +242,80 @@ async function checkApiHealth() {
     smtpBadgeEl.textContent = smtpOk ? "Gmail SMTP Connected" : (pyOk ? "SMTP Env Missing" : "Endpoint Unreachable");
   }
 
+  var nowIso = new Date().toISOString();
   var items = [
     {
       name: "Vercel Python FastAPI Serverless (/api)",
       status: pyOk ? "Online (Cloud)" : "Unreachable",
       badge: pyOk ? "badge-green" : "badge-red",
+      healthy: pyOk,
+      checked_at: nowIso,
       detail: pyOk
-        ? "Serving /api/health, /api/screen-async, /api/verify-captcha, /api/notify, and /api/polite-remark"
+        ? "Serving /api/health, /api/screen, /api/screen-async, /api/verify-captcha, /api/notify, and /api/polite-remark"
         : "Check Vercel deployment logs for api/index.py"
     },
     {
-      name: "Google Gemini Vision and AI API (gemini-flash-latest)",
+      name: "Google Gemini Vision and AI API",
       status: geminiOk ? "Online (Configured)" : "Key Missing",
       badge: geminiOk ? "badge-green" : "badge-yellow",
+      healthy: geminiOk,
+      checked_at: nowIso,
       detail: geminiOk
-        ? "Performs Valid ID Vision OCR extraction, preliminary screening findings, and polite customer messages"
+        ? "Performs Valid ID Vision OCR extraction, non-ID rejection, and polite customer remarks"
         : "Add GEMINI_API_KEY in Vercel Environment Variables to activate Vision OCR"
     },
     {
-      name: "OpenCV Readability, 4-Corner Auto-Crop, and Duplicate Check",
+      name: "OpenCV Readability and 4-Corner Auto-Crop",
       status: opencvOk ? "Online" : "Unavailable",
       badge: opencvOk ? "badge-green" : "badge-red",
+      healthy: opencvOk,
+      checked_at: nowIso,
       detail: opencvOk
-        ? "Evaluates blur, brightness, glare, contrast, SHA-256 duplicate image check, and saves cropped copy in documents/cropped/"
+        ? "Evaluates blur, brightness, glare, contrast, SHA-256 duplicate check, and saves cropped copy"
         : "Requires opencv-python-headless in Vercel Python runtime"
     },
     {
       name: "Google reCAPTCHA v2 Security (SiteVerify)",
       status: recaptchaOk ? "Protected" : "Client Key Only",
       badge: recaptchaOk ? "badge-green" : "badge-yellow",
+      healthy: recaptchaOk,
+      checked_at: nowIso,
       detail: recaptchaOk
-        ? "Checkbox Site Key active with server-side SiteVerify secret validation (/api/verify-captcha)"
-        : "Add RECAPTCHA_SECRET_KEY in Vercel Environment Variables for server-side token validation"
+        ? "Checkbox Site Key active with server-side SiteVerify secret validation"
+        : "Add RECAPTCHA_SECRET_KEY in Vercel Environment Variables for server-side validation"
     },
     {
       name: "LocationIQ + OpenStreetMap Geocoding",
       status: locationIqOk ? "Online (Dual-Source)" : "Fallback Only",
       badge: locationIqOk ? "badge-green" : "badge-yellow",
+      healthy: locationIqOk,
+      checked_at: nowIso,
       detail: locationIqOk
-        ? "Primary LocationIQ OpenStreetMap geocoding with automatic Nominatim fallback on Leaflet.js map"
+        ? "Primary LocationIQ geocoding with automatic Nominatim fallback on Leaflet.js map"
         : "Using OpenStreetMap Nominatim reverse geocoding"
     },
     {
       name: "PIGEM Support Services Email Engine",
       status: smtpOk ? "Online" : (pyOk ? "Env Missing" : "Unreachable"),
       badge: smtpOk ? "badge-green" : "badge-red",
+      healthy: smtpOk,
+      checked_at: nowIso,
       detail: smtpOk
-        ? "Connected via /api/notify (PIGEM Support Services <donotreply@pigem.ph>)"
+        ? "Connected via /api/notify (Gmail SMTP Notification Engine)"
         : "Configure SMTP_USER and SMTP_PASSWORD in Vercel Environment Variables"
     },
     {
-      name: "Supabase Cloud (PostgreSQL + Auth + Storage Buckets)",
+      name: "Supabase Cloud (PostgreSQL + Storage)",
       status: supaOk ? "Live Cloud" : "Demo Storage",
       badge: supaOk ? "badge-green" : "badge-blue",
+      healthy: supaOk,
+      checked_at: nowIso,
       detail: supaOk ? (CONFIG.SUPABASE_URL + " (documents + website-assets buckets)") : "Running in browser storage"
     }
   ];
+
+  lastApiReportRows = items;
+  if (!box) return;
 
   var html = "";
   for (var i = 0; i < items.length; i++) {
@@ -275,12 +332,90 @@ async function checkApiHealth() {
   box.innerHTML = html;
 }
 
+function getPasswordResetRequests() {
+  return (adminNotifs || []).filter(function (n) {
+    return String(n.title || "").indexOf("Password Reset Request:") === 0;
+  });
+}
+
+function setAccountSubTab(sub) {
+  activeAccountSubTab = sub;
+  var subs = ["all", "agent", "manager", "customer", "requests"];
+  for (var i = 0; i < subs.length; i++) {
+    var b = document.getElementById("acc-sub-" + subs[i]);
+    if (b) b.classList.toggle("active", subs[i] === sub);
+  }
+  var isReq = sub === "requests";
+  var tb = document.getElementById("acc-search-toolbar");
+  var tp = document.getElementById("acc-table-panel");
+  var rp = document.getElementById("acc-requests-panel");
+  if (tb) tb.classList.toggle("hidden", isReq);
+  if (tp) tp.classList.toggle("hidden", isReq);
+  if (rp) rp.classList.toggle("hidden", !isReq);
+  renderAdminUsers();
+}
+
 function renderAdminUsers() {
+  var cntAll = adminUsers.length;
+  var cntAg = adminUsers.filter(function (u) { return u.role === "agent"; }).length;
+  var cntMgr = adminUsers.filter(function (u) { return u.role === "manager"; }).length;
+  var cntCust = adminUsers.filter(function (u) { return u.role === "customer"; }).length;
+  var reqs = getPasswordResetRequests();
+
+  var cMap = { all: cntAll, agent: cntAg, manager: cntMgr, customer: cntCust, requests: reqs.length };
+  Object.keys(cMap).forEach(function (k) {
+    var el = document.getElementById("acc-cnt-" + k);
+    if (el) el.textContent = cMap[k];
+  });
+
+  if (activeAccountSubTab === "requests") {
+    var reqBody = document.getElementById("admin-reset-req-body");
+    if (!reqBody) return;
+    if (reqs.length === 0) {
+      reqBody.innerHTML = '<tr><td colspan="4" class="muted">No staff password reset requests at this time.</td></tr>';
+      return;
+    }
+    var rh = "";
+    for (var rIdx = 0; rIdx < reqs.length; rIdx++) {
+      var rq = reqs[rIdx];
+      var uMatch = String(rq.title || "").match(/@([a-zA-Z0-9._-]+)/);
+      var reqUname = uMatch ? uMatch[1].toLowerCase() : "";
+      var matchedStaff = adminUsers.find(function (u) { return String(u.username || "").toLowerCase() === reqUname; });
+      rh +=
+        '<tr>' +
+          '<td>' + formatDate(rq.created_at) + '</td>' +
+          '<td><b>' + escapeHtml(rq.title) + '</b></td>' +
+          '<td>' + escapeHtml(rq.message) + '</td>' +
+          '<td>' +
+            (matchedStaff
+              ? '<button type="button" class="btn btn-red btn-sm" onclick="adminOpenResetPasswordModal(\'' + escapeHtml(matchedStaff.id) + '\', \'@' + escapeHtml(matchedStaff.username || matchedStaff.full_name) + '\')">Reset Password</button>'
+              : '<span class="muted small">Account not found</span>') +
+          '</td>' +
+        '</tr>';
+    }
+    reqBody.innerHTML = rh;
+    return;
+  }
+
   var body = document.getElementById("admin-users-body");
   if (!body) return;
+  var q = (document.getElementById("acc-search-input") ? document.getElementById("acc-search-input").value : "").trim().toLowerCase();
+
+  var list = adminUsers.filter(function (u) {
+    if (activeAccountSubTab !== "all" && u.role !== activeAccountSubTab) return false;
+    if (!q) return true;
+    var hay = [u.full_name, u.username, u.email, u.role].join(" ").toLowerCase();
+    return hay.indexOf(q) !== -1;
+  });
+
+  if (list.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" class="muted">No accounts match this filter.</td></tr>';
+    return;
+  }
+
   var html = "";
-  for (var i = 0; i < adminUsers.length; i++) {
-    var u = adminUsers[i];
+  for (var i = 0; i < list.length; i++) {
+    var u = list[i];
     var isSoleAdmin = (u.role === "admin");
     var isCustomer = (u.role === "customer");
     var roleCell = "";
@@ -296,16 +431,23 @@ function renderAdminUsers() {
         '</select>';
     }
 
+    var contactLabel = isCustomer
+      ? escapeHtml(u.email || "-")
+      : '<span class="muted">Internal (Username Only)</span>';
+
+    var displayRef = "@" + (u.username || u.full_name || u.id);
     var actionBtns = '<div style="display:flex; gap:6px; flex-wrap:wrap">';
     if (!isCustomer) {
       actionBtns +=
-        '<button type="button" class="btn btn-outline btn-sm" onclick="adminOpenResetPasswordModal(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(u.email) + '\')">Reset Password</button>';
+        '<button type="button" class="btn btn-outline btn-sm" onclick="openEditStaffModal(\'' + escapeHtml(u.id) + '\')">Edit</button>' +
+        '<button type="button" class="btn btn-outline btn-sm" onclick="adminOpenResetPasswordModal(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(displayRef) + '\')">Reset Password</button>';
     }
     if (!isSoleAdmin) {
       actionBtns +=
         '<button type="button" class="btn btn-outline btn-sm" onclick="adminToggleActive(\'' + escapeHtml(u.id) + '\', ' + (!u.active) + ')">' +
           (u.active ? "Disable" : "Enable") +
-        '</button>';
+        '</button>' +
+        '<button type="button" class="btn btn-outline btn-sm" style="color:var(--bad);border-color:#fecdca;" onclick="adminDeleteUser(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(u.full_name || displayRef) + '\')">Delete</button>';
     }
     actionBtns += '</div>';
 
@@ -313,7 +455,7 @@ function renderAdminUsers() {
       '<tr>' +
         '<td><b>' + escapeHtml(u.full_name) + '</b></td>' +
         '<td><code>@' + escapeHtml(u.username || "-") + '</code></td>' +
-        '<td>' + escapeHtml(u.email) + '</td>' +
+        '<td>' + contactLabel + '</td>' +
         '<td>' + roleCell + '</td>' +
         '<td>' + (u.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-red">Disabled</span>') + '</td>' +
         '<td>' + actionBtns + '</td>' +
@@ -322,70 +464,208 @@ function renderAdminUsers() {
   body.innerHTML = html;
 }
 
-async function adminCreateUser() {
-  hideMsg("acc-msg");
-  var fname = (document.getElementById("new-acc-fname").value || "").trim();
-  var mname = (document.getElementById("new-acc-mname").value || "").trim();
-  var lname = (document.getElementById("new-acc-lname").value || "").trim();
-  var usernameInput = document.getElementById("new-acc-username");
-  var username = (usernameInput ? usernameInput.value : "").trim().toLowerCase();
-  var email = document.getElementById("new-acc-email").value.trim().toLowerCase();
-  var pw = (document.getElementById("new-acc-pw").value || "").trim();
-  var role = document.getElementById("new-acc-role").value;
+function openAddStaffModal(defaultRole) {
+  var roleVal = defaultRole === "manager" ? "manager" : "agent";
+  var title = roleVal === "manager" ? "Add Internal Manager Account" : "Add Internal Agent Account";
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>' + title + '</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<p class="small muted">Internal staff accounts sign in using Username and Password only (no email required).</p>' +
+    '<form class="mt" onsubmit="submitAddStaffModal(event)">' +
+      '<div class="grid-3">' +
+        '<div class="field"><label>First Name *</label><input id="modal-acc-fname" type="text" placeholder="Maria" required /></div>' +
+        '<div class="field"><label>Middle Name</label><input id="modal-acc-mname" type="text" placeholder="Reyes (or N/A)" /></div>' +
+        '<div class="field"><label>Last Name *</label><input id="modal-acc-lname" type="text" placeholder="Santos" required /></div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="field"><label>Username *</label><input id="modal-acc-username" type="text" minlength="3" maxlength="30" placeholder="maria_santos" required /></div>' +
+        '<div class="field"><label>Internal Role</label>' +
+          '<select id="modal-acc-role">' +
+            '<option value="agent" ' + (roleVal === "agent" ? "selected" : "") + '>Agent (Application Handling)</option>' +
+            '<option value="manager" ' + (roleVal === "manager" ? "selected" : "") + '>Manager (Monitoring &amp; CMS)</option>' +
+          '</select>' +
+        '</div>' +
+      '</div>' +
+      '<div class="field"><label>Password *</label><input id="modal-acc-pw" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" required /></div>' +
+      '<div id="modal-acc-err" class="notice bad mt" hidden></div>' +
+      '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
+        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+        '<button type="submit" id="btn-modal-add-staff" class="btn btn-red">+ Create Account</button>' +
+      '</div>' +
+    '</form>',
+    true
+  );
+}
 
-  if (!fname || !lname || !email) {
-    showMsg("acc-msg", "error", "Please enter First Name, Last Name, Username, and Official Email (@pigem.ph).");
+async function submitAddStaffModal(event) {
+  event.preventDefault();
+  var errBox = document.getElementById("modal-acc-err");
+  if (errBox) errBox.hidden = true;
+
+  var fname = (document.getElementById("modal-acc-fname").value || "").trim();
+  var mname = (document.getElementById("modal-acc-mname").value || "").trim();
+  var lname = (document.getElementById("modal-acc-lname").value || "").trim();
+  var username = (document.getElementById("modal-acc-username").value || "").trim().toLowerCase().replace(/^@/, "");
+  var role = document.getElementById("modal-acc-role").value;
+  var pw = (document.getElementById("modal-acc-pw").value || "").trim();
+
+  var fChk = validatePersonName(fname, "First Name", false);
+  var mChk = mname ? validatePersonName(mname, "Middle Name", true) : { valid: true };
+  var lChk = validatePersonName(lname, "Last Name", false);
+  if (!fChk.valid || !mChk.valid || !lChk.valid) {
+    if (errBox) { errBox.textContent = [fChk.message, mChk.message, lChk.message].filter(Boolean).join(" "); errBox.hidden = false; }
     return;
   }
-  var name = [fname, mname, lname].filter(Boolean).join(" ");
-  if (!username && typeof sanitizeUsernameSeed === "function") {
-    username = sanitizeUsernameSeed(name, email);
-  }
-  if (typeof isValidUsername === "function" && !isValidUsername(username)) {
-    showMsg("acc-msg", "error", "Username must be 3 to 30 characters using letters, numbers, dots (.), hyphens (-), or underscores (_).");
-    return;
-  }
-  if (!isStaffBusinessEmail(email)) {
-    showMsg("acc-msg", "error", "Internal staff must use an official @pigem.ph email address. Gmail addresses are reserved for Customers.");
+  if (!isValidUsername(username)) {
+    if (errBox) { errBox.textContent = "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_)."; errBox.hidden = false; }
     return;
   }
   if (!isStrongPassword(pw)) {
-    showMsg("acc-msg", "error", PASSWORD_REQUIREMENT_TEXT);
-    return;
-  }
-  if (role === "admin") {
-    showMsg("acc-msg", "error", "Only one System Administrator account is permitted in the system.");
+    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
     return;
   }
 
+  var fullName = [fname, (mname && mname.toUpperCase() !== "N/A") ? mname : "", lname].filter(Boolean).join(" ");
+  var btn = document.getElementById("btn-modal-add-staff");
+  btn.disabled = true;
+  btn.textContent = "Creating...";
   try {
-    var created = await dbCreateUserAccount(name, email, pw, role, username);
-    await dbAddLog(currentAdmin.email, "Created " + role + " account for @" + (created.username || username) + " (" + email + ")");
-    document.getElementById("new-acc-fname").value = "";
-    document.getElementById("new-acc-mname").value = "";
-    document.getElementById("new-acc-lname").value = "";
-    if (usernameInput) usernameInput.value = "";
-    document.getElementById("new-acc-email").value = "";
-    document.getElementById("new-acc-pw").value = "";
-    showMsg("acc-msg", "ok", "Staff account created for @" + (created.username || username) + " (" + email + " - " + role + ").");
+    var created = await dbCreateUserAccount(fullName, null, pw, role, username);
+    await dbAddLog(getStaffIdentifier(currentAdmin), "Created " + role + " account @" + created.username);
+    closePopup();
     await refreshAdminData();
+    showAlert("Staff Account Created", "Account for <b>" + escapeHtml(fullName) + "</b> (@" + escapeHtml(created.username) + " - " + role.toUpperCase() + ") is active.", "good");
   } catch (err) {
-    showMsg("acc-msg", "error", err.message);
+    if (errBox) { errBox.textContent = err.message || "Could not create account."; errBox.hidden = false; }
+    btn.disabled = false;
+    btn.textContent = "+ Create Account";
   }
+}
+
+function openEditStaffModal(userId) {
+  var user = adminUsers.find(function (u) { return u.id === userId; });
+  if (!user) return;
+  var isAdminRow = user.role === "admin";
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Edit Account (@' + escapeHtml(user.username || user.full_name) + ')</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<form class="mt" onsubmit="submitEditStaffModal(event, \'' + escapeHtml(user.id) + '\')">' +
+      '<div class="field"><label>Full Name *</label><input id="edit-acc-fullname" type="text" value="' + escapeHtml(user.full_name || "") + '" required /></div>' +
+      '<div class="grid-2">' +
+        '<div class="field"><label>Username *</label><input id="edit-acc-username" type="text" minlength="3" maxlength="30" value="' + escapeHtml(user.username || "") + '" required /></div>' +
+        '<div class="field"><label>Role</label>' +
+          (isAdminRow
+            ? '<input type="text" value="Admin (Provisioned)" readonly />'
+            : '<select id="edit-acc-role">' +
+                '<option value="agent" ' + (user.role === "agent" ? "selected" : "") + '>Agent</option>' +
+                '<option value="manager" ' + (user.role === "manager" ? "selected" : "") + '>Manager</option>' +
+              '</select>') +
+        '</div>' +
+      '</div>' +
+      '<div class="field"><label>New Password (Optional - leave blank to keep current)</label><input id="edit-acc-pw" type="password" data-pw-check="1" placeholder="Leave blank if unchanged" /></div>' +
+      '<div id="edit-acc-err" class="notice bad mt" hidden></div>' +
+      '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
+        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+        '<button type="submit" id="btn-modal-edit-staff" class="btn btn-red">Save Changes</button>' +
+      '</div>' +
+    '</form>',
+    true
+  );
+}
+
+async function submitEditStaffModal(event, userId) {
+  event.preventDefault();
+  var errBox = document.getElementById("edit-acc-err");
+  if (errBox) errBox.hidden = true;
+  var fullName = (document.getElementById("edit-acc-fullname").value || "").trim();
+  var username = (document.getElementById("edit-acc-username").value || "").trim().toLowerCase().replace(/^@/, "");
+  var roleEl = document.getElementById("edit-acc-role");
+  var newPw = (document.getElementById("edit-acc-pw").value || "").trim();
+
+  var nameChk = validatePersonName(fullName, "Full Name", false);
+  if (!nameChk.valid) {
+    if (errBox) { errBox.textContent = nameChk.message; errBox.hidden = false; }
+    return;
+  }
+  if (newPw && !isStrongPassword(newPw)) {
+    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
+    return;
+  }
+  var changes = { full_name: fullName, username: username };
+  if (roleEl) changes.role = roleEl.value;
+  if (newPw) changes.new_password = newPw;
+
+  var btn = document.getElementById("btn-modal-edit-staff");
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+  try {
+    var updated = await dbAdminUpdateStaffAccount(userId, changes);
+    if (currentAdmin && currentAdmin.id === userId) {
+      currentAdmin = Object.assign({}, currentAdmin, updated || changes);
+      document.getElementById("top-user-name").textContent = currentAdmin.full_name;
+    }
+    closePopup();
+    await refreshAdminData();
+    showAlert("Account Updated", "Saved changes for @" + escapeHtml(username) + ".", "good");
+  } catch (err) {
+    if (errBox) { errBox.textContent = err.message || "Could not update account."; errBox.hidden = false; }
+    btn.disabled = false;
+    btn.textContent = "Save Changes";
+  }
+}
+
+function adminDeleteUser(userId, label) {
+  openConfirmPopup(
+    "Delete Account?",
+    "Are you sure you want to permanently remove <b>" + escapeHtml(label) + "</b> from registered accounts? This cannot be undone.",
+    "Delete Account",
+    async function () {
+      try {
+        await dbDeleteUserAccount(userId);
+        await refreshAdminData();
+        showAlert("Account Deleted", escapeHtml(label) + " has been removed.", "good");
+      } catch (err) {
+        showAlert("Delete Failed", err.message || "Could not delete account.", "bad");
+      }
+    },
+    true
+  );
+}
+
+function openAdminInviteModal() {
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Generate Private Agent Invite</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<p class="small muted">Generate a one-time registration link (<code>agent-register.html?invite=INV-...</code>). Only Agents using an active invite token can register their username-only account.</p>' +
+    '<div class="field mt"><label>Invite Label / Note</label><input id="adm-invite-note" type="text" placeholder="e.g. Field Agent - Cavite Desk" /></div>' +
+    '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="adminGenerateAgentInvite()">Generate One-Time Registration Link</button>' +
+    '<div id="adm-invite-msg" class="msg mt"></div>' +
+    '<div id="adm-invite-output-wrap" class="hidden" style="margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">' +
+      '<div class="tiny muted" style="font-weight:700; margin-bottom:4px">Private One-Time Registration URL:</div>' +
+      '<input id="adm-invite-url" type="text" readonly style="margin-bottom:8px; font-size:12px" />' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="adminCopyInviteUrl()">Copy Registration Link</button>' +
+    '</div>'
+  );
 }
 
 async function adminGenerateAgentInvite() {
   var noteEl = document.getElementById("adm-invite-note");
   var note = noteEl ? noteEl.value.trim() : "";
   try {
-    var res = await dbCreateAgentInviteLink(currentAdmin ? currentAdmin.email : "admin@pigem.ph", note || "Admin Private Agent Registration Invite");
+    var res = await dbCreateAgentInviteLink(getStaffIdentifier(currentAdmin), note || "Admin Private Agent Registration Invite");
     var url = getSiteBaseUrl() + "/agent-register.html?invite=" + encodeURIComponent(res.code);
     var wrap = document.getElementById("adm-invite-output-wrap");
     var inp = document.getElementById("adm-invite-url");
     if (inp) inp.value = url;
     if (wrap) wrap.classList.remove("hidden");
     if (noteEl) noteEl.value = "";
-    showMsg("adm-invite-msg", "ok", "Private Agent Registration Link (" + res.code + ") created! Share the URL below with your new agent.");
+    showMsg("adm-invite-msg", "ok", "Invite " + res.code + " ready! Share the link below.");
   } catch (err) {
     showMsg("adm-invite-msg", "error", err.message || "Could not generate private registration link.");
   }
@@ -403,12 +683,12 @@ function adminCopyInviteUrl() {
   showAlert("Copied", "Private Agent Registration Link copied to clipboard.");
 }
 
-function adminOpenResetPasswordModal(userId, userEmail) {
+function adminOpenResetPasswordModal(userId, displayLabel) {
   window._adminResetTargetId = userId;
-  window._adminResetTargetEmail = userEmail;
+  window._adminResetTargetLabel = displayLabel;
   openPopup(
     '<h3>Reset Account Password</h3>' +
-    '<p class="small muted mt">Set a new sign-in password for <b>' + escapeHtml(userEmail) + '</b>.</p>' +
+    '<p class="small muted mt">Set a new sign-in password for <b>' + escapeHtml(displayLabel) + '</b>.</p>' +
     '<div class="mt">' +
       '<label for="adm-reset-pw">New Password</label>' +
       '<input id="adm-reset-pw" type="password" data-pw-check="1" placeholder="Enter strong password" />' +
@@ -429,9 +709,10 @@ async function adminConfirmResetPassword() {
   }
   try {
     await dbAdminResetUserPassword(window._adminResetTargetId, newPw);
-    await dbAddLog(currentAdmin.email, "Reset password for " + window._adminResetTargetEmail);
+    await dbAddLog(getStaffIdentifier(currentAdmin), "Reset password for " + window._adminResetTargetLabel);
     closePopup();
-    showAlert("Password Updated", "Updated sign-in password for " + window._adminResetTargetEmail + ".", "good");
+    await refreshAdminData();
+    showAlert("Password Updated", "Updated sign-in password for " + escapeHtml(window._adminResetTargetLabel) + ".", "good");
   } catch (err) {
     showAlert("Update Failed", err.message || "Could not update password.", "bad");
   }
@@ -444,65 +725,405 @@ async function adminChangeRole(userId, newRole) {
     return;
   }
   await dbUpdateUser(userId, { role: newRole });
-  await dbAddLog(currentAdmin.email, "Changed role of user " + userId + " to " + newRole);
+  await dbAddLog(getStaffIdentifier(currentAdmin), "Changed role of user " + userId + " to " + newRole);
   await refreshAdminData();
 }
 
 async function adminToggleActive(userId, activeState) {
   await dbUpdateUser(userId, { active: activeState });
-  await dbAddLog(currentAdmin.email, (activeState ? "Enabled" : "Disabled") + " user " + userId);
+  await dbAddLog(getStaffIdentifier(currentAdmin), (activeState ? "Enabled" : "Disabled") + " user " + userId);
   await refreshAdminData();
+}
+
+function setLogSubTab(sub) {
+  activeLogSubTab = sub;
+  var subs = ["activity", "login", "ai"];
+  for (var i = 0; i < subs.length; i++) {
+    var b = document.getElementById("log-sub-" + subs[i]);
+    if (b) b.classList.toggle("active", subs[i] === sub);
+    var p = document.getElementById("log-panel-" + subs[i]);
+    if (p) p.classList.toggle("hidden", subs[i] !== sub);
+  }
+  renderAdminLogs();
+}
+
+function classifyLogCategory(text) {
+  var s = String(text || "").toLowerCase();
+  if (s.indexOf("login") !== -1 || s.indexOf("logout") !== -1 || s.indexOf("password") !== -1 || s.indexOf("activat") !== -1) return "auth";
+  if (s.indexOf("user") !== -1 || s.indexOf("role") !== -1 || s.indexOf("account") !== -1 || s.indexOf("invite") !== -1) return "accounts";
+  return "system";
 }
 
 async function renderAdminLogs() {
   var logs = await dbListLogs();
+  var hist = await dbListLoginHistory();
+  var aiList = await dbListAiLogs();
+
+  var cAct = document.getElementById("log-cnt-activity");
+  var cLog = document.getElementById("log-cnt-login");
+  var cAi = document.getElementById("log-cnt-ai");
+  if (cAct) cAct.textContent = logs.length;
+  if (cLog) cLog.textContent = hist.length;
+  if (cAi) cAi.textContent = aiList.length;
+
+  var q = (document.getElementById("logs-search-input") ? document.getElementById("logs-search-input").value : "").trim().toLowerCase();
+  var cat = document.getElementById("logs-role-filter") ? document.getElementById("logs-role-filter").value : "all";
+
   var logBody = document.getElementById("admin-logs-body");
   if (logBody) {
+    var filteredLogs = logs.filter(function (row) {
+      if (cat !== "all" && classifyLogCategory(row.action) !== cat) return false;
+      if (!q) return true;
+      var hay = [row.actor_username, row.actor_email, row.action].join(" ").toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
     var h1 = "";
-    for (var i = 0; i < Math.min(logs.length, 30); i++) {
-      var actorDisplay = logs[i].actor_username
-        ? ('@' + logs[i].actor_username + ' (' + logs[i].actor_email + ')')
-        : logs[i].actor_email;
-      h1 += '<tr><td>' + formatDate(logs[i].created_at) + '</td><td><b>' + escapeHtml(actorDisplay) + '</b></td><td>' + escapeHtml(logs[i].action) + '</td></tr>';
+    for (var i = 0; i < Math.min(filteredLogs.length, 80); i++) {
+      var l = filteredLogs[i];
+      var actorDisplay = l.actor_username ? ("@" + l.actor_username) : (l.actor_email || "system");
+      h1 += '<tr><td>' + formatDate(l.created_at) + '</td><td><b>' + escapeHtml(actorDisplay) + '</b></td><td>' + escapeHtml(l.action) + '</td></tr>';
     }
-    logBody.innerHTML = h1 || '<tr><td colspan="3" class="muted">No activity logs yet.</td></tr>';
+    logBody.innerHTML = h1 || '<tr><td colspan="3" class="muted">No matching system activity logs.</td></tr>';
   }
 
-  var hist = await dbListLoginHistory();
   var histBody = document.getElementById("admin-login-history-body");
   if (histBody) {
+    var filteredHist = hist.filter(function (ev) {
+      if (cat === "accounts" || cat === "system") return cat !== "system" || false;
+      if (!q) return true;
+      var hay = [ev.username, ev.email, ev.role, ev.action].join(" ").toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
     var h2 = "";
-    for (var j = 0; j < Math.min(hist.length, 30); j++) {
-      var ev = hist[j];
-      var userDisplay = ev.username
-        ? ('@' + ev.username + ' (' + ev.email + ')')
-        : ev.email;
-      h2 += '<tr><td>' + formatDate(ev.created_at) + '</td><td><b>' + escapeHtml(userDisplay) + '</b></td><td>' + escapeHtml(ev.role) + '</td><td><span class="badge ' + (ev.action === "login" ? "badge-green" : "badge-gray") + '">' + escapeHtml(ev.action) + '</span></td></tr>';
+    for (var j = 0; j < Math.min(filteredHist.length, 80); j++) {
+      var ev = filteredHist[j];
+      var userDisplay = ev.username ? ("@" + ev.username) : (ev.email || "user");
+      var badgeCls = ev.action === "login" ? "badge-green" : (ev.action === "account_activated" ? "badge-blue" : "badge-gray");
+      h2 += '<tr><td>' + formatDate(ev.created_at) + '</td><td><b>' + escapeHtml(userDisplay) + '</b></td><td><span class="badge badge-gray">' + escapeHtml((ev.role || "").toUpperCase()) + '</span></td><td><span class="badge ' + badgeCls + '">' + escapeHtml(ev.action) + '</span></td></tr>';
     }
-    histBody.innerHTML = h2 || '<tr><td colspan="4" class="muted">No login events recorded yet.</td></tr>';
+    histBody.innerHTML = h2 || '<tr><td colspan="4" class="muted">No matching login events.</td></tr>';
+  }
+
+  var aiBody = document.getElementById("admin-ai-logs-table-body");
+  if (aiBody) {
+    var filteredAi = aiList.filter(function (a) {
+      if (!q) return true;
+      var hay = [a.reference_no, a.actor, a.message].join(" ").toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+    var h3 = "";
+    for (var k = 0; k < Math.min(filteredAi.length, 80); k++) {
+      var item = filteredAi[k];
+      h3 += '<tr><td>' + formatDate(item.created_at) + '</td><td><b>' + escapeHtml(item.reference_no || "-") + '</b></td><td>' + escapeHtml(item.actor || "Screening") + '</td><td>' + escapeHtml(item.message || "") + '</td></tr>';
+    }
+    aiBody.innerHTML = h3 || '<tr><td colspan="4" class="muted">No matching AI screening records.</td></tr>';
   }
 }
 
-function exportApplicationsCsv() {
-  var headers = ["Reference No", "Full Name", "Email", "Mobile", "Plan", "ID Type", "ID Number", "City", "Province", "Status", "Assigned Agent", "Created At"];
-  var rows = [headers.join(",")];
-  for (var i = 0; i < adminApps.length; i++) {
-    var a = adminApps[i];
-    var cols = [
-      a.reference_no, a.full_name, a.email, a.phone, a.plan_name,
-      a.id_type, a.id_number, a.city, a.province, a.status,
-      a.assigned_agent || "Unassigned", a.created_at
-    ];
-    var escaped = cols.map(function (v) {
-      return '"' + String(v || "").replace(/"/g, '""') + '"';
-    });
-    rows.push(escaped.join(","));
+function populateReportStatusFilter(subTab) {
+  var sel = document.getElementById("rep-filter-status");
+  if (!sel) return;
+  if (subTab === "api") {
+    sel.innerHTML =
+      '<option value="all">All Services</option>' +
+      '<option value="healthy">Online / Protected Only</option>' +
+      '<option value="attention">Needs Attention Only</option>';
+  } else if (subTab === "accounts") {
+    sel.innerHTML =
+      '<option value="all">All Account Roles</option>' +
+      '<option value="agent">Agents Only</option>' +
+      '<option value="manager">Managers Only</option>' +
+      '<option value="customer">Customers Only</option>' +
+      '<option value="disabled">Disabled Accounts Only</option>';
+  } else {
+    sel.innerHTML =
+      '<option value="all">All Application Statuses</option>' +
+      '<option value="Pending Review">Pending Review</option>' +
+      '<option value="Under Agent Review">Under Agent Review</option>' +
+      '<option value="Encoding">Encoding</option>' +
+      '<option value="Needs Correction">Needs Correction</option>' +
+      '<option value="Approved">Approved / Submitted</option>' +
+      '<option value="Rejected">Rejected</option>';
   }
-  var blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+}
+
+function setReportSubTab(sub) {
+  activeReportSubTab = sub;
+  var subs = ["api", "accounts", "applications"];
+  for (var i = 0; i < subs.length; i++) {
+    var b = document.getElementById("rep-sub-" + subs[i]);
+    if (b) b.classList.toggle("active", subs[i] === sub);
+  }
+  populateReportStatusFilter(sub);
+  renderAdminReport();
+}
+
+function onReportTimeframeChange() {
+  var tf = document.getElementById("rep-timeframe").value;
+  var dWrap = document.getElementById("rep-date-wrap");
+  var mWrap = document.getElementById("rep-month-wrap");
+  if (dWrap) dWrap.classList.toggle("hidden", tf !== "daily");
+  if (mWrap) mWrap.classList.toggle("hidden", tf !== "monthly");
+  renderAdminReport();
+}
+
+function matchesReportTimeframe(isoDateStr) {
+  var tf = document.getElementById("rep-timeframe") ? document.getElementById("rep-timeframe").value : "all";
+  if (tf === "all") return true;
+  if (!isoDateStr) return false;
+  var d = new Date(isoDateStr);
+  if (isNaN(d.getTime())) return false;
+  var localIso = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  if (tf === "daily") {
+    var pickedDate = document.getElementById("rep-date") ? document.getElementById("rep-date").value : "";
+    return !pickedDate || localIso === pickedDate;
+  }
+  if (tf === "monthly") {
+    var pickedMonth = document.getElementById("rep-month") ? document.getElementById("rep-month").value : "";
+    return !pickedMonth || localIso.slice(0, 7) === pickedMonth;
+  }
+  return true;
+}
+
+function getActiveReportData() {
+  var filterVal = document.getElementById("rep-filter-status") ? document.getElementById("rep-filter-status").value : "all";
+  var tf = document.getElementById("rep-timeframe") ? document.getElementById("rep-timeframe").value : "all";
+  var tfLabel = tf === "daily"
+    ? ("Daily (" + (document.getElementById("rep-date").value || getLocalTodayIso()) + ")")
+    : (tf === "monthly" ? ("Monthly (" + (document.getElementById("rep-month").value || getLocalMonthIso()) + ")") : "All Time");
+
+  if (activeReportSubTab === "api") {
+    var apiRows = lastApiReportRows.filter(function (item) {
+      if (!matchesReportTimeframe(item.checked_at)) return false;
+      if (filterVal === "healthy") return item.healthy;
+      if (filterVal === "attention") return !item.healthy;
+      return true;
+    });
+    var healthyCnt = apiRows.filter(function (x) { return x.healthy; }).length;
+    var issueCnt = apiRows.length - healthyCnt;
+    return {
+      title: "API Health Report",
+      timeframeLabel: tfLabel,
+      pieTitle: "Service Health Ratio",
+      barTitle: "API Readiness Breakdown",
+      pieCenter: "Services",
+      pieSlices: [
+        { label: "Online / Protected", value: healthyCnt, color: "#15803d" },
+        { label: "Needs Attention", value: issueCnt, color: "#d97706" }
+      ],
+      barRows: [
+        { label: "Healthy Services", value: healthyCnt, color: "#15803d" },
+        { label: "Warnings / Offline", value: issueCnt, color: "#dc2626" },
+        { label: "AI Mode Active", value: isAiEnabled() ? 1 : 0, color: "#2563eb" }
+      ],
+      columns: ["Service / Endpoint", "Health Status", "Checked Date", "Technical Detail"],
+      rows: apiRows.map(function (it) {
+        return [it.name, it.status, formatDate(it.checked_at), it.detail];
+      }),
+      badges: apiRows.map(function (it) { return it.badge; })
+    };
+  }
+
+  if (activeReportSubTab === "accounts") {
+    var accRows = adminUsers.filter(function (u) {
+      if (u.created_at && !matchesReportTimeframe(u.created_at)) return false;
+      if (filterVal === "disabled") return !u.active;
+      if (filterVal !== "all") return u.role === filterVal;
+      return true;
+    });
+    var cAg = accRows.filter(function (u) { return u.role === "agent"; }).length;
+    var cMgr = accRows.filter(function (u) { return u.role === "manager"; }).length;
+    var cCust = accRows.filter(function (u) { return u.role === "customer"; }).length;
+    var cAdm = accRows.filter(function (u) { return u.role === "admin"; }).length;
+    var cAct = accRows.filter(function (u) { return u.active; }).length;
+    return {
+      title: "Accounts Report",
+      timeframeLabel: tfLabel,
+      pieTitle: "Filtered Accounts by Role",
+      barTitle: "Account Status & Role Totals",
+      pieCenter: "Accounts",
+      pieSlices: [
+        { label: "Customers", value: cCust, color: "#64748b" },
+        { label: "Agents", value: cAg, color: "#2563eb" },
+        { label: "Managers", value: cMgr, color: "#d97706" },
+        { label: "Admin", value: cAdm, color: "#c8102e" }
+      ],
+      barRows: [
+        { label: "Active Accounts", value: cAct, color: "#15803d" },
+        { label: "Disabled Accounts", value: accRows.length - cAct, color: "#dc2626" },
+        { label: "Internal Staff", value: cAg + cMgr + cAdm, color: "#2563eb" },
+        { label: "Customers", value: cCust, color: "#64748b" }
+      ],
+      columns: ["Full Name", "Username", "Account Type / Email", "Role", "Status", "Created At"],
+      rows: accRows.map(function (u) {
+        return [
+          u.full_name || "-",
+          "@" + (u.username || "-"),
+          u.role === "customer" ? (u.email || "-") : "Internal (Username Only)",
+          String(u.role || "").toUpperCase(),
+          u.active ? "Active" : "Disabled",
+          u.created_at ? formatDate(u.created_at) : "-"
+        ];
+      }),
+      badges: []
+    };
+  }
+
+  var appRows = adminApps.filter(function (a) {
+    if (!matchesReportTimeframe(a.created_at)) return false;
+    if (filterVal === "all") return true;
+    if (filterVal === "Approved") return a.status === "Approved" || a.status === "Submitted to Provider";
+    return a.status === filterVal;
+  });
+  var aPend = appRows.filter(function (a) { return a.status === "Pending Review" || a.status === "Under Agent Review" || a.status === "Encoding"; }).length;
+  var aFix = appRows.filter(function (a) { return a.status === "Needs Correction"; }).length;
+  var aApp = appRows.filter(function (a) { return a.status === "Approved" || a.status === "Submitted to Provider"; }).length;
+  var aRej = appRows.filter(function (a) { return a.status === "Rejected"; }).length;
+
+  return {
+    title: "Applications Report",
+    timeframeLabel: tfLabel,
+    pieTitle: "Applications by Status",
+    barTitle: "Application Volume Summary",
+    pieCenter: "Apps",
+    pieSlices: [
+      { label: "Pending / Encoding", value: aPend, color: "#2563eb" },
+      { label: "Needs Correction", value: aFix, color: "#d97706" },
+      { label: "Approved", value: aApp, color: "#15803d" },
+      { label: "Rejected", value: aRej, color: "#dc2626" }
+    ],
+    barRows: [
+      { label: "Pending / Encoding", value: aPend, color: "#2563eb" },
+      { label: "Needs Correction", value: aFix, color: "#d97706" },
+      { label: "Approved", value: aApp, color: "#15803d" },
+      { label: "Rejected", value: aRej, color: "#dc2626" }
+    ],
+    columns: ["Reference No.", "Applicant Name", "Plan", "City", "Assigned Agent", "Status", "Submitted At"],
+    rows: appRows.map(function (a) {
+      return [
+        a.reference_no || a.ref_no || "-",
+        a.full_name || "-",
+        a.plan_name || "-",
+        a.city || "-",
+        a.assigned_agent || "Unassigned",
+        a.status || "-",
+        formatDate(a.created_at)
+      ];
+    }),
+    badges: []
+  };
+}
+
+function renderAdminReport() {
+  var data = getActiveReportData();
+  var sumEl = document.getElementById("rep-summary-header");
+  if (sumEl) {
+    sumEl.innerHTML = "<b>" + escapeHtml(data.title) + "</b> &mdash; Timeframe: <b>" + escapeHtml(data.timeframeLabel) +
+      "</b> &bull; Total Matching Records: <b>" + data.rows.length + "</b> &bull; Generated by <b>" + escapeHtml(getStaffIdentifier(currentAdmin)) + "</b>";
+  }
+
+  var pTitle = document.getElementById("rep-pie-title");
+  var bTitle = document.getElementById("rep-bar-title");
+  if (pTitle) pTitle.textContent = data.pieTitle;
+  if (bTitle) bTitle.textContent = data.barTitle;
+
+  if (typeof renderPieChart === "function") {
+    renderPieChart("chart-report-pie", data.pieSlices, data.pieCenter);
+  }
+  renderBars("chart-report-bars", data.barRows);
+
+  var wrap = document.getElementById("report-table-wrap");
+  if (!wrap) return;
+
+  var th = "<thead><tr>";
+  for (var c = 0; c < data.columns.length; c++) {
+    th += "<th>" + escapeHtml(data.columns[c]) + "</th>";
+  }
+  th += "</tr></thead>";
+
+  var tb = "<tbody>";
+  if (data.rows.length === 0) {
+    tb += '<tr><td colspan="' + data.columns.length + '" class="muted">No records found for this date/filter combination.</td></tr>';
+  } else {
+    for (var r = 0; r < data.rows.length; r++) {
+      tb += "<tr>";
+      for (var k = 0; k < data.rows[r].length; k++) {
+        var val = data.rows[r][k];
+        if (k === 1 && activeReportSubTab === "api" && data.badges[r]) {
+          tb += '<td><span class="badge ' + data.badges[r] + '">' + escapeHtml(val) + '</span></td>';
+        } else if (k === 0) {
+          tb += '<td><b>' + escapeHtml(val) + '</b></td>';
+        } else {
+          tb += '<td>' + escapeHtml(val) + '</td>';
+        }
+      }
+      tb += "</tr>";
+    }
+  }
+  tb += "</tbody>";
+  wrap.innerHTML = "<table>" + th + tb + "</table>";
+}
+
+function resetAdminReportFilters() {
+  var tfEl = document.getElementById("rep-timeframe");
+  var dEl = document.getElementById("rep-date");
+  var mEl = document.getElementById("rep-month");
+  var fEl = document.getElementById("rep-filter-status");
+  if (tfEl) tfEl.value = "all";
+  if (dEl) dEl.value = getLocalTodayIso();
+  if (mEl) mEl.value = getLocalMonthIso();
+  if (fEl) fEl.value = "all";
+  onReportTimeframeChange();
+}
+
+function exportActiveReportCsv() {
+  var data = getActiveReportData();
+  var csvRows = [data.columns.map(function (h) { return '"' + h.replace(/"/g, '""') + '"'; }).join(",")];
+  for (var i = 0; i < data.rows.length; i++) {
+    csvRows.push(data.rows[i].map(function (v) {
+      return '"' + String(v || "").replace(/"/g, '""') + '"';
+    }).join(","));
+  }
+  var blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
   var url = URL.createObjectURL(blob);
   var link = document.createElement("a");
   link.href = url;
-  link.download = "PIGEM-Applications-Report.csv";
+  link.download = "PIGEM-" + activeReportSubTab + "-report.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function downloadFormattedAdminReport() {
+  var data = getActiveReportData();
+  var rowsHtml = "";
+  for (var i = 0; i < data.rows.length; i++) {
+    rowsHtml += "<tr>" + data.rows[i].map(function (cell) {
+      return "<td style='padding:8px;border:1px solid #d0d5dd;'>" + escapeHtml(cell) + "</td>";
+    }).join("") + "</tr>";
+  }
+  var summaryMetrics = data.pieSlices.map(function (s) {
+    return "<li style='margin-bottom:4px;'><b>" + escapeHtml(s.label) + ":</b> " + s.value + "</li>";
+  }).join("");
+
+  var htmlDoc =
+    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>" + escapeHtml(data.title) + "</title></head>" +
+    "<body style='font-family:Arial,sans-serif;padding:28px;color:#111827;'>" +
+      "<h1 style='margin:0;color:#c8102e;'>COMBINED FACILITIES SUPPORT SERVICES</h1>" +
+      "<h2 style='margin:6px 0 12px;'>" + escapeHtml(data.title) + "</h2>" +
+      "<p style='font-size:13px;color:#475467;'>Timeframe: <b>" + escapeHtml(data.timeframeLabel) + "</b> | Total Records: <b>" + data.rows.length + "</b> | Generated: " + escapeHtml(new Date().toLocaleString()) + "</p>" +
+      "<ul style='font-size:13px;background:#f8fafc;padding:12px 24px;border:1px solid #e4e7ec;border-radius:8px;'>" + summaryMetrics + "</ul>" +
+      "<table style='width:100%;border-collapse:collapse;font-size:12.5px;margin-top:16px;'>" +
+        "<thead><tr>" + data.columns.map(function (c) { return "<th style='padding:8px;border:1px solid #d0d5dd;background:#f1f5f9;text-align:left;'>" + escapeHtml(c) + "</th>"; }).join("") + "</tr></thead>" +
+        "<tbody>" + (rowsHtml || "<tr><td colspan='" + data.columns.length + "' style='padding:10px;border:1px solid #d0d5dd;'>No records found.</td></tr>") + "</tbody>" +
+      "</table>" +
+    "</body></html>";
+
+  var blob = new Blob([htmlDoc], { type: "text/html;charset=utf-8;" });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = "PIGEM-" + activeReportSubTab + "-summary-report.html";
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

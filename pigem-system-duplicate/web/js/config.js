@@ -1,44 +1,35 @@
 // ============================================================================
 // FILE: web/js/config.js
-// PURPOSE: Global Cloud Configuration, Dasmarinas Barangay Directory & UI Helpers
+// PURPOSE: Global Cloud Configuration, Strict OOP/Helper Validators & UI Modals
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS / BROWSER APIS USED:
 //   - Browser `window`, `document`, `localStorage`, and `CustomEvent` APIs
-//   - Exports global `CONFIG` object consumed by `db.js`, `api.js`, and all portals
-//   - Provides barangay coordinate bounds, default fiber plans, CMS content,
-//     theme-aware logo switching (`black-logo-white-mode.png` / `white-logo-dark-mode.png`),
-//     strong password regex validation with live checklist hints, and
-//     interactive dashboard-only spotlight bubble tutorials
+//   - Exports global `CONFIG`, `validatePersonName`, `validateAdultBirthDate`,
+//     `getStaffIdentifier`, `isAssignedToStaff`, and `attachEnterKeyNavigation`
 // ============================================================================
 
 var ROOT = window.ROOT || "";
 
 var CONFIG = {
-  // Supabase Cloud Project URL and Anon Public Key
+
   SUPABASE_URL: "https://wuunqfxyejxwrawtjdrf.supabase.co",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g",
 
-  // Live Cloud Production Portal URL and Serverless FastAPI Base Path
   PUBLIC_URL: "https://pigem-system-web.vercel.app",
   API_URL: "/api",
 
-  // Where website pictures come from: "supabase" (website-assets bucket) or "local"
   ASSET_SOURCE: "supabase",
 
-  // LocationIQ OpenStreetMap Geocoding Public Key (with automatic OpenStreetMap Nominatim fallback)
   LOCATIONIQ_API_KEY: "pk.3597a6e1a756561513401f40ea9ee840",
 
-  // Google reCAPTCHA v2 Checkbox Site Key registered for pigem-system-web.vercel.app
   RECAPTCHA_SITE_KEY: "6LfLGBQuAAAAAP3l2jkVbG41srUfH3mv2io15vXD",
 
-  // Red Fiber plans (the Manager can edit these in Content > Plans)
   PLANS: [
     { id: "1000", name: "Plan 1000", speed: 100, price: 1000, tag: "Fiber for your home", featured: false },
     { id: "1400", name: "Plan 1400", speed: 300, price: 1400, tag: "Most chosen", featured: true },
     { id: "1900", name: "Plan 1900", speed: 500, price: 1900, tag: "Fiber for your home", featured: false }
   ],
 
-  // Inclusions shown on every plan card
   PLAN_INCLUSIONS: [
     "Unlimited pure fiber internet",
     "No lock-in",
@@ -46,13 +37,10 @@ var CONFIG = {
     "50% discount on the ₱2,000 one-time installation fee"
   ],
 
-  // Application statuses
   STATUSES: ["Pending Review", "Under Agent Review", "Encoding", "Approved", "Rejected", "Needs Correction"],
 
-  // Map starting point (Dasmariñas City, Cavite)
   MAP_CENTER: [14.3294, 120.9367],
 
-  // Service areas
   SERVICE_AREAS: [
     "metro manila", "ncr", "national capital region", "manila", "quezon city", "makati", "pasig", "taguig",
     "caloocan", "pasay", "paranaque", "parañaque", "las pinas", "las piñas", "muntinlupa", "marikina",
@@ -62,7 +50,6 @@ var CONFIG = {
 
   UNIT_TYPES: ["House", "Townhouse", "Apartment", "Condominium", "Dormitory", "Commercial"],
 
-  // Valid ID types and format patterns
   ID_TYPES: [
     { name: "Philippine National ID (PhilSys)", hint: "PhilSys Card Number: 16 digits (1234-5678-9012-3456) or PSN: 12 digits.", pattern: /^(\d{12}|\d{16})$/ },
     { name: "National ID", hint: "PhilSys Card Number: 16 digits (1234-5678-9012-3456) or PSN: 12 digits.", pattern: /^(\d{12}|\d{16})$/ },
@@ -80,7 +67,6 @@ var CONFIG = {
   ]
 };
 
-// Default public website content (editable in the Manager CMS)
 var DEFAULT_CONTENT = {
   logo_image: "black-logo-white-mode.png",
   dark_logo_image: "white-logo-dark-mode.png",
@@ -133,10 +119,7 @@ var DEFAULT_CONTENT = {
   ]
 };
 
-// ============================================================
-// Website pictures & Theme-Aware Logo Resolver
-// ============================================================
-
+// Data Accessor `getImageUrl` (params: filePath): Retrieves or refreshes data to get image url.
 function getImageUrl(filePath) {
   if (!filePath) return "";
   if (filePath.indexOf("data:") === 0 || filePath.indexOf("http://") === 0 || filePath.indexOf("https://") === 0) return filePath;
@@ -145,10 +128,12 @@ function getImageUrl(filePath) {
   return base + "/storage/v1/object/public/website-assets/" + clean;
 }
 
+// Helper `imageFallback` (params: img, filePath): Executes workflow logic for `imageFallback`.
 function imageFallback(img, filePath) {
   img.onerror = null;
 }
 
+// UI State Controller `showSystemMaintenanceNotice` (params: customMsg): Updates modal, tab, or panel state to show system maintenance notice.
 function showSystemMaintenanceNotice(customMsg) {
   var existing = document.getElementById("sys-maintenance-banner");
   if (existing) return;
@@ -161,6 +146,7 @@ function showSystemMaintenanceNotice(customMsg) {
   }
 }
 
+// Data Accessor `getActiveThemeLogoFilename`: Retrieves or refreshes data to get active theme logo filename.
 function getActiveThemeLogoFilename() {
   var wc = getWebsiteContent();
   var isDark = document.documentElement.getAttribute("data-theme") === "dark";
@@ -169,6 +155,7 @@ function getActiveThemeLogoFilename() {
   return isDark ? darkLogo : lightLogo;
 }
 
+// Data Accessor `loadPageImages`: Retrieves or refreshes data to load page images.
 function loadPageImages() {
   var activeLogo = getActiveThemeLogoFilename();
 
@@ -190,37 +177,40 @@ function loadPageImages() {
   }
 }
 
-// ============================================================
-// Saved settings (Synced with Supabase + cached in localStorage)
-// ============================================================
-
+// Data Accessor `readSaved` (params: key, defaultValue): Retrieves or refreshes data to read saved.
 function readSaved(key, defaultValue) {
   var raw = localStorage.getItem(key);
   if (!raw) return defaultValue;
   try { return JSON.parse(raw); } catch (e) { return defaultValue; }
 }
 
+// Helper `writeSaved` (params: key, value): Executes workflow logic for `writeSaved`.
 function writeSaved(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+// Data Accessor `getActivePlans`: Retrieves or refreshes data to get active plans.
 function getActivePlans() { return readSaved("pigem_plans", CONFIG.PLANS); }
+// Action Handler `saveActivePlans` (params: plans): Validates inputs and persists changes to save active plans.
 function saveActivePlans(plans) {
   writeSaved("pigem_plans", plans);
   if (typeof dbSaveLivePlans === "function") dbSaveLivePlans(plans);
 }
 
+// Data Accessor `getWebsiteContent`: Retrieves or refreshes data to get website content.
 function getWebsiteContent() {
   var saved = readSaved("pigem_website_content", {});
   var merged = Object.assign({}, DEFAULT_CONTENT, saved);
   merged.asset_library = Object.assign({}, DEFAULT_CONTENT.asset_library, saved.asset_library || {});
   return merged;
 }
+// Action Handler `saveWebsiteContent` (params: content): Validates inputs and persists changes to save website content.
 function saveWebsiteContent(content) {
   writeSaved("pigem_website_content", content);
   if (typeof dbSaveLiveWebsiteContent === "function") dbSaveLiveWebsiteContent(content);
 }
 
+// Data Accessor `getSystemSettings`: Retrieves or refreshes data to get system settings.
 function getSystemSettings() {
   return Object.assign({
     ai_enabled: true,
@@ -228,29 +218,30 @@ function getSystemSettings() {
     maintenance_message: "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly."
   }, readSaved("pigem_system_settings", {}));
 }
+// Action Handler `saveSystemSettings` (params: settings): Validates inputs and persists changes to save system settings.
 function saveSystemSettings(settings) {
   writeSaved("pigem_system_settings", settings);
   if (typeof dbSaveLiveSystemSettings === "function") dbSaveLiveSystemSettings(settings);
 }
 
-// ============================================================
-// Small formatting helpers
-// ============================================================
-
+// Utility `formatPeso` (params: amount): Normalizes or transforms values (format peso).
 function formatPeso(amount) {
   return "₱" + Number(amount).toLocaleString("en-US");
 }
 
+// Utility `formatDate` (params: dateString): Normalizes or transforms values (format date).
 function formatDate(dateString) {
   if (!dateString) return "-";
   return new Date(dateString).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }
 
+// Utility `formatDay` (params: dateString): Normalizes or transforms values (format day).
 function formatDay(dateString) {
   if (!dateString) return "-";
   return new Date(dateString).toLocaleDateString("en-US", { dateStyle: "medium" });
 }
 
+// Data Accessor `getPlanById` (params: planId): Retrieves or refreshes data to get plan by id.
 function getPlanById(planId) {
   var plans = getActivePlans();
   for (var i = 0; i < plans.length; i++) {
@@ -259,6 +250,7 @@ function getPlanById(planId) {
   return { id: planId, name: "Plan " + planId, speed: "-", price: planId };
 }
 
+// Data Accessor `getIdType` (params: name): Retrieves or refreshes data to get id type.
 function getIdType(name) {
   for (var i = 0; i < CONFIG.ID_TYPES.length; i++) {
     if (CONFIG.ID_TYPES[i].name === name) return CONFIG.ID_TYPES[i];
@@ -266,6 +258,7 @@ function getIdType(name) {
   return { name: name, hint: "Type the number exactly as printed.", pattern: /^[A-Z0-9]{4,25}$/ };
 }
 
+// Utility `formatAddress` (params: app): Normalizes or transforms values (format address).
 function formatAddress(app) {
   var parts = [
     app.house_no ? app.house_no + (app.house_suffix ? " " + app.house_suffix : "") : "",
@@ -285,6 +278,7 @@ function formatAddress(app) {
   return clean.join(", ");
 }
 
+// Validator/Check `isServiceArea` (params: addressText): Evaluates rule (is service area) and returns result.
 function isServiceArea(addressText) {
   var text = String(addressText || "").toLowerCase();
   for (var i = 0; i < CONFIG.SERVICE_AREAS.length; i++) {
@@ -293,6 +287,7 @@ function isServiceArea(addressText) {
   return false;
 }
 
+// Data Accessor `getDefaultStatusInstruction` (params: status, note): Retrieves or refreshes data to get default status instruction.
 function getDefaultStatusInstruction(status, note) {
   if (status === "Needs Correction") return note || "Please update the information or ID requested below.";
   if (status === "Encoding") return note || "Your application passed initial verification and is now being encoded into the provider portal.";
@@ -301,15 +296,13 @@ function getDefaultStatusInstruction(status, note) {
   return "We are reviewing your application. Please check your email for updates.";
 }
 
+// Helper `makeBadge` (params: status): Executes workflow logic for `makeBadge`.
 function makeBadge(status) {
   var cssName = String(status || "Processing").toLowerCase().replace(/ /g, "-");
   return '<span class="badge status-' + cssName + '">' + status + "</span>";
 }
 
-// ============================================================
-// Popups and alert messages
-// ============================================================
-
+// UI State Controller `openPopup` (params: htmlContent, isWide): Updates modal, tab, or panel state to open popup.
 function openPopup(htmlContent, isWide) {
   closePopup();
   var back = document.createElement("div");
@@ -318,13 +311,16 @@ function openPopup(htmlContent, isWide) {
   back.innerHTML = '<div class="popup' + (isWide ? " wide" : "") + '">' + htmlContent + "</div>";
   document.body.appendChild(back);
   if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles(back);
+  if (typeof attachEnterKeyNavigation === "function") attachEnterKeyNavigation(back);
 }
 
+// UI State Controller `closePopup`: Updates modal, tab, or panel state to close popup.
 function closePopup() {
   var existing = document.getElementById("popup-modal");
   if (existing) existing.remove();
 }
 
+// UI State Controller `showAlert` (params: title, message, type): Updates modal, tab, or panel state to show alert.
 function showAlert(title, message, type) {
   openPopup(
     "<h3>" + title + "</h3>" +
@@ -333,23 +329,25 @@ function showAlert(title, message, type) {
   );
 }
 
+// Helper `previewImage` (params: filePath, titleText): Executes workflow logic for `previewImage`.
 function previewImage(filePath, titleText) {
+  var headerHtml = titleText
+    ? '<div class="row between"><h3>' + escapeHtml(titleText) + '</h3><button class="btn btn-small" onclick="closePopup()">Close</button></div>'
+    : '<div class="row" style="justify-content:flex-end"><button class="btn btn-small" onclick="closePopup()">Close</button></div>';
   openPopup(
-    '<div class="row between"><h3>' + titleText + '</h3><button class="btn btn-small" onclick="closePopup()">Close</button></div>' +
-    '<img class="mt" src="' + getImageUrl(filePath) + '" onerror="imageFallback(this, \'' + filePath + '\')" style="margin:12px auto 0; max-height:70vh; border-radius:10px;">',
+    headerHtml +
+    '<img class="mt" src="' + getImageUrl(filePath) + '" onerror="imageFallback(this, \'' + filePath + '\')" style="margin:12px auto 0; max-height:74vh; border-radius:10px;">',
     true
   );
 }
 
-// ============================================================
-// Public website: phone menu, hero slider, picture strips
-// ============================================================
-
+// UI State Controller `toggleMenu`: Updates modal, tab, or panel state to toggle menu.
 function toggleMenu() {
   document.body.classList.toggle("menu-open");
 }
 
 var sliderTimers = {};
+// Helper `startSlider` (params: sliderId, slides): Executes workflow logic for `startSlider`.
 function startSlider(sliderId, slides) {
   var box = document.getElementById(sliderId);
   if (!box) return;
@@ -385,6 +383,7 @@ function startSlider(sliderId, slides) {
   sliderTimers[sliderId] = setInterval(function () { moveSlide(sliderId, 1); }, 5000);
 }
 
+// Helper `goToSlide` (params: sliderId, index): Executes workflow logic for `goToSlide`.
 function goToSlide(sliderId, index) {
   var box = document.getElementById(sliderId);
   var slides = box.querySelectorAll(".slide");
@@ -399,6 +398,7 @@ function goToSlide(sliderId, index) {
   box.setAttribute("data-index", String(index));
 }
 
+// Helper `moveSlide` (params: sliderId, step): Executes workflow logic for `moveSlide`.
 function moveSlide(sliderId, step) {
   var box = document.getElementById(sliderId);
   var current = Number(box.getAttribute("data-index") || 0);
@@ -407,13 +407,16 @@ function moveSlide(sliderId, step) {
 
 var stripTimers = {};
 
+// UI Renderer `buildStrip` (params: stripId, files, titlePrefix): Builds and updates DOM elements for strip.
 function buildStrip(stripId, files, titlePrefix) {
   var box = document.getElementById(stripId);
   if (!box) return;
+  var altLabel = titlePrefix ? String(titlePrefix) : "Gallery Image";
+  var popupTitle = titlePrefix ? String(titlePrefix) : "";
   var html = "";
   for (var round = 0; round < 2; round++) {
     for (var i = 0; i < files.length; i++) {
-      html += '<img draggable="false" src="' + getImageUrl(files[i]) + '" onerror="imageFallback(this, \'' + files[i] + '\')" alt="' + titlePrefix + " " + (i + 1) + '" onclick="if(!window._stripDragged) previewImage(\'' + files[i] + "', '" + titlePrefix + " " + (i + 1) + '\')">';
+      html += '<img draggable="false" src="' + getImageUrl(files[i]) + '" onerror="imageFallback(this, \'' + files[i] + '\')" alt="' + altLabel + '" onclick="if(!window._stripDragged) previewImage(\'' + files[i] + "', '" + popupTitle + '\')">';
     }
   }
   box.innerHTML = '<div class="strip-track">' + html + "</div>";
@@ -461,6 +464,7 @@ function buildStrip(stripId, files, titlePrefix) {
   }, 25);
 }
 
+// Data Accessor `getHomeForRole` (params: role): Retrieves or refreshes data to get home for role.
 function getHomeForRole(role) {
   if (role === "admin") return ROOT + "admin.html";
   if (role === "manager") return ROOT + "manager.html";
@@ -468,10 +472,7 @@ function getHomeForRole(role) {
   return ROOT + "customer.html";
 }
 
-// ============================================================
-// Strong Password Regex Evaluation & Eye Toggle Helper
-// ============================================================
-
+// Helper `evaluatePasswordRules` (params: pw): Executes workflow logic for `evaluatePasswordRules`.
 function evaluatePasswordRules(pw) {
   var val = String(pw || "");
   return {
@@ -483,21 +484,22 @@ function evaluatePasswordRules(pw) {
   };
 }
 
+// Validator/Check `isStrongPassword` (params: pw): Evaluates rule (is strong password) and returns result.
 function isStrongPassword(pw) {
   var r = evaluatePasswordRules(pw);
   return Boolean(r.length && r.upper && r.lower && r.digit && r.special);
 }
 
-// Shared message shown whenever a password fails the strong password rules
 var PASSWORD_REQUIREMENT_TEXT = "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special symbol.";
 
-// Returns the current website base URL (used to build private agent registration links)
+// Data Accessor `getSiteBaseUrl`: Retrieves or refreshes data to get site base url.
 function getSiteBaseUrl() {
   var path = window.location.pathname || "/";
   var folder = path.substring(0, path.lastIndexOf("/"));
   return window.location.origin + folder;
 }
 
+// Helper `attachPasswordRegexChecklist` (params: inputEl): Executes workflow logic for `attachPasswordRegexChecklist`.
 function attachPasswordRegexChecklist(inputEl) {
   if (!inputEl || inputEl.getAttribute("data-regex-attached") === "1") return;
   var id = inputEl.id || "";
@@ -508,7 +510,10 @@ function attachPasswordRegexChecklist(inputEl) {
     id === "ag-reg-pw" ||
     id === "m-ag-pw" ||
     id === "adm-new-pw" ||
+    id === "adm-reset-pw" ||
+    id === "mgr-ag-pass" ||
     id === "prof-new-pw" ||
+    id === "prof-pw-new" ||
     id === "rec-new-pw";
 
   if (!needsChecklist) return;
@@ -517,7 +522,7 @@ function attachPasswordRegexChecklist(inputEl) {
   var box = document.createElement("div");
   box.className = "pw-regex-box";
   box.innerHTML =
-    '<div class="pw-regex-title">Password Requirements:</div>' +
+    '<div class="pw-regex-title">Remaining Password Requirements:</div>' +
     '<div class="pw-regex-grid">' +
       '<span data-rule="length">&#9675; At least 8 characters</span>' +
       '<span data-rule="upper">&#9675; 1 uppercase letter (A-Z)</span>' +
@@ -531,16 +536,20 @@ function attachPasswordRegexChecklist(inputEl) {
     targetParent.parentNode.insertBefore(box, targetParent.nextSibling);
   }
 
+  // Data Accessor `refreshRules`: Retrieves or refreshes data to refresh rules.
   function refreshRules() {
-    var rules = evaluatePasswordRules(inputEl.value);
+    var val = String(inputEl.value || "");
+    var rules = evaluatePasswordRules(val);
     var items = box.querySelectorAll("[data-rule]");
+    var pendingCount = 0;
     for (var i = 0; i < items.length; i++) {
       var key = items[i].getAttribute("data-rule");
       var passed = Boolean(rules[key]);
+      items[i].style.display = passed ? "none" : "block";
       items[i].classList.toggle("passed", passed);
-      var labelText = items[i].textContent.replace(/^[\u2713\u25CB\s]+/, "");
-      items[i].innerHTML = (passed ? "&#10003; " : "&#9675; ") + labelText;
+      if (!passed) pendingCount++;
     }
+    box.style.display = pendingCount === 0 ? "none" : "block";
   }
 
   inputEl.addEventListener("input", refreshRules);
@@ -548,7 +557,7 @@ function attachPasswordRegexChecklist(inputEl) {
   refreshRules();
 }
 
-// Global password eye toggle helper (works even when the input is empty or null)
+// Helper `initPasswordEyeToggles` (params: rootEl): Executes workflow logic for `initPasswordEyeToggles`.
 function initPasswordEyeToggles(rootEl) {
   var container = rootEl || document;
   var pwInputs = container.querySelectorAll('input[type="password"], input[data-pw-field="1"]');
@@ -604,6 +613,7 @@ function initPasswordEyeToggles(rootEl) {
   }
 }
 
+// UI State Controller `setupPublicHeader`: Updates modal, tab, or panel state to setup public header.
 async function setupPublicHeader() {
   if (typeof dbGetCurrentUser !== "function") return;
   var user = await dbGetCurrentUser();
@@ -621,6 +631,7 @@ async function setupPublicHeader() {
   }
 }
 
+// Validator/Check `isManagerOrAdminPreview`: Evaluates rule (is manager or admin preview) and returns result.
 function isManagerOrAdminPreview() {
   if (window.location.search.indexOf("preview_cms=1") !== -1) {
     sessionStorage.setItem("pigem_cms_preview", "1");
@@ -632,6 +643,7 @@ function isManagerOrAdminPreview() {
   return false;
 }
 
+// Validator/Check `checkPublicMaintenance`: Evaluates rule (check public maintenance) and returns result.
 function checkPublicMaintenance() {
   var path = window.location.pathname.toLowerCase();
   var isCoveredPage =
@@ -680,9 +692,13 @@ function checkPublicMaintenance() {
     '</main>';
 }
 
+// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   if (typeof initPasswordEyeToggles === "function") {
     initPasswordEyeToggles();
+  }
+  if (typeof attachEnterKeyNavigation === "function") {
+    attachEnterKeyNavigation(document);
   }
   if (typeof dbSyncLiveSettingsAndContent === "function") {
     await dbSyncLiveSettingsAndContent();
@@ -692,10 +708,6 @@ window.addEventListener("DOMContentLoaded", async function () {
   setupPublicHeader();
 });
 
-
-// ============================================================
-// OOP Validation Classes (Abstraction, Inheritance, Encapsulation, Regex)
-// ============================================================
 class BaseFieldValidator {
   constructor() {
     this._emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -784,18 +796,22 @@ class ApplicantFormValidator extends BaseFieldValidator {
 
 var FORM_VALIDATOR = new ApplicantFormValidator();
 
+// Validator/Check `isCustomerGmail` (params: email): Evaluates rule (is customer gmail) and returns result.
 function isCustomerGmail(email) {
   return FORM_VALIDATOR.isCustomerGmail(email);
 }
 
+// Validator/Check `isStaffBusinessEmail` (params: email): Evaluates rule (is staff business email) and returns result.
 function isStaffBusinessEmail(email) {
   return FORM_VALIDATOR.isStaffBusinessEmail(email);
 }
 
+// Validator/Check `isValidUsername` (params: username): Evaluates rule (is valid username) and returns result.
 function isValidUsername(username) {
   return FORM_VALIDATOR.isValidUsername(username);
 }
 
+// Helper `sanitizeUsernameSeed` (params: fullName, email): Executes workflow logic for `sanitizeUsernameSeed`.
 function sanitizeUsernameSeed(fullName, email) {
   var emailPart = String(email || "").split("@")[0].toLowerCase().replace(/[^a-z0-9._]/g, "");
   var namePart = String(fullName || "").toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9._]/g, "");
@@ -806,10 +822,6 @@ function sanitizeUsernameSeed(fullName, email) {
   return base.slice(0, 24);
 }
 
-
-// ============================================================
-// Interactive Step-by-Step Spotlight Bubble Tutorial (Dashboards Only)
-// ============================================================
 var DASHBOARD_TUTORIAL_STEPS = {
   customer: [
     {
@@ -911,7 +923,7 @@ var DASHBOARD_TUTORIAL_STEPS = {
     {
       selector: "#nav-accounts",
       title: "Step 4: Accounts and Private Agent Links",
-      text: "Create Manager or Agent accounts (@pigem.ph) or generate private one-time Agent registration links."
+      text: "Create Manager or Agent accounts using usernames or generate private one-time Agent registration links."
     },
     {
       selector: "#nav-logs",
@@ -928,6 +940,7 @@ var _tourState = {
   userKey: ""
 };
 
+// Helper `startDashboardTour` (params: portalName, forceManual): Executes workflow logic for `startDashboardTour`.
 function startDashboardTour(portalName, forceManual) {
   var p = String(portalName || window.DASH_PORTAL || "").toLowerCase();
   if (!DASHBOARD_TUTORIAL_STEPS[p]) return;
@@ -950,6 +963,7 @@ function startDashboardTour(portalName, forceManual) {
   renderDashboardTourStep();
 }
 
+// UI Renderer `renderDashboardTourStep`: Builds and updates DOM elements for dashboard tour step.
 function renderDashboardTourStep() {
   removeDashboardTourElements();
   var steps = _tourState.steps || [];
@@ -1017,11 +1031,13 @@ function renderDashboardTourStep() {
   }
 }
 
+// Helper `stepDashboardTour` (params: delta): Executes workflow logic for `stepDashboardTour`.
 function stepDashboardTour(delta) {
   _tourState.index += delta;
   renderDashboardTourStep();
 }
 
+// Helper `removeDashboardTourElements`: Executes workflow logic for `removeDashboardTourElements`.
 function removeDashboardTourElements() {
   var old = document.getElementById("dashboard-tour-bubble");
   if (old) old.remove();
@@ -1031,6 +1047,7 @@ function removeDashboardTourElements() {
   }
 }
 
+// Helper `finishDashboardTour`: Executes workflow logic for `finishDashboardTour`.
 function finishDashboardTour() {
   if (_tourState.userKey) {
     localStorage.setItem(_tourState.userKey, "1");
@@ -1038,6 +1055,7 @@ function finishDashboardTour() {
   removeDashboardTourElements();
 }
 
+// UI State Controller `showPortalGuide` (params: guideId, onDone): Updates modal, tab, or panel state to show portal guide.
 function showPortalGuide(guideId, onDone) {
   var map = {
     customer_portal_guide: "customer",
@@ -1053,11 +1071,13 @@ function showPortalGuide(guideId, onDone) {
   if (typeof onDone === "function") onDone();
 }
 
+// Helper `finishPortalGuide`: Executes workflow logic for `finishPortalGuide`.
 function finishPortalGuide() {
   finishDashboardTour();
   closePopup();
 }
 
+// UI State Controller `openConfirmPopup` (params: title, messageHtml, confirmLabel, onConfirm, isDanger): Updates modal, tab, or panel state to open confirm popup.
 function openConfirmPopup(title, messageHtml, confirmLabel, onConfirm, isDanger) {
   window._pendingConfirmAction = typeof onConfirm === "function" ? onConfirm : null;
   var btnClass = isDanger ? "btn btn-red" : "btn btn-green";
@@ -1074,9 +1094,150 @@ function openConfirmPopup(title, messageHtml, confirmLabel, onConfirm, isDanger)
   );
 }
 
+// Helper `runPendingConfirmAction`: Executes workflow logic for `runPendingConfirmAction`.
 function runPendingConfirmAction() {
   var fn = window._pendingConfirmAction;
   window._pendingConfirmAction = null;
   closePopup();
   if (typeof fn === "function") fn();
+}
+
+// `validatePersonName` (params: name, fieldLabel, allowNA): Enforces letters, spaces, hyphens, apostrophes, and periods only on applicant/staff names (no digits or symbols).
+function validatePersonName(name, fieldLabel, allowNA) {
+  var label = fieldLabel || "Name";
+  var clean = String(name || "").trim();
+  if (!clean) {
+    return { valid: false, message: label + " is required." };
+  }
+  if (allowNA && /^(n\/a|na|none)$/i.test(clean)) {
+    return { valid: true, message: "" };
+  }
+  if (/\d/.test(clean)) {
+    return { valid: false, message: label + " must contain letters only and cannot include numbers." };
+  }
+  if (!/^[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\s.'-]*$/.test(clean) || !/[A-Za-z\u00C0-\u024F]/.test(clean)) {
+    return { valid: false, message: label + " must contain valid letters only without invalid symbols." };
+  }
+  return { valid: true, message: "" };
+}
+
+// Validator/Check `isValidPersonName` (params: name, allowNA): Evaluates rule (is valid person name) and returns result.
+function isValidPersonName(name, allowNA) {
+  return validatePersonName(name, "Name", allowNA).valid;
+}
+
+// `getMaxAdultBirthDate` (params: minAge): Computes the latest allowed YYYY-MM-DD birth date so applicants must be at least minAge (18+) years old.
+function getMaxAdultBirthDate(minAge) {
+  var years = typeof minAge === "number" ? minAge : 18;
+  var now = new Date();
+  var y = now.getFullYear() - years;
+  var m = String(now.getMonth() + 1).padStart(2, "0");
+  var d = String(now.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + d;
+}
+
+// `validateAdultBirthDate` (params: dateStr, minAge): Validates birth date format, rejects future dates, and enforces the minimum age requirement (default 18).
+function validateAdultBirthDate(dateStr, minAge) {
+  var years = typeof minAge === "number" ? minAge : 18;
+  var clean = String(dateStr || "").trim();
+  if (!clean) {
+    return { valid: false, message: "Please select your Date of Birth." };
+  }
+  var match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return { valid: false, message: "Please enter a valid Date of Birth." };
+  }
+  var y = parseInt(match[1], 10);
+  var m = parseInt(match[2], 10);
+  var day = parseInt(match[3], 10);
+  var dob = new Date(y, m - 1, day);
+  if (dob.getFullYear() !== y || dob.getMonth() !== m - 1 || dob.getDate() !== day || y < 1900) {
+    return { valid: false, message: "The Date of Birth entered is not a valid calendar date." };
+  }
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dob.setHours(0, 0, 0, 0);
+  if (dob > today) {
+    return { valid: false, message: "Date of Birth cannot be today or a future date." };
+  }
+  var age = today.getFullYear() - y;
+  var monthDiff = (today.getMonth() + 1) - m;
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < day)) {
+    age -= 1;
+  }
+  if (age < years) {
+    return {
+      valid: false,
+      age: age,
+      message: "Applicant must be at least " + years + " years old to apply (calculated age: " + Math.max(0, age) + ")."
+    };
+  }
+  return { valid: true, age: age, message: "" };
+}
+
+// `getStaffIdentifier` (params: user): Returns `@username` (falling back to email) as the canonical assignment identifier for internal staff without email.
+function getStaffIdentifier(user) {
+  if (!user) return "";
+  if (user.username) {
+    return "@" + String(user.username).replace(/^@/, "").trim();
+  }
+  return String(user.email || user.full_name || "").trim();
+}
+
+// `isAssignedToStaff` (params: assignedVal, staffUser): Matches an application's `assigned_agent` string against a staff user's username or legacy email identifier.
+function isAssignedToStaff(assignedVal, staffUser) {
+  var val = String(assignedVal || "").trim().toLowerCase();
+  if (!val || !staffUser) return false;
+  var uname = String(staffUser.username || "").replace(/^@/, "").trim().toLowerCase();
+  var email = String(staffUser.email || "").trim().toLowerCase();
+  if (uname && (val === uname || val === "@" + uname)) return true;
+  if (email && val === email) return true;
+  return false;
+}
+
+// `attachEnterKeyNavigation` (params: rootEl): Binds Enter-key flow inside forms/modals so pressing Enter advances to the next input and submits on the last field.
+function attachEnterKeyNavigation(rootEl) {
+  if (window.__pigemEnterNavBound) return;
+  window.__pigemEnterNavBound = true;
+  // Event Listener: Initializes handlers or syncs state when `keydown` fires
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.altKey) return;
+    var el = e.target;
+    if (!el || !el.tagName) return;
+    var tag = el.tagName.toUpperCase();
+    if (tag !== "INPUT" && tag !== "SELECT") return;
+    var inputType = String(el.type || "text").toLowerCase();
+    if (inputType === "submit" || inputType === "button" || inputType === "reset" || inputType === "file" || inputType === "checkbox" || inputType === "radio") {
+      return;
+    }
+    if (el.classList && el.classList.contains("no-enter-jump")) return;
+    var scope = el.closest(".popup, form, .panel, .auth-card, main, body") || document.body;
+    var rawFields = scope.querySelectorAll('input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([disabled]):not([readonly]), select:not([disabled])');
+    var visibleFields = [];
+    for (var i = 0; i < rawFields.length; i++) {
+      var f = rawFields[i];
+      if (f.offsetParent !== null && !f.closest("[hidden]")) {
+        visibleFields.push(f);
+      }
+    }
+    var idx = visibleFields.indexOf(el);
+    if (idx === -1) return;
+    if (idx < visibleFields.length - 1) {
+      e.preventDefault();
+      var nextEl = visibleFields[idx + 1];
+      nextEl.focus();
+      if (typeof nextEl.select === "function" && nextEl.tagName.toUpperCase() === "INPUT" && nextEl.type !== "date") {
+        try { nextEl.select(); } catch (err) {}
+      }
+      return;
+    }
+    var panel = el.closest(".panel");
+    if (panel) {
+      var nextBtn = panel.querySelector("[data-next]");
+      if (nextBtn && nextBtn.offsetParent !== null) {
+        e.preventDefault();
+        nextBtn.focus();
+      }
+    }
+  });
 }

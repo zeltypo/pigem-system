@@ -173,75 +173,140 @@ async function dbGetCurrentUser() {
 
 async function dbSignIn(identifier, password) {
   var cleanInput = String(identifier || "").trim().toLowerCase();
-  if (!cleanInput) throw new Error("Please enter your username or email address.");
+  if (!cleanInput) {
+    throw new Error((SYSTEM === "staff" || SYSTEM === "admin") ? "Please enter your username." : "Please enter your username or email address.");
+  }
+
+  var enteredHash = await hashPassword(password);
+
+  if (SYSTEM === "staff" || SYSTEM === "admin") {
+    if (cleanInput.indexOf("@") !== -1) {
+      throw new Error("Internal accounts sign in using Username only. Email login is not used for Admin, Manager, or Agent accounts.");
+    }
+    var cleanStaffUser = cleanInput.replace(/^@/, "");
+    if (typeof isValidUsername === "function" && !isValidUsername(cleanStaffUser)) {
+      throw new Error("Please enter a valid username (3-30 characters).");
+    }
+
+    var staffUser = findDemoUserByUsername(cleanStaffUser);
+    if (!staffUser && !IS_DEMO_MODE && supabaseClient) {
+      var staffRes = await supabaseClient.from("users").select("*").ilike("username", cleanStaffUser).maybeSingle();
+      if (staffRes.data) staffUser = staffRes.data;
+    }
+
+    if (!staffUser) {
+      throw new Error("Invalid username or password.");
+    }
+    if (!staffUser.active) {
+      throw new Error("This account is disabled. Please contact the System Administrator.");
+    }
+    if (SYSTEM_ROLES[SYSTEM].indexOf(staffUser.role) === -1) {
+      throw new Error("This account cannot sign in on this portal.");
+    }
+
+    var passMatched = Boolean(
+      (staffUser.password_hash && staffUser.password_hash === enteredHash) ||
+      (staffUser.password && (staffUser.password === password || staffUser.password === enteredHash)) ||
+      (staffUser.activation_code && (
+        staffUser.activation_code === ("PW:" + enteredHash) ||
+        staffUser.activation_code === ("PW:" + password) ||
+        staffUser.activation_code === password
+      ))
+    );
+
+    if (!passMatched && staffUser.email && !IS_DEMO_MODE && supabaseClient) {
+      var legacyAuth = await supabaseClient.auth.signInWithPassword({ email: staffUser.email, password: password });
+      if (!legacyAuth.error) {
+        passMatched = true;
+      }
+    }
+
+    if (!passMatched) {
+      throw new Error("Invalid username or password.");
+    }
+
+    sessionStore.setItem(SESSION_KEY, staffUser.id);
+    await dbAddLoginHistory(staffUser, "login");
+    return staffUser;
+  }
 
   var cleanEmail = "";
   var preloadedDbRow = null;
 
   if (cleanInput.indexOf("@") !== -1) {
     cleanEmail = cleanInput;
-    if (SYSTEM === "customer" && typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
+    if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
       throw new Error("Customer Login accepts @gmail.com accounts or Customer usernames only.");
     }
-    if ((SYSTEM === "staff" || SYSTEM === "admin") && typeof isCustomerGmail === "function" && isCustomerGmail(cleanEmail)) {
-      throw new Error("Internal portals require an internal staff email (such as @pigem.ph) or staff username, not a Gmail account.");
-    }
   } else {
-    if (typeof isValidUsername === "function" && !isValidUsername(cleanInput)) {
-      throw new Error("Please enter a valid username (3-30 characters) or email address.");
+    var cleanCustUser = cleanInput.replace(/^@/, "");
+    if (typeof isValidUsername === "function" && !isValidUsername(cleanCustUser)) {
+      throw new Error("Please enter a valid username (3-30 characters) or @gmail.com email address.");
     }
-    var localByUser = findDemoUserByUsername(cleanInput);
+    var localByUser = findDemoUserByUsername(cleanCustUser);
     if (localByUser) {
+      preloadedDbRow = localByUser;
       cleanEmail = String(localByUser.email || "").trim().toLowerCase();
     }
     if (!cleanEmail && !IS_DEMO_MODE && supabaseClient) {
-      var uRes = await supabaseClient.from("users").select("*").ilike("username", cleanInput).maybeSingle();
+      var uRes = await supabaseClient.from("users").select("*").ilike("username", cleanCustUser).maybeSingle();
       if (uRes.data) {
         preloadedDbRow = uRes.data;
         cleanEmail = String(uRes.data.email || "").trim().toLowerCase();
       }
     }
+    if (preloadedDbRow && preloadedDbRow.role && preloadedDbRow.role !== "customer") {
+      throw new Error("This username belongs to an internal staff account. Please use the Staff or Admin Login page.");
+    }
     if (!cleanEmail) {
       throw new Error("Invalid username or password.");
     }
-    if (SYSTEM === "customer" && typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
+    if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
       throw new Error("This username belongs to an internal staff account. Please use the Staff or Admin Login page.");
-    }
-    if ((SYSTEM === "staff" || SYSTEM === "admin") && typeof isCustomerGmail === "function" && isCustomerGmail(cleanEmail)) {
-      throw new Error("Customer accounts must sign in on the Customer Login page.");
     }
   }
 
   var user = null;
-
   var found = findDemoUserByEmail(cleanEmail);
-  var enteredHash = await hashPassword(password);
   if (found && (found.password === password || found.password_hash === enteredHash || found.password === enteredHash)) {
     if (found.role === "customer" && !found.activated) {
-      throw new Error("Please activate your account first using the link sent to your email.");
+      throw new Error("Please activate your account first using the activation link sent to your email.");
     }
     if (!found.active) throw new Error("This account is disabled. Please contact PIGEM.");
     if (!found.username) {
       found.username = await dbGenerateUniqueUsername(found.full_name, found.email);
     }
     user = found;
-    if (!IS_DEMO_MODE) {
-      await supabaseClient.from("users").upsert({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        full_name: user.full_name,
-        role: user.role,
-        active: user.active,
-        activated: true
-      }, { onConflict: "email" });
-    }
-  } else if (!IS_DEMO_MODE) {
-
+  } else if (!IS_DEMO_MODE && supabaseClient) {
     var dbRow = preloadedDbRow ? { data: preloadedDbRow } : await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
-    if (dbRow.data && (dbRow.data.activation_code === ("PW:" + password) || dbRow.data.activation_code === ("PW:" + enteredHash) || dbRow.data.activation_code === password)) {
-      if (!dbRow.data.active) throw new Error("This account is disabled. Please contact PIGEM.");
-      user = dbRow.data;
+    var rowData = dbRow.data;
+    if (rowData) {
+      if (rowData.role && rowData.role !== "customer") {
+        throw new Error("Internal accounts must sign in on the Staff or Admin Login page.");
+      }
+      if (rowData.role === "customer" && !rowData.activated) {
+        throw new Error("Please create your password first using the one-time activation link sent to your Gmail.");
+      }
+      if (!rowData.active) throw new Error("This account is disabled. Please contact PIGEM.");
+
+      var rowMatch = Boolean(
+        (rowData.password_hash && rowData.password_hash === enteredHash) ||
+        (rowData.activation_code && (
+          rowData.activation_code === ("PW:" + enteredHash) ||
+          rowData.activation_code === ("PW:" + password) ||
+          rowData.activation_code === password
+        ))
+      );
+
+      if (rowMatch) {
+        user = rowData;
+      } else if (!rowData.password_hash) {
+        var authRes = await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: password });
+        if (authRes.error) throw new Error("Invalid username/email or password.");
+        user = (await dbGetCurrentUser()) || rowData;
+      } else {
+        throw new Error("Invalid username/email or password.");
+      }
     } else {
       var res = await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: password });
       if (res.error) throw new Error(res.error.message);
@@ -253,7 +318,7 @@ async function dbSignIn(identifier, password) {
   }
 
   if (SYSTEM_ROLES[SYSTEM].indexOf(user.role) === -1) {
-    if (!IS_DEMO_MODE) await supabaseClient.auth.signOut();
+    if (!IS_DEMO_MODE && supabaseClient) await supabaseClient.auth.signOut();
     throw new Error("This account cannot sign in here.");
   }
 
@@ -353,6 +418,47 @@ async function dbCreateAccountFromApplication(fullName, email, preferredUsername
   return { user: pendingRow, status: "new", code: code };
 }
 
+async function dbCheckActivationLinkStatus(email, code) {
+  var cleanEmail = String(email || "").trim().toLowerCase();
+  var cleanCode = String(code || "").trim();
+  if (!cleanEmail) {
+    return { valid: false, alreadyActivated: false, reason: "Missing customer email in activation link." };
+  }
+  var record = null;
+  if (IS_DEMO_MODE) {
+    record = findDemoUserByEmail(cleanEmail);
+  } else if (supabaseClient) {
+    var res = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
+    record = res.data || null;
+  }
+  if (!record) {
+    return { valid: false, alreadyActivated: false, reason: "No pending customer application was found for " + cleanEmail + "." };
+  }
+  if (record.activated) {
+    return {
+      valid: false,
+      alreadyActivated: true,
+      username: record.username || "",
+      full_name: record.full_name || "",
+      reason: "This one-time activation link has already been used and your account is active. Please sign in on the Customer Login page."
+    };
+  }
+  if (cleanCode && String(record.activation_code || "").trim() !== cleanCode) {
+    return {
+      valid: false,
+      alreadyActivated: false,
+      reason: "This activation link or code is no longer valid or has expired."
+    };
+  }
+  return {
+    valid: true,
+    alreadyActivated: false,
+    username: record.username || "",
+    full_name: record.full_name || "",
+    code: record.activation_code || ""
+  };
+}
+
 async function dbActivateCustomerAccount(email, code, newPassword, chosenUsername) {
   var cleanEmail = email.trim().toLowerCase();
   if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
@@ -363,12 +469,16 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     throw new Error("Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
   }
 
+  var pwHash = await hashPassword(newPassword);
+
   if (IS_DEMO_MODE) {
     var users = getDemoUsers();
     for (var i = 0; i < users.length; i++) {
       if (users[i].email === cleanEmail) {
-        if (users[i].activated) throw new Error("This account is already activated. Please log in.");
-        if (users[i].activation_code !== code.trim()) throw new Error("The activation code is not correct.");
+        if (users[i].activated) throw new Error("This one-time activation link has already been used. Your account is already active.");
+        if (!users[i].activation_code || users[i].activation_code !== code.trim()) {
+          throw new Error("The 6-digit activation code is invalid or has already been used.");
+        }
         if (cleanChosenUser) {
           if (await dbIsUsernameTaken(cleanChosenUser, users[i].id)) {
             throw new Error("That username is already taken. Please choose another username.");
@@ -377,7 +487,8 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
         } else if (!users[i].username) {
           users[i].username = await dbGenerateUniqueUsername(users[i].full_name, cleanEmail);
         }
-        users[i].password = newPassword;
+        users[i].password_hash = pwHash;
+        delete users[i].password;
         users[i].activated = true;
         users[i].activation_code = "";
         writeSaved("pigem_users", users);
@@ -391,9 +502,9 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
 
   var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
   if (!existing.data) throw new Error("No application was found for this email.");
-  if (existing.data.activated) throw new Error("This account is already activated. Please log in.");
-  if (String(existing.data.activation_code || "").trim() !== code.trim()) {
-    throw new Error("The 6-digit activation code is not correct.");
+  if (existing.data.activated) throw new Error("This one-time activation link has already been used. Please log in instead.");
+  if (!existing.data.activation_code || String(existing.data.activation_code || "").trim() !== code.trim()) {
+    throw new Error("The 6-digit activation code is invalid or has already been used.");
   }
 
   var finalUsername = existing.data.username || "";
@@ -406,28 +517,38 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     finalUsername = await dbGenerateUniqueUsername(existing.data.full_name, cleanEmail);
   }
 
-  var signUpRes = await supabaseClient.auth.signUp({
-    email: cleanEmail,
-    password: newPassword,
-    options: { data: { full_name: existing.data.full_name, username: finalUsername } }
-  });
-  if (signUpRes.error && signUpRes.error.message.toLowerCase().indexOf("already registered") === -1) {
-    throw new Error(signUpRes.error.message);
-  }
+  var authUserId = existing.data.id;
+  try {
+    var signUpRes = await supabaseClient.auth.signUp({
+      email: cleanEmail,
+      password: newPassword,
+      options: { data: { full_name: existing.data.full_name, username: finalUsername } }
+    });
+    if (signUpRes.data && signUpRes.data.user && signUpRes.data.user.id) {
+      authUserId = signUpRes.data.user.id;
+    }
+  } catch (authErr) {}
 
-  var authUserId = (signUpRes.data && signUpRes.data.user && signUpRes.data.user.id) || existing.data.id;
-  await supabaseClient.from("users").update({
+  var upRes = await supabaseClient.from("users").update({
     id: authUserId,
     username: finalUsername,
+    password_hash: pwHash,
     activated: true,
-    activation_code: "PW:" + newPassword
-  }).eq("email", cleanEmail);
+    activation_code: null
+  }).eq("email", cleanEmail).select("*").maybeSingle();
 
-  await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
+  if (upRes.error) {
+    throw new Error(upRes.error.message);
+  }
+
+  try {
+    await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
+  } catch (e) {}
+
   sessionStore.setItem(SESSION_KEY, authUserId);
-  var user = await dbGetCurrentUser();
+  var user = (upRes.data) || (await dbGetCurrentUser()) || existing.data;
   if (user) await dbAddLoginHistory(user, "account_activated");
-  return user || existing.data;
+  return user;
 }
 
 async function dbIsAccountActivated(email) {
@@ -452,7 +573,7 @@ async function dbAddLoginHistory(user, action) {
   var row = {
     user_id: user.id,
     username: user.username || null,
-    email: user.email,
+    email: user.email || (user.username ? "@" + user.username : ""),
     role: user.role,
     action: action,
     created_at: new Date().toISOString()
@@ -592,13 +713,19 @@ async function dbGetDocumentLink(path) {
   return res.error ? null : res.data.signedUrl;
 }
 
-async function dbAddNotification(note) {
+async function dbAddNotification(note, roleArg, titleArg, messageArg) {
+  var payload = (note && typeof note === "object") ? note : {
+    email: typeof note === "string" ? note : null,
+    role: roleArg || null,
+    title: titleArg || "Notification",
+    message: messageArg || ""
+  };
   var row = {
-    user_id: note.user_id || null,
-    email: note.email || null,
-    role: note.role || null,
-    title: note.title || note.subject || "Notification",
-    message: note.message || note.body || "",
+    user_id: payload.user_id || null,
+    email: payload.email || null,
+    role: payload.role || null,
+    title: payload.title || payload.subject || "Notification",
+    message: payload.message || payload.body || "",
     is_read: false,
     created_at: new Date().toISOString()
   };
@@ -613,13 +740,21 @@ async function dbAddNotification(note) {
 }
 
 async function dbListMyNotifications(user) {
+  if (!user) return [];
   if (IS_DEMO_MODE) {
     return readSaved("pigem_notifications", []).filter(function (n) {
-      return n.user_id === user.id || n.email === user.email || n.role === user.role;
+      return (n.user_id && n.user_id === user.id) ||
+        (user.email && n.email && n.email === user.email) ||
+        (n.role && n.role === user.role);
     });
   }
+  var orParts = [];
+  if (user.id) orParts.push("user_id.eq." + user.id);
+  if (user.email) orParts.push("email.eq." + user.email);
+  if (user.role) orParts.push("role.eq." + user.role);
+  if (orParts.length === 0) return [];
   var res = await supabaseClient.from("notifications").select("*")
-    .or("user_id.eq." + user.id + ",email.eq." + user.email + ",role.eq." + user.role)
+    .or(orParts.join(","))
     .order("created_at", { ascending: false }).limit(50);
   return res.data || [];
 }
@@ -628,7 +763,7 @@ async function dbAddActivity(action, detail) {
   var user = await dbGetCurrentUser();
   var row = {
     actor_username: user && user.username ? user.username : null,
-    actor_email: user ? user.email : "public",
+    actor_email: user ? (user.email || (user.username ? "@" + user.username : "staff")) : "public",
     action: action,
     detail: String(detail || ""),
     created_at: new Date().toISOString()
@@ -1244,9 +1379,10 @@ async function dbStartPasswordReset(email) {
 }
 
 async function dbFinishPasswordReset(email, code, newPw) {
-  if (!newPw || newPw.length < 6) throw new Error("Password must be at least 6 characters.");
+  if (!newPw || newPw.length < 8) throw new Error("Password must be at least 8 characters.");
   var clean = String(email || "").trim().toLowerCase();
   var cleanCode = String(code || "").trim();
+  var pwHash = await hashPassword(newPw);
   var users = getDemoUsers();
   var updatedLocal = false;
 
@@ -1255,8 +1391,10 @@ async function dbFinishPasswordReset(email, code, newPw) {
       if (users[i].reset_code && users[i].reset_code !== cleanCode) {
         throw new Error("Invalid 6-digit verification code.");
       }
-      users[i].password = newPw;
+      users[i].password_hash = pwHash;
+      delete users[i].password;
       users[i].activated = true;
+      users[i].activation_code = "";
       users[i].reset_code = "";
       writeSaved("pigem_users", users);
       updatedLocal = true;
@@ -1272,7 +1410,8 @@ async function dbFinishPasswordReset(email, code, newPw) {
       }
       await supabaseClient.from("users").update({
         activated: true,
-        activation_code: "PW:" + newPw
+        password_hash: pwHash,
+        activation_code: null
       }).eq("email", clean);
 
       if (!updatedLocal) {
@@ -1280,7 +1419,7 @@ async function dbFinishPasswordReset(email, code, newPw) {
           id: existing.data.id,
           username: existing.data.username || (await dbGenerateUniqueUsername(existing.data.full_name || clean, clean)),
           email: clean,
-          password: newPw,
+          password_hash: pwHash,
           full_name: existing.data.full_name || clean,
           role: existing.data.role || "customer",
           active: existing.data.active !== false,
@@ -1459,12 +1598,12 @@ async function dbCreateAgentLink(agentEmail, note) {
   return item;
 }
 
-async function dbCreateAgentInviteLink(creatorEmail, note) {
+async function dbCreateAgentInviteLink(creatorRef, note) {
   var randPart = Math.random().toString(36).slice(2, 8).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
   var code = "INV-" + randPart;
   var item = {
     code: code,
-    agent_email: creatorEmail || "manager@pigem.ph",
+    agent_email: creatorRef || "@manager",
     note: note || "Private One-Time Agent Registration Link",
     active: true,
     created_at: new Date().toISOString()
@@ -1556,17 +1695,18 @@ async function dbHasAdminAccount() {
 }
 
 async function dbCreateUserAccount(fullName, email, password, role, username) {
-  var cleanEmail = email.trim().toLowerCase();
   var targetRole = role || "agent";
-  var cleanUsername = String(username || "").trim().toLowerCase();
+  var cleanEmail = email ? String(email).trim().toLowerCase() : null;
+  var cleanUsername = String(username || "").trim().toLowerCase().replace(/^@/, "");
 
   if (targetRole === "customer") {
-    if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
+    if (!cleanEmail || (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail))) {
       throw new Error("Customer accounts must use a valid @gmail.com email address.");
     }
   } else {
-    if (typeof isStaffBusinessEmail === "function" && !isStaffBusinessEmail(cleanEmail)) {
-      throw new Error("Internal Agent, Manager, and Admin accounts must use an official internal email (such as name@pigem.ph), not a Gmail address.");
+    cleanEmail = null;
+    if (!cleanUsername) {
+      throw new Error("Username is required for internal Admin, Manager, and Agent accounts.");
     }
   }
 
@@ -1578,7 +1718,7 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
       throw new Error("Username '@" + cleanUsername + "' is already taken. Please choose another username.");
     }
   } else {
-    cleanUsername = await dbGenerateUniqueUsername(fullName, cleanEmail);
+    cleanUsername = await dbGenerateUniqueUsername(fullName, cleanEmail || fullName);
   }
 
   if (targetRole === "admin") {
@@ -1593,10 +1733,12 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
   var pwHash = await hashPassword(password || "");
 
   if (!IS_DEMO_MODE && supabaseClient) {
-    var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
-    if (existing.data) throw new Error("Account email is already registered in the database.");
+    if (cleanEmail) {
+      var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
+      if (existing.data) throw new Error("Account email is already registered in the database.");
+    }
 
-    if (targetRole === "customer") {
+    if (targetRole === "customer" && cleanEmail) {
       try {
         var signUpRes = await supabaseClient.auth.signUp({
           email: cleanEmail,
@@ -1615,14 +1757,22 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
       email: cleanEmail,
       full_name: fullName,
       role: targetRole,
+      password_hash: pwHash,
       active: true,
       activated: true,
-      activation_code: "PW:" + pwHash
+      activation_code: null
     };
-    var upRes = await supabaseClient.from("users").upsert(dbRow, { onConflict: "email" });
+    var upRes = cleanEmail
+      ? await supabaseClient.from("users").upsert(dbRow, { onConflict: "email" })
+      : await supabaseClient.from("users").insert(dbRow);
     if (upRes.error) throw new Error(upRes.error.message);
   } else {
-    if (findDemoUserByEmail(cleanEmail)) throw new Error("Account email is already registered.");
+    if (cleanEmail && findDemoUserByEmail(cleanEmail)) {
+      throw new Error("Account email is already registered.");
+    }
+    if (findDemoUserByUsername(cleanUsername)) {
+      throw new Error("Username '@" + cleanUsername + "' is already registered.");
+    }
   }
 
   var u = {
@@ -1633,25 +1783,27 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
     full_name: fullName,
     role: targetRole,
     active: true,
-    activated: true,
-    activation_code: "PW:" + pwHash
+    activated: true
   };
-  var filtered = users.filter(function (x) { return x.email !== cleanEmail; });
+  var filtered = users.filter(function (x) {
+    return (cleanEmail ? x.email !== cleanEmail : true) && String(x.username || "").toLowerCase() !== cleanUsername;
+  });
   filtered.push(u);
   writeSaved("pigem_users", filtered);
-  await dbAddActivity("user_registered", fullName + " (@" + cleanUsername + " / " + cleanEmail + " - " + targetRole + ")");
+  await dbAddActivity("user_registered", fullName + " (@" + cleanUsername + (cleanEmail ? " / " + cleanEmail : "") + " - " + targetRole + ")");
   return u;
 }
 
 async function dbAdminResetUserPassword(userId, newPassword) {
-  if (!newPassword || newPassword.length < 6) {
-    throw new Error("New password must be at least 6 characters.");
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error("New password must be at least 8 characters.");
   }
   var pwHash = await hashPassword(newPassword);
   if (!IS_DEMO_MODE && supabaseClient) {
     var res = await supabaseClient.from("users").update({
       activated: true,
-      activation_code: "PW:" + pwHash
+      password_hash: pwHash,
+      activation_code: null
     }).eq("id", userId).select("*").single();
     if (res.error) throw new Error(res.error.message);
   }
@@ -1660,15 +1812,141 @@ async function dbAdminResetUserPassword(userId, newPassword) {
     if (users[i].id === userId) {
       users[i].password_hash = pwHash;
       delete users[i].password;
-      users[i].activation_code = "PW:" + pwHash;
+      users[i].activation_code = "";
     }
   }
   writeSaved("pigem_users", users);
+  await dbAddActivity("password_reset_by_admin", "Updated password for user ID " + userId);
   return true;
 }
 
 async function dbUpdateUser(userId, changes) {
   return await dbUpdateProfile(userId, changes);
+}
+
+async function dbAdminUpdateStaffAccount(userId, changes) {
+  var updates = {};
+  if (changes.full_name != null) updates.full_name = String(changes.full_name).trim();
+  if (changes.username != null) {
+    var cleanU = String(changes.username).trim().toLowerCase().replace(/^@/, "");
+    if (typeof isValidUsername === "function" && !isValidUsername(cleanU)) {
+      throw new Error("Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+    }
+    if (await dbIsUsernameTaken(cleanU, userId)) {
+      throw new Error("Username '@" + cleanU + "' is already taken.");
+    }
+    updates.username = cleanU;
+  }
+  if (changes.role != null) {
+    if (changes.role === "admin") {
+      throw new Error("Cannot promote an additional account to System Administrator.");
+    }
+    updates.role = changes.role;
+  }
+  if (changes.new_password) {
+    if (typeof validatePasswordStrength === "function") {
+      var pwCheck = validatePasswordStrength(changes.new_password);
+      if (!pwCheck.valid) throw new Error(pwCheck.message);
+    }
+    updates.password_hash = await hashPassword(changes.new_password);
+    updates.activation_code = null;
+  }
+  var updated = await dbUpdateProfile(userId, updates);
+  await dbAddActivity("staff_account_updated", (updates.username ? "@" + updates.username : userId) + " updated");
+  return updated;
+}
+
+async function dbDeleteUserAccount(userId) {
+  if (!userId) throw new Error("Missing user ID.");
+  var target = null;
+  var users = getDemoUsers();
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].id === userId) {
+      target = users[i];
+      break;
+    }
+  }
+  if (!IS_DEMO_MODE && supabaseClient && !target) {
+    var lookup = await supabaseClient.from("users").select("*").eq("id", userId).maybeSingle();
+    target = lookup.data;
+  }
+  if (target && target.role === "admin") {
+    throw new Error("The primary System Administrator account cannot be deleted.");
+  }
+  if (!IS_DEMO_MODE && supabaseClient) {
+    var delRes = await supabaseClient.from("users").delete().eq("id", userId);
+    if (delRes.error) throw new Error(delRes.error.message);
+  }
+  writeSaved("pigem_users", users.filter(function (u) { return u.id !== userId; }));
+  await dbAddActivity("user_deleted", (target && target.username ? "@" + target.username : userId));
+  return true;
+}
+
+async function dbChangeStaffPasswordDirect(userId, currentPassword, newPassword) {
+  if (!userId) throw new Error("Missing user ID.");
+  if (typeof validatePasswordStrength === "function") {
+    var pwCheck = validatePasswordStrength(newPassword);
+    if (!pwCheck.valid) throw new Error(pwCheck.message);
+  }
+  var userObj = null;
+  if (IS_DEMO_MODE) {
+    var list = getDemoUsers();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === userId) { userObj = list[i]; break; }
+    }
+  } else if (supabaseClient) {
+    var res = await supabaseClient.from("users").select("*").eq("id", userId).maybeSingle();
+    userObj = res.data;
+  }
+  if (!userObj) throw new Error("Account not found.");
+  var curHash = await hashPassword(currentPassword || "");
+  var matched = Boolean(
+    (userObj.password_hash && userObj.password_hash === curHash) ||
+    (userObj.password && (userObj.password === currentPassword || userObj.password === curHash)) ||
+    (userObj.activation_code && (
+      userObj.activation_code === ("PW:" + curHash) ||
+      userObj.activation_code === ("PW:" + currentPassword)
+    ))
+  );
+  if (!matched) {
+    throw new Error("Current password is incorrect.");
+  }
+  var nextHash = await hashPassword(newPassword);
+  await dbUpdateProfile(userId, { password_hash: nextHash, activation_code: null });
+  await dbAddActivity("password_changed_self", "@" + (userObj.username || userId));
+  return true;
+}
+
+async function dbRequestStaffPasswordReset(username, note) {
+  var clean = String(username || "").trim().toLowerCase().replace(/^@/, "");
+  if (!clean) throw new Error("Please enter your staff username.");
+  var found = findDemoUserByUsername(clean);
+  if (!found && !IS_DEMO_MODE && supabaseClient) {
+    var res = await supabaseClient.from("users").select("*").ilike("username", clean).maybeSingle();
+    found = res.data || null;
+  }
+  if (!found) {
+    throw new Error("No staff account was found with username '@" + clean + "'.");
+  }
+  if (found.role === "admin") {
+    throw new Error("System Administrator credentials cannot be reset via staff request.");
+  }
+  if (found.role === "customer") {
+    throw new Error("Customer accounts should use the Customer Login Forgot Password option.");
+  }
+  var detailMsg = "Staff user " + (found.full_name || "@" + clean) + " (@" + clean + ", " + String(found.role || "").toUpperCase() + ") requested a password reset." +
+    (note ? " Note: " + note : "");
+  await dbAddNotification({
+    role: "admin",
+    title: "Password Reset Request: @" + clean,
+    message: detailMsg
+  });
+  await dbAddActivity("staff_password_reset_requested", "@" + clean + (note ? " - " + note : ""));
+  return {
+    username: clean,
+    role: found.role,
+    full_name: found.full_name || clean
+  };
 }
 
 async function dbSaveLiveWebsiteContent(content) {
@@ -1877,4 +2155,78 @@ if (typeof apiSendStatusEmail === "undefined") {
       }
     });
   };
+}
+
+async function dbUploadQrSessionFile(sid, side, file) {
+  var cleanSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!cleanSid || !file) throw new Error("Missing QR upload session or file.");
+  var cleanSide = side === "back" ? "back" : "front";
+  var ext = (file.name && file.name.split(".").pop()) || "jpg";
+  var url = "";
+
+  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
+    try {
+      var storagePath = "qr_sessions/" + cleanSid + "/" + cleanSide + "-" + Date.now() + "." + ext;
+      var upRes = await supabaseClient.storage.from("documents").upload(storagePath, file, {
+        cacheControl: "60",
+        upsert: true
+      });
+      if (!upRes.error) {
+        var pub = supabaseClient.storage.from("documents").getPublicUrl(storagePath);
+        if (pub && pub.data && pub.data.publicUrl) {
+          url = pub.data.publicUrl;
+        }
+      }
+    } catch (err) {}
+  }
+
+  if (!url) {
+    url = await new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  var cached = readSaved("pigem_qr_" + cleanSid, {});
+  if (cleanSide === "front") cached.frontUrl = url;
+  else cached.backUrl = url;
+  cached.updatedAt = Date.now();
+  writeSaved("pigem_qr_" + cleanSid, cached);
+  return url;
+}
+
+async function dbListQrSessionFiles(sid) {
+  var cleanSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!cleanSid) return { frontUrl: "", backUrl: "" };
+  var result = { frontUrl: "", backUrl: "" };
+
+  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
+    try {
+      var res = await supabaseClient.storage.from("documents").list("qr_sessions/" + cleanSid, {
+        limit: 20,
+        sortBy: { column: "created_at", order: "desc" }
+      });
+      if (!res.error && Array.isArray(res.data)) {
+        for (var i = 0; i < res.data.length; i++) {
+          var item = res.data[i];
+          if (!item || !item.name) continue;
+          if (!result.frontUrl && item.name.indexOf("front-") === 0) {
+            var p1 = supabaseClient.storage.from("documents").getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
+            if (p1 && p1.data) result.frontUrl = p1.data.publicUrl;
+          }
+          if (!result.backUrl && item.name.indexOf("back-") === 0) {
+            var p2 = supabaseClient.storage.from("documents").getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
+            if (p2 && p2.data) result.backUrl = p2.data.publicUrl;
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  var local = readSaved("pigem_qr_" + cleanSid, {});
+  if (!result.frontUrl && local.frontUrl) result.frontUrl = local.frontUrl;
+  if (!result.backUrl && local.backUrl) result.backUrl = local.backUrl;
+  return result;
 }

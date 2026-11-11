@@ -1,15 +1,12 @@
 // ============================================================================
 // FILE: web/js/apply.js
-// PURPOSE: Customer Fiber Application Wizard Controller
+// PURPOSE: Application Wizard, Mobile QR ID Capture & Pre-Submit Screening
 // ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS:
-//   1. Google reCAPTCHA v2 (`recaptcha/api.js`) -> Verifies human applicant
-//   2. Leaflet 1.9.4 (`leaflet.js`)             -> Dasmarinas map pinning
-//   3. web/js/config.js -> Barangay coordinates, plan list, and validation helpers
-//   4. web/js/db.js     -> Saves application row, uploads Front/Back IDs,
-//                          and generates secured one-time OTP records (5-min expiry)
-//   5. web/js/api.js    -> Triggers background document screening and sends
-//                          confirmation & OTP emails via `/api/notify`
+// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
+//   1. Google reCAPTCHA v2 & Leaflet 1.9.4 -> Anti-bot check and Cavite map pinning
+//   2. web/js/config.js -> 18+ age validation, letters-only name validation, ID regex rules
+//   3. web/js/db.js     -> QR mobile session upload/polling, application save, activation code
+//   4. web/js/api.js    -> Synchronous pre-submit `/api/screen` validation & confirmation email
 // ============================================================================
 
 var currentPanel = 0;
@@ -34,6 +31,7 @@ var SECTION_TITLES = [
   "Subscriber Declaration and Consent"
 ];
 
+// UI State Controller `showReqTip` (params: el, fieldName, detail): Updates modal, tab, or panel state to show req tip.
 function showReqTip(el, fieldName, detail) {
   hideReqTip(el);
   var bubble = document.createElement("span");
@@ -42,12 +40,14 @@ function showReqTip(el, fieldName, detail) {
   el.appendChild(bubble);
 }
 
+// UI State Controller `hideReqTip` (params: el): Updates modal, tab, or panel state to hide req tip.
 function hideReqTip(el) {
   if (!el) return;
   var old = el.querySelector(".req-bubble:not(.error-pop)");
   if (old) old.remove();
 }
 
+// Helper `flashErrorBubble` (params: fieldId, fieldName, message): Executes workflow logic for `flashErrorBubble`.
 function flashErrorBubble(fieldId, fieldName, message) {
   var asterisk = document.querySelector('.req[data-req-for="' + fieldId + '"]');
   if (!asterisk) return;
@@ -65,6 +65,7 @@ function flashErrorBubble(fieldId, fieldName, message) {
   }, 4500);
 }
 
+// UI State Controller `setupDeviceUploadUI`: Updates modal, tab, or panel state to setup device upload ui.
 function setupDeviceUploadUI() {
   var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 768);
   var camBtns = document.querySelectorAll(".phone-only-btn");
@@ -83,8 +84,21 @@ function setupDeviceUploadUI() {
   }
 }
 
+var _qrPollTimer = null;
+var _qrActiveSid = "";
+var _qrLoadedUrls = { front: "", back: "" };
+
+// Helper `initApplyPage`: Executes workflow logic for `initApplyPage`.
 function initApplyPage() {
   var params = new URLSearchParams(window.location.search);
+  var qrUpload = params.get("qr_upload");
+  var qrSid = params.get("sid");
+
+  if (qrUpload === "1" && qrSid) {
+    initMobileQrMode(qrSid);
+    return;
+  }
+
   var urlPlan = params.get("plan");
   var urlAgent = params.get("agent") || params.get("ref");
 
@@ -100,6 +114,8 @@ function initApplyPage() {
 
   renderPlanChoices();
   setupDeviceUploadUI();
+  attachApplyLiveValidation();
+  // Event Listener: Initializes handlers or syncs state when `resize` fires
   window.addEventListener("resize", setupDeviceUploadUI);
 
   if (sessionStorage.getItem("pigem_captcha_verified") !== "true") {
@@ -115,6 +131,138 @@ function initApplyPage() {
   }
 }
 
+// Helper `attachApplyLiveValidation`: Executes workflow logic for `attachApplyLiveValidation`.
+function attachApplyLiveValidation() {
+  var dobEl = document.getElementById("birth_date");
+  if (dobEl && typeof getMaxAdultBirthDate === "function") {
+    dobEl.setAttribute("max", getMaxAdultBirthDate(18));
+    var checkDob = function () {
+      var warn = document.getElementById("birth-date-warn");
+      if (!warn) return;
+      if (!dobEl.value) {
+        warn.hidden = true;
+        warn.textContent = "";
+        return;
+      }
+      var res = validateAdultBirthDate(dobEl.value, 18);
+      if (!res.valid) {
+        warn.hidden = false;
+        warn.textContent = res.message;
+      } else {
+        warn.hidden = true;
+        warn.textContent = "";
+      }
+    };
+    dobEl.addEventListener("change", checkDob);
+    dobEl.addEventListener("blur", checkDob);
+  }
+
+  var nameIds = [
+    { id: "first_name", label: "First Name", allowNA: false },
+    { id: "middle_name", label: "Middle Name", allowNA: true },
+    { id: "last_name", label: "Last Name", allowNA: false }
+  ];
+  var checkNames = function () {
+    var wrap = document.getElementById("name-warn-wrap");
+    var box = document.getElementById("name-warn");
+    if (!wrap || !box) return;
+    var errs = [];
+    for (var i = 0; i < nameIds.length; i++) {
+      var el = document.getElementById(nameIds[i].id);
+      if (el && el.value.trim()) {
+        var r = validatePersonName(el.value, nameIds[i].label, nameIds[i].allowNA);
+        if (!r.valid) errs.push(r.message);
+      }
+    }
+    if (errs.length > 0) {
+      box.textContent = errs.join(" ");
+      wrap.hidden = false;
+    } else {
+      wrap.hidden = true;
+      box.textContent = "";
+    }
+  };
+  for (var n = 0; n < nameIds.length; n++) {
+    var nEl = document.getElementById(nameIds[n].id);
+    if (nEl) {
+      nEl.addEventListener("input", checkNames);
+      nEl.addEventListener("blur", checkNames);
+    }
+  }
+
+  var altPhoneEl = document.getElementById("phone_alt");
+  if (altPhoneEl) {
+    var checkAltPhone = function () {
+      var warn = document.getElementById("phone-alt-warn");
+      if (!warn) return;
+      var raw = altPhoneEl.value.trim();
+      if (!raw) {
+        warn.hidden = true;
+        warn.textContent = "";
+        return;
+      }
+      var digits = raw.replace(/\D/g, "");
+      if (digits.length !== 11 || !FORM_VALIDATOR.isValidMobile(digits)) {
+        warn.hidden = false;
+        warn.textContent = "Secondary mobile number must be 11 digits starting with 09 (or leave blank).";
+      } else {
+        warn.hidden = true;
+        warn.textContent = "";
+      }
+    };
+    altPhoneEl.addEventListener("input", checkAltPhone);
+    altPhoneEl.addEventListener("blur", checkAltPhone);
+  }
+}
+
+// `initMobileQrMode` (params: sid): Initializes the mobile-only QR ID capture view (`?qr_upload=1&sid=...`) directly on the Front/Back camera uploader.
+function initMobileQrMode(sid) {
+  _qrActiveSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  var prog = document.querySelector(".prog");
+  if (prog) prog.style.display = "none";
+  var refBanner = document.getElementById("agent-ref-banner");
+  if (refBanner) refBanner.hidden = true;
+  for (var i = 0; i < TOTAL_PANELS; i++) {
+    var p = document.getElementById("panel-" + i);
+    if (p) p.hidden = true;
+  }
+  var mobilePanel = document.getElementById("panel-qr-mobile");
+  if (mobilePanel) mobilePanel.hidden = false;
+  var badge = document.getElementById("qr-mobile-session-badge");
+  if (badge) badge.textContent = "Session: " + _qrActiveSid;
+}
+
+// Helper `handleMobileQrUpload` (params: side, inputEl): Executes workflow logic for `handleMobileQrUpload`.
+async function handleMobileQrUpload(side, inputEl) {
+  var file = inputEl && inputEl.files && inputEl.files[0];
+  if (!file) return;
+  if (String(file.type || "").indexOf("image/") !== 0) {
+    showAlert("Invalid File", "Please capture or choose a valid image photo.", "warn");
+    inputEl.value = "";
+    return;
+  }
+  var statusEl = document.getElementById(side === "front" ? "qr-front-status" : "qr-back-status");
+  if (statusEl) statusEl.innerHTML = "<b>Uploading...</b> Syncing to your computer...";
+  try {
+    var uploadedUrl = await dbUploadQrSessionFile(_qrActiveSid, side, file);
+    if (statusEl) statusEl.innerHTML = "<b style='color:var(--good)'>Uploaded &amp; Synced!</b>";
+    var box = document.getElementById(side === "front" ? "qr-front-preview-box" : "qr-back-preview-box");
+    var img = document.getElementById(side === "front" ? "qr-front-preview" : "qr-back-preview");
+    if (box && img) {
+      img.src = uploadedUrl;
+      box.hidden = false;
+    }
+    var files = await dbListQrSessionFiles(_qrActiveSid);
+    if (files.frontUrl && files.backUrl) {
+      var doneNote = document.getElementById("qr-mobile-done-note");
+      if (doneNote) doneNote.hidden = false;
+    }
+  } catch (err) {
+    if (statusEl) statusEl.innerHTML = "<span style='color:#b42318;'>Upload failed: " + escapeHtml(err.message || "Try again") + "</span>";
+  }
+}
+
+// UI State Controller `showApplySecurityCaptchaModal`: Updates modal, tab, or panel state to show apply security captcha modal.
 function showApplySecurityCaptchaModal() {
   openPopup(
     '<div class="center" style="padding:10px 4px;">' +
@@ -162,6 +310,7 @@ function showApplySecurityCaptchaModal() {
   }
 }
 
+// Helper `onApplyCaptchaVerified` (params: token): Executes workflow logic for `onApplyCaptchaVerified`.
 async function onApplyCaptchaVerified(token) {
   if (token && typeof apiVerifyCaptcha === "function") {
     var vRes = await apiVerifyCaptcha(token);
@@ -181,6 +330,7 @@ async function onApplyCaptchaVerified(token) {
   }
 }
 
+// Helper `triggerApplyPopupCaptcha`: Executes workflow logic for `triggerApplyPopupCaptcha`.
 function triggerApplyPopupCaptcha() {
   var check = document.getElementById("apply-popup-captcha-check");
   var card = document.getElementById("apply-popup-captcha-card");
@@ -200,6 +350,7 @@ function triggerApplyPopupCaptcha() {
   }, 600);
 }
 
+// UI Renderer `renderPlanChoices`: Builds and updates DOM elements for plan choices.
 function renderPlanChoices() {
   var plans = getActivePlans();
   var box = document.getElementById("plan-choice-box");
@@ -218,6 +369,7 @@ function renderPlanChoices() {
   box.innerHTML = html;
 }
 
+// Helper `pickPlan` (params: planId): Executes workflow logic for `pickPlan`.
 function pickPlan(planId) {
   selectedPlanId = String(planId);
   renderPlanChoices();
@@ -225,6 +377,7 @@ function pickPlan(planId) {
 
 var applyCaptchaVerified = false;
 
+// Helper `triggerApplyCaptcha`: Executes workflow logic for `triggerApplyCaptcha`.
 function triggerApplyCaptcha() {
   if (applyCaptchaVerified) return;
   var check = document.getElementById("apply-captcha-check");
@@ -243,29 +396,98 @@ function triggerApplyCaptcha() {
   }, 600);
 }
 
+// Helper `applyQrRemoteFile` (params: side, url): Executes workflow logic for `applyQrRemoteFile`.
+async function applyQrRemoteFile(side, url) {
+  if (!url || _qrLoadedUrls[side] === url) return;
+  _qrLoadedUrls[side] = url;
+  try {
+    var blob;
+    if (url.indexOf("data:") === 0) {
+      var parts = url.split(",");
+      var mime = (parts[0].match(/:(.*?);/) || [])[1] || "image/jpeg";
+      var bin = atob(parts[1]);
+      var arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      blob = new Blob([arr], { type: mime });
+    } else {
+      var resp = await fetch(url);
+      if (!resp.ok) return;
+      blob = await resp.blob();
+    }
+    var file = new File([blob], "phone-id-" + side + ".jpg", { type: blob.type || "image/jpeg" });
+    if (side === "front") {
+      selectedFrontFile = file;
+      var fnF = document.getElementById("id-front-filename");
+      if (fnF) fnF.innerHTML = "<b style='color:var(--good)'>Received from Phone:</b> Front ID Photo";
+      var boxF = document.getElementById("id-front-preview-box");
+      var imgF = document.getElementById("id-front-preview");
+      if (boxF && imgF) { imgF.src = url; boxF.hidden = false; }
+      var qfStat = document.getElementById("qr-sync-front-state");
+      if (qfStat) qfStat.innerHTML = "<b style='color:var(--good)'>Received!</b>";
+    } else {
+      selectedBackFile = file;
+      var fnB = document.getElementById("id-back-filename");
+      if (fnB) fnB.innerHTML = "<b style='color:var(--good)'>Received from Phone:</b> Back ID Photo";
+      var boxB = document.getElementById("id-back-preview-box");
+      var imgB = document.getElementById("id-back-preview");
+      if (boxB && imgB) { imgB.src = url; boxB.hidden = false; }
+      var qbStat = document.getElementById("qr-sync-back-state");
+      if (qbStat) qbStat.innerHTML = "<b style='color:var(--good)'>Received!</b>";
+    }
+    var warnEl = document.getElementById("id-screen-warn");
+    if (warnEl) { warnEl.hidden = true; warnEl.innerHTML = ""; }
+  } catch (e) {}
+}
+
+// Helper `stopPhoneQrPolling`: Executes workflow logic for `stopPhoneQrPolling`.
+function stopPhoneQrPolling() {
+  if (_qrPollTimer) {
+    clearInterval(_qrPollTimer);
+    _qrPollTimer = null;
+  }
+}
+
+// `openPhoneQrModal`: Opens the QR code modal containing the session link and polls Supabase until mobile photos arrive.
 function openPhoneQrModal() {
-  var currentUrl = window.location.href;
+  stopPhoneQrPolling();
+  if (!_qrActiveSid) {
+    _qrActiveSid = "QR-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
+  }
+  var baseUrl = window.location.href.split("?")[0].split("#")[0];
+  var currentUrl = baseUrl + "?qr_upload=1&sid=" + encodeURIComponent(_qrActiveSid);
   var qrImgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(currentUrl);
 
   openPopup(
     '<div class="center">' +
-      '<h3>Continue on Phone</h3>' +
-      '<p class="small muted mt">Scan this QR code with your phone camera to open this application form directly on your phone and take photos of your Valid ID.</p>' +
+      '<h3>Continue ID Upload on Phone</h3>' +
+      '<p class="small muted mt">Scan this QR code with your phone to capture ONLY the Front &amp; Back photos of your Valid ID without restarting your application.</p>' +
       '<div class="mt-big" style="background:#fff; padding:16px; border-radius:12px; display:inline-block; border:1px solid var(--line);">' +
         '<img src="' + qrImgUrl + '" alt="Scan with Phone" style="width:180px; height:180px; display:block;" />' +
       '</div>' +
-      '<div class="small muted mt-big">Or open this link on your mobile browser:</div>' +
+      '<div class="notice mt" style="text-align:left;font-size:13px;">' +
+        '<div>Front ID Status: <span id="qr-sync-front-state">' + (selectedFrontFile ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
+        '<div class="mt">Back ID Status: <span id="qr-sync-back-state">' + (selectedBackFile ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
+      '</div>' +
+      '<div class="small muted mt">Or open this link on your mobile browser:</div>' +
       '<input type="text" readonly value="' + currentUrl + '" style="font-size:12px; text-align:center; margin-top:6px;" onclick="this.select()" />' +
       '<div class="row mt-big" style="justify-content:center">' +
-        '<button type="button" class="btn btn-red" onclick="closePopup()">OK, Got It</button>' +
+        '<button type="button" class="btn btn-red" onclick="stopPhoneQrPolling(); closePopup()">Done / Close</button>' +
       '</div>' +
     '</div>'
   );
+
+  _qrPollTimer = setInterval(async function () {
+    if (!document.getElementById("popup-modal")) {
+      stopPhoneQrPolling();
+      return;
+    }
+    var files = await dbListQrSessionFiles(_qrActiveSid);
+    if (files.frontUrl) await applyQrRemoteFile("front", files.frontUrl);
+    if (files.backUrl) await applyQrRemoteFile("back", files.backUrl);
+  }, 2500);
 }
 
-// ============================================================
-// Secured One-Time Email OTP & Mobile OTP Verification (Panel 2)
-// ============================================================
+// Helper `sendContactOtp`: Executes workflow logic for `sendContactOtp`.
 async function sendContactOtp() {
   var email = document.getElementById("email").value.trim().toLowerCase();
 
@@ -320,6 +542,7 @@ async function sendContactOtp() {
   btn.textContent = "Resend Email OTP";
 }
 
+// Helper `verifyContactOtp`: Executes workflow logic for `verifyContactOtp`.
 function verifyContactOtp() {
   var email = document.getElementById("email").value.trim().toLowerCase();
   var entered = (document.getElementById("contact_otp_code").value || "").trim();
@@ -349,6 +572,7 @@ function verifyContactOtp() {
   }
 }
 
+// Action Handler `updateIdFormatHint`: Validates inputs and persists changes to update id format hint.
 function updateIdFormatHint() {
   var type = document.getElementById("id_type").value;
   var hintEl = document.getElementById("id-format-hint");
@@ -367,10 +591,20 @@ function updateIdFormatHint() {
   hintEl.textContent = hints[type] || "";
 }
 
-// Handle Valid ID File Selection (Front and Back) with Immediate Duplicate File Detection
+// Helper `handleIdFileSelect` (params: side, inputEl): Executes workflow logic for `handleIdFileSelect`.
 function handleIdFileSelect(side, inputEl) {
   var file = inputEl && inputEl.files && inputEl.files[0];
   if (!file) return;
+
+  if (String(file.type || "").indexOf("image/") !== 0 || file.size < 4096) {
+    inputEl.value = "";
+    showAlert(
+      "Invalid ID Photo",
+      "Please select a clear, full-resolution image file (JPG or PNG, at least 4 KB) showing your Valid Government ID.",
+      "warn"
+    );
+    return;
+  }
 
   var otherFile = side === "front" ? selectedBackFile : selectedFrontFile;
   if (otherFile && otherFile.size === file.size && otherFile.name === file.name) {
@@ -381,6 +615,12 @@ function handleIdFileSelect(side, inputEl) {
       "warn"
     );
     return;
+  }
+
+  var warnEl = document.getElementById("id-screen-warn");
+  if (warnEl) {
+    warnEl.hidden = true;
+    warnEl.innerHTML = "";
   }
 
   if (side === "front") {
@@ -406,6 +646,7 @@ function handleIdFileSelect(side, inputEl) {
   }
 }
 
+// UI State Controller `showPanel` (params: index): Updates modal, tab, or panel state to show panel.
 function showPanel(index) {
   currentPanel = index;
   for (var i = 0; i < TOTAL_PANELS; i++) {
@@ -426,9 +667,11 @@ function showPanel(index) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+// Validator/Check `validateCurrentPanel`: Evaluates rule (validate current panel) and returns result.
 function validateCurrentPanel() {
   var firstInvalidEl = null;
 
+  // Helper `markInvalid` (params: fieldId, name, msg, elToFocus): Executes workflow logic for `markInvalid`.
   function markInvalid(fieldId, name, msg, elToFocus) {
     flashErrorBubble(fieldId, name, msg);
     if (!firstInvalidEl) {
@@ -450,13 +693,41 @@ function validateCurrentPanel() {
     var last = document.getElementById("last_name").value.trim();
     var birth = document.getElementById("birth_date").value;
 
-    if (!first) markInvalid("first_name", "First Name", "Please enter your first name.");
     if (!middle) {
       middle = "N/A";
       document.getElementById("middle_name").value = "N/A";
     }
-    if (!last) markInvalid("last_name", "Last Name", "Please enter your last name.");
-    if (!birth) markInvalid("birth_date", "Birth Date", "Please select your birth date.");
+
+    var fCheck = validatePersonName(first, "First Name", false);
+    var mCheck = validatePersonName(middle, "Middle Name", true);
+    var lCheck = validatePersonName(last, "Last Name", false);
+    var dobCheck = validateAdultBirthDate(birth, 18);
+
+    var nameErrs = [];
+    if (!fCheck.valid) { markInvalid("first_name", "First Name", fCheck.message); nameErrs.push(fCheck.message); }
+    if (!mCheck.valid) { markInvalid("middle_name", "Middle Name", mCheck.message); nameErrs.push(mCheck.message); }
+    if (!lCheck.valid) { markInvalid("last_name", "Last Name", lCheck.message); nameErrs.push(lCheck.message); }
+
+    var nWrap = document.getElementById("name-warn-wrap");
+    var nBox = document.getElementById("name-warn");
+    if (nWrap && nBox) {
+      if (nameErrs.length > 0) {
+        nBox.textContent = nameErrs.join(" ");
+        nWrap.hidden = false;
+      } else {
+        nWrap.hidden = true;
+        nBox.textContent = "";
+      }
+    }
+
+    var dobWarn = document.getElementById("birth-date-warn");
+    if (!dobCheck.valid) {
+      markInvalid("birth_date", "Birth Date (18+ Required)", dobCheck.message);
+      if (dobWarn) { dobWarn.hidden = false; dobWarn.textContent = dobCheck.message; }
+    } else if (dobWarn) {
+      dobWarn.hidden = true;
+      dobWarn.textContent = "";
+    }
 
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -469,9 +740,22 @@ function validateCurrentPanel() {
   if (currentPanel === 2) {
     var email = document.getElementById("email").value.trim().toLowerCase();
     var phone = document.getElementById("phone").value.trim().replace(/\D/g, "");
+    var phoneAltRaw = document.getElementById("phone_alt").value.trim();
+    var phoneAltDigits = phoneAltRaw.replace(/\D/g, "");
 
     if (!email || !isCustomerGmail(email)) markInvalid("email", "Gmail Address", "Enter a valid @gmail.com address.");
-    if (!phone || phone.length !== 11) markInvalid("phone", "Mobile Number", "Enter an 11-digit mobile number.");
+    if (!FORM_VALIDATOR.isValidMobile(phone)) markInvalid("phone", "Mobile Number", "Enter a valid 11-digit mobile number starting with 09.");
+
+    var altWarn = document.getElementById("phone-alt-warn");
+    if (phoneAltRaw && (phoneAltDigits.length !== 11 || !FORM_VALIDATOR.isValidMobile(phoneAltDigits))) {
+      var altMsg = "Secondary mobile number must be an 11-digit number starting with 09 (or leave blank).";
+      markInvalid("phone_alt", "Secondary Mobile Number", altMsg, document.getElementById("phone_alt"));
+      if (altWarn) { altWarn.hidden = false; altWarn.textContent = altMsg; }
+    } else if (altWarn) {
+      altWarn.hidden = true;
+      altWarn.textContent = "";
+    }
+
     if (!isContactOtpVerified || verifiedEmailAddress !== email) {
       markInvalid("contact_otp", "Email OTP", "Please send and verify your 6-digit Email OTP code.", document.getElementById("btn-send-otp"));
     }
@@ -550,6 +834,7 @@ function validateCurrentPanel() {
   return true;
 }
 
+// Helper `nextPanel`: Executes workflow logic for `nextPanel`.
 function nextPanel() {
   if (!validateCurrentPanel()) return;
   if (currentPanel < TOTAL_PANELS - 1) {
@@ -557,15 +842,14 @@ function nextPanel() {
   }
 }
 
+// Helper `prevPanel`: Executes workflow logic for `prevPanel`.
 function prevPanel() {
   if (currentPanel > 0) {
     showPanel(currentPanel - 1);
   }
 }
 
-// ============================================================
-// Interactive Map Pinning & Address Auto-Fill
-// ============================================================
+// Helper `initMapPin`: Executes workflow logic for `initMapPin`.
 function initMapPin() {
   if (!leafletMap) {
     var lat = parseFloat(document.getElementById("lat").value) || CONFIG.MAP_CENTER[0];
@@ -594,6 +878,7 @@ function initMapPin() {
   }, 150);
 }
 
+// Action Handler `updatePinAndAddress` (params: lat, lng): Validates inputs and persists changes to update pin and address.
 async function updatePinAndAddress(lat, lng) {
   document.getElementById("lat").value = lat.toFixed(6);
   document.getElementById("lng").value = lng.toFixed(6);
@@ -651,6 +936,7 @@ async function updatePinAndAddress(lat, lng) {
   }
 }
 
+// Helper `searchMapAddress`: Executes workflow logic for `searchMapAddress`.
 async function searchMapAddress() {
   var q = document.getElementById("map-search").value.trim();
   if (!q) return;
@@ -694,6 +980,7 @@ async function searchMapAddress() {
   await updatePinAndAddress(lat, lng);
 }
 
+// Helper `useCurrentLocation`: Executes workflow logic for `useCurrentLocation`.
 function useCurrentLocation() {
   initMapPin();
   var statusEl = document.getElementById("map-status");
@@ -710,6 +997,7 @@ function useCurrentLocation() {
   }
   if (statusEl) statusEl.textContent = "Detecting current GPS location...";
 
+  // Helper `onGeoSuccess` (params: pos): Executes workflow logic for `onGeoSuccess`.
   function onGeoSuccess(pos) {
     if (btn) {
       btn.disabled = false;
@@ -725,6 +1013,7 @@ function useCurrentLocation() {
     updatePinAndAddress(lat, lng);
   }
 
+  // Helper `onGeoError`: Executes workflow logic for `onGeoError`.
   function onGeoError() {
     navigator.geolocation.getCurrentPosition(
       onGeoSuccess,
@@ -747,9 +1036,7 @@ function useCurrentLocation() {
   );
 }
 
-// ============================================================
-// Customer Submission Progress (3 Steps) & Post-Submission Notice
-// ============================================================
+// Helper `advanceLoadingStep` (params: stepNum): Executes workflow logic for `advanceLoadingStep`.
 function advanceLoadingStep(stepNum) {
   for (var i = 1; i <= 3; i++) {
     var el = document.getElementById("step-ld-" + i);
@@ -767,6 +1054,7 @@ function advanceLoadingStep(stepNum) {
   }
 }
 
+// Action Handler `submitRegistration`: Validates inputs and persists changes to submit registration.
 async function submitRegistration() {
   if (!validateCurrentPanel()) return;
 
@@ -789,25 +1077,66 @@ async function submitRegistration() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 
   try {
-    // Step 1: Transferring Application Information
-    advanceLoadingStep(1);
-    await new Promise(function (r) { setTimeout(r, 350); });
 
-    // Step 2: Uploading Valid ID to Secure Storage
+    advanceLoadingStep(1);
+    var screeningActive = Boolean(getSystemSettings().ai_enabled);
+    var preScreenRes = null;
+
+    if (screeningActive && !IS_DEMO_MODE && typeof apiRunScreening === "function") {
+      preScreenRes = await apiRunScreening(selectedFrontFile, {
+        full_name: fullName,
+        first_name: first,
+        middle_name: middle,
+        last_name: last,
+        birth_date: birth,
+        id_type: idType,
+        id_number: idNumber
+      }, selectedBackFile);
+
+      if (preScreenRes && preScreenRes.status !== "offline") {
+        var ocrInfo = preScreenRes.ocr || {};
+        var qualityInfo = preScreenRes.quality || {};
+        var isNotGovId = ocrInfo.is_valid_government_id === false;
+        var isSevereQuality = Boolean(qualityInfo.severe);
+
+        if (isNotGovId || isSevereQuality) {
+          var rejectReason = isNotGovId
+            ? ("The uploaded Front ID image does not appear to be a valid government-issued ID" +
+              (ocrInfo.detected_document_type ? " (detected: " + ocrInfo.detected_document_type + ")" : "") +
+              ". Please upload clear photos of an authentic government ID before submitting.")
+            : ("Your uploaded ID photo failed quality screening (" +
+              ((qualityInfo.issues && qualityInfo.issues.length) ? qualityInfo.issues.join("; ") : "too blurry, dark, or unreadable") +
+              "). Please retake a sharp, well-lit photo before submitting.");
+
+          if (loadingScreen) loadingScreen.hidden = true;
+          showPanel(4);
+          var warnBox = document.getElementById("id-screen-warn");
+          if (warnBox) {
+            warnBox.innerHTML = "<b>Valid ID Check Failed:</b> " + escapeHtml(rejectReason);
+            warnBox.hidden = false;
+          }
+          showAlert("Valid ID Verification Failed", escapeHtml(rejectReason), "bad");
+          return;
+        }
+      }
+    }
+
     advanceLoadingStep(2);
     var accountInfo = await dbCreateAccountFromApplication(fullName, email);
     var frontPath = await dbUploadDocument(selectedFrontFile, accountInfo.user.id || "public", "id-front");
     var backPath = await dbUploadDocument(selectedBackFile, accountInfo.user.id || "public", "id-back");
 
-    var screening = {
-      preliminary: true,
-      state: getSystemSettings().ai_enabled ? "queued" : "paused",
-      phase: getSystemSettings().ai_enabled ? "Queued for Screening" : "Manual Review Active",
-      eta_seconds: getSystemSettings().ai_enabled ? 35 : 0,
-      advisory: getSystemSettings().ai_enabled
-        ? "Screening in progress. Original submission is available below."
-        : "Manual document review is active."
-    };
+    var screening = preScreenRes && preScreenRes.status !== "offline"
+      ? Object.assign({}, preScreenRes, { preliminary: false, state: "completed", phase: preScreenRes.overall_status || "Screened" })
+      : {
+          preliminary: true,
+          state: screeningActive ? "queued" : "paused",
+          phase: screeningActive ? "Queued for Screening" : "Manual Review Active",
+          eta_seconds: screeningActive ? 35 : 0,
+          advisory: screeningActive
+            ? "Screening in progress. Original submission is available below."
+            : "Manual document review is active."
+        };
 
     var addrData = {
       house_no: document.getElementById("house_no").value.trim(),
@@ -824,7 +1153,6 @@ async function submitRegistration() {
       landmark: document.getElementById("landmark").value.trim()
     };
 
-    // Step 3: Generating Official Reference Number
     advanceLoadingStep(3);
     var saved = await dbCreateApplication(Object.assign({}, addrData, {
       customer_id: accountInfo.user.id,
@@ -854,7 +1182,6 @@ async function submitRegistration() {
       screening: screening
     }));
 
-    var screeningActive = Boolean(getSystemSettings().ai_enabled);
     if (!screeningActive) {
       var pausedScreening = Object.assign({}, screening, {
         state: "paused",
@@ -868,7 +1195,7 @@ async function submitRegistration() {
       if (typeof dbNotifyScreeningUnavailable === "function") {
         await dbNotifyScreeningUnavailable(saved.ref_no, fullName, "Original uploaded ID copies are ready for manual verification.");
       }
-    } else if (typeof apiStartBackgroundScreening === "function") {
+    } else if (!(preScreenRes && preScreenRes.status !== "offline") && typeof apiStartBackgroundScreening === "function") {
       apiStartBackgroundScreening(saved.id).then(async function (bgRes) {
         if (!bgRes || (!bgRes.queued && !bgRes.screened)) {
           var fallbackScreening = Object.assign({}, screening, {
@@ -909,20 +1236,30 @@ async function submitRegistration() {
       }
     }
 
-    // Post-submission popup WITHOUT a direct redirect button to activate.html;
-    // the customer must open the activation link sent to their email notification.
+    var assignedUname = (accountInfo.user && accountInfo.user.username) ? accountInfo.user.username : "";
+    var isAlreadyActive = accountInfo.status === "active";
+    var directActivateHref = "activate.html?email=" + encodeURIComponent(email) +
+      "&code=" + encodeURIComponent(accountInfo.code || "") +
+      "&username=" + encodeURIComponent(assignedUname);
+
     openPopup(
       '<div class="center">' +
         '<h3>Application Submitted!</h3>' +
         '<p class="small muted mt">Your Application Reference Number is:</p>' +
         '<div class="big-ref">' + escapeHtml(saved.ref_no) + '</div>' +
-        '<div class="notice mt" style="text-align:left;">' +
-          '<b>Check Your Email Notification:</b><br>' +
-          'We sent your confirmation details, 6-digit Activation OTP code, and Account Activation link to <b>' + escapeHtml(email) + '</b>. ' +
-          'Please open your email inbox (or Spam folder) and use the activation link inside the email to activate your Customer Account.' +
+        '<div class="notice mt" style="text-align:left;line-height:1.6;">' +
+          '<b>Account Summary:</b><br>' +
+          'Customer Email: <b>' + escapeHtml(email) + '</b><br>' +
+          (assignedUname ? ('Assigned Username: <b>@' + escapeHtml(assignedUname) + '</b><br>') : '') +
+          (isAlreadyActive
+            ? 'Your Customer Account is already activated. Sign in anytime to track your application.'
+            : 'We also emailed your one-time activation link to <b>' + escapeHtml(email) + '</b>. Create your Customer Account password now using the button below to track your application!') +
         '</div>' +
-        '<div class="row mt-big" style="justify-content:center">' +
-          '<a class="btn btn-red" href="index.html">Return to Home</a>' +
+        '<div class="row mt-big" style="justify-content:center;gap:10px;flex-wrap:wrap;">' +
+          (isAlreadyActive
+            ? '<a class="btn btn-red" href="login.html">Go to Customer Login</a>'
+            : '<a class="btn btn-red" href="' + directActivateHref + '">Create Password &amp; Activate Account</a>') +
+          '<a class="btn btn-outline" href="index.html">Return to Home</a>' +
         '</div>' +
       '</div>'
     );

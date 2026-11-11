@@ -1,8 +1,13 @@
 // ============================================================================
 // FILE: web/js/login.js
-// PURPOSE: Unified Role-Based Sign-In, Remember Me, Failed-Attempt Field Reset,
-//          & 3-Tab Account Recovery Modal (Password, Username, Email Address)
-//          with 6-Square PIN Input and 5-Minute Countdown Timer
+// PURPOSE: Role-Based Sign-In (Customer Gmail/Username vs. Staff Username-Only)
+// ----------------------------------------------------------------------------
+// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
+//   1. Inline Portal Config (`window.LOGIN_SYSTEM`) -> Customer / Staff / Admin gatekeeper
+//   2. Google reCAPTCHA v2 (`recaptcha/api.js`)     -> Anti-bot sign-in verification
+//   3. web/js/config.js -> Password rules, `attachEnterKeyNavigation` & modal helpers
+//   4. web/js/db.js     -> `dbSignIn`, `dbRequestStaffPasswordReset`, OTP password recovery
+//   5. web/js/api.js    -> `apiVerifyCaptcha` and `apiSendOtpEmail`
 // ============================================================================
 
 var loginCaptchaVerified = false;
@@ -18,6 +23,7 @@ var _recoveryState = {
   remainingSec: 300
 };
 
+// Data Accessor `getHomeForRole` (params: role): Retrieves or refreshes data to get home for role.
 function getHomeForRole(role) {
   var r = String(role || "").toLowerCase();
   if (r === "admin") return (window.ROOT || "") + "admin.html";
@@ -41,6 +47,7 @@ window.onLoginCaptchaExpired = function () {
   loginCaptchaVerified = false;
 };
 
+// UI Renderer `renderLoginCaptchaBox`: Builds and updates DOM elements for login captcha box.
 function renderLoginCaptchaBox() {
   var box = document.getElementById("login-captcha-box");
   if (!box) return;
@@ -48,6 +55,7 @@ function renderLoginCaptchaBox() {
   var siteKey = CONFIG.RECAPTCHA_SITE_KEY;
   box.innerHTML = '<div id="g-login-recaptcha" class="g-recaptcha" data-sitekey="' + siteKey + '" data-callback="onLoginCaptchaVerified" data-expired-callback="onLoginCaptchaExpired"></div>';
 
+  // Helper `tryRenderGoogle`: Executes workflow logic for `tryRenderGoogle`.
   function tryRenderGoogle() {
     if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
       try {
@@ -81,6 +89,7 @@ function renderLoginCaptchaBox() {
   }
 }
 
+// UI Renderer `renderLoginCaptchaFallback` (params: box): Builds and updates DOM elements for login captcha fallback.
 function renderLoginCaptchaFallback(box) {
   if (!box) return;
   box.innerHTML =
@@ -96,6 +105,7 @@ function renderLoginCaptchaFallback(box) {
     '</div>';
 }
 
+// Helper `triggerLoginCaptcha`: Executes workflow logic for `triggerLoginCaptcha`.
 function triggerLoginCaptcha() {
   if (loginCaptchaVerified) return;
   var check = document.getElementById("login-captcha-check");
@@ -114,6 +124,7 @@ function triggerLoginCaptcha() {
   }, 450);
 }
 
+// Helper `resetLoginFieldsAndCaptcha`: Executes workflow logic for `resetLoginFieldsAndCaptcha`.
 function resetLoginFieldsAndCaptcha() {
   var emailEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
@@ -129,6 +140,7 @@ function resetLoginFieldsAndCaptcha() {
   renderLoginCaptchaBox();
 }
 
+// Data Accessor `loadRememberedIdentifier`: Retrieves or refreshes data to load remembered identifier.
 function loadRememberedIdentifier() {
   var sys = window.SYSTEM || "customer";
   var saved = localStorage.getItem("pigem_remember_" + sys);
@@ -140,6 +152,7 @@ function loadRememberedIdentifier() {
   }
 }
 
+// Action Handler `saveRememberedIdentifier` (params: identifier): Validates inputs and persists changes to save remembered identifier.
 function saveRememberedIdentifier(identifier) {
   var sys = window.SYSTEM || "customer";
   var remEl = document.getElementById("remember-me");
@@ -150,6 +163,7 @@ function saveRememberedIdentifier(identifier) {
   }
 }
 
+// Validator/Check `checkAdminProvisionState`: Evaluates rule (check admin provision state) and returns result.
 async function checkAdminProvisionState() {
   if (window.SYSTEM !== "admin" || typeof dbHasAdminAccount !== "function") return;
   var box = document.getElementById("admin-provision-box");
@@ -158,20 +172,22 @@ async function checkAdminProvisionState() {
   box.hidden = Boolean(hasAdmin);
 }
 
+// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", function () {
   loadRememberedIdentifier();
   renderLoginCaptchaBox();
   checkAdminProvisionState();
 });
 
+// UI State Controller `showLockoutPopup`: Updates modal, tab, or panel state to show lockout popup.
 function showLockoutPopup() {
   var isCustomer = (window.SYSTEM === "customer");
   var msgHtml = isCustomer
     ? "You have reached " + MAX_ATTEMPTS + " failed login attempts. Please use Account Recovery to verify your identity via OTP."
-    : "You have reached " + MAX_ATTEMPTS + " failed login attempts. Please contact the System Administrator or refresh the page to try again.";
+    : "You have reached " + MAX_ATTEMPTS + " failed login attempts.<br><br><b>Need Help Signing In?</b><br>Contact the System Administrator at Tel: <b>(046) 458-0908</b> or Hotline: <b>101-733</b>, or submit a Password Reset Request below.";
   var actionBtn = isCustomer
     ? '<button class="btn btn-red" onclick="closePopup(); openForgotModal();">Recover Account</button>'
-    : "";
+    : '<button class="btn btn-red" onclick="closePopup(); openStaffResetRequestModal();">Request Password Reset</button>';
 
   openPopup(
     "<h3>Sign-In Temporarily Locked</h3>" +
@@ -183,11 +199,60 @@ function showLockoutPopup() {
   );
 }
 
-// Processes sign-in form submission; clears ALL fields and resets CAPTCHA when login fails.
+// `openStaffResetRequestModal`: Opens the internal Forgot Password request modal showing Administrator contact info on the Staff Login page.
+function openStaffResetRequestModal() {
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Staff Password Reset Request</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<p class="small muted">Internal Agents and Managers use username-only accounts. Submit your username below to notify the System Administrator, or call <b>(046) 458-0908</b>.</p>' +
+    '<form class="mt" onsubmit="submitStaffResetRequest(event)">' +
+      '<label for="staff-reset-username">Your Staff Username</label>' +
+      '<input id="staff-reset-username" type="text" placeholder="e.g. maria_santos" required>' +
+      '<label for="staff-reset-note" class="mt">Optional Note / Contact Extension</label>' +
+      '<input id="staff-reset-note" type="text" placeholder="e.g. Forgot password - Cavite Desk">' +
+      '<div id="staff-reset-feedback" class="mt"></div>' +
+      '<button type="submit" id="btn-staff-reset-submit" class="btn btn-red btn-full mt-big">Send Request to System Admin</button>' +
+    '</form>'
+  );
+}
+
+// `submitStaffResetRequest` (params: event): Submits a forgot-password request by username to notify the System Administrator in-system.
+async function submitStaffResetRequest(event) {
+  event.preventDefault();
+  var unameEl = document.getElementById("staff-reset-username");
+  var noteEl = document.getElementById("staff-reset-note");
+  var fbEl = document.getElementById("staff-reset-feedback");
+  var btn = document.getElementById("btn-staff-reset-submit");
+  var uname = unameEl ? unameEl.value.trim() : "";
+  var note = noteEl ? noteEl.value.trim() : "";
+  if (fbEl) fbEl.innerHTML = "";
+  btn.disabled = true;
+  btn.textContent = "Sending Request...";
+  try {
+    var info = await dbRequestStaffPasswordReset(uname, note);
+    if (fbEl) {
+      fbEl.innerHTML = '<div class="notice ok"><b>Request Sent!</b> System Administrator has been notified to reset the password for <b>@' + escapeHtml(info.username) + '</b>. You may also reach Admin Support at Tel: <b>(046) 458-0908</b>.</div>';
+    }
+  } catch (err) {
+    if (fbEl) {
+      fbEl.innerHTML = '<div class="notice bad">' + escapeHtml(err.message || "Could not submit reset request.") + '</div>';
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Send Request to System Admin";
+  }
+}
+
+// Helper `handleLogin` (params: event): Executes workflow logic for `handleLogin`.
 async function handleLogin(event) {
   event.preventDefault();
 
-  if (loginAttempts >= MAX_ATTEMPTS) {
+  var isAdmin = (window.SYSTEM === "admin");
+  var isStaff = (window.SYSTEM === "staff");
+
+  if (!isAdmin && loginAttempts >= MAX_ATTEMPTS) {
     showLockoutPopup();
     return;
   }
@@ -197,24 +262,31 @@ async function handleLogin(event) {
   var identifier = (emailEl ? emailEl.value : "").trim().toLowerCase();
   var password = pwEl ? pwEl.value : "";
 
-  if (identifier.indexOf("@") !== -1) {
-    if (window.SYSTEM === "customer") {
+  if (isAdmin || isStaff) {
+    if (identifier.indexOf("@") !== -1) {
+      resetLoginFieldsAndCaptcha();
+      showAlert("Username Required", "Internal Admin, Manager, and Agent accounts sign in by Username only.", "warn");
+      return;
+    }
+    var cleanU = identifier.replace(/^@/, "");
+    if (typeof isValidUsername === "function" && !isValidUsername(cleanU)) {
+      resetLoginFieldsAndCaptcha();
+      showAlert("Invalid Username", "Please enter your valid username (3 to 30 characters: letters, numbers, dots, underscores).", "warn");
+      return;
+    }
+    identifier = cleanU;
+  } else {
+    if (identifier.indexOf("@") !== -1) {
       if (typeof isCustomerGmail === "function" && !isCustomerGmail(identifier)) {
         resetLoginFieldsAndCaptcha();
         showAlert("Gmail or Username Required", "Customer Login accepts Customer usernames or @gmail.com email addresses only.", "warn");
         return;
       }
-    } else {
-      if (typeof isCustomerGmail === "function" && isCustomerGmail(identifier)) {
-        resetLoginFieldsAndCaptcha();
-        showAlert("Internal Account Required", "Gmail accounts are reserved for Customers. Please enter your internal username or @pigem.ph email.", "warn");
-        return;
-      }
+    } else if (typeof isValidUsername === "function" && !isValidUsername(identifier.replace(/^@/, ""))) {
+      resetLoginFieldsAndCaptcha();
+      showAlert("Invalid Username", "Please enter a valid username (3 to 30 characters) or @gmail.com email address.", "warn");
+      return;
     }
-  } else if (typeof isValidUsername === "function" && !isValidUsername(identifier)) {
-    resetLoginFieldsAndCaptcha();
-    showAlert("Invalid Username", "Please enter a valid username (3 to 30 characters: letters, numbers, dots, underscores) or email address.", "warn");
-    return;
   }
 
   if (!loginCaptchaVerified && typeof grecaptcha !== "undefined" && grecaptcha.getResponse) {
@@ -242,28 +314,52 @@ async function handleLogin(event) {
   try {
     var user = await dbSignIn(identifier, password);
     loginAttempts = 0;
+    var bannerEl = document.getElementById("login-attempt-banner");
+    if (bannerEl) bannerEl.hidden = true;
     saveRememberedIdentifier(identifier);
     window.location.href = getHomeForRole(user.role);
   } catch (err) {
-    loginAttempts++;
     resetLoginFieldsAndCaptcha();
     if (emailEl) emailEl.focus();
     btn.disabled = false;
     btn.textContent = oldText;
 
+    var banner = document.getElementById("login-attempt-banner");
+    if (isAdmin) {
+      if (banner) {
+        banner.hidden = false;
+        banner.innerHTML = "<b>Sign In Failed:</b> " + escapeHtml(err.message || "Invalid Administrator username or password.");
+      }
+      showAlert("Sign In Failed", err.message || "Invalid Administrator username or password.", "bad");
+      return;
+    }
+
+    loginAttempts++;
     if (loginAttempts >= MAX_ATTEMPTS) {
+      if (banner) {
+        banner.hidden = false;
+        banner.innerHTML = "<b>Account Temporarily Locked:</b> 5 failed attempts reached. Contact System Admin at Tel: <b>(046) 458-0908</b>" +
+          (isStaff ? ' or <a href="#" onclick="openStaffResetRequestModal(); return false;">Request Password Reset</a>.' : ".");
+      }
       showLockoutPopup();
     } else {
       var remaining = MAX_ATTEMPTS - loginAttempts;
-      showAlert("Sign In Failed", (err.message || "Invalid username/email or password.") + " (" + remaining + " attempt" + (remaining === 1 ? "" : "s") + " remaining)", "bad");
+      var msgText = (err.message || "Invalid username or password.") + " (Failed attempt " + loginAttempts + " of " + MAX_ATTEMPTS + ", " + remaining + " remaining)";
+      if (banner) {
+        banner.hidden = false;
+        banner.innerHTML = "<b>Sign In Failed:</b> " + escapeHtml(msgText) +
+          (isStaff ? "<br><span class='small'>Contact System Admin: Tel (046) 458-0908 | Hotline 101-733</span>" : "");
+      }
+      showAlert(
+        "Sign In Failed",
+        msgText + (isStaff ? "<br><br>Need help? Contact System Admin at <b>(046) 458-0908</b> or use <b>Forgot Password?</b>." : ""),
+        "bad"
+      );
     }
   }
 }
 
-// ============================================================================
-// 3-TAB ACCOUNT RECOVERY MODAL (Password, Username, Email Address)
-// ============================================================================
-
+// Helper `stopRecoveryCountdown`: Executes workflow logic for `stopRecoveryCountdown`.
 function stopRecoveryCountdown() {
   if (_recoveryState.timerId) {
     clearInterval(_recoveryState.timerId);
@@ -271,6 +367,7 @@ function stopRecoveryCountdown() {
   }
 }
 
+// UI State Controller `openForgotModal` (params: initialTab): Updates modal, tab, or panel state to open forgot modal.
 function openForgotModal(initialTab) {
   if (window.SYSTEM !== "customer") {
     showAlert("Administrator Managed", "Internal staff credentials are managed by the System Administrator.", "warn");
@@ -283,11 +380,13 @@ function openForgotModal(initialTab) {
   renderRecoveryStep1();
 }
 
+// Helper `switchRecoveryTab` (params: tabName): Executes workflow logic for `switchRecoveryTab`.
 function switchRecoveryTab(tabName) {
   _recoveryState.tab = tabName;
   renderRecoveryStep1();
 }
 
+// UI Renderer `renderRecoveryStep1`: Builds and updates DOM elements for recovery step1.
 function renderRecoveryStep1() {
   var tab = _recoveryState.tab || "password";
   var isPw = tab === "password";
@@ -335,6 +434,7 @@ function renderRecoveryStep1() {
   );
 }
 
+// Helper `startRecoveryVerification`: Executes workflow logic for `startRecoveryVerification`.
 async function startRecoveryVerification() {
   var inp = document.getElementById("recovery-query-input");
   var query = inp ? inp.value.trim() : "";
@@ -377,6 +477,7 @@ async function startRecoveryVerification() {
   }
 }
 
+// UI Renderer `renderRecoveryOtpPinModal`: Builds and updates DOM elements for recovery otp pin modal.
 function renderRecoveryOtpPinModal() {
   var info = _recoveryState.account;
   if (!info) return;
@@ -410,6 +511,7 @@ function renderRecoveryOtpPinModal() {
   if (firstSq) firstSq.focus();
 }
 
+// Helper `handleOtpSquareInput` (params: el, idx): Executes workflow logic for `handleOtpSquareInput`.
 function handleOtpSquareInput(el, idx) {
   var val = String(el.value || "").replace(/\D/g, "");
   el.value = val ? val.slice(-1) : "";
@@ -419,6 +521,7 @@ function handleOtpSquareInput(el, idx) {
   }
 }
 
+// Helper `handleOtpSquareKey` (params: ev, idx): Executes workflow logic for `handleOtpSquareKey`.
 function handleOtpSquareKey(ev, idx) {
   if (ev.key === "Backspace" && !ev.target.value && idx > 0) {
     var prev = document.querySelector('#recovery-otp-squares .otp-sq[data-sq="' + (idx - 1) + '"]');
@@ -429,6 +532,7 @@ function handleOtpSquareKey(ev, idx) {
   }
 }
 
+// Data Accessor `getEnteredOtpSquaresCode`: Retrieves or refreshes data to get entered otp squares code.
 function getEnteredOtpSquaresCode() {
   var boxes = document.querySelectorAll("#recovery-otp-squares .otp-sq");
   var code = "";
@@ -438,17 +542,20 @@ function getEnteredOtpSquaresCode() {
   return code;
 }
 
+// Utility `formatTimerMMSS` (params: sec): Normalizes or transforms values (format timer mmss).
 function formatTimerMMSS(sec) {
   var m = Math.floor(sec / 60);
   var s = sec % 60;
   return (m < 10 ? "0" + m : String(m)) + ":" + (s < 10 ? "0" + s : String(s));
 }
 
+// Helper `startRecoveryCountdownTimer`: Executes workflow logic for `startRecoveryCountdownTimer`.
 function startRecoveryCountdownTimer() {
   stopRecoveryCountdown();
   var timerBox = document.getElementById("recovery-timer-box");
   if (!timerBox) return;
 
+  // UI Renderer `renderTick`: Builds and updates DOM elements for tick.
   function renderTick() {
     var box = document.getElementById("recovery-timer-box");
     if (!box) {
@@ -468,6 +575,7 @@ function startRecoveryCountdownTimer() {
   _recoveryState.timerId = setInterval(renderTick, 1000);
 }
 
+// Helper `resendRecoveryOtpCode`: Executes workflow logic for `resendRecoveryOtpCode`.
 async function resendRecoveryOtpCode() {
   var box = document.getElementById("recovery-timer-box");
   if (box) {
@@ -492,6 +600,7 @@ async function resendRecoveryOtpCode() {
   }
 }
 
+// Helper `verifyRecoveryPinCode`: Executes workflow logic for `verifyRecoveryPinCode`.
 function verifyRecoveryPinCode() {
   var entered = getEnteredOtpSquaresCode();
   if (entered.length < 6) {
@@ -561,12 +670,14 @@ function verifyRecoveryPinCode() {
   );
 }
 
+// Helper `fillRecoveredLogin` (params: val): Executes workflow logic for `fillRecoveredLogin`.
 function fillRecoveredLogin(val) {
   closePopup();
   var emailEl = document.getElementById("email");
   if (emailEl) emailEl.value = val;
 }
 
+// Action Handler `confirmResetPassword`: Validates inputs and persists changes to confirm reset password.
 async function confirmResetPassword() {
   var info = _recoveryState.account;
   if (!info) return;

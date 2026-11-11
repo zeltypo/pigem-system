@@ -159,8 +159,8 @@ function initHomePage() {
   var logosBox = document.querySelector(".logos");
   var clientImgs = content.client_images || DEFAULT_CONTENT.client_images;
   if (logosBox && clientImgs && clientImgs.length) {
-    logosBox.innerHTML = clientImgs.map(function (imgPath, idx) {
-      return '<img data-img="' + imgPath + '" src="' + getImageUrl(imgPath) + '" alt="Partner ' + (idx + 1) + '" onerror="imageFallback(this, \'' + imgPath + '\')" onclick="previewImage(\'' + imgPath + '\', \'Partner ' + (idx + 1) + '\')">';
+    logosBox.innerHTML = clientImgs.map(function (imgPath) {
+      return '<img data-img="' + imgPath + '" src="' + getImageUrl(imgPath) + '" alt="Client Partner" onerror="imageFallback(this, \'' + imgPath + '\')" onclick="previewImage(\'' + imgPath + '\', \'\')">';
     }).join("");
   }
 }

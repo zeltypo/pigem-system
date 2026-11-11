@@ -21,11 +21,11 @@
   <div class="dash-wrap">
 
     <aside class="dash-side">
-      <div class="brand">
+      <div class="brand brand-stacked">
         <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
         <div>
-          <b>PIGEM Staff</b>
-          <span>Application Handling</span>
+          <b>COMBINED FACILITIES SUPPORT SERVICES</b>
+          <span>AGENT WORKSPACE SYSTEM</span>
         </div>
       </div>
 
@@ -83,17 +83,11 @@
           <div class="muted" style="font-size:12px">Signed in as <span id="top-user-name">Agent</span></div>
         </div>
 
-        <div class="top-search">
-          <input type="text" placeholder="Search sections, applicant name, or reference no..." oninput="onTopSearchInput(this)" />
-          <div id="top-search-results" class="search-drop hidden"></div>
-        </div>
-
         <div class="top-actions">
-          <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('agent_workspace_guide')">Tutorial</button>
-          <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
-            <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications (not available)" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+          <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
+            <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
           </button>
-          <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">AG</button>
+          <button id="avatar-btn" type="button" class="avatar-btn overview-only-avatar" onclick="toggleProfileDrawer()" title="Account and Theme">AG</button>
         </div>
       </div>
 
@@ -105,6 +99,13 @@
       </div>
 
       <section id="tab-overview">
+        <div class="overview-hero">
+          <div>
+            <h2>Agent Overview</h2>
+            <p>Real-time verification queue, claimed applications, encoding updates, and personal productivity metrics.</p>
+          </div>
+        </div>
+
         <div class="grid-4" style="margin-bottom:20px">
           <div class="stat" style="cursor:pointer" onclick="showTab('queue')"><div class="num" id="st-unclaimed">0</div><div class="lbl">Unclaimed Queue</div></div>
           <div class="stat" style="cursor:pointer" onclick="showTab('claimed')"><div class="num" id="st-myclaimed">0</div><div class="lbl">My Claimed</div></div>
@@ -120,6 +121,7 @@
         <div class="grid-2" style="margin-bottom:20px">
           <div class="card">
             <h3 style="margin-bottom:12px">Application Status Breakdown</h3>
+            <div id="chart-agent-pie" style="margin-bottom:14px"></div>
             <div id="chart-agent-bars"></div>
           </div>
           <div class="card">
@@ -146,13 +148,13 @@
               <button type="button" class="btn btn-outline btn-sm" onclick="refreshAgentData()">Refresh</button>
             </div>
           </div>
-          <div class="quick-status-pills mt" style="display:flex; gap:6px; flex-wrap:wrap; padding-top:10px; border-top:1px solid var(--line);">
-            <button type="button" class="btn btn-sm btn-outline" data-pill="queue" onclick="showTab('queue')">Queue</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="claimed" onclick="showTab('claimed')">Claimed</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="encoding" onclick="showTab('encoding')">Encoding</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="correction" onclick="showTab('correction')">Needs Correction</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="approved" onclick="showTab('approved')">Approved</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="rejected" onclick="showTab('rejected')">Rejected</button>
+          <div class="sub-nav" style="margin-top:12px">
+            <button type="button" class="sub-nav-btn active" data-pill="queue" onclick="showTab('queue')">Queue</button>
+            <button type="button" class="sub-nav-btn" data-pill="claimed" onclick="showTab('claimed')">Claimed</button>
+            <button type="button" class="sub-nav-btn" data-pill="encoding" onclick="showTab('encoding')">Encoding</button>
+            <button type="button" class="sub-nav-btn" data-pill="correction" onclick="showTab('correction')">Needs Correction</button>
+            <button type="button" class="sub-nav-btn" data-pill="approved" onclick="showTab('approved')">Approved</button>
+            <button type="button" class="sub-nav-btn" data-pill="rejected" onclick="showTab('rejected')">Rejected</button>
           </div>
         </div>
 

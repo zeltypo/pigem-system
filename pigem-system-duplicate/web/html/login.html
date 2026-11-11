@@ -1,35 +1,38 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     FILE OVERVIEW: Customer Portal Sign-In Page (web/login.html)
-     PURPOSE: Authenticates Customer accounts using Username or Gmail, Remember Me,
-              Google reCAPTCHA v2, and a 3-Tab Account Recovery Modal
-              (Password, Username, Email Address) with 6-square OTP PIN verification.
+     FILE OVERVIEW: Customer Account Sign-In Portal (web/html/login.html)
+     PURPOSE: Authenticates customers via Gmail or username with reCAPTCHA protection, lockout defense, and 6-digit OTP password recovery.
+     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
      ========================================================================== -->
+
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+
+  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Customer Login | Combined Facilities Support Services</title>
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
+
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
-  <!-- IMPORT: Google reCAPTCHA v2 client script -->
+
+  <!-- IMPORT: Google reCAPTCHA v2 client widget script for anti-bot protection -->
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body class="public-page">
 
-  <!-- Simple Top Bar -->
+  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="site-header">
     <div class="container" style="display:flex; align-items:center; justify-content:space-between; height:64px;">
-      <a href="../index.html" class="btn btn-small">&#8592; Back</a>
+      <a href="index.html" class="btn btn-small">&#8592; Back</a>
       <div style="display:flex; align-items:center; gap:10px;">
         <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
       </div>
     </div>
   </header>
 
-  <!-- Main Sign-In Card -->
+  <!-- SECTION: Main Page Content Container -->
   <main class="auth-page">
     <div class="card auth-card">
       <div class="center">
@@ -37,6 +40,7 @@
         <p class="small muted mt" style="margin-top:4px;">Sign in using your username or email</p>
       </div>
 
+      <!-- FORM: Interactive User Input Form -->
       <form class="mt-big" onsubmit="handleLogin(event)">
         <div>
           <label for="email">Username or Email</label>
@@ -69,18 +73,24 @@
     </div>
   </main>
 
+  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
 window.SYSTEM = "customer";
   </script>
-  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
+
+  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- IMPORT: Global cloud configuration and UI helpers -->
+
+  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
-  <!-- IMPORT: Cloud database & authentication layer -->
+
+  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
-  <!-- IMPORT: Cloud backend service client -->
+
+  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for captcha verification, ID screening & Gmail SMTP emails -->
   <script src="../js/api.js"></script>
-  <!-- IMPORT: Unified sign-in and 3-tab account recovery controller -->
+
+  <!-- IMPORT: Role-based authentication controller for Customers, Staff (username-only), and Admin -->
   <script src="../js/login.js"></script>
 </body>
 </html>

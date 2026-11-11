@@ -1,23 +1,24 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     FILE OVERVIEW: Agent Verification and Encoding Workspace (web/agent.html)
-     PURPOSE: Provides preliminary ID screening review, visual screening progress,
-              duplicate ID detection, side-by-side OCR comparison, polite update
-              requests, and provider encoding status management.
+     FILE OVERVIEW: Agent Verification & Provider Encoding Workspace (web/html/agent.html)
+     PURPOSE: Provides overview analytics (bar & pie charts), sub-nav application queues, preliminary ID screening review, and encoding workflow.
+     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
      ========================================================================== -->
+
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Application Handling Management - PIGEM Agent Workspace</title>
-  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+
+  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" type="image/png" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" />
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
+
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
 
-  <!-- SPLASH SCREEN -->
   <div id="splash" class="splash">
     <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
     <b>Application Management System</b>
@@ -26,13 +27,13 @@
 
   <div class="dash-wrap">
 
-    <!-- SIDEBAR -->
+    <!-- SECTION: Left Dashboard Sidebar Navigation -->
     <aside class="dash-side">
-      <div class="brand">
+      <div class="brand brand-stacked">
         <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
         <div>
-          <b>PIGEM Staff</b>
-          <span>Application Handling</span>
+          <b>COMBINED FACILITIES SUPPORT SERVICES</b>
+          <span>AGENT WORKSPACE SYSTEM</span>
         </div>
       </div>
 
@@ -40,7 +41,6 @@
         <span><img data-img="icons/overview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/overview.png" alt="Overview (not available)" class="icon-img" />Overview</span>
       </button>
 
-      <!-- EXPANDABLE APPLICATIONS BRANCH (Separated Statuses for 1-Click Access) -->
       <button type="button" onclick="toggleNavGroup(this)">
         <span><img data-img="icons/applications.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/applications.png" alt="Applications (not available)" class="icon-img" />Applications</span>
         <span class="chev">v</span>
@@ -83,31 +83,22 @@
       <div class="side-foot">© 2026 All Rights Reserved</div>
     </aside>
 
-    <!-- MAIN CONTENT -->
     <div class="dash-main">
 
-      <!-- TOP BAR -->
       <div class="dash-top">
         <div>
           <b style="font-size:16px">Application Handling Management</b>
           <div class="muted" style="font-size:12px">Signed in as <span id="top-user-name">Agent</span></div>
         </div>
 
-        <div class="top-search">
-          <input type="text" placeholder="Search sections, applicant name, or reference no..." oninput="onTopSearchInput(this)" />
-          <div id="top-search-results" class="search-drop hidden"></div>
-        </div>
-
         <div class="top-actions">
-          <button type="button" class="btn btn-outline btn-sm" onclick="showPortalGuide('agent_workspace_guide')">Tutorial</button>
-          <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
-            <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications (not available)" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+          <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
+            <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
           </button>
-          <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">AG</button>
+          <button id="avatar-btn" type="button" class="avatar-btn overview-only-avatar" onclick="toggleProfileDrawer()" title="Account and Theme">AG</button>
         </div>
       </div>
 
-      <!-- AUTO-SCREENING UNAVAILABLE / MANUAL FALLBACK BANNER -->
       <div id="agent-screening-banner" class="status-banner warn hidden">
         <div>
           <b>Auto-Screening Currently Unavailable:</b> Automatic document checking is temporarily inactive. Applications continue normally using each customer's <b>Original Uploaded ID Copy</b> for manual review.
@@ -115,8 +106,14 @@
         <span class="badge badge-yellow">Original ID Copy Active</span>
       </div>
 
-      <!-- TAB 1: OVERVIEW -->
       <section id="tab-overview">
+        <div class="overview-hero">
+          <div>
+            <h2>Agent Overview</h2>
+            <p>Real-time verification queue, claimed applications, encoding updates, and personal productivity metrics.</p>
+          </div>
+        </div>
+
         <div class="grid-4" style="margin-bottom:20px">
           <div class="stat" style="cursor:pointer" onclick="showTab('queue')"><div class="num" id="st-unclaimed">0</div><div class="lbl">Unclaimed Queue</div></div>
           <div class="stat" style="cursor:pointer" onclick="showTab('claimed')"><div class="num" id="st-myclaimed">0</div><div class="lbl">My Claimed</div></div>
@@ -132,6 +129,7 @@
         <div class="grid-2" style="margin-bottom:20px">
           <div class="card">
             <h3 style="margin-bottom:12px">Application Status Breakdown</h3>
+            <div id="chart-agent-pie" style="margin-bottom:14px"></div>
             <div id="chart-agent-bars"></div>
           </div>
           <div class="card">
@@ -146,7 +144,6 @@
         </div>
       </section>
 
-      <!-- TAB 2: APPLICATION LISTS (WITH QUICK 1-CLICK STATUS SHORTCUT PILLS) -->
       <section id="tab-apps" class="hidden">
         <div class="card" style="margin-bottom:16px">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
@@ -159,20 +156,19 @@
               <button type="button" class="btn btn-outline btn-sm" onclick="refreshAgentData()">Refresh</button>
             </div>
           </div>
-          <div class="quick-status-pills mt" style="display:flex; gap:6px; flex-wrap:wrap; padding-top:10px; border-top:1px solid var(--line);">
-            <button type="button" class="btn btn-sm btn-outline" data-pill="queue" onclick="showTab('queue')">Queue</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="claimed" onclick="showTab('claimed')">Claimed</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="encoding" onclick="showTab('encoding')">Encoding</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="correction" onclick="showTab('correction')">Needs Correction</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="approved" onclick="showTab('approved')">Approved</button>
-            <button type="button" class="btn btn-sm btn-outline" data-pill="rejected" onclick="showTab('rejected')">Rejected</button>
+          <div class="sub-nav" style="margin-top:12px">
+            <button type="button" class="sub-nav-btn active" data-pill="queue" onclick="showTab('queue')">Queue</button>
+            <button type="button" class="sub-nav-btn" data-pill="claimed" onclick="showTab('claimed')">Claimed</button>
+            <button type="button" class="sub-nav-btn" data-pill="encoding" onclick="showTab('encoding')">Encoding</button>
+            <button type="button" class="sub-nav-btn" data-pill="correction" onclick="showTab('correction')">Needs Correction</button>
+            <button type="button" class="sub-nav-btn" data-pill="approved" onclick="showTab('approved')">Approved</button>
+            <button type="button" class="sub-nav-btn" data-pill="rejected" onclick="showTab('rejected')">Rejected</button>
           </div>
         </div>
 
         <div id="agent-cards-box"></div>
       </section>
 
-      <!-- TAB 3: APPLICATION LINKS -->
       <section id="tab-links" class="hidden">
         <div class="card" style="margin-bottom:18px">
           <h2 style="font-size:20px; margin-bottom:4px">Generate Customer Application Link</h2>
@@ -205,7 +201,6 @@
     </div>
   </div>
 
-  <!-- APPLICATION DETAILS AND VERIFICATION MODAL -->
   <div id="app-detail-modal" class="modal hidden" onclick="if(event.target===this) closeDetailModal()">
     <div class="modal-box wide">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--line)">
@@ -224,7 +219,6 @@
     </div>
   </div>
 
-  <!-- NOTIFICATIONS MODAL -->
   <div id="notif-modal" class="modal hidden">
     <div class="modal-box">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
@@ -235,7 +229,6 @@
     </div>
   </div>
 
-  <!-- PROFILE DRAWER -->
   <div id="profile-drawer" class="drawer hidden" onclick="if(event.target===this) toggleProfileDrawer()">
     <div class="drawer-panel">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
@@ -246,18 +239,27 @@
     </div>
   </div>
 
-  <script>window.SYSTEM = "staff";</script>
-  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
+  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
+  <script>
+window.SYSTEM = "staff";
+  </script>
+
+  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- IMPORT: Global cloud configuration and UI helpers -->
+
+  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
-  <!-- IMPORT: Cloud database and storage data-access layer -->
+
+  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
-  <!-- IMPORT: Cloud backend service client -->
+
+  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for captcha verification, ID screening & Gmail SMTP emails -->
   <script src="../js/api.js"></script>
-  <!-- IMPORT: Shared dashboard shell controller -->
+
+  <!-- IMPORT: Shared dashboard shell controller (sidebar nav, theme toggle, Overview-only controls, pie/bar charts) -->
   <script src="../js/dash-ui.js"></script>
-  <!-- IMPORT: Agent workspace controller -->
+
+  <!-- IMPORT: Agent workspace controller managing screening review, polite remarks, and encoding status -->
   <script src="../js/agent.js"></script>
 </body>
 </html>

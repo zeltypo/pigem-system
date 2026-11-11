@@ -1,25 +1,35 @@
 // ============================================================================
 // FILE: web/js/api.js
-// PURPOSE: Cloud Backend Service Client for PIGEM System
+// PURPOSE: Serverless Python FastAPI Client for Screening, Captcha & Gmail SMTP
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js -> Provides global `CONFIG.PUBLIC_URL` and `CONFIG.API_URL`
-//   2. web/js/db.js     -> Provides `dbGetToken()` to attach Supabase Auth Bearer JWTs
-//   3. Browser Web APIs -> Uses built-in `fetch`, `FormData`, and `AbortController`
+//   1. web/js/config.js -> `CONFIG` base URL and activation/portal route helpers
+//   2. Browser Fetch    -> Calls `/api/verify-captcha`, `/api/screen`, `/api/screen-async`,
+//                          `/api/notify`, `/api/polite-remark`, and `/api/health`
 // ============================================================================
 
+// Helper `_getPortalBaseUrl`: Executes workflow logic for `_getPortalBaseUrl`.
 function _getPortalBaseUrl() {
+  var origin = "https://pigem-system-web.vercel.app";
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
-    return window.location.origin;
+    origin = window.location.origin;
+  } else if (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) {
+    origin = CONFIG.PUBLIC_URL;
   }
-  return (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) ? CONFIG.PUBLIC_URL : "https://pigem-system-web.vercel.app";
+  if (typeof window !== "undefined" && window.location && window.location.pathname) {
+    var p = window.location.pathname;
+    if (p.indexOf("/web/html/") !== -1) return origin + "/web/html";
+  }
+  return origin;
 }
 
+// Helper `_apiEndpoint` (params: path): Executes workflow logic for `_apiEndpoint`.
 function _apiEndpoint(path) {
   var base = (typeof CONFIG !== "undefined" && CONFIG.API_URL) ? CONFIG.API_URL : "/api";
   return base.replace(/\/$/, "") + path;
 }
 
+// Helper `generateOtpRefTag`: Executes workflow logic for `generateOtpRefTag`.
 function generateOtpRefTag() {
   var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   var tag = "";
@@ -29,9 +39,7 @@ function generateOtpRefTag() {
   return tag;
 }
 
-// ============================================================================
-// 1. GOOGLE RECAPTCHA V2 VERIFICATION (`/api/verify-captcha`)
-// ============================================================================
+// Helper `apiVerifyCaptcha` (params: token): Executes workflow logic for `apiVerifyCaptcha`.
 async function apiVerifyCaptcha(token) {
   var clean = String(token || "").trim();
   if (!clean) return { verified: false };
@@ -50,9 +58,7 @@ async function apiVerifyCaptcha(token) {
   }
 }
 
-// ============================================================================
-// 2. ASYNCHRONOUS CLOUD REQUIREMENTS SCREENING (`/api/screen-async`)
-// ============================================================================
+// Helper `apiStartBackgroundScreening` (params: applicationId): Executes workflow logic for `apiStartBackgroundScreening`.
 function apiStartBackgroundScreening(applicationId) {
   if (!applicationId) return Promise.resolve({ queued: false });
 
@@ -84,9 +90,7 @@ function apiStartBackgroundScreening(applicationId) {
   })();
 }
 
-// ============================================================================
-// 3. DIRECT SYNCHRONOUS SCREENING HELPER (`/api/screen`)
-// ============================================================================
+// Helper `apiRunScreening` (params: idFrontFile, customerDetails, idBackFile): Executes workflow logic for `apiRunScreening`.
 async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
   var offlineResult = {
     preliminary: true,
@@ -157,9 +161,7 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
   }
 }
 
-// ============================================================================
-// 4. CORPORATE GMAIL SMTP DISPATCHER (`/api/notify`)
-// ============================================================================
+// Helper `apiSendEmail` (params: toEmail, subjectText, messageText, options): Executes workflow logic for `apiSendEmail`.
 async function apiSendEmail(toEmail, subjectText, messageText, options) {
   options = options || {};
   if (typeof options === "string") {
@@ -214,8 +216,7 @@ async function apiSendEmail(toEmail, subjectText, messageText, options) {
   }
 }
 
-// Sends a 6-digit One-Time Password (OTP) email with a 4-letter Reference Tag
-// and 5-minute validity notice (`template_type: "otp"`).
+// Helper `apiSendOtpEmail` (params: toEmail, code, purpose, recipientName, refTag): Executes workflow logic for `apiSendOtpEmail`.
 async function apiSendOtpEmail(toEmail, code, purpose, recipientName, refTag) {
   var pName = recipientName || "Valued Subscriber";
   var tag = refTag || generateOtpRefTag();
@@ -236,17 +237,20 @@ async function apiSendOtpEmail(toEmail, code, purpose, recipientName, refTag) {
   });
 }
 
-// Sends an Application Confirmation & Account Activation email (`template_type: "activation"`).
-// Note: Activation link goes to `activate.html` without pre-filling fields so the customer enters their own details.
+// Helper `apiSendApplicationConfirmationEmail` (params: toEmail, customerName, refNo, planObj, addressStr, accountInfo): Executes workflow logic for `apiSendApplicationConfirmationEmail`.
 async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo, planObj, addressStr, accountInfo) {
   var p = planObj || {};
   var tag = generateOtpRefTag();
   var subj = "PIGEM Application Received - Reference No. " + refNo + " (Ref no: " + tag + ")";
-  var msg = "Thank you for applying. Reference No: " + refNo;
-  var isExisting = accountInfo && accountInfo.status === "active";
-  var actCode = accountInfo && accountInfo.code ? accountInfo.code : "";
+  var isExisting = Boolean(accountInfo && accountInfo.status === "active");
+  var actCode = (accountInfo && accountInfo.code) ? String(accountInfo.code) : "";
+  var username = (accountInfo && accountInfo.user && accountInfo.user.username) ? String(accountInfo.user.username) : "";
   var baseUrl = _getPortalBaseUrl();
-  var actLink = baseUrl + "/activate.html?invite=1";
+  var actLink = baseUrl + "/activate.html?email=" + encodeURIComponent(toEmail) + (actCode ? "&code=" + encodeURIComponent(actCode) : "") + (username ? "&username=" + encodeURIComponent(username) : "");
+  var portalLink = baseUrl + "/login.html";
+  var msg = isExisting
+    ? ("Thank you for applying. Reference No: " + refNo + ". Sign in to check your status at " + portalLink)
+    : ("Thank you for applying. Reference No: " + refNo + ". One-Time Activation Code: " + actCode + ". Create your password once at " + actLink);
 
   return await apiSendEmail(toEmail, subj, msg, {
     template_type: "activation",
@@ -254,18 +258,21 @@ async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo,
       ref_no: refNo,
       ref_tag: tag,
       customer_name: customerName || "Valued Subscriber",
+      customer_email: toEmail,
+      username: username,
       plan_name: p.name ? ("Red Fiber " + p.name) : "Red Fiber Plan",
       speed: p.speed ? (p.speed + " Mbps") : "Standard Speed",
       price: p.price ? ("₱" + Number(p.price).toLocaleString("en-PH")) : "₱1,400",
       address: addressStr || "Dasmariñas City, Cavite",
       activation_link: actLink,
+      portal_link: portalLink,
       activation_code: actCode,
       is_existing_account: isExisting
     }
   });
 }
 
-// Sends a privacy-safe Correction Notice email (`template_type: "correction"`).
+// Helper `apiSendCorrectionEmail` (params: toEmail, customerName, refNo, remarks, targetSummary): Executes workflow logic for `apiSendCorrectionEmail`.
 async function apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, targetSummary) {
   var tag = generateOtpRefTag();
   var subj = "PIGEM Action Needed - Reference No. " + refNo + " (Ref no: " + tag + ")";
@@ -283,7 +290,7 @@ async function apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, tar
   });
 }
 
-// Sends a Customer Application Status Update email (`template_type: "status_update"`).
+// Helper `apiSendStatusEmail` (params: toEmail, customerName, refNo, status, remarks, targetSummary): Executes workflow logic for `apiSendStatusEmail`.
 async function apiSendStatusEmail(toEmail, customerName, refNo, status, remarks, targetSummary) {
   var st = (status || "").toLowerCase();
   if (st.indexOf("correction") !== -1 || st.indexOf("need") !== -1) {
@@ -310,7 +317,7 @@ async function apiSendStatusEmail(toEmail, customerName, refNo, status, remarks,
   });
 }
 
-// Sends a Service Announcement email (`template_type: "promo"`).
+// Helper `apiSendPromotionalEmail` (params: toEmail, customerName, headline, bodyText, promoPlans): Executes workflow logic for `apiSendPromotionalEmail`.
 async function apiSendPromotionalEmail(toEmail, customerName, headline, bodyText, promoPlans) {
   var tag = generateOtpRefTag();
   var subj = headline + " - PIGEM Support Services";
@@ -327,9 +334,7 @@ async function apiSendPromotionalEmail(toEmail, customerName, headline, bodyText
   });
 }
 
-// ============================================================================
-// 5. CLOUD HEALTH & POLITE REMARK DRAFTING HELPERS
-// ============================================================================
+// Helper `apiCheckHealth`: Executes workflow logic for `apiCheckHealth`.
 async function apiCheckHealth() {
   var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   var timer = controller ? setTimeout(function () { controller.abort(); }, 8000) : null;
@@ -345,6 +350,7 @@ async function apiCheckHealth() {
   }
 }
 
+// Helper `apiGeneratePoliteRemark` (params: rawRemark, chosenField): Executes workflow logic for `apiGeneratePoliteRemark`.
 async function apiGeneratePoliteRemark(rawRemark, chosenField) {
   var text = String(rawRemark || "").trim();
   var field = chosenField || "auto";

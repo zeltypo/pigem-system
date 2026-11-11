@@ -1,13 +1,12 @@
 // ============================================================================
 // FILE: web/js/manager.js
-// PURPOSE: Operational Manager Dashboard, Analytics, Agent Invites, Plans & Website Content Controller
+// PURPOSE: Manager Operations, Overview Charts, Agent CRUD Modals & Website CMS
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js  -> Fiber plan schemas, website content keys, and modal helpers
-//   2. web/js/db.js      -> `requireLogin(['manager', 'admin'])`, `dbListAllApplications()`,
-//                           `dbCreateAgentInviteLink()`, `dbCreateStaffAccount()`, `saveSiteContent()`
-//   3. web/js/api.js     -> `apiCheckHealth()`, `apiSendStatusEmail()`, `apiSendPromotionalEmail()`
-//   4. web/js/dash-ui.js -> Shared dashboard sidebar, global search, and notifications
+//   1. web/js/config.js  -> Plan schemas, `getStaffIdentifier`, `isAssignedToStaff`, modals
+//   2. web/js/db.js      -> Agent provisioning/CRUD, applications overview & CMS persistence
+//   3. web/js/api.js     -> Status emails and promotional broadcasts
+//   4. web/js/dash-ui.js -> Overview-only avatar/notifications, pie/bar charts & navigation
 // ============================================================================
 
 var currentManager = null;
@@ -17,7 +16,7 @@ var activeMgrTab = "overview";
 var activeMgrAppId = null;
 var isMgrScreeningOnline = true;
 
-// Validation/State check `checkMgrScreeningService`: Evaluates condition (check mgr screening service) and returns status.
+// Validator/Check `checkMgrScreeningService`: Evaluates rule (check mgr screening service) and returns result.
 async function checkMgrScreeningService() {
   var banner = document.getElementById("mgr-screening-banner");
   if (!isAiEnabled()) {
@@ -41,13 +40,13 @@ async function checkMgrScreeningService() {
   return true;
 }
 
-// Validation/State check `isMgrScreeningActive` (params: app): Evaluates condition (is mgr screening active) and returns status.
+// Validator/Check `isMgrScreeningActive` (params: app): Evaluates rule (is mgr screening active) and returns result.
 function isMgrScreeningActive(app) {
   var scr = (app && app.screening) || {};
   return scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running";
 }
 
-// Formatter/Utility `formatMgrEta` (params: seconds): Transforms or sanitizes data (format mgr eta).
+// Utility `formatMgrEta` (params: seconds): Normalizes or transforms values (format mgr eta).
 function formatMgrEta(seconds) {
   var sec = Number(seconds || 0);
   if (!sec || sec <= 0) return "";
@@ -58,7 +57,7 @@ function formatMgrEta(seconds) {
   return "~" + sec + "s left";
 }
 
-// Data Accessor `getMgrScreeningBadge` (params: app): Retrieves or refreshes state to get mgr screening badge.
+// Data Accessor `getMgrScreeningBadge` (params: app): Retrieves or refreshes data to get mgr screening badge.
 function getMgrScreeningBadge(app) {
   var scr = app.screening || {};
   var state = scr.state || "";
@@ -94,7 +93,7 @@ function getMgrScreeningBadge(app) {
   return '<span class="badge badge-gray">Screening Checked</span>';
 }
 
-// Event Listener: Runs initialization or state sync when `DOMContentLoaded` fires
+// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   currentManager = await requireLogin(["manager", "admin"]);
   if (!currentManager) return;
@@ -109,7 +108,6 @@ window.addEventListener("DOMContentLoaded", async function () {
     checkMgrScreeningService();
   }, 20000);
 
-  // Live refresh every 5 seconds while applications are actively screening in the background
   setInterval(async function () {
     var anyRunning = false;
     for (var i = 0; i < mgrApps.length; i++) {
@@ -130,7 +128,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   }, 5000);
 });
 
-// Data Accessor `refreshManagerData`: Retrieves or refreshes state to refresh manager data.
+// Data Accessor `refreshManagerData`: Retrieves or refreshes data to refresh manager data.
 async function refreshManagerData() {
   mgrApps = await dbListAllApplications();
   mgrUsers = await dbListUsers();
@@ -139,7 +137,6 @@ async function refreshManagerData() {
   var pending = 0, fix = 0, approved = 0, rejected = 0;
   var planCounts = { "1000": 0, "1400": 0, "1900": 0 };
 
-  // Count application statuses across the system
   for (var i = 0; i < mgrApps.length; i++) {
     var a = mgrApps[i];
     if (a.status === "Pending Review" || a.status === "Under Agent Review" || a.status === "Encoding") pending++;
@@ -156,6 +153,15 @@ async function refreshManagerData() {
   document.getElementById("st-pending").textContent = pending;
   document.getElementById("st-fix").textContent = fix;
   document.getElementById("st-approved").textContent = approved;
+
+  if (typeof renderPieChart === "function") {
+    renderPieChart("chart-mgr-pie", [
+      { label: "Pending / Encoding", value: pending, color: "#2563eb" },
+      { label: "Needs Correction", value: fix, color: "#d97706" },
+      { label: "Approved", value: approved, color: "#15803d" },
+      { label: "Rejected", value: rejected, color: "#dc2626" }
+    ], "Apps");
+  }
 
   renderBars("chart-mgr-bars", [
     { label: "Pending / Encoding", value: pending, color: "#2563eb" },
@@ -175,7 +181,7 @@ async function refreshManagerData() {
   await renderManagerLinks();
 }
 
-// UI Interaction `showTab` (params: tab): Controls modal/panel visibility to show tab.
+// UI State Controller `showTab` (params: tab): Updates modal, tab, or panel state to show tab.
 function showTab(tab) {
   if (tab === "app-encoded") tab = "app-approved";
   activeMgrTab = tab;
@@ -230,11 +236,19 @@ function showTab(tab) {
       "app-rejected": "Rejected Applications"
     };
     document.getElementById("mgr-apps-title").textContent = headings[tab] || "All Customer Applications";
+    var subTabs = ["app-all", "app-encoding", "app-override", "app-approved", "app-rejected"];
+    for (var s = 0; s < subTabs.length; s++) {
+      var sb = document.getElementById("mgr-sub-" + subTabs[s]);
+      if (sb) sb.classList.toggle("active", subTabs[s] === tab);
+    }
     renderManagerApps();
+  }
+  if (typeof updateOverviewOnlyVisibility === "function") {
+    updateOverviewOnlyVisibility(tab === "overview");
   }
 }
 
-// Action Handler `updateCmsMaintenanceBarUI`: Validates user input and commits state changes to update cms maintenance bar ui.
+// Action Handler `updateCmsMaintenanceBarUI`: Validates inputs and persists changes to update cms maintenance bar ui.
 function updateCmsMaintenanceBarUI() {
   var badge = document.getElementById("cms-maint-badge");
   var btn = document.getElementById("cms-maint-toggle-btn");
@@ -252,7 +266,7 @@ function updateCmsMaintenanceBarUI() {
   }
 }
 
-// Helper function `finishCmsAndDisableMaintenance`: Executes portal workflow logic for `finishCmsAndDisableMaintenance`.
+// Helper `finishCmsAndDisableMaintenance`: Executes workflow logic for `finishCmsAndDisableMaintenance`.
 function finishCmsAndDisableMaintenance() {
   if (isMaintenanceOn()) {
     openConfirmPopup(
@@ -261,7 +275,7 @@ function finishCmsAndDisableMaintenance() {
       "Yes, Make Website Live",
       async function () {
         setMaintenanceOn(false);
-        if (currentManager) await dbAddLog(currentManager.email, "Disabled Maintenance Mode from Website Content (CMS)");
+        if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Disabled Maintenance Mode from Website Content (CMS)");
         await dbAddNotification(null, "agent", "Website Restored to Live", "Public Maintenance Mode has been disabled. Customer website and application form are live.");
         updateCmsMaintenanceBarUI();
         showAlert("Website is Live", "Maintenance Mode is now OFF. Customers can browse plans and submit applications.");
@@ -275,7 +289,7 @@ function finishCmsAndDisableMaintenance() {
       "Yes, Enable Maintenance Mode",
       async function () {
         setMaintenanceOn(true);
-        if (currentManager) await dbAddLog(currentManager.email, "Enabled Maintenance Mode from Website Content (CMS)");
+        if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Enabled Maintenance Mode from Website Content (CMS)");
         await dbAddNotification(null, "agent", "Website Maintenance Mode Enabled", "Public Maintenance Mode is active while website content is being updated.");
         updateCmsMaintenanceBarUI();
       },
@@ -342,7 +356,7 @@ function renderManagerApps() {
   box.innerHTML = html;
 }
 
-// Data Accessor `findMgrApp` (params: id): Retrieves or refreshes state to find mgr app.
+// Data Accessor `findMgrApp` (params: id): Retrieves or refreshes data to find mgr app.
 function findMgrApp(id) {
   for (var i = 0; i < mgrApps.length; i++) {
     if (mgrApps[i].id === id) return mgrApps[i];
@@ -350,7 +364,7 @@ function findMgrApp(id) {
   return null;
 }
 
-// UI Interaction `openMgrAppModal` (params: appId): Controls modal/panel visibility to open mgr app modal.
+// UI State Controller `openMgrAppModal` (params: appId): Updates modal, tab, or panel state to open mgr app modal.
 function openMgrAppModal(appId) {
   activeMgrAppId = appId;
   var app = findMgrApp(appId);
@@ -363,8 +377,9 @@ function openMgrAppModal(appId) {
   var agentOpts = '<option value="">- Unassigned -</option>';
   for (var j = 0; j < agents.length; j++) {
     var ag = agents[j];
-    var sel = app.assigned_agent === ag.email ? "selected" : "";
-    agentOpts += '<option value="' + escapeHtml(ag.email) + '" ' + sel + '>' + escapeHtml(ag.full_name + " (" + ag.email + ")") + '</option>';
+    var agId = getStaffIdentifier(ag);
+    var sel = isAssignedToStaff(app.assigned_agent, ag) ? "selected" : "";
+    agentOpts += '<option value="' + escapeHtml(agId) + '" ' + sel + '>' + escapeHtml(ag.full_name + " (" + agId + ")") + '</option>';
   }
 
   var scr = app.screening || {};
@@ -417,12 +432,12 @@ function openMgrAppModal(appId) {
   document.getElementById("mgr-modal").classList.remove("hidden");
 }
 
-// UI Interaction `closeMgrModal`: Controls modal/panel visibility to close mgr modal.
+// UI State Controller `closeMgrModal`: Updates modal, tab, or panel state to close mgr modal.
 function closeMgrModal() {
   document.getElementById("mgr-modal").classList.add("hidden");
 }
 
-// Action Handler `saveMgrOverride`: Validates user input and commits state changes to save mgr override.
+// Action Handler `saveMgrOverride`: Validates inputs and persists changes to save mgr override.
 async function saveMgrOverride() {
   var app = findMgrApp(activeMgrAppId);
   if (!app) return;
@@ -446,19 +461,19 @@ async function saveMgrOverride() {
   }
 
   await dbAddAiLog(app.id, app.reference_no, "Manager (" + currentManager.full_name + ")", "Manager set status to " + newStatus + " (Agent: " + (agentEmail || "Unassigned") + ")");
-  await dbAddLog(currentManager.email, "Manager updated " + app.reference_no + " -> " + newStatus);
+  await dbAddLog(getStaffIdentifier(currentManager), "Manager updated " + app.reference_no + " -> " + newStatus);
 
-  // Notify assigned agent strictly via in-system website notification
   if (agentEmail && agentEmail !== app.assigned_agent) {
-    await dbAddNotification(
-      agentEmail,
-      "agent",
-      "Application Assigned: " + app.reference_no,
-      "Manager " + currentManager.full_name + " assigned application " + app.reference_no + " to your workspace queue."
-    );
+    var targetAg = mgrUsers.find(function (u) { return isAssignedToStaff(agentEmail, u); });
+    await dbAddNotification({
+      user_id: targetAg ? targetAg.id : null,
+      email: targetAg ? targetAg.email : null,
+      role: "agent",
+      title: "Application Assigned: " + app.reference_no,
+      message: "Manager " + currentManager.full_name + " assigned application " + app.reference_no + " (" + agentEmail + ") to your workspace queue."
+    });
   }
 
-  // Notify customer on Needs Correction (even if resending updated remarks) or when Approved/Rejected changes
   var shouldNotifyCust = (newStatus === "Needs Correction") || (newStatus !== app.status && (newStatus === "Approved" || newStatus === "Rejected"));
   if (shouldNotifyCust) {
     var custLabel = (newStatus === "Needs Correction") ? "Update Needed" : newStatus;
@@ -491,39 +506,265 @@ async function saveMgrOverride() {
 function renderAgentPerformance() {
   var body = document.getElementById("mgr-agent-body");
   if (!body) return;
+  var q = (document.getElementById("mgr-agent-search") ? document.getElementById("mgr-agent-search").value : "").trim().toLowerCase();
   var html = "";
   for (var i = 0; i < mgrUsers.length; i++) {
     var u = mgrUsers[i];
     if (u.role !== "agent") continue;
+    if (q) {
+      var hay = [u.full_name, u.username, u.email].join(" ").toLowerCase();
+      if (hay.indexOf(q) === -1) continue;
+    }
     var active = 0, fix = 0, done = 0, total = 0;
     for (var j = 0; j < mgrApps.length; j++) {
       var a = mgrApps[j];
-      if (a.assigned_agent === u.email) {
+      if (isAssignedToStaff(a.assigned_agent, u)) {
         total++;
         if (a.status === "Pending Review" || a.status === "Under Agent Review") active++;
         else if (a.status === "Needs Correction") fix++;
         else if (a.status === "Encoding" || a.status === "Approved" || a.status === "Submitted to Provider") done++;
       }
     }
+    var unameLabel = "@" + (u.username || u.full_name || "agent");
+    var statusBadgeHtml = u.active !== false
+      ? '<span class="badge badge-green" style="margin-left:6px">Active</span>'
+      : '<span class="badge badge-red" style="margin-left:6px">Disabled</span>';
     html +=
       '<tr>' +
-        '<td><b>' + escapeHtml(u.full_name) + '</b>' + (u.username ? '<div class="tiny muted">@' + escapeHtml(u.username) + '</div>' : '') + '</td>' +
-        '<td>' + escapeHtml(u.email) + '</td>' +
+        '<td><b>' + escapeHtml(u.full_name) + '</b>' + statusBadgeHtml + '</td>' +
+        '<td><code>' + escapeHtml(unameLabel) + '</code></td>' +
         '<td><span class="badge badge-blue">' + active + '</span></td>' +
         '<td><span class="badge badge-yellow">' + fix + '</span></td>' +
         '<td><span class="badge badge-green">' + done + '</span></td>' +
         '<td><b>' + total + '</b></td>' +
+        '<td>' +
+          '<div style="display:flex; gap:6px; flex-wrap:wrap">' +
+            '<button type="button" class="btn btn-outline btn-sm" onclick="openManagerEditAgentModal(\'' + escapeHtml(u.id) + '\')">Edit</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" onclick="managerOpenResetAgentPwModal(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(unameLabel) + '\')">Reset PW</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" onclick="managerToggleAgentActive(\'' + escapeHtml(u.id) + '\', ' + (!u.active) + ')">' + (u.active !== false ? "Disable" : "Enable") + '</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" style="color:var(--bad);border-color:#fecdca;" onclick="managerDeleteAgent(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(u.full_name || unameLabel) + '\')">Delete</button>' +
+          '</div>' +
+        '</td>' +
       '</tr>';
   }
-  body.innerHTML = html || '<tr><td colspan="6" class="muted">No agents found.</td></tr>';
+  body.innerHTML = html || '<tr><td colspan="7" class="muted">No agents found.</td></tr>';
 }
 
-// Action Handler `generateManagerAgentInvite`: Generates a private one-time INV-... registration link for a new Agent
+// UI State Controller `openManagerAddAgentModal`: Updates modal, tab, or panel state to open manager add agent modal.
+function openManagerAddAgentModal() {
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Add Verification Agent Account</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<p class="small muted">Create a new Verification Agent account using Username &amp; Password only (no email needed).</p>' +
+    '<form class="mt" onsubmit="submitManagerAddAgent(event)">' +
+      '<div class="grid-3">' +
+        '<div class="field"><label>First Name *</label><input id="mgr-modal-ag-fname" type="text" placeholder="Juan" required /></div>' +
+        '<div class="field"><label>Middle Name</label><input id="mgr-modal-ag-mname" type="text" placeholder="Santos (or N/A)" /></div>' +
+        '<div class="field"><label>Last Name *</label><input id="mgr-modal-ag-lname" type="text" placeholder="Dela Cruz" required /></div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="field"><label>Agent Username *</label><input id="mgr-modal-ag-username" type="text" minlength="3" maxlength="30" placeholder="agent_juan" required /></div>' +
+        '<div class="field"><label>Password *</label><input id="mgr-modal-ag-pass" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" required /></div>' +
+      '</div>' +
+      '<div id="mgr-modal-ag-err" class="notice bad mt" hidden></div>' +
+      '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
+        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+        '<button type="submit" id="btn-mgr-add-agent" class="btn btn-red">+ Create Agent Account</button>' +
+      '</div>' +
+    '</form>',
+    true
+  );
+}
+
+// Action Handler `submitManagerAddAgent` (params: event): Validates inputs and persists changes to submit manager add agent.
+async function submitManagerAddAgent(event) {
+  event.preventDefault();
+  var errBox = document.getElementById("mgr-modal-ag-err");
+  if (errBox) errBox.hidden = true;
+  var fname = (document.getElementById("mgr-modal-ag-fname").value || "").trim();
+  var mname = (document.getElementById("mgr-modal-ag-mname").value || "").trim();
+  var lname = (document.getElementById("mgr-modal-ag-lname").value || "").trim();
+  var username = (document.getElementById("mgr-modal-ag-username").value || "").trim().toLowerCase().replace(/^@/, "");
+  var pass = (document.getElementById("mgr-modal-ag-pass").value || "").trim();
+
+  var fChk = validatePersonName(fname, "First Name", false);
+  var mChk = mname ? validatePersonName(mname, "Middle Name", true) : { valid: true };
+  var lChk = validatePersonName(lname, "Last Name", false);
+  if (!fChk.valid || !mChk.valid || !lChk.valid) {
+    if (errBox) { errBox.textContent = [fChk.message, mChk.message, lChk.message].filter(Boolean).join(" "); errBox.hidden = false; }
+    return;
+  }
+  if (!isValidUsername(username)) {
+    if (errBox) { errBox.textContent = "Username must be 3-30 characters using letters, numbers, dots (.), or underscores (_)."; errBox.hidden = false; }
+    return;
+  }
+  if (!isStrongPassword(pass)) {
+    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
+    return;
+  }
+
+  var fullName = [fname, (mname && mname.toUpperCase() !== "N/A") ? mname : "", lname].filter(Boolean).join(" ");
+  var btn = document.getElementById("btn-mgr-add-agent");
+  btn.disabled = true;
+  btn.textContent = "Creating...";
+  try {
+    await dbCreateUserAccount(fullName, null, pass, "agent", username);
+    if (currentManager) {
+      await dbAddLog(getStaffIdentifier(currentManager), "Manager created Agent account: @" + username);
+    }
+    closePopup();
+    await refreshManagerData();
+    showAlert("Agent Created", "Agent account for <b>" + escapeHtml(fullName) + "</b> (@" + escapeHtml(username) + ") is ready.", "good");
+  } catch (err) {
+    if (errBox) { errBox.textContent = err.message || "Could not create Agent account."; errBox.hidden = false; }
+    btn.disabled = false;
+    btn.textContent = "+ Create Agent Account";
+  }
+}
+
+// UI State Controller `openManagerEditAgentModal` (params: userId): Updates modal, tab, or panel state to open manager edit agent modal.
+function openManagerEditAgentModal(userId) {
+  var u = mgrUsers.find(function (x) { return x.id === userId; });
+  if (!u) return;
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Edit Agent (@' + escapeHtml(u.username || u.full_name) + ')</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<form class="mt" onsubmit="submitManagerEditAgent(event, \'' + escapeHtml(u.id) + '\')">' +
+      '<div class="field"><label>Full Name *</label><input id="mgr-edit-ag-name" type="text" value="' + escapeHtml(u.full_name || "") + '" required /></div>' +
+      '<div class="field"><label>Username *</label><input id="mgr-edit-ag-user" type="text" minlength="3" maxlength="30" value="' + escapeHtml(u.username || "") + '" required /></div>' +
+      '<div class="field"><label>New Password (Optional - leave blank to keep current)</label><input id="mgr-edit-ag-pw" type="password" data-pw-check="1" placeholder="Leave blank if unchanged" /></div>' +
+      '<div id="mgr-edit-ag-err" class="notice bad mt" hidden></div>' +
+      '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
+        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+        '<button type="submit" id="btn-mgr-edit-agent" class="btn btn-red">Save Changes</button>' +
+      '</div>' +
+    '</form>'
+  );
+}
+
+// Action Handler `submitManagerEditAgent` (params: event, userId): Validates inputs and persists changes to submit manager edit agent.
+async function submitManagerEditAgent(event, userId) {
+  event.preventDefault();
+  var errBox = document.getElementById("mgr-edit-ag-err");
+  if (errBox) errBox.hidden = true;
+  var fullName = (document.getElementById("mgr-edit-ag-name").value || "").trim();
+  var username = (document.getElementById("mgr-edit-ag-user").value || "").trim().toLowerCase().replace(/^@/, "");
+  var pw = (document.getElementById("mgr-edit-ag-pw").value || "").trim();
+  var nChk = validatePersonName(fullName, "Full Name", false);
+  if (!nChk.valid) {
+    if (errBox) { errBox.textContent = nChk.message; errBox.hidden = false; }
+    return;
+  }
+  if (pw && !isStrongPassword(pw)) {
+    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
+    return;
+  }
+  var changes = { full_name: fullName, username: username };
+  if (pw) changes.new_password = pw;
+  var btn = document.getElementById("btn-mgr-edit-agent");
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+  try {
+    await dbAdminUpdateStaffAccount(userId, changes);
+    if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Manager updated Agent @" + username);
+    closePopup();
+    await refreshManagerData();
+    showAlert("Agent Updated", "Updated Agent @" + escapeHtml(username) + ".", "good");
+  } catch (err) {
+    if (errBox) { errBox.textContent = err.message || "Could not update Agent."; errBox.hidden = false; }
+    btn.disabled = false;
+    btn.textContent = "Save Changes";
+  }
+}
+
+// Helper `managerOpenResetAgentPwModal` (params: userId, unameLabel): Executes workflow logic for `managerOpenResetAgentPwModal`.
+function managerOpenResetAgentPwModal(userId, unameLabel) {
+  window._mgrResetAgentId = userId;
+  window._mgrResetAgentLabel = unameLabel;
+  openPopup(
+    '<h3>Reset Agent Password</h3>' +
+    '<p class="small muted mt">Set a new sign-in password for <b>' + escapeHtml(unameLabel) + '</b>.</p>' +
+    '<div class="mt"><label for="mgr-reset-ag-pw">New Password</label><input id="mgr-reset-ag-pw" type="password" data-pw-check="1" placeholder="Enter strong password" /></div>' +
+    '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
+      '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+      '<button type="button" class="btn btn-red" onclick="managerConfirmResetAgentPw()">Update Password</button>' +
+    '</div>'
+  );
+}
+
+// Helper `managerConfirmResetAgentPw`: Executes workflow logic for `managerConfirmResetAgentPw`.
+async function managerConfirmResetAgentPw() {
+  var newPw = (document.getElementById("mgr-reset-ag-pw").value || "").trim();
+  if (!isStrongPassword(newPw)) {
+    showAlert("Password Requirement", PASSWORD_REQUIREMENT_TEXT, "warn");
+    return;
+  }
+  try {
+    await dbAdminResetUserPassword(window._mgrResetAgentId, newPw);
+    if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Manager reset password for " + window._mgrResetAgentLabel);
+    closePopup();
+    await refreshManagerData();
+    showAlert("Password Updated", "Updated password for " + escapeHtml(window._mgrResetAgentLabel) + ".", "good");
+  } catch (err) {
+    showAlert("Update Failed", err.message || "Could not reset password.", "bad");
+  }
+}
+
+// Helper `managerToggleAgentActive` (params: userId, nextState): Executes workflow logic for `managerToggleAgentActive`.
+async function managerToggleAgentActive(userId, nextState) {
+  await dbUpdateUser(userId, { active: nextState });
+  if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), (nextState ? "Enabled" : "Disabled") + " Agent " + userId);
+  await refreshManagerData();
+}
+
+// Helper `managerDeleteAgent` (params: userId, label): Executes workflow logic for `managerDeleteAgent`.
+function managerDeleteAgent(userId, label) {
+  openConfirmPopup(
+    "Delete Agent Account?",
+    "Permanently delete Agent <b>" + escapeHtml(label) + "</b>? This cannot be undone.",
+    "Delete Agent",
+    async function () {
+      try {
+        await dbDeleteUserAccount(userId);
+        await refreshManagerData();
+        showAlert("Agent Deleted", escapeHtml(label) + " has been removed.", "good");
+      } catch (err) {
+        showAlert("Delete Failed", err.message || "Could not delete agent.", "bad");
+      }
+    },
+    true
+  );
+}
+
+// UI State Controller `openManagerInviteModal`: Updates modal, tab, or panel state to open manager invite modal.
+function openManagerInviteModal() {
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Generate Private Agent Registration Link</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<p class="small muted">Generate a one-time URL (<code>agent-register.html?invite=INV-...</code>) so an Agent can self-register their Name, Username, and Password.</p>' +
+    '<div class="field mt"><label>Assigned Agent Note / Label</label><input id="mgr-invite-note" type="text" placeholder="e.g. Verification Agent - Cavite Team" /></div>' +
+    '<button type="button" class="btn btn-red" style="width:100%" onclick="generateManagerAgentInvite()">Generate Private Registration Link</button>' +
+    '<div id="mgr-invite-msg" class="msg mt"></div>' +
+    '<div id="mgr-invite-output-wrap" class="hidden" style="margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">' +
+      '<div class="tiny muted" style="font-weight:700; margin-bottom:4px">Private One-Time Registration URL:</div>' +
+      '<input id="mgr-invite-url" type="text" readonly style="margin-bottom:8px; font-size:12px" />' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="copyManagerInviteUrl()">Copy Registration Link</button>' +
+    '</div>'
+  );
+}
+
+// Helper `generateManagerAgentInvite`: Executes workflow logic for `generateManagerAgentInvite`.
 async function generateManagerAgentInvite() {
   var noteEl = document.getElementById("mgr-invite-note");
   var note = noteEl ? noteEl.value.trim() : "";
   try {
-    var res = await dbCreateAgentInviteLink(currentManager ? currentManager.email : "manager@pigem.ph", note || "Manager Private Agent Registration Invite");
+    var res = await dbCreateAgentInviteLink(getStaffIdentifier(currentManager), note || "Manager Private Agent Registration Invite");
     var url = getSiteBaseUrl() + "/agent-register.html?invite=" + encodeURIComponent(res.code);
     var wrap = document.getElementById("mgr-invite-output-wrap");
     var inp = document.getElementById("mgr-invite-url");
@@ -533,11 +774,11 @@ async function generateManagerAgentInvite() {
     showMsg("mgr-invite-msg", "ok", "Private Agent Registration Link (" + res.code + ") created! Share the URL below with your new agent.");
     await renderManagerLinks();
   } catch (err) {
-    showMsg("mgr-invite-msg", "err", err.message || "Could not generate private registration link.");
+    showMsg("mgr-invite-msg", "error", err.message || "Could not generate private registration link.");
   }
 }
 
-// Helper `copyManagerInviteUrl`: Copies the generated private agent registration URL to clipboard
+// Helper `copyManagerInviteUrl`: Executes workflow logic for `copyManagerInviteUrl`.
 function copyManagerInviteUrl() {
   var inp = document.getElementById("mgr-invite-url");
   if (!inp || !inp.value) return;
@@ -550,52 +791,7 @@ function copyManagerInviteUrl() {
   showAlert("Copied", "Private Agent Registration Link copied to clipboard.");
 }
 
-// Action Handler `createAgentFromManager`: Creates an Agent account directly from the Manager Portal
-async function createAgentFromManager() {
-  var fname = (document.getElementById("mgr-ag-fname").value || "").trim();
-  var mname = (document.getElementById("mgr-ag-mname").value || "").trim();
-  var lname = (document.getElementById("mgr-ag-lname").value || "").trim();
-  var username = (document.getElementById("mgr-ag-username").value || "").trim().toLowerCase();
-  var email = (document.getElementById("mgr-ag-email").value || "").trim().toLowerCase();
-  var pass = document.getElementById("mgr-ag-pass").value;
-
-  if (!fname || !lname || !username || !email || !pass) {
-    showMsg("mgr-create-agent-msg", "err", "Please complete First Name, Last Name, Username, Official Email (@pigem.ph), and Password.");
-    return;
-  }
-  if (!isValidUsername(username)) {
-    showMsg("mgr-create-agent-msg", "err", "Username must be 3-30 characters using letters, numbers, underscores, dots, or hyphens.");
-    return;
-  }
-  if (!isStaffBusinessEmail(email)) {
-    showMsg("mgr-create-agent-msg", "err", "Agent accounts must use an official @pigem.ph email address.");
-    return;
-  }
-  if (!isStrongPassword(pass)) {
-    showMsg("mgr-create-agent-msg", "err", PASSWORD_REQUIREMENT_TEXT);
-    return;
-  }
-
-  var fullName = [fname, mname, lname].filter(Boolean).join(" ");
-  try {
-    await dbCreateUserAccount(fullName, email, pass, "agent", username);
-    if (currentManager) {
-      await dbAddLog(currentManager.email, "Manager created Agent account: " + email + " (@" + username + ")");
-    }
-    document.getElementById("mgr-ag-fname").value = "";
-    document.getElementById("mgr-ag-mname").value = "";
-    document.getElementById("mgr-ag-lname").value = "";
-    document.getElementById("mgr-ag-username").value = "";
-    document.getElementById("mgr-ag-email").value = "";
-    document.getElementById("mgr-ag-pass").value = "";
-    showMsg("mgr-create-agent-msg", "ok", "Agent account created for " + fullName + " (@" + username + ").");
-    await refreshManagerData();
-  } catch (err) {
-    showMsg("mgr-create-agent-msg", "err", err.message || "Could not create Agent account.");
-  }
-}
-
-// UI Renderer `renderManagerLinks`: Builds and updates DOM elements for manager links and private agent registration invites.
+// UI Renderer `renderManagerLinks`: Builds and updates DOM elements for manager links.
 async function renderManagerLinks() {
   var body = document.getElementById("mgr-links-body");
   if (!body) return;
@@ -633,10 +829,7 @@ async function renderManagerLinks() {
   body.innerHTML = html;
 }
 
-// ============================================================
-// WEBSITE CONTENT (CMS) EDITORS (4-Slide Hero Banners, Media Assets, About, Plans, FAQs)
-// ============================================================
-
+// Helper `ensureFourSlides` (params: slides, fallbackSlides): Executes workflow logic for `ensureFourSlides`.
 function ensureFourSlides(slides, fallbackSlides) {
   var arr = (slides || []).slice();
   var fb = fallbackSlides || [];
@@ -647,21 +840,18 @@ function ensureFourSlides(slides, fallbackSlides) {
   return arr.slice(0, 4);
 }
 
-// Data Accessor `loadAllCmsEditors`: Retrieves or refreshes state to load all cms editors.
+// Data Accessor `loadAllCmsEditors`: Retrieves or refreshes data to load all cms editors.
 function loadAllCmsEditors() {
   var c = getSiteContent();
   var lib = c.asset_library || DEFAULT_CONTENT.asset_library;
 
-  // 1. Hero Banners (4 Home + 4 About Slides with Library Switcher)
   c.home_slides = ensureFourSlides(c.home_slides, DEFAULT_CONTENT.hero_slides);
   c.about_slides = ensureFourSlides(c.about_slides, DEFAULT_CONTENT.about_slides);
   renderSlideEditorList("cms-home-slides", "home", c.home_slides, lib.Banners || []);
   renderSlideEditorList("cms-about-slides", "about", c.about_slides, lib.Banners || []);
 
-  // 2. Media Assets (Logos, Clients, Vehicles, Permits)
   renderMediaAssetsEditor(c);
 
-  // 3. About Company text
   document.getElementById("cms-about-lead").value = c.about_lead || "";
   document.getElementById("cms-about-s1").value = c.about_story_1 || "";
   document.getElementById("cms-about-s2").value = c.about_story_2 || "";
@@ -669,7 +859,6 @@ function loadAllCmsEditors() {
   document.getElementById("cms-contact-phone").value = c.contact_phone || "";
   document.getElementById("cms-contact-addr").value = c.contact_address || "";
 
-  // 4. Plans
   var plansBox = document.getElementById("cms-plans-list");
   var plansHtml = "";
   var plans = c.plans || [];
@@ -687,7 +876,6 @@ function loadAllCmsEditors() {
   }
   plansBox.innerHTML = plansHtml;
 
-  // 5. FAQs
   renderFaqEditorRows(c.faqs || []);
 }
 
@@ -736,7 +924,6 @@ function renderMediaAssetsEditor(c) {
   var lib = c.asset_library || DEFAULT_CONTENT.asset_library;
   var logos = (lib.Logos || ["black-logo-white-mode.png", "white-logo-dark-mode.png"]).slice();
 
-  // 1A. Light Mode Logo selector
   var logoSelect = document.getElementById("cms-active-logo");
   var logoPrev = document.getElementById("cms-logo-preview");
   if (logoSelect && logoPrev) {
@@ -749,7 +936,6 @@ function renderMediaAssetsEditor(c) {
     logoPrev.src = getImageUrl(activeLogo);
   }
 
-  // 1B. Dark Mode Logo selector
   var darkLogoSelect = document.getElementById("cms-active-dark-logo");
   var darkLogoPrev = document.getElementById("cms-dark-logo-preview");
   if (darkLogoSelect && darkLogoPrev) {
@@ -762,7 +948,6 @@ function renderMediaAssetsEditor(c) {
     darkLogoPrev.src = getImageUrl(activeDarkLogo);
   }
 
-  // 2. Checkable galleries for Clients, Vehicles, Permits
   renderAssetCheckboxGallery("cms-clients-gallery", "client", lib.Clients || [], c.client_images || []);
   renderAssetCheckboxGallery("cms-vehicles-gallery", "vehicle", lib.Vehicles || [], c.vehicle_images || []);
   renderAssetCheckboxGallery("cms-permits-gallery", "permit", lib.Permits || [], c.permit_images || []);
@@ -791,7 +976,7 @@ function renderAssetCheckboxGallery(boxId, groupName, allSaved, activeList) {
   box.innerHTML = html;
 }
 
-// Helper function `uploadNewBucketAsset` (params: category, fileInputId, msgId): Executes portal workflow logic for `uploadNewBucketAsset`.
+// Helper `uploadNewBucketAsset` (params: category, fileInputId, msgId): Executes workflow logic for `uploadNewBucketAsset`.
 async function uploadNewBucketAsset(category, fileInputId, msgId) {
   var inp = document.getElementById(fileInputId);
   var file = inp && inp.files ? inp.files[0] : null;
@@ -824,7 +1009,7 @@ async function uploadNewBucketAsset(category, fileInputId, msgId) {
   }
 }
 
-// Action Handler `saveMediaAssetsCms`: Validates user input and commits state changes to save media assets cms.
+// Action Handler `saveMediaAssetsCms`: Validates inputs and persists changes to save media assets cms.
 function saveMediaAssetsCms() {
   var c = getSiteContent();
   var logoSel = document.getElementById("cms-active-logo");
@@ -838,11 +1023,11 @@ function saveMediaAssetsCms() {
 
   saveSiteContent(c);
   loadPageImages();
-  dbAddLog(currentManager.email, "Updated active Logos, Clients, Vehicles and Permits in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated active Logos, Clients, Vehicles and Permits in Website Content (CMS)");
   showMsg("cms-assets-msg", "ok", "Active Website Assets saved! Click 'Preview Live Website' above to view.");
 }
 
-// Data Accessor `getCheckedAssetValues` (params: groupName): Retrieves or refreshes state to get checked asset values.
+// Data Accessor `getCheckedAssetValues` (params: groupName): Retrieves or refreshes data to get checked asset values.
 function getCheckedAssetValues(groupName) {
   var boxes = document.querySelectorAll('input[name="cms-asset-' + groupName + '"]:checked');
   var out = [];
@@ -850,7 +1035,7 @@ function getCheckedAssetValues(groupName) {
   return out;
 }
 
-// Action Handler `saveBannersCms`: Validates user input and commits state changes to save banners cms.
+// Action Handler `saveBannersCms`: Validates inputs and persists changes to save banners cms.
 function saveBannersCms() {
   var c = getSiteContent();
   c.home_slides = ensureFourSlides(c.home_slides, DEFAULT_CONTENT.hero_slides);
@@ -869,11 +1054,11 @@ function saveBannersCms() {
     c.about_slides[j].text = document.getElementById("about-text-" + j).value.trim();
   }
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated 4 Home and 4 About Hero Banners in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated 4 Home and 4 About Hero Banners in Website Content (CMS)");
   showMsg("cms-banners-msg", "ok", "4-Slide Hero Banners saved! Click 'Preview Live Website' to inspect.");
 }
 
-// Action Handler `saveAboutCms`: Validates user input and commits state changes to save about cms.
+// Action Handler `saveAboutCms`: Validates inputs and persists changes to save about cms.
 function saveAboutCms() {
   var c = getSiteContent();
   c.about_lead = document.getElementById("cms-about-lead").value.trim();
@@ -883,11 +1068,11 @@ function saveAboutCms() {
   c.contact_phone = document.getElementById("cms-contact-phone").value.trim();
   c.contact_address = document.getElementById("cms-contact-addr").value.trim();
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated About PIGEM text in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated About PIGEM text in Website Content (CMS)");
   showMsg("cms-about-msg", "ok", "About PIGEM and Contact information saved!");
 }
 
-// Action Handler `savePlansCms`: Validates user input and commits state changes to save plans cms.
+// Action Handler `savePlansCms`: Validates inputs and persists changes to save plans cms.
 function savePlansCms() {
   var c = getSiteContent();
   for (var i = 0; i < c.plans.length; i++) {
@@ -902,11 +1087,12 @@ function savePlansCms() {
     c.plans[i].features = cleanFeats;
   }
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated Red Fiber Plans in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated Red Fiber Plans in Website Content (CMS)");
   showMsg("cms-plans-msg", "ok", "Internet Plans saved!");
 }
 
 var currentEditingFaqs = [];
+
 // UI Renderer `renderFaqEditorRows` (params: faqs): Builds and updates DOM elements for faq editor rows.
 function renderFaqEditorRows(faqs) {
   currentEditingFaqs = faqs.slice();
@@ -922,14 +1108,14 @@ function renderFaqEditorRows(faqs) {
   box.innerHTML = html;
 }
 
-// Helper function `addFaqCmsRow`: Executes portal workflow logic for `addFaqCmsRow`.
+// Helper `addFaqCmsRow`: Executes workflow logic for `addFaqCmsRow`.
 function addFaqCmsRow() {
   syncFaqInputs();
   currentEditingFaqs.push({ q: "New Question?", a: "Write the answer here." });
   renderFaqEditorRows(currentEditingFaqs);
 }
 
-// Helper function `syncFaqInputs`: Executes portal workflow logic for `syncFaqInputs`.
+// Helper `syncFaqInputs`: Executes workflow logic for `syncFaqInputs`.
 function syncFaqInputs() {
   for (var i = 0; i < currentEditingFaqs.length; i++) {
     var qEl = document.getElementById("faq-q-" + i);
@@ -941,33 +1127,33 @@ function syncFaqInputs() {
   }
 }
 
-// Action Handler `saveFaqsCms`: Validates user input and commits state changes to save faqs cms.
+// Action Handler `saveFaqsCms`: Validates inputs and persists changes to save faqs cms.
 function saveFaqsCms() {
   syncFaqInputs();
   var c = getSiteContent();
   c.faqs = currentEditingFaqs.filter(function (item) { return item.q !== ""; });
   saveSiteContent(c);
-  dbAddLog(currentManager.email, "Updated FAQs in Website Content (CMS)");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated FAQs in Website Content (CMS)");
   showMsg("cms-faqs-msg", "ok", "FAQs saved!");
 }
 
-// UI Interaction `togglePromoTarget`: Controls modal/panel visibility to toggle promo target.
+// UI State Controller `togglePromoTarget`: Updates modal, tab, or panel state to toggle promo target.
 function togglePromoTarget() {
   var t = document.getElementById("promo-target").value;
   var wrap = document.getElementById("promo-test-email-wrap");
   if (wrap) wrap.style.display = (t === "test") ? "block" : "none";
 }
 
-// Helper function `clearSiteAnnouncement`: Executes portal workflow logic for `clearSiteAnnouncement`.
+// Helper `clearSiteAnnouncement`: Executes workflow logic for `clearSiteAnnouncement`.
 function clearSiteAnnouncement() {
   var c = getSiteContent();
   c.announcement = { active: false, headline: "", body: "" };
   saveSiteContent(c);
-  if (currentManager) dbAddLog(currentManager.email, "Cleared public website announcement banner");
+  if (currentManager) dbAddLog(getStaffIdentifier(currentManager), "Cleared public website announcement banner");
   showMsg("promo-msg", "ok", "Public website announcement banner has been cleared.");
 }
 
-// Helper function `sendManagerPromoBroadcast`: Executes portal workflow logic for `sendManagerPromoBroadcast`.
+// Helper `sendManagerPromoBroadcast`: Executes workflow logic for `sendManagerPromoBroadcast`.
 async function sendManagerPromoBroadcast() {
   var btn = document.getElementById("btn-send-promo");
   var headline = document.getElementById("promo-headline").value.trim();
@@ -1015,7 +1201,6 @@ async function sendManagerPromoBroadcast() {
       siteAll.announcement = { active: true, headline: headline, body: body };
       saveSiteContent(siteAll);
 
-      // Collect opted-in @gmail.com Customer addresses
       var optedEmails = {};
       var optedNames = {};
       for (var aIdx = 0; aIdx < mgrApps.length; aIdx++) {
@@ -1051,7 +1236,7 @@ async function sendManagerPromoBroadcast() {
     }
 
     if (currentManager) {
-      await dbAddLog(currentManager.email, "Published Announcement: '" + headline + "' (" + target + ")");
+      await dbAddLog(getStaffIdentifier(currentManager), "Published Announcement: '" + headline + "' (" + target + ")");
     }
   } catch (err) {
     showMsg("promo-msg", "error", "Error: " + err.message);

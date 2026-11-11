@@ -713,61 +713,37 @@ class GeminiScreeningService(BaseLanguageClient):
     _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
     _OCR_RESPONSE_SCHEMA = {
-
         "type": "OBJECT",
-
         "properties": {
-
+            "is_valid_government_id": {"type": "BOOLEAN"},
+            "detected_document_type": {"type": "STRING"},
             "extracted_name": {"type": "STRING"},
-
             "extracted_first_name": {"type": "STRING"},
-
             "extracted_middle_name": {"type": "STRING"},
-
             "extracted_last_name": {"type": "STRING"},
-
             "extracted_birth_date": {"type": "STRING"},
-
             "extracted_id_number": {"type": "STRING"},
-
             "alternate_id_numbers": {
-
                 "type": "ARRAY",
-
                 "items": {"type": "STRING"},
-
             },
-
             "lines": {
-
                 "type": "ARRAY",
-
                 "items": {"type": "STRING"},
-
             },
-
         },
-
         "required": [
-
+            "is_valid_government_id",
+            "detected_document_type",
             "extracted_name",
-
             "extracted_first_name",
-
             "extracted_middle_name",
-
             "extracted_last_name",
-
             "extracted_birth_date",
-
             "extracted_id_number",
-
             "alternate_id_numbers",
-
             "lines",
-
         ],
-
     }
 
     _FIELD_PATTERNS = [
@@ -1004,8 +980,8 @@ class GeminiScreeningService(BaseLanguageClient):
 
             "or CRN and serial number), include all secondary numbers in `alternate_id_numbers`.\n"
 
-            "5. Put every readable text line from the card in `lines`."
-
+            "5. Put every readable text line from the card in `lines`.\n"
+            "6. Set `is_valid_government_id` to `true` ONLY if the image clearly shows a physical or digital official Philippine government-issued ID card (or official paper/ePhilID); set `false` for selfies, landscapes, blank images, receipts, random screenshots, or unreadable pictures, and summarize what is shown in `detected_document_type`."
         )
 
         parts.append({"text": prompt})
@@ -1061,27 +1037,18 @@ class GeminiScreeningService(BaseLanguageClient):
             alt_nums = [str(x).strip() for x in (parsed.get("alternate_id_numbers") or []) if str(x).strip()]
 
             return {
-
                 "available": True,
-
+                "is_valid_government_id": bool(parsed.get("is_valid_government_id", True)),
+                "detected_document_type": str(parsed.get("detected_document_type") or "").strip(),
                 "lines": clean_lines,
-
                 "line_count": len(clean_lines),
-
                 "extracted_name": str(parsed.get("extracted_name") or "").strip(),
-
                 "extracted_first_name": str(parsed.get("extracted_first_name") or "").strip(),
-
                 "extracted_middle_name": str(parsed.get("extracted_middle_name") or "").strip(),
-
                 "extracted_last_name": str(parsed.get("extracted_last_name") or "").strip(),
-
                 "extracted_birth_date": str(parsed.get("extracted_birth_date") or "").strip(),
-
                 "extracted_id_number": str(parsed.get("extracted_id_number") or "").strip(),
-
                 "alternate_id_numbers": alt_nums,
-
             }
 
         except Exception:

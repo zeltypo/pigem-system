@@ -1,53 +1,48 @@
 // ============================================================================
 // FILE: web/js/dash-ui.js
-// PURPOSE: Shared Dashboard Shell UI (Theme, Search, Notifications & Avatar Menu)
+// PURPOSE: Shared Dashboard Shell UI (Theme, Overview Visibility, Profile & Charts)
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js -> Global `CONFIG`, popup helpers, and role guide utilities
-//   2. web/js/db.js     -> `dbGetNotifications()`, `dbMarkAllNotificationsRead()`,
-//                          `dbUpdateOwnProfile()`, `dbChangeOwnPassword()`, `dbSignOut()`
-//   3. web/js/api.js    -> `apiSendOtpEmail()` for profile/password security verification
+//   1. web/js/config.js -> Global `CONFIG`, popup helpers, and `renderPieChart` support
+//   2. web/js/db.js     -> `dbListMyNotifications`, `dbChangeStaffPasswordDirect`, `dbSignOut`
+//   3. web/js/api.js    -> `apiSendOtpEmail` for Customer profile password updates
 // ============================================================================
 
 var dashCurrentUser = null;
 var dashSearchApps = [];
-var dashOnSelectApp = null; // Optional callback(appId) when user clicks an app in Smart Search
+var dashOnSelectApp = null;
 
-// 1. Initialize Splash Screen, Theme, Profile Drawer, and Smart Search
+// Helper `initDashUI` (params: user, apps, onSelectAppCallback): Executes workflow logic for `initDashUI`.
 function initDashUI(user, apps, onSelectAppCallback) {
   dashCurrentUser = user;
   dashSearchApps = apps || [];
   dashOnSelectApp = onSelectAppCallback || null;
 
-  if (user && user.email) {
+  if (user) {
     try {
-      sessionStorage.setItem("pigem_user_cache", JSON.stringify({ email: user.email, role: user.role }));
+      sessionStorage.setItem("pigem_user_cache", JSON.stringify({
+        email: user.email || ("@" + (user.username || "")),
+        role: user.role
+      }));
     } catch (e) {}
   }
 
-  // Apply saved theme immediately
   var savedTheme = readSaved("pigem_theme", "light");
   setThemeMode(savedTheme);
 
-  // Fade out splash screen and launch first-time user bubble tutorial in dashboards
   var splash = document.getElementById("splash");
   if (splash) {
     setTimeout(function () {
       splash.classList.add("hide");
-      if (user && user.role && typeof startDashboardTour === "function") {
-        setTimeout(function () { startDashboardTour(user.role, false); }, 350);
-      }
     }, 1200);
-  } else if (user && user.role && typeof startDashboardTour === "function") {
-    setTimeout(function () { startDashboardTour(user.role, false); }, 500);
   }
 
-  // Render avatar button & drawer content
   renderAvatarBtn(user);
   renderProfileDrawer(user);
   refreshNotifBell(user);
+  updateOverviewOnlyVisibility(true);
 
-  // Close search dropdown when clicking outside
+  // Event Listener: Initializes handlers or syncs state when `click` fires
   document.addEventListener("click", function (e) {
     var sWrap = document.querySelector(".top-search");
     var sDrop = document.getElementById("top-search-results");
@@ -57,12 +52,34 @@ function initDashUI(user, apps, onSelectAppCallback) {
   });
 }
 
-// Action Handler `updateDashSearchApps` (params: apps): Validates user input and commits state changes to update dash search apps.
+// `updateOverviewOnlyVisibility` (params: isOverview): Shows Overview-exclusive header controls (notifications bell, Manager/Agent avatar) only when Overview tab is active.
+function updateOverviewOnlyVisibility(isOverview) {
+  var notifBtn = document.getElementById("notif-btn");
+  var notifModal = document.getElementById("notif-modal");
+  if (notifBtn && notifBtn.classList.contains("overview-only-notif")) {
+    notifBtn.classList.toggle("overview-hidden", !isOverview);
+  }
+  if (!isOverview && notifModal) {
+    notifModal.classList.add("hidden");
+  }
+  var avatarBtn = document.getElementById("avatar-btn");
+  if (avatarBtn && avatarBtn.classList.contains("overview-only-avatar")) {
+    avatarBtn.classList.toggle("overview-hidden", !isOverview);
+  }
+  if (!isOverview) {
+    var drawer = document.getElementById("profile-drawer");
+    if (drawer && avatarBtn && avatarBtn.classList.contains("overview-only-avatar")) {
+      drawer.classList.add("hidden");
+    }
+  }
+}
+
+// Action Handler `updateDashSearchApps` (params: apps): Validates inputs and persists changes to update dash search apps.
 function updateDashSearchApps(apps) {
   dashSearchApps = apps || [];
 }
 
-// 2. Light / Dark / Device Theme
+// UI State Controller `setThemeMode` (params: mode): Updates modal, tab, or panel state to set theme mode.
 function setThemeMode(mode) {
   writeSaved("pigem_theme", mode);
   var effective = mode;
@@ -79,7 +96,6 @@ function setThemeMode(mode) {
     loadPageImages();
   }
 
-  // Highlight active theme button inside drawer
   var btns = document.querySelectorAll("[data-theme-btn]");
   for (var i = 0; i < btns.length; i++) {
     btns[i].classList.toggle("btn-red", btns[i].getAttribute("data-theme-btn") === mode);
@@ -87,7 +103,7 @@ function setThemeMode(mode) {
   }
 }
 
-// 3. Expandable Sidebar Navigation Group
+// UI State Controller `toggleNavGroup` (params: btn): Updates modal, tab, or panel state to toggle nav group.
 function toggleNavGroup(btn) {
   var next = btn.nextElementSibling;
   if (!next) return;
@@ -96,7 +112,7 @@ function toggleNavGroup(btn) {
   if (arrow) arrow.textContent = isHidden ? ">" : "v";
 }
 
-// 4. Smart Topbar Search (searches Sidebar Navs + Applications)
+// Helper `onTopSearchInput` (params: inputEl): Executes workflow logic for `onTopSearchInput`.
 function onTopSearchInput(inputEl) {
   var q = (inputEl.value || "").trim().toLowerCase();
   var box = document.getElementById("top-search-results");
@@ -108,7 +124,7 @@ function onTopSearchInput(inputEl) {
   }
 
   var html = "";
-  // Search sidebar buttons
+
   var navBtns = document.querySelectorAll(".dash-side [data-nav-label]");
   for (var i = 0; i < navBtns.length; i++) {
     var label = navBtns[i].getAttribute("data-nav-label") || "";
@@ -120,7 +136,6 @@ function onTopSearchInput(inputEl) {
     }
   }
 
-  // Search applications
   var matched = 0;
   for (var j = 0; j < dashSearchApps.length; j++) {
     if (matched >= 6) break;
@@ -141,7 +156,7 @@ function onTopSearchInput(inputEl) {
   box.classList.remove("hidden");
 }
 
-// Helper function `jumpToNav` (params: target): Executes portal workflow logic for `jumpToNav`.
+// Helper `jumpToNav` (params: target): Executes workflow logic for `jumpToNav`.
 function jumpToNav(target) {
   var box = document.getElementById("top-search-results");
   if (box) box.classList.add("hidden");
@@ -150,7 +165,7 @@ function jumpToNav(target) {
   }
 }
 
-// Helper function `jumpToApp` (params: appId): Executes portal workflow logic for `jumpToApp`.
+// Helper `jumpToApp` (params: appId): Executes workflow logic for `jumpToApp`.
 function jumpToApp(appId) {
   var box = document.getElementById("top-search-results");
   if (box) box.classList.add("hidden");
@@ -159,13 +174,13 @@ function jumpToApp(appId) {
   }
 }
 
-// Helper function `autoLinkUrls` (params: text): Executes portal workflow logic for `autoLinkUrls`.
+// Helper `autoLinkUrls` (params: text): Executes workflow logic for `autoLinkUrls`.
 function autoLinkUrls(text) {
   var escaped = escapeHtml(text || "");
   return escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:var(--red); text-decoration:underline; word-break:break-all;">$1</a>');
 }
 
-// 5. Notifications Bell
+// Data Accessor `refreshNotifBell` (params: user): Retrieves or refreshes data to refresh notif bell.
 async function refreshNotifBell(user) {
   if (!user) return;
   var list = await dbListNotifications(user.email, user.role);
@@ -193,13 +208,13 @@ async function refreshNotifBell(user) {
   }
 }
 
-// UI Interaction `toggleNotifModal`: Controls modal/panel visibility to toggle notif modal.
+// UI State Controller `toggleNotifModal`: Updates modal, tab, or panel state to toggle notif modal.
 function toggleNotifModal() {
   var m = document.getElementById("notif-modal");
   if (m) m.classList.toggle("hidden");
 }
 
-// 6. Google-Style Circle Profile Drawer
+// Data Accessor `getInitials` (params: name): Retrieves or refreshes data to get initials.
 function getInitials(name) {
   var parts = String(name || "U").trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -213,11 +228,11 @@ function renderAvatarBtn(user) {
   if (user.avatar_url) {
     btn.innerHTML = '<img src="' + escapeHtml(user.avatar_url) + '" alt="Profile" />';
   } else {
-    btn.textContent = getInitials(user.full_name || user.email);
+    btn.textContent = getInitials(user.full_name || user.username || user.email || "U");
   }
 }
 
-// UI Interaction `toggleProfileDrawer`: Controls modal/panel visibility to toggle profile drawer.
+// UI State Controller `toggleProfileDrawer`: Updates modal, tab, or panel state to toggle profile drawer.
 function toggleProfileDrawer() {
   var d = document.getElementById("profile-drawer");
   if (d) d.classList.toggle("hidden");
@@ -230,18 +245,40 @@ function renderProfileDrawer(user) {
   var savedTheme = readSaved("pigem_theme", "light");
   var avatarHtml = user.avatar_url
     ? '<img src="' + escapeHtml(user.avatar_url) + '" style="width:68px;height:68px;border-radius:999px;object-fit:cover;margin:0 auto 8px;border:2px solid #c8102e" />'
-    : '<div class="avatar-btn" style="width:68px;height:68px;font-size:22px;margin:0 auto 8px;cursor:default">' + escapeHtml(getInitials(user.full_name)) + '</div>';
+    : '<div class="avatar-btn" style="width:68px;height:68px;font-size:22px;margin:0 auto 8px;cursor:default">' + escapeHtml(getInitials(user.full_name || user.username)) + '</div>';
+
+  var subLine = user.email
+    ? (escapeHtml(user.email) + " - " + escapeHtml((user.role || "").toUpperCase()))
+    : ("Internal Staff - " + escapeHtml((user.role || "").toUpperCase()));
+
+  var pwSection = (!user.email || user.role !== "customer")
+    ? '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
+        '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password</div>' +
+        '<div id="prof-pw-msg" class="msg"></div>' +
+        '<div class="field"><label>Current Password</label><input id="prof-pw-current" type="password" placeholder="Enter current password" /></div>' +
+        '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" placeholder="Strong new password" /></div>' +
+        '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmDirectProfilePassword()">Update Password</button>' +
+      '</div>'
+    : '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
+        '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password (OTP Verification)</div>' +
+        '<div id="prof-pw-msg" class="msg"></div>' +
+        '<button type="button" class="btn btn-outline btn-sm" style="width:100%" onclick="sendProfilePwOtp()">Send 6-Digit Code to ' + escapeHtml(user.email) + '</button>' +
+        '<div id="prof-pw-step2" class="hidden" style="margin-top:10px">' +
+          '<div class="field"><label>6-Digit Code</label><input id="prof-pw-code" type="text" maxlength="6" /></div>' +
+          '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" /></div>' +
+          '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmProfilePwOtp()">Update Password</button>' +
+        '</div>' +
+      '</div>';
 
   box.innerHTML =
     '<div style="text-align:center; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
       avatarHtml +
       '<div style="font-weight:800; font-size:16px">' + escapeHtml(user.full_name) + '</div>' +
       (user.username ? '<div style="font-size:12.5px; font-weight:700; color:var(--red); margin-top:2px">@' + escapeHtml(user.username) + '</div>' : '') +
-      '<div class="muted" style="font-size:12px">' + escapeHtml(user.email) + ' - ' + escapeHtml((user.role || "").toUpperCase()) + '</div>' +
+      '<div class="muted" style="font-size:12px">' + subLine + '</div>' +
       (user.intro ? '<div style="font-size:12px; margin-top:6px; font-style:italic">"' + escapeHtml(user.intro) + '"</div>' : '') +
     '</div>' +
 
-    // Theme Switcher
     '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
       '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Appearance / Theme</div>' +
       '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px">' +
@@ -251,7 +288,6 @@ function renderProfileDrawer(user) {
       '</div>' +
     '</div>' +
 
-    // Edit Profile Info
     '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
       '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Edit Profile</div>' +
       '<div id="prof-msg" class="msg"></div>' +
@@ -262,19 +298,8 @@ function renderProfileDrawer(user) {
       '<button type="button" class="btn btn-dark btn-sm" style="width:100%" onclick="saveProfileChanges()">Save Profile</button>' +
     '</div>' +
 
-    // Password Reset via OTP
-    '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
-      '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password (OTP Verification)</div>' +
-      '<div id="prof-pw-msg" class="msg"></div>' +
-      '<button type="button" class="btn btn-outline btn-sm" style="width:100%" onclick="sendProfilePwOtp()">Send 6-Digit Code to ' + escapeHtml(user.email) + '</button>' +
-      '<div id="prof-pw-step2" class="hidden" style="margin-top:10px">' +
-        '<div class="field"><label>6-Digit Code</label><input id="prof-pw-code" type="text" maxlength="6" /></div>' +
-        '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" /></div>' +
-        '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmProfilePwOtp()">Update Password</button>' +
-      '</div>' +
-    '</div>' +
+    pwSection +
 
-    // Sign Out
     '<div style="margin-top:16px">' +
       '<button type="button" class="btn btn-red" style="width:100%" onclick="signOutAndGoLogin()">Sign Out</button>' +
     '</div>';
@@ -282,7 +307,8 @@ function renderProfileDrawer(user) {
 }
 
 var pendingAvatarDataUrl = "";
-// Helper function `onProfilePhotoPick` (params: inputEl): Executes portal workflow logic for `onProfilePhotoPick`.
+
+// Helper `onProfilePhotoPick` (params: inputEl): Executes workflow logic for `onProfilePhotoPick`.
 function onProfilePhotoPick(inputEl) {
   var file = inputEl.files && inputEl.files[0];
   if (!file) return;
@@ -293,7 +319,7 @@ function onProfilePhotoPick(inputEl) {
   reader.readAsDataURL(file);
 }
 
-// Action Handler `saveProfileChanges`: Validates user input and commits profile changes (including unique username) to Supabase and local session cache.
+// Action Handler `saveProfileChanges`: Validates inputs and persists changes to save profile changes.
 async function saveProfileChanges() {
   if (!dashCurrentUser) return;
   hideMsg("prof-msg");
@@ -329,7 +355,7 @@ async function saveProfileChanges() {
   }
 }
 
-// Helper function `sendProfilePwOtp`: Executes portal workflow logic for `sendProfilePwOtp`.
+// Helper `sendProfilePwOtp`: Executes workflow logic for `sendProfilePwOtp`.
 async function sendProfilePwOtp() {
   if (!dashCurrentUser) return;
   try {
@@ -342,7 +368,33 @@ async function sendProfilePwOtp() {
   }
 }
 
-// Action Handler `confirmProfilePwOtp`: Validates user input and commits state changes to confirm profile pw otp.
+// `confirmDirectProfilePassword`: Validates password strength rules and updates an internal staff member's password without external email OTP.
+async function confirmDirectProfilePassword() {
+  if (!dashCurrentUser) return;
+  hideMsg("prof-pw-msg");
+  var curEl = document.getElementById("prof-pw-current");
+  var newEl = document.getElementById("prof-pw-new");
+  var curPw = curEl ? curEl.value : "";
+  var newPw = newEl ? newEl.value : "";
+  if (!curPw) {
+    showMsg("prof-pw-msg", "error", "Please enter your current password.");
+    return;
+  }
+  if (typeof isStrongPassword === "function" && !isStrongPassword(newPw)) {
+    showMsg("prof-pw-msg", "error", "New password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+    return;
+  }
+  try {
+    await dbChangeStaffPasswordDirect(dashCurrentUser.id, curPw, newPw);
+    if (curEl) curEl.value = "";
+    if (newEl) newEl.value = "";
+    showMsg("prof-pw-msg", "ok", "Password updated successfully.");
+  } catch (err) {
+    showMsg("prof-pw-msg", "error", err.message || "Could not update password.");
+  }
+}
+
+// Action Handler `confirmProfilePwOtp`: Validates inputs and persists changes to confirm profile pw otp.
 async function confirmProfilePwOtp() {
   if (!dashCurrentUser) return;
   var code = document.getElementById("prof-pw-code").value.trim();
@@ -360,7 +412,59 @@ async function confirmProfilePwOtp() {
   }
 }
 
-// 7. Simple CSS Horizontal Bar & Vertical Column Chart Builders
+// `renderPieChart` (params: boxId, slices, centerTitle): Renders a clean CSS conic-gradient SVG/HTML donut pie chart with interactive percentage legend items.
+function renderPieChart(boxId, slices, centerTitle) {
+  var box = document.getElementById(boxId);
+  if (!box) return;
+  var list = (slices || []).filter(function (s) { return Number(s.value || 0) > 0; });
+  var total = 0;
+  for (var i = 0; i < (slices || []).length; i++) {
+    total += Number(slices[i].value || 0);
+  }
+  var r = 56;
+  var c = 2 * Math.PI * r;
+  var circlesHtml = "";
+  var offset = 0;
+
+  if (total <= 0) {
+    circlesHtml = '<circle cx="78" cy="78" r="' + r + '" fill="none" stroke="#e4e7ec" stroke-width="22"></circle>';
+  } else {
+    for (var j = 0; j < list.length; j++) {
+      var val = Number(list[j].value || 0);
+      var dash = (val / total) * c;
+      circlesHtml += '<circle cx="78" cy="78" r="' + r + '" fill="none" stroke="' + (list[j].color || "#c8102e") + '" stroke-width="22" ' +
+        'stroke-dasharray="' + dash.toFixed(2) + " " + c.toFixed(2) + '" stroke-dashoffset="-' + offset.toFixed(2) + '" ' +
+        'transform="rotate(-90 78 78)"></circle>';
+      offset += dash;
+    }
+  }
+
+  var legendHtml = "";
+  for (var k = 0; k < (slices || []).length; k++) {
+    var sl = slices[k];
+    var cnt = Number(sl.value || 0);
+    var pct = total > 0 ? Math.round((cnt / total) * 100) : 0;
+    legendHtml +=
+      '<div class="pie-legend-row">' +
+        '<div style="display:flex;align-items:center;gap:8px;min-width:0;">' +
+          '<span class="pie-dot" style="background:' + (sl.color || "#c8102e") + ';"></span>' +
+          '<span>' + escapeHtml(sl.label) + '</span>' +
+        '</div>' +
+        '<b>' + cnt + ' <span class="muted" style="font-weight:500;">(' + pct + '%)</span></b>' +
+      '</div>';
+  }
+
+  box.innerHTML =
+    '<div class="pie-wrap">' +
+      '<div class="pie-svg-box">' +
+        '<svg viewBox="0 0 156 156" width="156" height="156">' + circlesHtml + '</svg>' +
+        '<div class="pie-center-label"><b>' + total + '</b><span>' + escapeHtml(centerTitle || "Total") + '</span></div>' +
+      '</div>' +
+      '<div class="pie-legend">' + legendHtml + '</div>' +
+    '</div>';
+}
+
+// UI Renderer `renderBars` (params: boxId, rows): Builds and updates DOM elements for bars.
 function renderBars(boxId, rows) {
   var box = document.getElementById(boxId);
   if (!box) return;
@@ -404,7 +508,7 @@ function renderColumns(boxId, cols) {
   box.innerHTML = html;
 }
 
-// 8. Simple Monthly Calendar Builder
+// UI Renderer `renderCalendar` (params: boxId, apps): Builds and updates DOM elements for calendar.
 function renderCalendar(boxId, apps) {
   var box = document.getElementById(boxId);
   if (!box) return;
@@ -415,7 +519,6 @@ function renderCalendar(boxId, apps) {
   var firstDay = new Date(year, month, 1).getDay();
   var daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  // Map day number -> count of applications created that day
   var byDay = {};
   var list = apps || [];
   for (var i = 0; i < list.length; i++) {
@@ -451,8 +554,7 @@ function renderCalendar(boxId, apps) {
   box.innerHTML = html;
 }
 
-
-// Ensure splash screen always fades out smoothly after 1200ms
+// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", function () {
   var splash = document.getElementById("splash");
   if (splash) {

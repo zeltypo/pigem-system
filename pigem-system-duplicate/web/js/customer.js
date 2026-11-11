@@ -4,17 +4,16 @@
 // ----------------------------------------------------------------------------
 // SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
 //   1. web/js/config.js  -> System maintenance checks and accessible alert modals
-//   2. web/js/db.js      -> `checkPageAccess(['customer'])`, `dbGetMyApplications()`,
-//                           `dbUploadIdPhoto()`, and `dbSubmitCustomerResubmission()`
-//   3. web/js/api.js     -> `apiStartBackgroundScreening()` to re-screen updated IDs/fields
-//   4. web/js/dash-ui.js -> Shared topbar, notifications bell, and account settings modal
+//   2. web/js/db.js      -> Customer application queries and ID photo resubmission
+//   3. web/js/api.js     -> Background re-screening when updated IDs are submitted
+//   4. web/js/dash-ui.js -> Shared topbar, notifications bell, and account settings drawer
 // ============================================================================
 
 var currentCustomer = null;
 var myApps = [];
 var selectedAppId = null;
 
-// Event Listener: Runs initialization or state sync when `DOMContentLoaded` fires
+// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   currentCustomer = await requireLogin(["customer"]);
   if (!currentCustomer) return;
@@ -23,7 +22,6 @@ window.addEventListener("DOMContentLoaded", async function () {
   await loadMyApplications();
   initDashUI(currentCustomer, myApps, selectMyApp);
 
-  // Quietly refresh status in background if customer is not typing in a correction box
   setInterval(async function () {
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
     if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") return;
@@ -32,7 +30,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   }, 8000);
 });
 
-// `loadMyApplications`: Fetches all fiber service applications belonging to the signed-in customer from Supabase.
+// Data Accessor `loadMyApplications`: Retrieves or refreshes data to load my applications.
 async function loadMyApplications() {
   myApps = await dbListApplicationsForCustomer(currentCustomer.email);
 
@@ -82,7 +80,7 @@ async function loadMyApplications() {
   renderSelectedApp();
 }
 
-// `findMyApp` (params: id): Looks up a specific customer application object in memory by its unique application ID.
+// Data Accessor `findMyApp` (params: id): Retrieves or refreshes data to find my app.
 function findMyApp(id) {
   for (var i = 0; i < myApps.length; i++) {
     if (myApps[i].id === id) return myApps[i];
@@ -90,13 +88,13 @@ function findMyApp(id) {
   return null;
 }
 
-// `selectMyApp` (params: id): Sets the active application in the Customer Portal and refreshes the status detail view.
+// Helper `selectMyApp` (params: id): Executes workflow logic for `selectMyApp`.
 function selectMyApp(id) {
   selectedAppId = id;
   renderSelectedApp();
 }
 
-// `renderSelectedApp`: Renders the simplified 3-stage progress tracker (Processing, Approved, Rejected) and any requested correction form.
+// UI Renderer `renderSelectedApp`: Builds and updates DOM elements for selected app.
 function renderSelectedApp() {
   var box = document.getElementById("cust-detail-box");
   var app = findMyApp(selectedAppId);
@@ -137,7 +135,7 @@ function renderSelectedApp() {
         escapeHtml(app.agent_remarks || "Your application could not be approved. Please review the note above or contact PIGEM support.") +
       '</div>';
   } else {
-    // Main status is Processing; if Needs Correction is active, show the Needs Correction branch inside Processing
+
     if (needsFix) {
       guideBox =
         '<div class="msg info show" style="margin-bottom:10px">' +
@@ -179,7 +177,6 @@ function renderSelectedApp() {
       '<div><span>Nearest Landmark</span><b>' + escapeHtml(app.landmark || "-") + '</b></div>' +
     '</div>';
 
-  //Needs Correction branch inside Processing (appears ONLY when needsFix is true)
   if (needsFix) {
     var hiName  = fields.indexOf("name") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
     var hiBdate = fields.indexOf("birth_date") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
@@ -243,7 +240,7 @@ function renderSelectedApp() {
   box.innerHTML = html;
 }
 
-// `submitCustomerCorrection` (params: appId): Uploads updated customer fields or replacement Valid ID photos to Supabase and triggers fresh cloud re-screening.
+// Action Handler `submitCustomerCorrection` (params: appId): Validates inputs and persists changes to submit customer correction.
 async function submitCustomerCorrection(appId) {
   var app = findMyApp(appId);
   if (!app) return;
@@ -382,7 +379,6 @@ async function submitCustomerCorrection(appId) {
       agent_remarks: "Customer submitted update: " + changedList.join(", ")
     });
 
-    // Trigger non-blocking cloud re-screening on the updated submission (with fail-safe to original ID copy)
     var rescrActive = isAiEnabled();
     if (!rescrActive) {
       updatedScreening.state = "paused";

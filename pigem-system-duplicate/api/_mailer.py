@@ -24,8 +24,8 @@ KEY RESPONSIBILITIES:
 # fallback body and an HTML body.
 from email.message import EmailMessage
 
-# `formataddr` formats the "From" header as "PIGEM Support Services <donotreply@pigem.ph>".
-from email.utils import formataddr
+# `formataddr`, `formatdate`, and `make_msgid` build SPF/DKIM-friendly headers to avoid spam folders.
+from email.utils import formataddr, formatdate, make_msgid
 
 # `html` safely escapes user-supplied strings before embedding them in HTML.
 import html
@@ -85,28 +85,39 @@ def _get_smtp_password() -> str:
 
 
 def _get_sender_name() -> str:
-    """Returns the corporate sender display name shown in the recipient's inbox."""
+    """Returns the official display sender name."""
     return (
         os.getenv("SMTP_FROM_NAME")
-        or "PIGEM Support Services"
+        or "Combined Facilities Support Services"
     ).strip()
 
 
-def _get_sender_email() -> str:
-    """Returns the official display sender address (defaults to donotreply@pigem.ph)."""
-    return (
-        os.getenv("SMTP_FROM_EMAIL")
-        or "donotreply@pigem.ph"
-    ).strip()
+def _get_sender_email(smtp_user: str = "") -> str:
+    """Returns a domain-aligned sender address matching SMTP_USER to prevent spam filtering."""
+    explicit = (os.getenv("SMTP_FROM_EMAIL") or "").strip()
+    if explicit and smtp_user:
+        exp_domain = explicit.split("@")[-1].lower()
+        usr_domain = smtp_user.split("@")[-1].lower()
+        if exp_domain == usr_domain:
+            return explicit
+        return smtp_user
+    if smtp_user:
+        return smtp_user
+    return explicit or "donotreply@pigem.ph"
 
 
 def _get_app_base_url() -> str:
-    """Returns the live Vercel deployment URL so email logos and links resolve."""
-    return (
-        os.getenv("VERCEL_PROJECT_PRODUCTION_URL")
-        and f"https://{os.getenv('VERCEL_PROJECT_PRODUCTION_URL').strip()}"
-        or "https://pigem-system-web.vercel.app"
-    )
+    """Returns the live Vercel deployment URL so activation/portal links resolve."""
+    prod_domain = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or "").strip()
+    if prod_domain:
+        return f"https://{prod_domain}"
+    return (os.getenv("APP_BASE_URL") or "https://pigem-system-web.vercel.app").strip().rstrip("/")
+
+
+def _get_supabase_logo_url() -> str:
+    """Builds the direct Supabase Storage public URL for the email corporate logo."""
+    base = (os.getenv("SUPABASE_URL") or "https://wuunqfxyejxwrawtjdrf.supabase.co").strip().rstrip("/")
+    return f"{base}/storage/v1/object/public/website-assets/black-logo-white-mode.png"
 
 
 def _generate_ref_tag(existing_tag: str = "") -> str:
@@ -134,24 +145,11 @@ def is_Allowed_customer_gmail(email_addr: str) -> bool:
 # ------------------------------------------------------------------------------
 # SIMPLE ZERO-COLOR CORPORATE EMAIL RENDERER
 # ------------------------------------------------------------------------------
-_CONFIDENTIALITY_STARS = "*" * 150
-
+# Concise confidentiality footer free of repeated asterisks that trigger spam filters
 _CONFIDENTIALITY_NOTICE = (
-    f"{_CONFIDENTIALITY_STARS}"
-    "Privileged/confidential information may be contained in this message. If this message is "
-    "received by anyone other than the intended addressee, please return the message to the sender "
-    "by replying to it and then delete the message from your computer. Unintended recipients are "
-    "prohibited from taking action on the basis of information in this e-mail. No confidentiality "
-    "or privilege is waived or lost by PIGEM Combined Facilities Support Services including its "
-    "affiliates by any mistransmission of this e-mail. PIGEM Combined Facilities Support Services "
-    "does not accept responsibility or liability for the accuracy or completeness of, or presence "
-    "of any virus or disabling code in, this e-mail. PIGEM Combined Facilities Support Services "
-    "reserves the right to monitor e-mail communications through its networks (in accordance with "
-    "applicable laws). Opinions, conclusions, statements and other information in this message that "
-    "do not relate to the official business of PIGEM Combined Facilities Support Services shall be "
-    "understood as neither given nor endorsed by it. PIGEM Combined Facilities Support Services. "
+    "Confidentiality Notice: This message from Combined Facilities Support Services (PIGEM) "
+    "is intended solely for the recipient named above under the Data Privacy Act of 2012 (RA 10173). "
     "Registered Office: Dasmariñas City, Cavite, Philippines."
-    f"{_CONFIDENTIALITY_STARS}"
 )
 
 
@@ -183,20 +181,24 @@ class BaseEmailTemplateRenderer:
         """
         safe_title = self._escape(title)
         safe_sub = self._escape(subtitle)
-        app_url = _get_app_base_url().rstrip("/")
-        logo_url = f"{app_url}/assets/images/black-logo-white-mode.png"
+        logo_url = _get_supabase_logo_url()
         final_ref_tag = _generate_ref_tag(ref_tag)
 
         cta_block = ""
         if cta_label and cta_url:
             safe_label = self._escape(cta_label)
             safe_url = self._escape(cta_url)
+            # Provide both a styled action button and a plain clickable URL for strict email viewers
             cta_block = f"""
-            <div style="margin:20px 0;">
-              <a href="{safe_url}"
-                 style="display:inline-block;border:1px solid #111111;color:#111111;text-decoration:none;padding:10px 18px;font-weight:700;font-size:13px;">
+            <div style="margin:22px 0;">
+              <a href="{safe_url}" target="_blank" rel="noopener"
+                 style="display:inline-block;background-color:#c8102e;border:1px solid #c8102e;border-radius:6px;color:#ffffff;text-decoration:none;padding:12px 22px;font-weight:700;font-size:14px;">
                  {safe_label}
               </a>
+              <div style="margin-top:10px;font-size:12px;color:#555555;word-break:break-all;">
+                Or copy and open this link in your browser:<br>
+                <a href="{safe_url}" target="_blank" rel="noopener" style="color:#c8102e;text-decoration:underline;">{safe_url}</a>
+              </div>
             </div>
             """
 
@@ -206,17 +208,17 @@ class BaseEmailTemplateRenderer:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin:0;padding:24px 12px;background-color:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;line-height:1.6;">
-  <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #d4d4d4;padding:28px 26px;">
-    <div style="border-bottom:1px solid #d4d4d4;padding-bottom:14px;margin-bottom:20px;">
-      <img src="{logo_url}" alt="PIGEM" style="height:38px;width:auto;display:block;margin-bottom:8px;">
+<body style="margin:0;padding:24px 12px;background-color:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#111111;line-height:1.6;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:28px 26px;">
+    <div style="border-bottom:1px solid #e2e8f0;padding-bottom:14px;margin-bottom:20px;">
+      <img src="{logo_url}" alt="Combined Facilities Support Services" style="height:40px;width:auto;display:block;margin-bottom:8px;">
       <div style="font-size:12px;font-weight:700;color:#111111;letter-spacing:0.3px;">
         COMBINED FACILITIES SUPPORT SERVICES
       </div>
     </div>
 
     <div style="font-size:18px;font-weight:700;color:#111111;margin-bottom:4px;">{safe_title}</div>
-    <div style="font-size:13px;color:#444444;margin-bottom:18px;">{safe_sub}</div>
+    <div style="font-size:13px;color:#475569;margin-bottom:18px;">{safe_sub}</div>
 
     <div style="font-size:14px;color:#111111;">
       {body_html}
@@ -224,14 +226,13 @@ class BaseEmailTemplateRenderer:
 
     {cta_block}
 
-    <div style="margin-top:20px;padding-top:14px;border-top:1px solid #e5e5e5;font-size:12.5px;color:#333333;">
-      <div>Ref no: <b>{self._escape(final_ref_tag)}</b></div>
-      <p style="margin:10px 0 0;font-size:12px;color:#444444;">
-        This is a system-generated message. Please do not respond to this email.
-        To ensure reliable delivery of all emails from our system, please ensure you add
-        <b>donotreply@pigem.ph</b> to your address book.
+    <div style="margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:12px;color:#475569;">
+      <div>Reference Tag: <b>{self._escape(final_ref_tag)}</b></div>
+      <p style="margin:8px 0 0;font-size:12px;color:#64748b;">
+        This is an automated service email from Combined Facilities Support Services (PIGEM).
+        Please do not share your one-time codes with anyone.
       </p>
-      <p style="margin:12px 0 0;font-size:11px;color:#555555;word-break:break-word;line-height:1.45;">
+      <p style="margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45;">
         {self._escape(_CONFIDENTIALITY_NOTICE)}
       </p>
     </div>
@@ -295,31 +296,62 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
             activation_link = str(
                 data.get("activation_link") or f"{app_base}/activate.html"
             )
+            portal_link = str(data.get("portal_link") or f"{app_base}/login.html")
+            customer_email = self._escape(data.get("customer_email") or "")
+            suggested_username = self._escape(data.get("username") or "")
+            is_existing = bool(data.get("is_existing_account"))
+
+            # Applicants who already own a portal account get a portal link instead of a duplicate activation code
+            if is_existing or not activation_code:
+                body = f"""
+                <p style="margin:0 0 12px;">Dear <b>{customer_name}</b>,</p>
+                <p style="margin:0 0 14px;">
+                  Your internet service application has been received and linked to your existing Customer Portal account.
+                </p>
+                <div style="border:1px solid #cbd5e1;border-radius:6px;padding:14px 16px;margin:14px 0;background:#f8fafc;">
+                  <div style="margin-bottom:6px;">Application Reference Number: <b>{ref_no}</b></div>
+                  <div style="margin-bottom:6px;">Selected Plan: <b>{plan_name}</b></div>
+                  {f'<div style="margin-bottom:6px;">Registered Email: <b>{customer_email}</b></div>' if customer_email else ''}
+                  {f'<div>Username: <b>@{suggested_username}</b></div>' if suggested_username else ''}
+                </div>
+                <p style="margin:0;font-size:13px;color:#334155;">
+                  Sign in at the Customer Portal anytime to check your application status.
+                </p>
+                """
+                return self.wrap_layout(
+                    title="Application Received - Linked to Your Account",
+                    subtitle=f"Application Reference: {ref_no}",
+                    body_html=body,
+                    cta_label="Open Customer Login Portal",
+                    cta_url=portal_link,
+                    ref_tag=ref_tag,
+                )
+
+            # New applicants receive a one-time activation link & code to create their Customer Portal password
             body = f"""
             <p style="margin:0 0 12px;">Dear <b>{customer_name}</b>,</p>
             <p style="margin:0 0 14px;">
-              Thank you for submitting your internet service application. To protect your personal data
-              under the Data Privacy Act of 2012 (RA 10173), no detailed personal information is displayed in this email.
+              Thank you for applying for Red Fiber Internet service. To view your application progress, please use the
+              <b>one-time activation link</b> below to create your Customer Portal password and confirm your username.
             </p>
-            <div style="border:1px solid #d4d4d4;padding:14px 16px;margin:14px 0;">
+            <div style="border:1px solid #cbd5e1;border-radius:6px;padding:14px 16px;margin:14px 0;background:#f8fafc;">
               <div style="margin-bottom:6px;">Application Reference Number: <b>{ref_no}</b></div>
               <div style="margin-bottom:6px;">Selected Plan: <b>{plan_name}</b></div>
-              <div>6-Digit Activation OTP Code: <b style="letter-spacing:2px;">{activation_code}</b></div>
+              {f'<div style="margin-bottom:6px;">Account Email: <b>{customer_email}</b></div>' if customer_email else ''}
+              {f'<div style="margin-bottom:6px;">Assigned Username: <b>@{suggested_username}</b></div>' if suggested_username else ''}
+              <div>One-Time Activation Code: <b style="letter-spacing:2px;font-size:16px;color:#c8102e;">{activation_code}</b></div>
             </div>
-            <p style="margin:0 0 10px;font-size:13px;color:#222222;">
-              NEVER SHARE YOUR OTP especially on social media and SMS or email links. Your code is for your eyes only.
-              Ref no: <b>{ref_tag}</b>. This code is only valid for 5 minutes upon receiving this email.
-            </p>
-            <p style="margin:0;font-size:13px;color:#222222;">
-              Click the link below to open the Account Activation page, then enter your email address,
-              preferred username, 6-digit OTP code, and password to activate your Customer Portal account.
+            <p style="margin:0 0 8px;font-size:13px;color:#1e293b;">
+              <b>Important:</b> This activation link and code can only be used <b>once</b> to create your account password.
+              After activating, use your username or Gmail address to sign in at:
+              <a href="{self._escape(portal_link)}" style="color:#c8102e;">{self._escape(portal_link)}</a>
             </p>
             """
             return self.wrap_layout(
-                title="Application Received - Activate Your Account",
+                title="Application Received - Create Your Account Password",
                 subtitle=f"Application Reference: {ref_no}",
                 body_html=body,
-                cta_label="Open Account Activation Page",
+                cta_label="Create Password & Activate Account",
                 cta_url=activation_link,
                 ref_tag=ref_tag,
             )
@@ -463,7 +495,8 @@ def send(
         }
 
     sender_name = _get_sender_name()
-    sender_email = _get_sender_email()
+    # Align From header with authenticated SMTP user to avoid Gmail spam classification
+    sender_email = _get_sender_email(smtp_user)
     renderer = CustomerEmailRenderer(sender_name=sender_name)
 
     final_html = html_content
@@ -475,19 +508,33 @@ def send(
             payload=payload,
         )
 
+    payload_dict = payload or {}
+    extra_plain = ""
+    if payload_dict.get("activation_link") and payload_dict.get("activation_code"):
+        extra_plain = (
+            f"\nOne-Time Activation Code: {payload_dict.get('activation_code')}\n"
+            f"Create your password here (one-time link): {payload_dict.get('activation_link')}\n"
+            f"Customer Login Portal: {payload_dict.get('portal_link') or (_get_app_base_url().rstrip('/') + '/login.html')}\n"
+        )
+    elif payload_dict.get("portal_link"):
+        extra_plain = f"\nCustomer Login Portal: {payload_dict.get('portal_link')}\n"
+
     plain_fallback = (
-        f"{ (message or subject or 'Please view this message in an HTML-capable email client.').strip() }\n\n"
-        "This is a system-generated message. Please do not respond to this email. "
-        "To ensure reliable delivery of all emails from our system, please ensure you add "
-        "donotreply@pigem.ph to your address book.\n\n"
+        f"{(message or subject or 'Please view this message in an HTML-capable email client.').strip()}\n"
+        f"{extra_plain}\n"
+        "This is an automated service message from Combined Facilities Support Services (PIGEM).\n\n"
         f"{_CONFIDENTIALITY_NOTICE}"
     )
 
     msg = EmailMessage()
     msg["Subject"] = subject or "PIGEM Notification"
     msg["From"] = formataddr((sender_name, sender_email))
-    msg["Reply-To"] = formataddr((sender_name, "support@pigem.ph"))
+    msg["Reply-To"] = formataddr((sender_name, smtp_user or sender_email))
     msg["To"] = recipient
+    # RFC Date and Message-ID headers prevent common spam quarantine heuristics
+    msg["Date"] = formatdate(localtime=True)
+    domain_part = sender_email.split("@")[-1] if "@" in sender_email else "gmail.com"
+    msg["Message-ID"] = make_msgid(domain=domain_part)
     msg.set_content(plain_fallback)
     msg.add_alternative(final_html, subtype="html")
 

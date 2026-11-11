@@ -161,10 +161,10 @@ function showLockoutPopup() {
   var isCustomer = (window.SYSTEM === "customer");
   var msgHtml = isCustomer
     ? "You have reached " + MAX_ATTEMPTS + " failed login attempts. Please use Account Recovery to verify your identity via OTP."
-    : "You have reached " + MAX_ATTEMPTS + " failed login attempts. Please contact the System Administrator or refresh the page to try again.";
+    : "You have reached " + MAX_ATTEMPTS + " failed login attempts.<br><br><b>Need Help Signing In?</b><br>Contact the System Administrator at Tel: <b>(046) 458-0908</b> or Hotline: <b>101-733</b>, or submit a Password Reset Request below.";
   var actionBtn = isCustomer
     ? '<button class="btn btn-red" onclick="closePopup(); openForgotModal();">Recover Account</button>'
-    : "";
+    : '<button class="btn btn-red" onclick="closePopup(); openStaffResetRequestModal();">Request Password Reset</button>';
 
   openPopup(
     "<h3>Sign-In Temporarily Locked</h3>" +
@@ -176,10 +176,57 @@ function showLockoutPopup() {
   );
 }
 
+function openStaffResetRequestModal() {
+  openPopup(
+    '<div class="row between" style="margin-bottom:8px;">' +
+      '<h3>Staff Password Reset Request</h3>' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '</div>' +
+    '<p class="small muted">Internal Agents and Managers use username-only accounts. Submit your username below to notify the System Administrator, or call <b>(046) 458-0908</b>.</p>' +
+    '<form class="mt" onsubmit="submitStaffResetRequest(event)">' +
+      '<label for="staff-reset-username">Your Staff Username</label>' +
+      '<input id="staff-reset-username" type="text" placeholder="e.g. maria_santos" required>' +
+      '<label for="staff-reset-note" class="mt">Optional Note / Contact Extension</label>' +
+      '<input id="staff-reset-note" type="text" placeholder="e.g. Forgot password - Cavite Desk">' +
+      '<div id="staff-reset-feedback" class="mt"></div>' +
+      '<button type="submit" id="btn-staff-reset-submit" class="btn btn-red btn-full mt-big">Send Request to System Admin</button>' +
+    '</form>'
+  );
+}
+
+async function submitStaffResetRequest(event) {
+  event.preventDefault();
+  var unameEl = document.getElementById("staff-reset-username");
+  var noteEl = document.getElementById("staff-reset-note");
+  var fbEl = document.getElementById("staff-reset-feedback");
+  var btn = document.getElementById("btn-staff-reset-submit");
+  var uname = unameEl ? unameEl.value.trim() : "";
+  var note = noteEl ? noteEl.value.trim() : "";
+  if (fbEl) fbEl.innerHTML = "";
+  btn.disabled = true;
+  btn.textContent = "Sending Request...";
+  try {
+    var info = await dbRequestStaffPasswordReset(uname, note);
+    if (fbEl) {
+      fbEl.innerHTML = '<div class="notice ok"><b>Request Sent!</b> System Administrator has been notified to reset the password for <b>@' + escapeHtml(info.username) + '</b>. You may also reach Admin Support at Tel: <b>(046) 458-0908</b>.</div>';
+    }
+  } catch (err) {
+    if (fbEl) {
+      fbEl.innerHTML = '<div class="notice bad">' + escapeHtml(err.message || "Could not submit reset request.") + '</div>';
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Send Request to System Admin";
+  }
+}
+
 async function handleLogin(event) {
   event.preventDefault();
 
-  if (loginAttempts >= MAX_ATTEMPTS) {
+  var isAdmin = (window.SYSTEM === "admin");
+  var isStaff = (window.SYSTEM === "staff");
+
+  if (!isAdmin && loginAttempts >= MAX_ATTEMPTS) {
     showLockoutPopup();
     return;
   }
@@ -189,24 +236,31 @@ async function handleLogin(event) {
   var identifier = (emailEl ? emailEl.value : "").trim().toLowerCase();
   var password = pwEl ? pwEl.value : "";
 
-  if (identifier.indexOf("@") !== -1) {
-    if (window.SYSTEM === "customer") {
+  if (isAdmin || isStaff) {
+    if (identifier.indexOf("@") !== -1) {
+      resetLoginFieldsAndCaptcha();
+      showAlert("Username Required", "Internal Admin, Manager, and Agent accounts sign in by Username only.", "warn");
+      return;
+    }
+    var cleanU = identifier.replace(/^@/, "");
+    if (typeof isValidUsername === "function" && !isValidUsername(cleanU)) {
+      resetLoginFieldsAndCaptcha();
+      showAlert("Invalid Username", "Please enter your valid username (3 to 30 characters: letters, numbers, dots, underscores).", "warn");
+      return;
+    }
+    identifier = cleanU;
+  } else {
+    if (identifier.indexOf("@") !== -1) {
       if (typeof isCustomerGmail === "function" && !isCustomerGmail(identifier)) {
         resetLoginFieldsAndCaptcha();
         showAlert("Gmail or Username Required", "Customer Login accepts Customer usernames or @gmail.com email addresses only.", "warn");
         return;
       }
-    } else {
-      if (typeof isCustomerGmail === "function" && isCustomerGmail(identifier)) {
-        resetLoginFieldsAndCaptcha();
-        showAlert("Internal Account Required", "Gmail accounts are reserved for Customers. Please enter your internal username or @pigem.ph email.", "warn");
-        return;
-      }
+    } else if (typeof isValidUsername === "function" && !isValidUsername(identifier.replace(/^@/, ""))) {
+      resetLoginFieldsAndCaptcha();
+      showAlert("Invalid Username", "Please enter a valid username (3 to 30 characters) or @gmail.com email address.", "warn");
+      return;
     }
-  } else if (typeof isValidUsername === "function" && !isValidUsername(identifier)) {
-    resetLoginFieldsAndCaptcha();
-    showAlert("Invalid Username", "Please enter a valid username (3 to 30 characters: letters, numbers, dots, underscores) or email address.", "warn");
-    return;
   }
 
   if (!loginCaptchaVerified && typeof grecaptcha !== "undefined" && grecaptcha.getResponse) {
@@ -234,20 +288,47 @@ async function handleLogin(event) {
   try {
     var user = await dbSignIn(identifier, password);
     loginAttempts = 0;
+    var bannerEl = document.getElementById("login-attempt-banner");
+    if (bannerEl) bannerEl.hidden = true;
     saveRememberedIdentifier(identifier);
     window.location.href = getHomeForRole(user.role);
   } catch (err) {
-    loginAttempts++;
     resetLoginFieldsAndCaptcha();
     if (emailEl) emailEl.focus();
     btn.disabled = false;
     btn.textContent = oldText;
 
+    var banner = document.getElementById("login-attempt-banner");
+    if (isAdmin) {
+      if (banner) {
+        banner.hidden = false;
+        banner.innerHTML = "<b>Sign In Failed:</b> " + escapeHtml(err.message || "Invalid Administrator username or password.");
+      }
+      showAlert("Sign In Failed", err.message || "Invalid Administrator username or password.", "bad");
+      return;
+    }
+
+    loginAttempts++;
     if (loginAttempts >= MAX_ATTEMPTS) {
+      if (banner) {
+        banner.hidden = false;
+        banner.innerHTML = "<b>Account Temporarily Locked:</b> 5 failed attempts reached. Contact System Admin at Tel: <b>(046) 458-0908</b>" +
+          (isStaff ? ' or <a href="#" onclick="openStaffResetRequestModal(); return false;">Request Password Reset</a>.' : ".");
+      }
       showLockoutPopup();
     } else {
       var remaining = MAX_ATTEMPTS - loginAttempts;
-      showAlert("Sign In Failed", (err.message || "Invalid username/email or password.") + " (" + remaining + " attempt" + (remaining === 1 ? "" : "s") + " remaining)", "bad");
+      var msgText = (err.message || "Invalid username or password.") + " (Failed attempt " + loginAttempts + " of " + MAX_ATTEMPTS + ", " + remaining + " remaining)";
+      if (banner) {
+        banner.hidden = false;
+        banner.innerHTML = "<b>Sign In Failed:</b> " + escapeHtml(msgText) +
+          (isStaff ? "<br><span class='small'>Contact System Admin: Tel (046) 458-0908 | Hotline 101-733</span>" : "");
+      }
+      showAlert(
+        "Sign In Failed",
+        msgText + (isStaff ? "<br><br>Need help? Contact System Admin at <b>(046) 458-0908</b> or use <b>Forgot Password?</b>." : ""),
+        "bad"
+      );
     }
   }
 }

@@ -60,12 +60,7 @@
           <div class="mt">
             <label for="adm-username">Administrator Username</label>
             <input id="adm-username" type="text" minlength="3" maxlength="30" placeholder="pigem_admin" required>
-            <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores).</div>
-          </div>
-          <div class="mt">
-            <label for="adm-email">Admin Email</label>
-            <input id="adm-email" type="email" placeholder="admin@pigem.ph" required>
-            <div class="small muted" style="font-size:11.5px; margin-top:4px;">Use an official internal domain such as <b>admin@pigem.ph</b>.</div>
+            <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores). Administrator signs in with username only.</div>
           </div>
           <div class="mt">
             <label for="adm-pw">Password</label>
@@ -87,7 +82,7 @@
       </div>
 
       <div class="row between mt-big" style="border-top:1px solid var(--line); padding-top:14px;">
-        <a href="../index.html" class="btn btn-small">&larr; Home</a>
+        <a href="index.html" class="btn btn-small">&larr; Home</a>
         <a href="admin-login.html" class="btn btn-small">Admin Login &rarr;</a>
       </div>
     </div>
@@ -127,22 +122,26 @@ window.SYSTEM = "admin";
       var middle = document.getElementById("adm-middle-name").value.trim();
       var last = document.getElementById("adm-last-name").value.trim();
       var fullName = [first, middle && middle.toUpperCase() !== "N/A" ? middle : "", last].filter(Boolean).join(" ").trim();
-      var username = document.getElementById("adm-username").value.trim().toLowerCase();
-      var email = document.getElementById("adm-email").value.trim().toLowerCase();
+      var username = document.getElementById("adm-username").value.trim().toLowerCase().replace(/^@/, "");
       var pw = document.getElementById("adm-pw").value;
       var pw2 = document.getElementById("adm-pw2").value;
       var btn = document.getElementById("btn-save-admin");
 
-      if (!first || !last || !username || !email || !pw) {
-        showAlert("Missing Fields", "Please complete First Name, Middle Name, Last Name, Username, Email, and Password.", "warn");
+      if (!first || !last || !username || !pw) {
+        showAlert("Missing Fields", "Please complete First Name, Last Name, Username, and Password.", "warn");
         return;
+      }
+      if (typeof validatePersonName === "function") {
+        var fChk = validatePersonName(first, "First Name", false);
+        var mChk = middle ? validatePersonName(middle, "Middle Name", true) : { valid: true };
+        var lChk = validatePersonName(last, "Last Name", false);
+        if (!fChk.valid || !mChk.valid || !lChk.valid) {
+          showAlert("Invalid Name", [fChk.message, mChk.message, lChk.message].filter(Boolean).join(" "), "warn");
+          return;
+        }
       }
       if (typeof isValidUsername === "function" && !isValidUsername(username)) {
         showAlert("Invalid Username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).", "warn");
-        return;
-      }
-      if (!isStaffBusinessEmail(email)) {
-        showAlert("Official Email Required", "Admin provisioning requires an internal email address (such as admin@pigem.ph). Gmail addresses are reserved for Customers.", "warn");
         return;
       }
       if (typeof isStrongPassword === "function" && !isStrongPassword(pw)) {
@@ -157,9 +156,9 @@ window.SYSTEM = "admin";
       btn.disabled = true;
       btn.textContent = "Provisioning Admin...";
       try {
-        await dbCreateUserAccount(fullName, email, pw, "admin", username);
+        await dbCreateUserAccount(fullName, null, pw, "admin", username);
         await initProvisioningPage();
-        showAlert("Admin Provisioned", "System Administrator account (@" + username + " / " + email + ") is ready. You can now sign in to the Admin Console.", "good");
+        showAlert("Admin Provisioned", "System Administrator account (@" + username + ") is ready. You can now sign in to the Admin Console.", "good");
       } catch (err) {
         showAlert("Provisioning Failed", err.message || "Could not provision Admin account.", "bad");
       } finally {

@@ -1,24 +1,25 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     FILE OVERVIEW: Customer Account Activation Page (web/activate.html)
-     PURPOSE: Accessed exclusively via the Customer's email notification link.
-              All input fields start completely empty so the Customer manually
-              enters their Gmail address, preferred Username, 6-digit OTP code,
-              and strong password.
+     FILE OVERVIEW: One-Time Customer Account Password Setup & Activation Page (web/html/activate.html)
+     PURPOSE: Allows newly registered applicants to verify their one-time activation link/code once, confirm username, and set their account password.
+     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
      ========================================================================== -->
+
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- IMPORT: Browser tab favicon displaying the official PIGEM corporate logo -->
+
+  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Customer Account Activation | Combined Facilities Support Services</title>
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet -->
+
+  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
 </head>
 <body class="gray-bg">
 
-  <!-- Simple Top Bar -->
+  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="simple-bar">
     <div class="container" style="display:flex; align-items:center; gap:12px;">
       <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
@@ -26,21 +27,23 @@
     </div>
   </header>
 
+  <!-- SECTION: Main Page Content Container -->
   <main class="auth-page" style="min-height:calc(100vh - 62px);">
     <div class="card auth-card">
       <div class="auth-head">
         <h2>Activate Your Account</h2>
-        <p>Enter your registered Gmail address, preferred username, the 6-digit OTP code from your email notification, and create your password.</p>
+        <p>Create your Customer Account password and confirm your username using the one-time activation link sent to your Gmail.</p>
       </div>
 
       <div id="already-active-box" class="notice warn mt" hidden>
-        <b>Account Already Activated:</b> This email address has already activated its Customer Account. You can sign in directly to track your application.
+        <b id="already-active-title">One-Time Link Used:</b>
+        <span id="already-active-msg">This one-time activation link has already been used and your Customer Account is active.</span>
         <div class="mt">
           <a href="login.html" class="btn btn-red btn-full">Go to Customer Login</a>
         </div>
       </div>
 
-      <!-- All fields intentionally start empty so the Customer enters them from their email notification -->
+      <!-- FORM: Interactive User Input Form -->
       <form id="activate-form" class="mt" autocomplete="off" onsubmit="submitActivation(event)">
         <div>
           <label for="act-email">Gmail Address</label>
@@ -68,22 +71,60 @@
     </div>
   </main>
 
-  <!-- IMPORT: Official Supabase JavaScript SDK v2 -->
+  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- IMPORT: Global cloud configuration and UI helpers -->
+
+  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
-  <!-- IMPORT: Cloud database & authentication layer -->
+
+  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
+  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
-    function initActivatePage() {
-      var ids = ["act-email", "act-username", "act-code", "act-pass", "act-pass2"];
-      for (var i = 0; i < ids.length; i++) {
-        var el = document.getElementById(ids[i]);
-        if (el) el.value = "";
+    // Helper `initActivatePage`: Executes workflow logic for `initActivatePage`.
+    async function initActivatePage() {
+      var params = new URLSearchParams(window.location.search);
+      var qEmail = (params.get("email") || "").trim().toLowerCase();
+      var qCode = (params.get("code") || "").trim();
+      var qUser = (params.get("username") || "").trim().toLowerCase();
+
+      var emailEl = document.getElementById("act-email");
+      var userEl = document.getElementById("act-username");
+      var codeEl = document.getElementById("act-code");
+      var passEl = document.getElementById("act-pass");
+      var pass2El = document.getElementById("act-pass2");
+      var boxEl = document.getElementById("already-active-box");
+      var titleEl = document.getElementById("already-active-title");
+      var msgEl = document.getElementById("already-active-msg");
+      var formEl = document.getElementById("activate-form");
+
+      if (passEl) passEl.value = "";
+      if (pass2El) pass2El.value = "";
+      if (emailEl) {
+        emailEl.value = qEmail;
+        if (qEmail) emailEl.readOnly = true;
       }
+      if (userEl) userEl.value = qUser;
+      if (codeEl) codeEl.value = qCode;
+
       if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles();
+
+      if (qEmail && typeof dbCheckActivationLinkStatus === "function") {
+        var st = await dbCheckActivationLinkStatus(qEmail, qCode);
+        if (!st.valid) {
+          if (boxEl) boxEl.hidden = false;
+          if (titleEl) titleEl.textContent = st.alreadyActivated ? "Account Already Activated: " : "Activation Link Unavailable: ";
+          if (msgEl) msgEl.textContent = st.reason || "This one-time link cannot be used again.";
+          if (formEl && (st.alreadyActivated || qCode)) formEl.hidden = true;
+          return;
+        }
+        if (userEl && !userEl.value && st.username) {
+          userEl.value = st.username;
+        }
+      }
     }
 
+    // Action Handler `submitActivation` (params: event): Validates inputs and persists changes to submit activation.
     async function submitActivation(event) {
       event.preventDefault();
       var email = document.getElementById("act-email").value.trim().toLowerCase();
