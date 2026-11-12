@@ -418,7 +418,12 @@ class FieldComparisonEngine(BaseTextMatcher):
 
         if not candidate_dates:
 
-            candidate_dates = self._extract_dates(" ".join(lines))
+            non_issue_lines = [
+                ln for ln in lines
+                if not any(k in ln.upper() for k in ("ISSUED", "ISSUE", "EXPIR", "VALID UNTIL", "VALIDITY"))
+            ]
+
+            candidate_dates = self._extract_dates(" ".join(non_issue_lines))
 
         if clean_entered in candidate_dates:
 
@@ -646,6 +651,34 @@ class FieldComparisonEngine(BaseTextMatcher):
 
         results = []
 
+        if ocr_payload.get("is_valid_government_id") is False:
+
+            detected_doc = str(ocr_payload.get("detected_document_type") or "Non-ID or unreadable image").strip()
+
+            results.append({
+                "field": "Document Authenticity Check",
+                "key": "document_type",
+                "entered": str(entered.get("id_type") or "Government ID").strip(),
+                "found_on_id": detected_doc,
+                "status": "mismatch",
+                "note": f"Uploaded image does not appear to be a valid government-issued ID ({detected_doc}).",
+            })
+
+        elif ocr_payload.get("id_type_matches_declared") is False:
+
+            detected_doc = str(ocr_payload.get("detected_document_type") or "Different ID type").strip()
+
+            entered_doc = str(entered.get("id_type") or "Selected ID").strip()
+
+            results.append({
+                "field": "ID Type Match",
+                "key": "id_type",
+                "entered": entered_doc,
+                "found_on_id": detected_doc,
+                "status": "mismatch",
+                "note": f"Selected ID type ({entered_doc}) does not match the uploaded document ({detected_doc}).",
+            })
+
         if (entered.get("full_name") or "").strip():
 
             results.append(
@@ -716,6 +749,7 @@ class GeminiScreeningService(BaseLanguageClient):
         "type": "OBJECT",
         "properties": {
             "is_valid_government_id": {"type": "BOOLEAN"},
+            "id_type_matches_declared": {"type": "BOOLEAN"},
             "detected_document_type": {"type": "STRING"},
             "extracted_name": {"type": "STRING"},
             "extracted_first_name": {"type": "STRING"},
@@ -727,6 +761,11 @@ class GeminiScreeningService(BaseLanguageClient):
                 "type": "ARRAY",
                 "items": {"type": "STRING"},
             },
+            "unreadable_or_occluded_fields": {
+                "type": "ARRAY",
+                "items": {"type": "STRING"},
+            },
+            "confidence": {"type": "STRING"},
             "lines": {
                 "type": "ARRAY",
                 "items": {"type": "STRING"},
@@ -734,6 +773,7 @@ class GeminiScreeningService(BaseLanguageClient):
         },
         "required": [
             "is_valid_government_id",
+            "id_type_matches_declared",
             "detected_document_type",
             "extracted_name",
             "extracted_first_name",
@@ -742,6 +782,8 @@ class GeminiScreeningService(BaseLanguageClient):
             "extracted_birth_date",
             "extracted_id_number",
             "alternate_id_numbers",
+            "unreadable_or_occluded_fields",
+            "confidence",
             "lines",
         ],
     }
@@ -768,7 +810,7 @@ class GeminiScreeningService(BaseLanguageClient):
 
         api_key = (getenv("GEMINI_API_KEY") or "").strip()
 
-        model = (getenv("GEMINI_MODEL") or "gemini-flash-latest").strip()
+        model = (getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
 
         return api_key, model
 
@@ -798,11 +840,13 @@ class GeminiScreeningService(BaseLanguageClient):
 
         expect_json: bool = True,
 
-        max_tokens: int = 600,
+        max_tokens: int = 2048,
 
         temperature: float = 0.0,
 
         response_schema: dict = None,
+
+        system_instruction: str = "",
 
     ) -> str:
 
@@ -812,7 +856,12 @@ class GeminiScreeningService(BaseLanguageClient):
 
             return ""
 
-        gen_cfg = {"temperature": temperature, "maxOutputTokens": max_tokens}
+        gen_cfg = {
+            "temperature": temperature,
+            "topP": 0.1,
+            "topK": 1,
+            "maxOutputTokens": max_tokens,
+        }
 
         if expect_json:
 
@@ -830,6 +879,10 @@ class GeminiScreeningService(BaseLanguageClient):
 
         }
 
+        if system_instruction:
+
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
         headers = {
 
             "Content-Type": "application/json",
@@ -840,7 +893,7 @@ class GeminiScreeningService(BaseLanguageClient):
 
         models_to_try = [primary_model]
 
-        for fallback_model in ("gemini-2.5-flash", "gemini-2.0-flash"):
+        for fallback_model in ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest"):
 
             if fallback_model not in models_to_try:
 
@@ -956,6 +1009,13 @@ class GeminiScreeningService(BaseLanguageClient):
 
         )
 
+        system_rules = (
+            "You are a strict forensic document transcription engine. "
+            "Never guess, infer, hallucinate, or auto-complete obscured, blurry, cropped, or missing characters. "
+            "Every character you output in structured fields MUST be directly supported by visible printed text in the image and included in `lines`. "
+            "If a field cannot be read with certainty, output an empty string and list the field in `unreadable_or_occluded_fields`."
+        )
+
         prompt = (
 
             side_hint
@@ -964,7 +1024,7 @@ class GeminiScreeningService(BaseLanguageClient):
 
             + "Read every visible printed character with extreme character-by-character precision:\n"
 
-            "1. Do NOT guess blurred or covered characters and do NOT judge legal authenticity.\n"
+            "1. ANTI-HALLUCINATION: Do NOT guess blurred, glare-washed, shaded, or covered characters, and do NOT invent placeholder values.\n"
 
             "2. Separate the cardholder's printed First/Given Name (`Pangalan`), Middle Name (`Gitnang Apelyido`), "
 
@@ -980,8 +1040,13 @@ class GeminiScreeningService(BaseLanguageClient):
 
             "or CRN and serial number), include all secondary numbers in `alternate_id_numbers`.\n"
 
-            "5. Put every readable text line from the card in `lines`.\n"
-            "6. Set `is_valid_government_id` to `true` ONLY if the image clearly shows a physical or digital official Philippine government-issued ID card (or official paper/ePhilID); set `false` for selfies, landscapes, blank images, receipts, random screenshots, or unreadable pictures, and summarize what is shown in `detected_document_type`."
+            "5. Put every readable printed text line verbatim in `lines`.\n"
+
+            "6. Set `is_valid_government_id` to `true` ONLY if the image clearly shows an authentic physical or digital Philippine government-issued ID card (or official ePhilID); set `false` for selfies, landscapes, blank images, receipts, random screenshots, or unreadable photos, and describe what is shown in `detected_document_type`.\n"
+
+            "7. Set `id_type_matches_declared` to `false` ONLY if you clearly detect a DIFFERENT specific ID card type than the applicant's selected type (otherwise `true`).\n"
+
+            "8. List any blurry, cut-off, shadowed, or unreadable target fields among `[\"name\", \"birth_date\", \"id_number\"]` in `unreadable_or_occluded_fields`, and set `confidence` to `\"high\"`, `\"medium\"`, or `\"low\"`."
         )
 
         parts.append({"text": prompt})
@@ -992,11 +1057,13 @@ class GeminiScreeningService(BaseLanguageClient):
 
             expect_json=True,
 
-            max_tokens=650,
+            max_tokens=2048,
 
             temperature=0.0,
 
             response_schema=self._OCR_RESPONSE_SCHEMA,
+
+            system_instruction=system_rules,
 
         )
 
@@ -1022,6 +1089,12 @@ class GeminiScreeningService(BaseLanguageClient):
 
                 "alternate_id_numbers": [],
 
+                "unreadable_fields": [],
+
+                "ungrounded_fields": [],
+
+                "confidence": "low",
+
                 "note": "Vision OCR service did not return a response.",
 
             }
@@ -1036,18 +1109,88 @@ class GeminiScreeningService(BaseLanguageClient):
 
             alt_nums = [str(x).strip() for x in (parsed.get("alternate_id_numbers") or []) if str(x).strip()]
 
+            unreadable = [str(x).strip().lower() for x in (parsed.get("unreadable_or_occluded_fields") or []) if str(x).strip()]
+
+            ext_name = str(parsed.get("extracted_name") or "").strip()
+
+            ext_first = str(parsed.get("extracted_first_name") or "").strip()
+
+            ext_middle = str(parsed.get("extracted_middle_name") or "").strip()
+
+            ext_last = str(parsed.get("extracted_last_name") or "").strip()
+
+            ext_dob = str(parsed.get("extracted_birth_date") or "").strip()
+
+            ext_id = str(parsed.get("extracted_id_number") or "").strip()
+
+            ungrounded = []
+
+            if "name" in unreadable:
+
+                ext_name, ext_first, ext_middle, ext_last = "", "", "", ""
+
+            if "birth_date" in unreadable:
+
+                ext_dob = ""
+
+            if "id_number" in unreadable:
+
+                ext_id = ""
+
+            if clean_lines:
+
+                compact_lines = _matcher._normalize_id_code(" ".join(clean_lines))
+
+                clean_words = _matcher._clean_words(" ".join(clean_lines)).split()
+
+                if ext_id:
+
+                    compact_id = _matcher._normalize_id_code(ext_id)
+
+                    id_core = _matcher._ID_PREFIX_REGEX.sub("", compact_id)
+
+                    if len(id_core) >= 4 and id_core not in compact_lines and compact_id not in compact_lines:
+
+                        ext_id = ""
+
+                        ungrounded.append("id_number")
+
+                if ext_dob:
+
+                    dob_year_match = re.match(r"^(\d{4})-", ext_dob)
+
+                    if dob_year_match and dob_year_match.group(1) not in " ".join(clean_lines):
+
+                        ext_dob = ""
+
+                        ungrounded.append("birth_date")
+
+                if ext_last and clean_words:
+
+                    last_tokens = [t for t in _matcher._clean_words(ext_last).split() if len(t) >= 3]
+
+                    if last_tokens and not any(_matcher._token_matches_list(tok, clean_words, 0.80) for tok in last_tokens):
+
+                        ext_name, ext_first, ext_middle, ext_last = "", "", "", ""
+
+                        ungrounded.append("name")
+
             return {
                 "available": True,
                 "is_valid_government_id": bool(parsed.get("is_valid_government_id", True)),
+                "id_type_matches_declared": bool(parsed.get("id_type_matches_declared", True)),
                 "detected_document_type": str(parsed.get("detected_document_type") or "").strip(),
+                "confidence": str(parsed.get("confidence") or "medium").strip().lower(),
+                "unreadable_fields": unreadable,
+                "ungrounded_fields": ungrounded,
                 "lines": clean_lines,
                 "line_count": len(clean_lines),
-                "extracted_name": str(parsed.get("extracted_name") or "").strip(),
-                "extracted_first_name": str(parsed.get("extracted_first_name") or "").strip(),
-                "extracted_middle_name": str(parsed.get("extracted_middle_name") or "").strip(),
-                "extracted_last_name": str(parsed.get("extracted_last_name") or "").strip(),
-                "extracted_birth_date": str(parsed.get("extracted_birth_date") or "").strip(),
-                "extracted_id_number": str(parsed.get("extracted_id_number") or "").strip(),
+                "extracted_name": ext_name,
+                "extracted_first_name": ext_first,
+                "extracted_middle_name": ext_middle,
+                "extracted_last_name": ext_last,
+                "extracted_birth_date": ext_dob,
+                "extracted_id_number": ext_id,
                 "alternate_id_numbers": alt_nums,
             }
 
@@ -1058,6 +1201,16 @@ class GeminiScreeningService(BaseLanguageClient):
             return {
 
                 "available": True,
+
+                "is_valid_government_id": True,
+
+                "id_type_matches_declared": True,
+
+                "confidence": "low",
+
+                "unreadable_fields": ["name", "birth_date", "id_number"],
+
+                "ungrounded_fields": [],
 
                 "lines": fallback_lines,
 
@@ -1183,9 +1336,9 @@ class GeminiScreeningService(BaseLanguageClient):
 
             "You are an application screening co-pilot assisting a human Verification Agent at an internet service company. "
 
-            "Do NOT mention technical words like AI, Gemini, OCR, or OpenCV. "
+            "STRICT FACTUALITY: Mention ONLY discrepancies and facts explicitly present in the Checks JSON below. "
 
-            "State the specific discrepancy clearly so the Agent can verify it quickly. "
+            "Do NOT invent numbers, fields, or issues that do not appear in Checks, and do NOT mention AI, Gemini, OCR, or OpenCV. "
 
             'Return ONLY valid JSON: {"findings": ["short point"], "guidance": ["short action tip for the agent"]}.\n\n'
 
@@ -1193,7 +1346,7 @@ class GeminiScreeningService(BaseLanguageClient):
 
         )
 
-        raw = self._call_gemini(parts=[{"text": prompt}], expect_json=True, max_tokens=280, temperature=0.1)
+        raw = self._call_gemini(parts=[{"text": prompt}], expect_json=True, max_tokens=512, temperature=0.0)
 
         if raw:
 
@@ -1205,7 +1358,13 @@ class GeminiScreeningService(BaseLanguageClient):
 
                 g_list = [self._sanitize_plain_text(str(x)) for x in (parsed.get("guidance") or []) if str(x).strip()]
 
-                if f_list and g_list:
+                checks_blob = json.dumps(summary_data)
+
+                out_blob = " ".join(f_list + g_list)
+
+                cited_numbers = re.findall(r"\d{5,}", out_blob)
+
+                if f_list and g_list and all(num in checks_blob for num in cited_numbers):
 
                     return {"available": True, "findings": f_list[:4], "guidance": g_list[:4]}
 
@@ -1370,6 +1529,48 @@ def is_available() -> bool:
 def extract_id_text(front_bytes: bytes, back_bytes: bytes = None, id_type: str = "") -> dict:
 
     return _gemini_service.extract_id_text(front_bytes, back_bytes=back_bytes, id_type=id_type)
+
+def extract_id_text_with_fallback(
+    primary_front: bytes,
+    primary_back: bytes = None,
+    raw_front: bytes = None,
+    raw_back: bytes = None,
+    id_type: str = "",
+) -> dict:
+
+    first_pass = _gemini_service.extract_id_text(primary_front, back_bytes=primary_back, id_type=id_type)
+
+    if not first_pass.get("available"):
+
+        return first_pass
+
+    missing_core = not (
+        first_pass.get("extracted_name")
+        and first_pass.get("extracted_birth_date")
+        and first_pass.get("extracted_id_number")
+    )
+
+    should_retry_raw = bool(raw_front and raw_front != primary_front and (missing_core or first_pass.get("is_valid_government_id") is False))
+
+    if not should_retry_raw:
+
+        return first_pass
+
+    second_pass = _gemini_service.extract_id_text(raw_front, back_bytes=raw_back or primary_back, id_type=id_type)
+
+    if not second_pass.get("available"):
+
+        return first_pass
+
+    score_1 = sum(1 for k in ("extracted_name", "extracted_birth_date", "extracted_id_number") if first_pass.get(k))
+
+    score_2 = sum(1 for k in ("extracted_name", "extracted_birth_date", "extracted_id_number") if second_pass.get(k))
+
+    if (second_pass.get("is_valid_government_id") and not first_pass.get("is_valid_government_id")) or score_2 > score_1:
+
+        return second_pass
+
+    return first_pass
 
 def compare_fields(entered: dict, ocr_payload: dict) -> list:
 

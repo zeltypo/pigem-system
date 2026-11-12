@@ -126,19 +126,30 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
     var compsObj = data.comparisons || {};
     var comps = Array.isArray(compsObj) ? compsObj : (compsObj.fields || []);
 
-    var nameComp = comps.find(function (c) { return c.key === "full_name" || c.field === "full_name"; });
-    var dobComp = comps.find(function (c) { return c.key === "birth_date" || c.field === "birth_date"; });
-    var idComp = comps.find(function (c) { return c.key === "id_number" || c.field === "id_number"; });
+    var nameComp = comps.find(function (c) {
+      return c.key === "name" || c.key === "full_name" || c.field === "Full Name" || c.field === "full_name";
+    });
+    var dobComp = comps.find(function (c) {
+      return c.key === "birth_date" || c.field === "Birth Date" || c.field === "birth_date";
+    });
+    var idComp = comps.find(function (c) {
+      return c.key === "id_number" || c.field === "ID Number" || c.field === "id_number";
+    });
+    var docComp = comps.find(function (c) {
+      return c.key === "document_type" || c.key === "id_type";
+    });
 
     data.name_match = Boolean(nameComp && (nameComp.status === "match" || nameComp.matched === true));
     data.birth_date_match = Boolean(dobComp && (dobComp.status === "match" || dobComp.matched === true));
     data.id_number_match = Boolean(idComp && (idComp.status === "match" || idComp.matched === true));
+    data.document_valid = !(data.ocr && data.ocr.is_valid_government_id === false) && !(docComp && docComp.status === "mismatch");
 
     var hasQualityIssue = Boolean(q.issues && q.issues.length > 0);
-    var hasFieldGap = comps.length > 0 && !(data.name_match && data.birth_date_match && data.id_number_match);
-    data.overall_status = (hasQualityIssue || hasFieldGap) ? "Needs Review" : "Verified";
+    var hasFieldGap = comps.length > 0 && !(data.name_match && data.birth_date_match && data.id_number_match && data.document_valid);
+    data.overall_status = (hasQualityIssue || hasFieldGap || !data.document_valid) ? "Needs Review" : "Verified";
     data.blur_score = (q.metrics && q.metrics.blur_score) || q.blur_score || "OK";
-    data.issues = (notes.notes && notes.notes.length) ? notes.notes : (q.issues || []);
+    var aiFindings = (notes.findings && notes.findings.length) ? notes.findings : (notes.notes || []);
+    data.issues = aiFindings.length ? aiFindings : (q.issues || []);
     return data;
   } catch (error) {
     return offlineResult;

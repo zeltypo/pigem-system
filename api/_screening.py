@@ -432,21 +432,29 @@ def _evaluate_front_and_back_quality(
 
     combined = dict(front_quality)
 
-    combined["front_passed"] = bool(front_quality.get("passed", True))
+    front_ok = bool(front_quality.get("readable", False))
+
+    combined["front_passed"] = front_ok
+
+    combined["passed"] = front_ok
 
     combined["front_summary"] = front_quality.get("summary", "")
 
     if back_quality:
 
-        combined["back_passed"] = bool(back_quality.get("passed", True))
+        back_ok = bool(back_quality.get("readable", False))
+
+        combined["back_passed"] = back_ok
 
         combined["back_summary"] = back_quality.get("summary", "")
 
         combined["back_metrics"] = back_quality.get("metrics", {})
 
-        if not back_quality.get("passed", True):
+        if not back_ok:
 
             combined["passed"] = False
+
+            combined["readable"] = False
 
             back_issues = [f"Back ID: {msg}" for msg in (back_quality.get("issues") or [])]
 
@@ -556,11 +564,17 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
     id_type = str(app_row.get("id_type") or "")
 
-    ocr_result = _gemini.extract_id_text(ocr_front_input, ocr_back_input, id_type=id_type)
+    ocr_result = _gemini.extract_id_text_with_fallback(
+        ocr_front_input,
+        primary_back=ocr_back_input,
+        raw_front=front_raw_bytes,
+        raw_back=back_raw_bytes,
+        id_type=id_type,
+    )
 
     entered_fields = {
 
-        "full_name": app_row.get("customer_name") or "",
+        "full_name": app_row.get("customer_name") or app_row.get("full_name") or "",
 
         "first_name": app_row.get("first_name") or "",
 
@@ -580,15 +594,31 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
     guidance = _gemini.write_guidance(quality_result, comparisons)
 
-    quality_ok = bool(quality_result.get("passed", True)) and bool(back_raw_bytes) and not bool(duplicate_check.get("has_duplicate"))
+    is_valid_gov_id = ocr_result.get("is_valid_government_id") is not False
 
-    fields_ok = bool(comparisons.get("all_matched", False))
+    front_readable = bool(quality_result.get("readable", False))
+
+    back_readable = bool(quality_result.get("back_passed", True)) if back_raw_bytes else False
+
+    quality_ok = bool(front_readable and back_readable and bool(back_raw_bytes) and not bool(duplicate_check.get("has_duplicate")) and is_valid_gov_id)
+
+    fields_ok = bool(comparisons) and all(c.get("status") == "match" for c in comparisons)
 
     overall_match = bool(quality_ok and fields_ok)
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    notes_list = list(guidance.get("notes") or [])
+    findings_list = [str(x).strip() for x in (guidance.get("findings") or []) if str(x).strip()]
+
+    guidance_tips = [str(x).strip() for x in (guidance.get("guidance") or []) if str(x).strip()]
+
+    notes_list = list(findings_list)
+
+    for tip in guidance_tips:
+
+        if tip not in notes_list:
+
+            notes_list.append(tip)
 
     for dup_msg in (duplicate_check.get("issues") or []):
 
@@ -606,7 +636,7 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
         if duplicate_check.get("has_duplicate") and duplicate_check.get("issues")
 
-        else str(guidance.get("summary") or "")
+        else (findings_list[0] if findings_list else str(quality_result.get("summary") or "Document checked."))
 
     )
 
@@ -624,7 +654,7 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
         "notes": notes_list,
 
-        "Suggested_remark": guidance.get("Suggested_remark") or summary_text,
+        "Suggested_remark": summary_text,
 
         "quality": quality_result,
 

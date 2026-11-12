@@ -170,7 +170,13 @@ async def screen_document(
 
         ocr_back_input = cropped_back if cropped_back else back_bytes
 
-    ocr_result = _gemini.extract_id_text(ocr_front_input, ocr_back_input, id_type=id_type)
+    ocr_result = _gemini.extract_id_text_with_fallback(
+        ocr_front_input,
+        primary_back=ocr_back_input,
+        raw_front=front_bytes,
+        raw_back=back_bytes,
+        id_type=id_type,
+    )
 
     entered = {
 
