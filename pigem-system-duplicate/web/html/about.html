@@ -155,7 +155,9 @@
     // Helper `initAboutPage`: Executes workflow logic for `initAboutPage`.
     function initAboutPage() {
       var content = getWebsiteContent();
-      startSlider("about-slider", content.about_slides || DEFAULT_CONTENT.about_slides);
+      var rawAboutSlides = content.about_slides || DEFAULT_CONTENT.about_slides || [];
+      var slideLimit = Math.max(1, Math.min(4, Number(content.hero_slide_count || DEFAULT_CONTENT.hero_slide_count || 3)));
+      startSlider("about-slider", rawAboutSlides.slice(0, slideLimit));
 
       var ab = content.about || DEFAULT_CONTENT.about;
       var elMission = document.getElementById("about-mission");

@@ -35,7 +35,7 @@ def _supabase_url() -> str:
 
         or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 
-        or "https://lvvtrwsmvxgdovmurqbz.supabase.co"
+        or "https://wuunqfxyejxwrawtjdrf.supabase.co"
 
     ).strip().rstrip("/")
 
@@ -277,9 +277,9 @@ def _upload_cropped_image(app_ref: str, side: str, jpeg_bytes: bytes) -> Optiona
 
     stamp = int(datetime.now(timezone.utc).timestamp() * 1000)
 
-    object_path = f"cropped/{safe_ref}_{side}_{stamp}.jpg"
+    object_path = f"applications/cropped/{safe_ref}_{side}_{stamp}.jpg"
 
-    upload_url = f"{base_url}/storage/v1/object/id-documents/{object_path}"
+    upload_url = f"{base_url}/storage/v1/object/documents/{object_path}"
 
     headers = {
 
@@ -301,7 +301,7 @@ def _upload_cropped_image(app_ref: str, side: str, jpeg_bytes: bytes) -> Optiona
 
             if 200 <= resp.status < 300:
 
-                return f"{base_url}/storage/v1/object/public/id-documents/{object_path}"
+                return f"{base_url}/storage/v1/object/public/documents/{object_path}"
 
     except Exception:
 

@@ -762,9 +762,17 @@ async function adminChangeRole(userId, newRole) {
 
 // Helper `adminToggleActive` (params: userId, activeState): Executes workflow logic for `adminToggleActive`.
 async function adminToggleActive(userId, activeState) {
-  await dbUpdateUser(userId, { active: activeState });
-  await dbAddLog(getStaffIdentifier(currentAdmin), (activeState ? "Enabled" : "Disabled") + " user " + userId);
-  await refreshAdminData();
+  if (!activeState && currentAdmin && userId === currentAdmin.id) {
+    showAlert("Action Blocked", "You cannot disable your own active System Administrator account.", "warn");
+    return;
+  }
+  try {
+    await dbUpdateUser(userId, { active: activeState });
+    await dbAddLog(getStaffIdentifier(currentAdmin), (activeState ? "Enabled" : "Disabled") + " user " + userId);
+    await refreshAdminData();
+  } catch (err) {
+    showAlert("Update Failed", err.message || "Could not update account status.", "bad");
+  }
 }
 
 // UI State Controller `setLogSubTab` (params: sub): Updates modal, tab, or panel state to set log sub tab.

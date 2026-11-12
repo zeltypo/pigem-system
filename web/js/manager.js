@@ -241,6 +241,7 @@ function showTab(tab) {
     maintBar.classList.toggle("hidden", !isCmsView);
     if (isCmsView) {
       updateCmsMaintenanceBarUI();
+      refreshCmsWebsiteAssetsFromBucket();
     }
   }
 
@@ -715,9 +716,17 @@ async function managerConfirmResetAgentPw() {
 }
 
 async function managerToggleAgentActive(userId, nextState) {
-  await dbUpdateUser(userId, { active: nextState });
-  if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), (nextState ? "Enabled" : "Disabled") + " Agent " + userId);
-  await refreshManagerData();
+  if (!nextState && currentManager && userId === currentManager.id) {
+    showAlert("Action Blocked", "You cannot disable your own active account.", "warn");
+    return;
+  }
+  try {
+    await dbUpdateUser(userId, { active: nextState });
+    if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), (nextState ? "Enabled" : "Disabled") + " Agent " + userId);
+    await refreshManagerData();
+  } catch (err) {
+    showAlert("Update Failed", err.message || "Could not update agent status.", "bad");
+  }
 }
 
 function managerDeleteAgent(userId, label) {
@@ -834,7 +843,29 @@ function ensureFourSlides(slides, fallbackSlides) {
   return out;
 }
 
-function loadAllCmsEditors() {
+var _cmsBucketRefreshPromise = null;
+var _cmsInitialBucketSynced = false;
+
+async function refreshCmsWebsiteAssetsFromBucket() {
+  if (_cmsBucketRefreshPromise) return _cmsBucketRefreshPromise;
+  if (typeof dbSyncLiveSettingsAndContent !== "function") return;
+  _cmsBucketRefreshPromise = (async function () {
+    try {
+      await dbSyncLiveSettingsAndContent();
+      _cmsInitialBucketSynced = true;
+      loadAllCmsEditors(true);
+    } catch (e) {
+    } finally {
+      _cmsBucketRefreshPromise = null;
+    }
+  })();
+  return _cmsBucketRefreshPromise;
+}
+
+function loadAllCmsEditors(skipBucketRefresh) {
+  if (!skipBucketRefresh && !_cmsInitialBucketSynced) {
+    refreshCmsWebsiteAssetsFromBucket();
+  }
   var c = getSiteContent();
   var lib = c.asset_library || DEFAULT_CONTENT.asset_library;
   var countEl = document.getElementById("cms-hero-slide-count");
@@ -996,14 +1027,25 @@ async function uploadNewBucketAsset(category, fileInputId, msgId) {
   var inp = document.getElementById(fileInputId);
   var file = inp && inp.files ? inp.files[0] : null;
   if (!file) {
-    showMsg(msgId, "err", "Please choose an image file from your computer first.");
+    showMsg(msgId, "error", "Please choose an image file from your computer first.");
     return;
   }
   try {
-    showMsg(msgId, "info", "Uploading " + file.name + " to " + category + " library...");
+    showMsg(msgId, "info", "Uploading " + file.name + " to Supabase " + category + " folder...");
     var savedPath = await dbUploadWebsiteAsset(file, category);
     var c = getSiteContent();
-    if (category === "Logos") {
+    if (category === "Banners") {
+      var slots = ensureFourSlides(c.home_slides, DEFAULT_CONTENT.hero_slides);
+      var assigned = false;
+      for (var sIdx = 0; sIdx < Math.min(4, Number(c.hero_slide_count || 3)); sIdx++) {
+        if (!slots[sIdx].image) {
+          slots[sIdx].image = savedPath;
+          assigned = true;
+          break;
+        }
+      }
+      if (assigned) c.home_slides = slots;
+    } else if (category === "Logos") {
       c.logo_image = savedPath;
     } else if (category === "Clients") {
       c.client_images = c.client_images || [];
@@ -1016,15 +1058,18 @@ async function uploadNewBucketAsset(category, fileInputId, msgId) {
       if (c.permit_images.indexOf(savedPath) === -1) c.permit_images.push(savedPath);
     }
     saveSiteContent(c);
+    if (typeof dbSaveLiveWebsiteContent === "function") {
+      await dbSaveLiveWebsiteContent(getWebsiteContent());
+    }
     inp.value = "";
     loadAllCmsEditors();
-    showMsg(msgId, "ok", "Uploaded (" + savedPath + ")! It is now saved in your media library and ready to select.");
+    showMsg(msgId, "ok", "Uploaded to Supabase Storage (" + savedPath + ")! Ready to select and preview.");
   } catch (e) {
-    showMsg(msgId, "err", e.message || "Upload failed.");
+    showMsg(msgId, "error", e.message || "Upload failed.");
   }
 }
 
-function saveMediaAssetsCms() {
+async function saveMediaAssetsCms() {
   var c = getSiteContent();
   var logoSel = document.getElementById("cms-active-logo");
   var darkLogoSel = document.getElementById("cms-active-dark-logo");
@@ -1036,9 +1081,16 @@ function saveMediaAssetsCms() {
   c.permit_images = getCheckedAssetValues("permit");
 
   saveSiteContent(c);
-  loadPageImages();
-  dbAddLog(getStaffIdentifier(currentManager), "Updated active Logos, Clients, Vehicles and Permits in Website Content (CMS)");
-  showMsg("cms-assets-msg", "ok", "Active Website Assets saved! Click 'Preview Live Website' above to view.");
+  try {
+    if (typeof dbSaveLiveWebsiteContent === "function") {
+      await dbSaveLiveWebsiteContent(getWebsiteContent());
+    }
+    loadPageImages();
+    dbAddLog(getStaffIdentifier(currentManager), "Updated active Logos, Clients, Vehicles and Permits in Website Content (CMS)");
+    showMsg("cms-assets-msg", "ok", "Active Website Assets saved to Supabase! Click 'Preview Live Website' above to view.");
+  } catch (e) {
+    showMsg("cms-assets-msg", "error", "Could not save assets to Supabase: " + (e.message || e));
+  }
 }
 
 function getCheckedAssetValues(groupName) {
@@ -1048,7 +1100,7 @@ function getCheckedAssetValues(groupName) {
   return out;
 }
 
-function saveBannersCms() {
+async function saveBannersCms() {
   var c = getSiteContent();
   var countEl = document.getElementById("cms-hero-slide-count");
   var slideCount = countEl ? Math.min(4, Math.max(1, parseInt(countEl.value, 10) || 3)) : 3;
@@ -1067,8 +1119,15 @@ function saveBannersCms() {
   c.home_slides = nextHome;
   c.about_slides = nextAbout;
   saveSiteContent(c);
-  dbAddLog(getStaffIdentifier(currentManager), "Updated Hero Banner settings (" + slideCount + " active slides) in Website Content (CMS)");
-  showMsg("cms-banners-msg", "ok", "Hero Banners saved (" + slideCount + " slide(s) active)! Click 'Preview Live Website' to inspect.");
+  try {
+    if (typeof dbSaveLiveWebsiteContent === "function") {
+      await dbSaveLiveWebsiteContent(getWebsiteContent());
+    }
+    dbAddLog(getStaffIdentifier(currentManager), "Updated Hero Banner settings (" + slideCount + " active slides) in Website Content (CMS)");
+    showMsg("cms-banners-msg", "ok", "Hero Banners saved to Supabase (" + slideCount + " slide(s) active)! Click 'Preview Live Website' to inspect.");
+  } catch (e) {
+    showMsg("cms-banners-msg", "error", "Could not save banners to Supabase: " + (e.message || e));
+  }
 }
 
 function saveAboutCms() {

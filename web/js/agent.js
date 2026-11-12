@@ -18,6 +18,7 @@ window.openDashTabById = function (tabId, targetId) {
 var activeCopyMode = "latest";
 var activeIdImgMode = "cropped";
 var pendingProofDataUrl = "";
+var pendingProofFile = null;
 var lastDetectedFields = null;
 var isScreeningServiceOnline = true;
 var visualScreeningRunningAppId = null;
@@ -536,6 +537,7 @@ async function openAppDetail(appId) {
   var app = findAppById(appId);
   activeIdImgMode = (app && app.cropped_id_url) ? "cropped" : "raw";
   pendingProofDataUrl = "";
+  pendingProofFile = null;
   await renderDetailModalContent();
   document.getElementById("app-detail-modal").classList.remove("hidden");
 
@@ -980,6 +982,7 @@ async function convertValidatorToPoliteRemark() {
 function onEncodingProofPick(inputEl) {
   var file = inputEl.files && inputEl.files[0];
   if (!file) return;
+  pendingProofFile = file;
   var reader = new FileReader();
   reader.onload = function () {
     pendingProofDataUrl = reader.result;
@@ -1024,7 +1027,16 @@ async function saveAgentDecision(newStatus) {
     }
   }
 
-  var proofUrl = pendingProofDataUrl || app.encoding_proof_url || "";
+  var proofUrl = app.encoding_proof_url || "";
+  if (pendingProofFile && typeof dbUploadDocument === "function") {
+    var safeRefFolder = String(app.reference_no || app.ref_no || app.id || "proof").replace(/[^a-zA-Z0-9_-]/g, "_");
+    proofUrl = await dbUploadDocument(pendingProofFile, "applications/encoding-proofs/" + safeRefFolder, "encoding-proof");
+    pendingProofFile = null;
+    pendingProofDataUrl = "";
+  } else if (pendingProofDataUrl) {
+    proofUrl = pendingProofDataUrl;
+    pendingProofDataUrl = "";
+  }
   var updatedScreening = Object.assign({}, app.screening || {}, {
     correction_fields: newStatus === "Needs Correction" ? targetFields : [],
     auto_correction_sent: false,

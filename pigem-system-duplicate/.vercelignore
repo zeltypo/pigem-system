@@ -1,0 +1,7 @@
+pigem-system-duplicate/
+.env
+.env.*
+__pycache__/
+*.pyc
+STUDY_GUIDE.md
+schema.sql

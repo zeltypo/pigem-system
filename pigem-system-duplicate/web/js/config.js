@@ -489,9 +489,10 @@ function buildStrip(stripId, files, titlePrefix) {
 
 // Data Accessor `getHomeForRole` (params: role): Retrieves or refreshes data to get home for role.
 function getHomeForRole(role) {
-  if (role === "admin") return ROOT + "admin.html";
-  if (role === "manager") return ROOT + "manager.html";
-  if (role === "agent") return ROOT + "agent.html";
+  var r = String(role || "").toLowerCase();
+  if (r === "admin") return ROOT + "admin.html";
+  if (r === "manager") return ROOT + "manager.html";
+  if (r === "agent") return ROOT + "agent.html";
   return ROOT + "customer.html";
 }
 
@@ -743,8 +744,8 @@ function isManagerOrAdminPreview() {
     return true;
   }
   if (sessionStorage.getItem("pigem_cms_preview") === "1") return true;
-  if (sessionStorage.getItem("pigem_session_staff")) return true;
-  if (sessionStorage.getItem("pigem_session_admin")) return true;
+  if (localStorage.getItem("pigem_session_staff") || sessionStorage.getItem("pigem_session_staff")) return true;
+  if (localStorage.getItem("pigem_session_admin") || sessionStorage.getItem("pigem_session_admin")) return true;
   return false;
 }
 

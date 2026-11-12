@@ -18,7 +18,7 @@ var SYSTEM_ROLES = {
 
 var SESSION_KEY = "pigem_session_" + SYSTEM;
 var SESSION_TOKEN_KEY = SESSION_KEY + "_tok";
-var sessionStore = sessionStorage;
+var sessionStore = localStorage;
 
 var IS_DEMO_MODE = (CONFIG.SUPABASE_URL === "" || CONFIG.SUPABASE_ANON_KEY === "");
 var supabaseClient = null;
@@ -108,7 +108,10 @@ async function dbBindSingleDeviceSession(userObj) {
   }
   if (!IS_DEMO_MODE && supabaseClient) {
     try {
-      await supabaseClient.from("users").update({ session_token: tok }).eq("id", userObj.id);
+      var upRes = await supabaseClient.from("users").update({ session_token: tok }).eq("id", userObj.id);
+      if (upRes.error) {
+        console.warn("Session token update error:", upRes.error.message);
+      }
     } catch (e) {}
   }
   return tok;
@@ -119,12 +122,16 @@ async function dbVerifyActiveSession() {
   var currentId = sessionStore.getItem(SESSION_KEY);
   var localTok = sessionStore.getItem(SESSION_TOKEN_KEY);
   if (!currentId) return { valid: false, reason: "missing" };
+  var allowedForSystem = SYSTEM_ROLES[SYSTEM] || null;
   if (IS_DEMO_MODE) {
     var list = getDemoUsers();
     for (var i = 0; i < list.length; i++) {
       if (list[i].id === currentId) {
+        if (allowedForSystem && allowedForSystem.indexOf(list[i].role) === -1) {
+          return { valid: false, reason: "wrong_portal" };
+        }
         if (list[i].active === false) return { valid: false, reason: "disabled" };
-        if (localTok && list[i].session_token && list[i].session_token !== localTok) {
+        if (list[i].session_token && list[i].session_token !== localTok) {
           return { valid: false, reason: "other_device" };
         }
         return { valid: true };
@@ -136,8 +143,11 @@ async function dbVerifyActiveSession() {
   var res = await supabaseClient.from("users").select("id,active,session_token,role").eq("id", currentId).maybeSingle();
   if (res.error) return { valid: true };
   if (!res.data) return { valid: false, reason: "missing" };
+  if (allowedForSystem && allowedForSystem.indexOf(res.data.role) === -1) {
+    return { valid: false, reason: "wrong_portal" };
+  }
   if (res.data.active === false) return { valid: false, reason: "disabled" };
-  if (localTok && res.data.session_token && res.data.session_token !== localTok) {
+  if (res.data.session_token && res.data.session_token !== localTok) {
     return { valid: false, reason: "other_device" };
   }
   return { valid: true };
@@ -266,15 +276,28 @@ function getLoginPage() {
 // Database/Storage helper `dbGetCurrentUser`: Performs Supabase cloud operation to get current user.
 async function dbGetCurrentUser() {
   var currentId = sessionStore.getItem(SESSION_KEY);
+  var allowedForSystem = SYSTEM_ROLES[SYSTEM] || null;
   if (currentId) {
     if (!IS_DEMO_MODE && supabaseClient) {
       var dbUser = await supabaseClient.from("users").select("*").eq("id", currentId).maybeSingle();
-      if (dbUser.data && dbUser.data.active !== false) return dbUser.data;
+      if (
+        dbUser.data &&
+        dbUser.data.active !== false &&
+        (!allowedForSystem || allowedForSystem.indexOf(dbUser.data.role) !== -1)
+      ) {
+        return dbUser.data;
+      }
       return null;
     }
     var localUsers = getDemoUsers();
     for (var i = 0; i < localUsers.length; i++) {
-      if (localUsers[i].id === currentId && localUsers[i].active !== false) return localUsers[i];
+      if (
+        localUsers[i].id === currentId &&
+        localUsers[i].active !== false &&
+        (!allowedForSystem || allowedForSystem.indexOf(localUsers[i].role) !== -1)
+      ) {
+        return localUsers[i];
+      }
     }
   }
 
@@ -492,6 +515,9 @@ async function dbSignOut(clearServerToken) {
   }
   sessionStore.removeItem(SESSION_KEY);
   sessionStore.removeItem(SESSION_TOKEN_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  sessionStorage.removeItem("pigem_user_cache");
   if (!IS_DEMO_MODE && supabaseClient) {
     try { await supabaseClient.auth.signOut(); } catch (e) {}
   }
@@ -523,15 +549,15 @@ async function checkPageAccess(allowedRoles) {
   }
   var user = await dbGetCurrentUser();
   if (!user) {
-    window.location.href = getLoginPage();
+    window.location.replace(getLoginPage());
     return null;
   }
   if (allowedRoles.indexOf(user.role) === -1) {
     if (SYSTEM_ROLES[SYSTEM] && SYSTEM_ROLES[SYSTEM].indexOf(user.role) !== -1 && typeof getHomeForRole === "function") {
-      window.location.href = getHomeForRole(user.role);
+      window.location.replace(getHomeForRole(user.role));
       return null;
     }
-    window.location.href = getLoginPage();
+    window.location.replace(getLoginPage());
     return null;
   }
   return user;
@@ -910,7 +936,42 @@ async function dbCreateApplication(appData) {
   }
   var res = await supabaseClient.from("applications").insert(row).select("*").single();
   if (res.error) throw new Error(res.error.message);
+  if (res.data && res.data.id) {
+    await dbCreateDocumentRecord(res.data.id, {
+      id_type: res.data.id_type || "",
+      id_number: res.data.id_number || "",
+      front_image_url: res.data.id_image_url || res.data.id_front_path || "",
+      back_image_url: res.data.id_back_image_url || res.data.id_back_path || "",
+      doc_type: "valid_id",
+      file_path: res.data.id_image_url || res.data.id_front_path || "",
+      version: "original"
+    });
+  }
   return res.data;
+}
+
+// Database/Storage helper `dbCreateDocumentRecord` (params: appId, docPayload): Performs Supabase cloud operation to create document record.
+async function dbCreateDocumentRecord(appId, docPayload) {
+  if (!appId || IS_DEMO_MODE || !supabaseClient) return null;
+  var p = docPayload || {};
+  try {
+    var docRow = {
+      application_id: String(appId),
+      id_type: p.id_type || null,
+      id_number: p.id_number || null,
+      front_image_url: p.front_image_url || null,
+      back_image_url: p.back_image_url || null,
+      cropped_front_url: p.cropped_front_url || null,
+      cropped_back_url: p.cropped_back_url || null,
+      doc_type: p.doc_type || "valid_id",
+      file_path: p.file_path || p.front_image_url || null,
+      version: p.version || "original"
+    };
+    var docRes = await supabaseClient.from("documents").insert(docRow).select("*").maybeSingle();
+    return docRes.data || null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // Database/Storage helper `dbUpdateApplication` (params: appId, changes): Performs Supabase cloud operation to update application.
@@ -944,24 +1005,29 @@ async function dbAddAiLog(appId, who, text) {
 // Database/Storage helper `dbUploadDocument` (params: file, folder, label): Performs Supabase cloud operation to upload document.
 async function dbUploadDocument(file, folder, label) {
   if (!file) return null;
-  var ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  var fileName = Date.now() + "-" + (label || "doc") + "." + ext;
-  var path = (folder || "ids") + "/" + fileName;
+  var cleanFolder = String(folder || "applications/uploads").replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9_/-]/g, "_");
+  var cleanLabel = String(label || "doc").replace(/[^a-zA-Z0-9_-]/g, "_");
+  var ext = ((file.name && file.name.split(".").pop()) || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  var fileName = Date.now() + "-" + cleanLabel + "." + ext;
+  var path = cleanFolder + "/" + fileName;
 
   if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
     try {
       var res = await supabaseClient.storage.from("documents").upload(path, file, {
         cacheControl: "3600",
-        upsert: true
+        upsert: true,
+        contentType: file.type || "image/jpeg"
       });
       if (!res.error) {
         var pub = supabaseClient.storage.from("documents").getPublicUrl(path);
         if (pub && pub.data && pub.data.publicUrl) {
           return pub.data.publicUrl;
         }
+      } else {
+        console.warn("Supabase documents storage upload failed:", res.error.message);
       }
     } catch (storageErr) {
-      console.warn("Direct storage upload notice, utilizing secure encoded document payload:", storageErr);
+      console.warn("Direct storage upload notice, utilizing encoded fallback:", storageErr);
     }
   }
 
@@ -1080,6 +1146,20 @@ async function dbListProfiles() {
 // Database/Storage helper `dbUpdateProfile` (params: userId, changes): Performs Supabase cloud operation to update profile.
 async function dbUpdateProfile(userId, changes) {
   var safeChanges = Object.assign({}, changes || {});
+  if (safeChanges.active === false) {
+    if (!IS_DEMO_MODE && supabaseClient) {
+      var chkAdm = await supabaseClient.from("users").select("role").eq("id", userId).maybeSingle();
+      if (chkAdm.data && chkAdm.data.role === "admin") {
+        throw new Error("The primary System Administrator account cannot be disabled.");
+      }
+    } else {
+      var localTarget = getDemoUsers().find(function (x) { return x.id === userId; });
+      if (localTarget && localTarget.role === "admin") {
+        throw new Error("The primary System Administrator account cannot be disabled.");
+      }
+    }
+    safeChanges.session_token = null;
+  }
   if (safeChanges.username != null) {
     var cleanUser = String(safeChanges.username || "").trim().toLowerCase();
     if (typeof isValidUsername === "function" && !isValidUsername(cleanUser)) {
@@ -1113,7 +1193,10 @@ async function dbUpdateProfile(userId, changes) {
 // Database/Storage helper `dbResetDemoData`: Performs Supabase cloud operation to reset demo data.
 function dbResetDemoData() {
   var keys = ["pigem_users", "pigem_applications", "pigem_notifications", "pigem_activity", "pigem_login_history",
-    "pigem_provider_updates", "pigem_plans", "pigem_website_content", "pigem_system_settings", "pigem_session_customer"];
+    "pigem_provider_updates", "pigem_plans", "pigem_website_content", "pigem_system_settings",
+    "pigem_session_customer", "pigem_session_customer_tok",
+    "pigem_session_staff", "pigem_session_staff_tok",
+    "pigem_session_admin", "pigem_session_admin_tok"];
   for (var i = 0; i < keys.length; i++) localStorage.removeItem(keys[i]);
   sessionStorage.clear();
 }
@@ -1134,7 +1217,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09171234567",
     id_type: "Philippine Driver's License",
     id_number: "N01-23-456789",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/logo.png",
+    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
     building_name: "Greenwoods Subd.",
     street: "Blk 4 Lot 12 Sampaguita St.",
     subdivision: "Greenwoods Executive",
@@ -1176,7 +1259,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09189876543",
     id_type: "National ID",
     id_number: "1234-5678-9012-3456",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/logo.png",
+    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
     building_name: "Villa Luisa",
     street: "24 Mabini St.",
     subdivision: "Villa Luisa Homes",
@@ -1220,7 +1303,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09223334455",
     id_type: "Philippine Passport",
     id_number: "P1234567A",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/logo.png",
+    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
     building_name: "St. Charbel",
     street: "88 Aguinaldo Hwy",
     subdivision: "St. Charbel South",
@@ -1241,7 +1324,7 @@ var DEFAULT_DEMO_APPS = [
       id_type: "Philippine Passport",
       id_number: "P1234567",
       street: "Aguinaldo Hwy",
-      id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/logo.png"
+      id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png"
     },
     ai_result: {
       overall_status: "Verified",
@@ -1277,7 +1360,8 @@ function normalizeAppRecord(a) {
   if (a.latitude == null && a.lat != null) a.latitude = a.lat;
   if (a.longitude == null && a.lng != null) a.longitude = a.lng;
   if (a.screening && typeof a.screening === "object") {
-    a.cropped_id_url = a.screening.cropped_id_url || (a.ai_result && a.ai_result.cropped_id_url) || "";
+    a.cropped_id_url = a.cropped_id_url || a.id_cropped_url || a.cropped_id_path || a.screening.cropped_front_url || a.screening.cropped_id_url || (a.ai_result && (a.ai_result.cropped_front_url || a.ai_result.cropped_id_url)) || "";
+    a.cropped_back_url = a.cropped_back_url || a.id_back_cropped_url || a.screening.cropped_back_url || "";
     var q = a.screening.quality || {};
     var ai = a.screening.ai || {};
     var comps = Array.isArray(a.screening.comparisons) ? a.screening.comparisons : [];
@@ -1413,7 +1497,7 @@ function getSiteContent() {
   var wc = getWebsiteContent();
   var plans = getActivePlans();
   return {
-    logo_image: wc.logo_image || DEFAULT_CONTENT.logo_image || "logo.png",
+    logo_image: wc.logo_image || DEFAULT_CONTENT.logo_image || "black-logo-white-mode.png",
     dark_logo_image: wc.dark_logo_image || DEFAULT_CONTENT.dark_logo_image || "white-logo-dark-mode.png",
     hero_slide_count: Number(wc.hero_slide_count || DEFAULT_CONTENT.hero_slide_count || 3),
     home_slides: wc.hero_slides || DEFAULT_CONTENT.hero_slides,
@@ -1494,7 +1578,7 @@ async function signOutAndGoLogin(reasonCode, clearServerToken) {
   if (reasonCode) {
     page += (page.indexOf("?") === -1 ? "?" : "&") + "reason=" + encodeURIComponent(reasonCode);
   }
-  window.location.href = page;
+  window.location.replace(page);
 }
 
 // Helper `maskEmailAddress` (params: email): Executes workflow logic for `maskEmailAddress`.
@@ -1781,9 +1865,10 @@ async function dbListApplicationsForCustomer(email) {
   return all.filter(function (a) { return String(a.email || "").toLowerCase() === clean; });
 }
 
-// Database/Storage helper `dbUploadIdPhoto` (params: file, label): Performs Supabase cloud operation to upload id photo.
-async function dbUploadIdPhoto(file, label) {
-  return await dbUploadDocument(file, "ids", label || "id");
+// Database/Storage helper `dbUploadIdPhoto` (params: file, label, customerId): Performs Supabase cloud operation to upload id photo.
+async function dbUploadIdPhoto(file, label, customerId) {
+  var safeOwner = String(customerId || "customer").replace(/[^a-zA-Z0-9_-]/g, "_");
+  return await dbUploadDocument(file, "applications/" + safeOwner + "/corrections", label || "id-update");
 }
 
 // Database/Storage helper `dbListNotifications` (params: email, role): Performs Supabase cloud operation to list notifications.
@@ -2356,14 +2441,16 @@ async function dbRequestStaffPasswordReset(username, note) {
 
 // Database/Storage helper `dbSaveLiveWebsiteContent` (params: content): Performs Supabase cloud operation to save live website content.
 async function dbSaveLiveWebsiteContent(content) {
-  if (IS_DEMO_MODE || !supabaseClient) return;
-  try {
-    await supabaseClient.from("website_content").upsert({
-      id: "main",
-      data: content,
-      updated_at: new Date().toISOString()
-    });
-  } catch (e) {}
+  if (IS_DEMO_MODE || !supabaseClient) return { saved: true, localOnly: true };
+  var res = await supabaseClient.from("website_content").upsert({
+    id: "main",
+    data: content,
+    updated_at: new Date().toISOString()
+  });
+  if (res.error) {
+    throw new Error(res.error.message);
+  }
+  return { saved: true };
 }
 
 // Database/Storage helper `dbSaveLivePlans` (params: plans): Performs Supabase cloud operation to save live plans.
@@ -2399,10 +2486,82 @@ async function dbSaveLiveSystemSettings(settings) {
   } catch (e) {}
 }
 
+// Utility `normalizeWebsiteAssetFolder` (params: category): Normalizes or transforms values (normalize website asset folder).
+function normalizeWebsiteAssetFolder(category) {
+  var c = String(category || "").trim().toLowerCase();
+  if (c === "logos" || c === "logo") return "Logos";
+  if (c === "clients" || c === "client") return "Clients";
+  if (c === "vehicles" || c === "vehicle") return "Vehicles";
+  if (c === "permits" || c === "permit") return "Permits";
+  return "Banners";
+}
+
+// Helper `mergeAssetPathLists` (params: existingList, discoveredList): Executes workflow logic for `mergeAssetPathLists`.
+function mergeAssetPathLists(existingList, discoveredList) {
+  var out = [];
+  var seen = {};
+  var sources = [existingList || [], discoveredList || []];
+  for (var s = 0; s < sources.length; s++) {
+    for (var i = 0; i < sources[s].length; i++) {
+      var val = String(sources[s][i] || "").trim();
+      if (!val || seen[val]) continue;
+      seen[val] = true;
+      out.push(val);
+    }
+  }
+  return out;
+}
+
+// Database/Storage helper `dbListWebsiteAssetBucketFiles`: Performs Supabase cloud operation to list website asset bucket files.
+async function dbListWebsiteAssetBucketFiles() {
+  if (IS_DEMO_MODE || !supabaseClient || !supabaseClient.storage) return null;
+  var folders = ["Banners", "Logos", "Clients", "Vehicles", "Permits"];
+  var discovered = { Banners: [], Logos: [], Clients: [], Vehicles: [], Permits: [] };
+  var isImgFile = function (name) {
+    return /\.(png|jpe?g|webp|gif|svg)$/i.test(String(name || ""));
+  };
+
+  try {
+    var rootRes = await supabaseClient.storage.from("website-assets").list("", { limit: 100 });
+    if (!rootRes.error && Array.isArray(rootRes.data)) {
+      for (var r = 0; r < rootRes.data.length; r++) {
+        var item = rootRes.data[r];
+        if (item && item.id && isImgFile(item.name)) {
+          discovered.Logos.push(item.name);
+        }
+      }
+    }
+  } catch (e) {}
+
+  for (var f = 0; f < folders.length; f++) {
+    var folderName = folders[f];
+    try {
+      var res = await supabaseClient.storage.from("website-assets").list(folderName, {
+        limit: 100,
+        sortBy: { column: "created_at", order: "desc" }
+      });
+      if (!res.error && Array.isArray(res.data)) {
+        for (var i = 0; i < res.data.length; i++) {
+          var obj = res.data[i];
+          if (!obj || !obj.name || obj.name === ".emptyFolderPlaceholder" || !isImgFile(obj.name)) continue;
+          discovered[folderName].push(folderName + "/" + obj.name);
+        }
+      }
+    } catch (e) {}
+  }
+  return discovered;
+}
+
 // Database/Storage helper `dbUploadWebsiteAsset` (params: file, category): Performs Supabase cloud operation to upload website asset.
 async function dbUploadWebsiteAsset(file, category) {
   if (!file) throw new Error("Please select an image file first.");
-  var folder = category || "Banners";
+  var isImage = String(file.type || "").indexOf("image/") === 0 || /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name || "");
+  if (!isImage) throw new Error("Please upload a valid image file (PNG, JPG, WEBP, or SVG).");
+  if (file.size && file.size > 10 * 1024 * 1024) {
+    throw new Error("Image file size must not exceed 10 MB.");
+  }
+
+  var folder = normalizeWebsiteAssetFolder(category);
   var savedPath = "";
 
   if (IS_DEMO_MODE || !supabaseClient) {
@@ -2413,20 +2572,22 @@ async function dbUploadWebsiteAsset(file, category) {
       reader.readAsDataURL(file);
     });
   } else {
-    var cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    var cleanName = String(file.name || "asset.png").replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
     var path = folder + "/" + Date.now() + "-" + cleanName;
-    var res = await supabaseClient.storage.from("website-assets").upload(path, file, { upsert: true });
+    var res = await supabaseClient.storage.from("website-assets").upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.type || "image/png"
+    });
     if (res.error) throw new Error(res.error.message);
     savedPath = path;
   }
 
   var wc = getWebsiteContent();
   wc.asset_library = wc.asset_library || {};
-  wc.asset_library[folder] = wc.asset_library[folder] || [];
-  if (wc.asset_library[folder].indexOf(savedPath) === -1) {
-    wc.asset_library[folder].unshift(savedPath);
-  }
-  saveWebsiteContent(wc);
+  wc.asset_library[folder] = mergeAssetPathLists([savedPath], wc.asset_library[folder] || []);
+  writeSaved("pigem_website_content", wc);
+  await dbSaveLiveWebsiteContent(wc);
   await dbAddActivity("website_asset_uploaded", folder + ": " + file.name);
   return savedPath;
 }
@@ -2446,9 +2607,24 @@ async function dbSyncLiveSettingsAndContent() {
     }
 
     var wcRes = await supabaseClient.from("website_content").select("*").eq("id", "main").maybeSingle();
-    if (wcRes.data && wcRes.data.data && Object.keys(wcRes.data.data).length > 0) {
-      writeSaved("pigem_website_content", wcRes.data.data);
+    var wcData = (wcRes.data && wcRes.data.data && Object.keys(wcRes.data.data).length > 0)
+      ? Object.assign({}, DEFAULT_CONTENT, wcRes.data.data)
+      : getWebsiteContent();
+
+    var bucketFiles = await dbListWebsiteAssetBucketFiles();
+    if (bucketFiles) {
+      var baseLib = Object.assign({}, DEFAULT_CONTENT.asset_library, wcData.asset_library || {});
+      baseLib.Banners = mergeAssetPathLists(baseLib.Banners, bucketFiles.Banners);
+      baseLib.Logos = mergeAssetPathLists(baseLib.Logos, bucketFiles.Logos);
+      baseLib.Clients = mergeAssetPathLists(baseLib.Clients, bucketFiles.Clients);
+      baseLib.Vehicles = mergeAssetPathLists(baseLib.Vehicles, bucketFiles.Vehicles);
+      baseLib.Permits = mergeAssetPathLists(baseLib.Permits, bucketFiles.Permits);
+      wcData.asset_library = baseLib;
+      if ((!wcData.hero_slides || wcData.hero_slides.length === 0) && baseLib.Banners.length > 0) {
+        wcData.hero_slides = baseLib.Banners.slice(0, 4).map(function (bPath) { return { image: bPath }; });
+      }
     }
+    writeSaved("pigem_website_content", wcData);
 
     var plansRes = await supabaseClient.from("plans").select("*").eq("active", true).order("price", { ascending: true });
     if (plansRes.data && plansRes.data.length > 0) {
@@ -2586,7 +2762,8 @@ async function dbUploadQrSessionFile(sid, side, file) {
       var storagePath = "qr_sessions/" + cleanSid + "/" + cleanSide + "-" + Date.now() + "." + ext;
       var upRes = await supabaseClient.storage.from("documents").upload(storagePath, file, {
         cacheControl: "60",
-        upsert: true
+        upsert: true,
+        contentType: file.type || "image/jpeg"
       });
       if (!upRes.error) {
         var pub = supabaseClient.storage.from("documents").getPublicUrl(storagePath);

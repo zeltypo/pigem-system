@@ -1,3 +1,20 @@
+DROP POLICY IF EXISTS "Allow public access to website-assets" ON storage.objects;
+DROP POLICY IF EXISTS "Allow access to documents" ON storage.objects;
+
+DROP TABLE IF EXISTS public.system_logs CASCADE;
+DROP TABLE IF EXISTS public.login_history CASCADE;
+DROP TABLE IF EXISTS public.notifications CASCADE;
+DROP TABLE IF EXISTS public.provider_updates CASCADE;
+DROP TABLE IF EXISTS public.corrections CASCADE;
+DROP TABLE IF EXISTS public.screenings CASCADE;
+DROP TABLE IF EXISTS public.documents CASCADE;
+DROP TABLE IF EXISTS public.applications CASCADE;
+DROP TABLE IF EXISTS public.agent_links CASCADE;
+DROP TABLE IF EXISTS public.website_content CASCADE;
+DROP TABLE IF EXISTS public.system_settings CASCADE;
+DROP TABLE IF EXISTS public.plans CASCADE;
+DROP TABLE IF EXISTS public.users CASCADE;
+
 CREATE TABLE public.users (
   id TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
@@ -296,6 +313,6 @@ ON CONFLICT (id) DO UPDATE SET
 
 INSERT INTO public.website_content (id, data) VALUES (
   'main',
-  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "hero_slide_count": 3, "area_text": "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.", "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
+  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "hero_slide_count": 3, "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;

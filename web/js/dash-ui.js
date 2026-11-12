@@ -406,7 +406,7 @@ function renderProfileDrawer(user) {
       '<a href="index.html" target="_blank" rel="noopener" class="btn btn-outline" style="width:100%; margin-bottom:8px; display:inline-flex; align-items:center; justify-content:center;">' +
         '<img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="" class="icon-img" />Open Main Website' +
       '</a>' +
-      '<button type="button" class="btn btn-red" style="width:100%" onclick="signOutAndGoLogin()">Sign Out</button>' +
+      '<button type="button" class="btn btn-red" style="width:100%" onclick="signOutAndGoLogin(\'\', true)">Sign Out</button>' +
     '</div>';
   if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles(box);
 }

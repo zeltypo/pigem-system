@@ -23,15 +23,6 @@ var _recoveryState = {
   remainingSec: 300
 };
 
-// Data Accessor `getHomeForRole` (params: role): Retrieves or refreshes data to get home for role.
-function getHomeForRole(role) {
-  var r = String(role || "").toLowerCase();
-  if (r === "admin") return (window.ROOT || "") + "admin.html";
-  if (r === "manager") return (window.ROOT || "") + "manager.html";
-  if (r === "agent") return (window.ROOT || "") + "agent.html";
-  return (window.ROOT || "") + "customer.html";
-}
-
 window.onLoginCaptchaVerified = async function (token) {
   if (token && typeof apiVerifyCaptcha === "function") {
     var verifyRes = await apiVerifyCaptcha(token);
@@ -153,8 +144,16 @@ async function checkAdminProvisionState() {
 function showSessionReasonBanner() {
   var params = new URLSearchParams(window.location.search);
   var reason = String(params.get("reason") || "").toLowerCase();
+  if (!reason) return false;
+  if (typeof sessionStore !== "undefined" && typeof SESSION_KEY !== "undefined") {
+    sessionStore.removeItem(SESSION_KEY);
+    sessionStore.removeItem(SESSION_TOKEN_KEY);
+  }
+  if (window.history && typeof window.history.replaceState === "function") {
+    window.history.replaceState(null, "", window.location.pathname);
+  }
   var banner = document.getElementById("login-attempt-banner");
-  if (!reason || !banner) return;
+  if (!banner) return true;
   if (reason === "idle") {
     banner.hidden = false;
     banner.innerHTML = "<b>Session Ended:</b> You missed your active session — you were automatically logged out due to inactivity. Please sign in again.";
@@ -165,13 +164,37 @@ function showSessionReasonBanner() {
     banner.hidden = false;
     banner.innerHTML = "<b>Account Disabled:</b> This account has been deactivated. Contact System Admin at Tel: <b>(046) 458-0908</b>.";
   }
+  return true;
+}
+
+// Helper `redirectIfAlreadySignedIn`: Executes workflow logic for `redirectIfAlreadySignedIn`.
+async function redirectIfAlreadySignedIn() {
+  if (typeof dbGetCurrentUser !== "function") return;
+  if (typeof sessionStore !== "undefined" && typeof SESSION_KEY !== "undefined" && !sessionStore.getItem(SESSION_KEY)) return;
+  try {
+    if (typeof dbVerifyActiveSession === "function") {
+      var chk = await dbVerifyActiveSession();
+      if (!chk || chk.valid === false) {
+        if (typeof dbSignOut === "function") await dbSignOut(false);
+        return;
+      }
+    }
+    var activeUser = await dbGetCurrentUser();
+    var sysRoles = (typeof SYSTEM_ROLES !== "undefined" && SYSTEM_ROLES[window.SYSTEM || "customer"]) || [];
+    if (activeUser && activeUser.active !== false && sysRoles.indexOf(activeUser.role) !== -1) {
+      window.location.replace(getHomeForRole(activeUser.role));
+    }
+  } catch (e) {}
 }
 
 // Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", function () {
-  showSessionReasonBanner();
+  var hasReason = showSessionReasonBanner();
   renderLoginCaptchaBox();
   checkAdminProvisionState();
+  if (!hasReason) {
+    redirectIfAlreadySignedIn();
+  }
   var idEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
   if (idEl && typeof clearFieldError === "function") idEl.addEventListener("input", function () { clearFieldError("email"); });
@@ -339,7 +362,7 @@ async function handleLogin(event) {
     loginAttempts = 0;
     var bannerEl = document.getElementById("login-attempt-banner");
     if (bannerEl) bannerEl.hidden = true;
-    window.location.href = getHomeForRole(user.role);
+    window.location.replace(getHomeForRole(user.role));
   } catch (err) {
     resetLoginFieldsAndCaptcha();
     if (emailEl) emailEl.focus();

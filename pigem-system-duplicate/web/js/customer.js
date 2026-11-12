@@ -466,7 +466,7 @@ async function submitCustomerCorrection(appId) {
 
     var idUrl = app.id_image_url || app.id_front_path;
     if (file) {
-      idUrl = await dbUploadIdPhoto(file, app.reference_no + "-corrected");
+      idUrl = await dbUploadIdPhoto(file, (app.reference_no || app.ref_no || "app") + "-corrected", app.customer_id || (currentCustomer && currentCustomer.id));
     }
 
     var correctedSnapshot = {
@@ -516,6 +516,18 @@ async function submitCustomerCorrection(appId) {
       customer_instruction: "Your updated details (" + changedList.join(", ") + ") were received and your application is continuing in Processing.",
       agent_remarks: "Customer submitted update: " + changedList.join(", ")
     });
+
+    if (file && typeof dbCreateDocumentRecord === "function") {
+      await dbCreateDocumentRecord(app.id, {
+        id_type: app.id_type || "",
+        id_number: idNo || app.id_number || "",
+        front_image_url: idUrl,
+        back_image_url: app.id_back_image_url || app.id_back_path || "",
+        doc_type: "valid_id",
+        file_path: idUrl,
+        version: "corrected"
+      });
+    }
 
     var rescrActive = isAiEnabled();
     if (!rescrActive) {

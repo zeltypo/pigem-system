@@ -1,10 +1,6 @@
 pigem-system-duplicate/
-api/.venv/
-api/.venv311/
-api/.env
-api/.env.example
 .env
-.env.local
+.env.*
 __pycache__/
 *.pyc
 STUDY_GUIDE.md

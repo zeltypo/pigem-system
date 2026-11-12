@@ -1132,8 +1132,9 @@ async function submitRegistration() {
 
     advanceLoadingStep(2);
     var accountInfo = await dbCreateAccountFromApplication(fullName, email);
-    var frontPath = await dbUploadDocument(selectedFrontFile, accountInfo.user.id || "public", "id-front");
-    var backPath = await dbUploadDocument(selectedBackFile, accountInfo.user.id || "public", "id-back");
+    var appFolder = "applications/" + (accountInfo.user.id || "public") + "/original";
+    var frontPath = await dbUploadDocument(selectedFrontFile, appFolder, "id-front");
+    var backPath = await dbUploadDocument(selectedBackFile, appFolder, "id-back");
 
     var screening = preScreenRes && preScreenRes.status !== "offline"
       ? Object.assign({}, preScreenRes, { preliminary: false, state: "completed", phase: preScreenRes.overall_status || "Screened" })
