@@ -550,18 +550,12 @@ function updateIdFormatHint() {
   var type = document.getElementById("id_type").value;
   var hintEl = document.getElementById("id-format-hint");
   if (!hintEl) return;
-
-  var hints = {
-    "Philippine National ID (PhilSys)": "Format: 16 digits (e.g. 1234-5678-9012-3456)",
-    "Driver's License": "Format: 1 letter + 10 digits (e.g. N01-23-456789)",
-    "Passport": "Format: 9 alphanumeric characters (e.g. P1234567A)",
-    "UMID": "Format: 12 digits (e.g. 0012-3456789-0)",
-    "SSS ID": "Format: 10 digits (e.g. 34-1234567-8)",
-    "PRC ID": "Format: 7 digits registration number",
-    "Postal ID": "Format: 12-digit PRN code",
-    "Voter's ID": "Format: 16-character alphanumeric code"
-  };
-  hintEl.textContent = hints[type] || "";
+  if (!type) {
+    hintEl.textContent = "";
+    return;
+  }
+  var meta = typeof getIdType === "function" ? getIdType(type) : null;
+  hintEl.textContent = (meta && meta.hint) ? meta.hint : "Type the ID number exactly as printed.";
 }
 
 function handleIdFileSelect(side, inputEl) {

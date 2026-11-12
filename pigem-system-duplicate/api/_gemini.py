@@ -866,6 +866,8 @@ class GeminiScreeningService(BaseLanguageClient):
 
         system_instruction: str = "",
 
+        model_override: str = "",
+
     ) -> str:
 
         api_key, primary_model = self._get_config()
@@ -909,7 +911,7 @@ class GeminiScreeningService(BaseLanguageClient):
 
         }
 
-        models_to_try = [primary_model]
+        models_to_try = [model_override.strip() or primary_model]
 
         for fallback_model in ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest"):
 
@@ -921,9 +923,19 @@ class GeminiScreeningService(BaseLanguageClient):
 
             url = f"{self._API_BASE}/{model_name}:generateContent"
 
+            model_payload = dict(payload)
+
+            model_cfg = dict(gen_cfg)
+
+            if "2.5-flash" in model_name:
+
+                model_cfg["thinkingConfig"] = {"thinkingBudget": 0}
+
+            model_payload["generationConfig"] = model_cfg
+
             try:
 
-                reply = httpx.post(url, headers=headers, json=payload, timeout=25)
+                reply = httpx.post(url, headers=headers, json=model_payload, timeout=18)
 
                 if reply.status_code == 200:
 
@@ -951,7 +963,65 @@ class GeminiScreeningService(BaseLanguageClient):
 
         return ""
 
-    def extract_id_text(self, front_bytes: bytes, back_bytes: bytes = None, id_type: str = "") -> dict:
+    def _build_id_type_guide(self, id_type: str) -> str:
+
+        t = (id_type or "").lower()
+
+        if "passport" in t:
+
+            return "LAYOUT HINT (Philippine Passport): Read visual bio page fields (`Surname`, `Given Names`, `Middle Name`, `Date of Birth`) AND verify against the bottom 2 MRZ lines (`P<PHL...` and passport number + `YYMMDD` DOB). Ignore Date of Issue / Expiry. "
+
+        if "driver" in t or "lto" in t:
+
+            return "LAYOUT HINT (Philippine Driver's License): Name prints as `LAST NAME, FIRST NAME MIDDLE NAME`. Extract `Date of Birth` (`YYYY/MM/DD` or `YYYY-MM-DD`), NEVER `Expiration Date`. License No. starts with 1 letter + 10 digits (e.g. `N01-23-456789`). "
+
+        if "national" in t or "philsys" in t or "ephilid" in t:
+
+            return "LAYOUT HINT (Philippine National ID / PhilSys / ePhilID): Look for `Apelyido/Last Name`, `Mga Pangalan/Given Names`, `Gitnang Apelyido/Middle Name`, `Petsa ng Kapanganakan/Date of Birth`, 16-digit `PCN` (xxxx-xxxx-xxxx-xxxx) on front, and 12-digit `PSN` or QR label on back/bottom. "
+
+        if "unified" in t or "umid" in t:
+
+            return "LAYOUT HINT (UMID Card): CRN is the 12-digit number near the top right (`CRN-XXXX-XXXXXXX-X`). Extract Surname, Given Name, Middle Name, and Date of Birth; ignore issue stamps. "
+
+        if "sss" in t or "gsis" in t:
+
+            return "LAYOUT HINT (SSS / My.SSS / GSIS ID): Look for SS Number (10 digits), CRN (12 digits), or GSIS BP/ID number (11 digits) and cardholder birth date if printed. "
+
+        if "philhealth" in t:
+
+            return "LAYOUT HINT (PhilHealth ID): PIN is 12 digits (`XX-XXXXXXXXX-X`). Digitized or laminated versions may print name as `LAST, FIRST MIDDLE`. "
+
+        if "postal" in t:
+
+            return "LAYOUT HINT (Postal ID): PRN is the 12-13 character reference code (often starting with `PRN`). Extract Date of Birth, NOT Valid Until date. "
+
+        if "tin" in t:
+
+            return "LAYOUT HINT (TIN ID with photo): TIN is 9 to 12 digits (`XXX-XXX-XXX-000`). Extract Birth Date carefully; ignore Date Issued. "
+
+        if "voter" in t or "comelec" in t:
+
+            return "LAYOUT HINT (Voter's / COMELEC ID): VIN is printed at the top (`XXXX-XXXXA-...`). Extract Surname, First, Middle, and Date of Birth. "
+
+        if "police clearance" in t:
+
+            return "LAYOUT HINT (National Police Clearance): Usually portrait layout. Extract applicant name, DOB, and Clearance Reference No., ignoring issue/validity dates. "
+
+        if "credit card" in t:
+
+            return "LAYOUT HINT (Locally-issued Credit Card): Name is embossed/printed on card; DOB and Middle Name may not be printed (mark missing ones in `unreadable_or_occluded_fields` instead of guessing). For `extracted_id_number`, extract ONLY visible last 4 digits or printed non-CVV reference if unmasked. "
+
+        if "company" in t or "student" in t or "barangay" in t or "senior" in t:
+
+            return "LAYOUT HINT (Company / Student / Barangay / Senior Citizen ID): These may be portrait or custom layouts and DOB may be on the back side; read both Front and Back carefully without guessing unprinted fields. "
+
+        if "alien" in t or "acr" in t or "firearms" in t or "prc" in t or "afp" in t or "pnp" in t or "air force" in t:
+
+            return "LAYOUT HINT (Government/Service Credential): Read License/Serial/Registration/ACR number cleanly, distinguish Date of Birth from Date Issued/Expiry, and inspect both front and back sides. "
+
+        return ""
+
+    def extract_id_text(self, front_bytes: bytes, back_bytes: bytes = None, id_type: str = "", model_override: str = "") -> dict:
 
         """Extracts printed Philippine government ID fields blindly with strict anti-hallucination grounding verification."""
         if not front_bytes or not self.is_available():
@@ -984,6 +1054,8 @@ class GeminiScreeningService(BaseLanguageClient):
 
         front_b64 = base64.b64encode(front_bytes).decode("ascii")
 
+        parts.append({"text": "IMAGE 1 (FRONT OF ID):"})
+
         parts.append({
 
             "inline_data": {
@@ -999,6 +1071,8 @@ class GeminiScreeningService(BaseLanguageClient):
         if back_bytes:
 
             back_b64 = base64.b64encode(back_bytes).decode("ascii")
+
+            parts.append({"text": "IMAGE 2 (BACK OF ID):"})
 
             parts.append({
 
@@ -1018,21 +1092,23 @@ class GeminiScreeningService(BaseLanguageClient):
 
         )
 
+        layout_guide = self._build_id_type_guide(id_type)
+
         side_hint = (
 
-            "Both FRONT and BACK images of the same Philippine identification card are attached. "
+            "Both FRONT (Image 1) and BACK (Image 2) images of the same applicant identification credential are attached. "
 
             if back_bytes
 
-            else "The FRONT image of a Philippine identification card is attached. "
+            else "The FRONT image (Image 1) of an applicant identification credential is attached. "
 
         )
 
         system_rules = (
-            "You are a strict forensic document transcription engine. "
+            "You are a strict forensic document transcription engine for Philippine telecom KYC verification. "
             "Never guess, infer, hallucinate, or auto-complete obscured, blurry, cropped, or missing characters. "
             "Every character you output in structured fields MUST be directly supported by visible printed text in the image and included in `lines`. "
-            "If a field cannot be read with certainty, output an empty string and list the field in `unreadable_or_occluded_fields`."
+            "If a field cannot be read with certainty or is not printed on this card type, output an empty string and list the field in `unreadable_or_occluded_fields`."
         )
 
         prompt = (
@@ -1041,31 +1117,33 @@ class GeminiScreeningService(BaseLanguageClient):
 
             + declared_type_hint
 
+            + layout_guide
+
             + "Read every visible printed character with extreme character-by-character precision:\n"
 
             "1. ANTI-HALLUCINATION: Do NOT guess blurred, glare-washed, shaded, or covered characters, and do NOT invent placeholder values.\n"
 
-            "2. Separate the cardholder's printed First/Given Name (`Pangalan`), Middle Name (`Gitnang Apelyido`), "
+            "2. Separate the cardholder's printed First/Given Name (`Pangalan`), Middle Name/Initial (`Gitnang Apelyido`), "
 
-            "and Last Name/Surname (`Apelyido`), and set `extracted_name` to `First Middle Last`.\n"
+            "and Last Name/Surname (`Apelyido`), and set `extracted_name` to `First Middle Last`. Watch for `LAST, FIRST MIDDLE` format on LTO Driver's Licenses, Passports, UMID, PRC, and Police Clearances.\n"
 
             "3. For `extracted_birth_date`, extract ONLY the cardholder's Date of Birth (`Petsa ng Kapanganakan` / `Date of Birth`), "
 
-            "NEVER the Date of Issue or Expiration Date, normalized strictly to `YYYY-MM-DD` (or empty string if unreadable).\n"
+            "NEVER the Date of Issue or Expiration Date, normalized strictly to `YYYY-MM-DD` (or empty string if unreadable or not printed on the card).\n"
 
             "4. For `extracted_id_number`, extract the primary card/license/ID number exactly as printed. "
 
-            "If a secondary number is also printed on the front or back (for example PhilSys 16-digit PCN and 12-digit PSN, "
+            "Use cardholder conventions: National ID / PhilSys (16-digit PCN front or 12-digit PSN), Driver's License (LTO format e.g. N01-23-456789), Passport (9 chars + MRZ), UMID (12-digit CRN), SSS/My.SSS (10 digits), GSIS (11 digits), Postal ID (PRN), PhilHealth (12 digits), TIN (9-12 digits), ACR I-Card, Firearms License, PRC, Voter's/Comelec, Senior Citizen's, Barangay, Police Clearance, AFP/PNP/Air Force, Company ID, Student ID, or Locally-issued Credit Card. "
 
-            "or CRN and serial number), include all secondary numbers in `alternate_id_numbers`.\n"
+            "Include any secondary printed numbers in `alternate_id_numbers`.\n"
 
             "5. Put every readable printed text line verbatim in `lines`.\n"
 
-            "6. Set `is_valid_government_id` to `true` ONLY if the image clearly shows an authentic physical or digital Philippine government-issued ID card (or official ePhilID); set `false` for selfies, landscapes, blank images, receipts, random screenshots, or unreadable photos, and describe what is shown in `detected_document_type`.\n"
+            "6. Set `is_valid_government_id` to `true` if the image clearly shows an authentic physical or digital accepted ID credential (Philippine government ID, National ID/ePhilID, LTO/Passport/UMID/SSS/GSIS/PRC/IBP/OFW/Diplomat/AFP/PNP/Air Force/Postal/PhilHealth/Voter's/Senior Citizen/Barangay/TIN/Firearms/ACR, verifiable Police Clearance, Company ID, Student ID, or Locally-issued Credit Card). Set `false` ONLY for selfies, landscapes, blank images, receipts, random screenshots, or non-ID photos, and describe what is shown in `detected_document_type`.\n"
 
-            "7. Set `id_type_matches_declared` to `false` ONLY if you clearly detect a DIFFERENT specific ID card type than the applicant's selected type (otherwise `true`).\n"
+            "7. Set `id_type_matches_declared` to `false` ONLY if you clearly detect a DIFFERENT specific ID card type than the applicant's selected type (otherwise `true`). Treat variants like 'National ID' / 'Philippine National ID (PhilSys)', 'Digitized' vs 'Laminated' Postal/PhilHealth, or 'SSS ID' / 'My.SSS ID' / 'SSS/GSIS with photo' as matching.\n"
 
-            "8. List any blurry, cut-off, shadowed, or unreadable target fields among `[\"name\", \"birth_date\", \"id_number\"]` in `unreadable_or_occluded_fields`, and set `confidence` to `\"high\"`, `\"medium\"`, or `\"low\"`."
+            "8. List any blurry, cut-off, shadowed, or absent target fields among `[\"name\", \"birth_date\", \"id_number\"]` in `unreadable_or_occluded_fields`, and set `confidence` to `\"high\"`, `\"medium\"`, or `\"low\"`."
         )
 
         parts.append({"text": prompt})
@@ -1083,6 +1161,8 @@ class GeminiScreeningService(BaseLanguageClient):
             response_schema=self._OCR_RESPONSE_SCHEMA,
 
             system_instruction=system_rules,
+
+            model_override=model_override,
 
         )
 
@@ -1173,6 +1253,22 @@ class GeminiScreeningService(BaseLanguageClient):
                         ext_id = ""
 
                         ungrounded.append("id_number")
+
+                if alt_nums:
+
+                    verified_alts = []
+
+                    for alt_val in alt_nums:
+
+                        c_alt = _matcher._normalize_id_code(alt_val)
+
+                        c_core = _matcher._ID_PREFIX_REGEX.sub("", c_alt)
+
+                        if c_alt and (len(c_core) < 4 or c_core in compact_lines or c_alt in compact_lines):
+
+                            verified_alts.append(alt_val)
+
+                    alt_nums = verified_alts
 
                 if ext_dob:
 
@@ -1570,13 +1666,34 @@ def extract_id_text_with_fallback(
         and first_pass.get("extracted_id_number")
     )
 
-    should_retry_raw = bool(raw_front and raw_front != primary_front and (missing_core or first_pass.get("is_valid_government_id") is False))
+    low_conf = first_pass.get("confidence") == "low"
 
-    if not should_retry_raw:
+    has_ungrounded = bool(first_pass.get("ungrounded_fields"))
+
+    needs_escalation = bool(missing_core or low_conf or has_ungrounded or first_pass.get("is_valid_government_id") is False)
+
+    if not needs_escalation:
 
         return first_pass
 
-    second_pass = _gemini_service.extract_id_text(raw_front, back_bytes=raw_back or primary_back, id_type=id_type)
+    retry_front = raw_front if raw_front else primary_front
+
+    retry_back = raw_back if raw_back else primary_back
+
+    _, configured_model = _gemini_service._get_config()
+
+    escalate_model = "gemini-2.5-pro" if "pro" not in configured_model else ""
+
+    if retry_front == primary_front and not escalate_model:
+
+        return first_pass
+
+    second_pass = _gemini_service.extract_id_text(
+        retry_front,
+        back_bytes=retry_back,
+        id_type=id_type,
+        model_override=escalate_model,
+    )
 
     if not second_pass.get("available"):
 
@@ -1587,6 +1704,10 @@ def extract_id_text_with_fallback(
     score_2 = sum(1 for k in ("extracted_name", "extracted_birth_date", "extracted_id_number") if second_pass.get(k))
 
     if (second_pass.get("is_valid_government_id") and not first_pass.get("is_valid_government_id")) or score_2 > score_1:
+
+        return second_pass
+
+    if score_2 == score_1 and first_pass.get("confidence") == "low" and second_pass.get("confidence") != "low":
 
         return second_pass
 

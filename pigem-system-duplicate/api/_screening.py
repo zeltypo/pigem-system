@@ -744,11 +744,11 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
             "overall_match": overall_match,
 
-            "blur_score": float((quality_result.get("metrics") or {}).get("blur_score") or 0),
+            "blur_score": float((quality_result.get("metrics") or quality_result).get("blur_score") or 0),
 
-            "brightness": float((quality_result.get("metrics") or {}).get("brightness") or 0),
+            "brightness": float((quality_result.get("metrics") or quality_result).get("brightness") or 0),
 
-            "glare_pct": float((quality_result.get("metrics") or {}).get("glare_pct") or 0),
+            "glare_pct": float((quality_result.get("metrics") or quality_result).get("glare_pct") or 0),
 
             "extracted_fields": ocr_result,
 

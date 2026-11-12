@@ -256,7 +256,7 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
         aspect = longer / shorter
 
-        return 1.12 <= aspect <= 2.20
+        return 1.00 <= aspect <= 2.35
 
     def _find_card_quad(self, gray):
 
@@ -420,10 +420,6 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
                 if self._is_valid_card_shape(warped.shape[1], warped.shape[0]):
 
-                    if warped.shape[0] > warped.shape[1] * 1.12:
-
-                        warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
-
                     image = warped
 
                     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -442,10 +438,6 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
             if tight is not None:
 
-                if tight.shape[0] > tight.shape[1] * 1.15:
-
-                    tight = cv2.rotate(tight, cv2.ROTATE_90_CLOCKWISE)
-
                 image = tight
 
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -462,19 +454,23 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
         brightness = float(gray.mean())
 
+        hotspot_ratio = float(np.mean(gray >= 252))
+
         overexposed_ratio = float(np.mean(gray >= 248))
+
+        glare_pct = round(overexposed_ratio * 100.0, 2)
 
         if brightness < self._dark_limit:
 
             issues.append("The ID photo is too dark. Please take the picture in a well-lit area.")
 
-        elif brightness > self._glare_limit or overexposed_ratio > 0.25:
+        elif (brightness > 224.0 and overexposed_ratio > 0.28) or hotspot_ratio > 0.12:
 
             issues.append("The ID photo has glare. Avoid using direct camera flash.")
 
         contrast = float(gray.std())
 
-        if contrast < 32.0:
+        if contrast < 30.0:
 
             issues.append("The ID photo has low contrast, making details harder to read.")
 
@@ -483,10 +479,6 @@ class DocumentCropEnhancer(BaseImageProcessor):
             issues.append("The image resolution is too low. Please upload a clearer photo.")
 
         orientation = "landscape" if cur_w >= cur_h else "portrait"
-
-        if orientation == "portrait" and not deskew_applied:
-
-            issues.append("The ID appears rotated vertically instead of horizontal.")
 
         cropped_jpeg_bytes = None
 
@@ -534,6 +526,20 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
             )
 
+        quality_metrics = {
+
+            "blur_score": round(blur_score, 1),
+
+            "brightness": round(brightness, 1),
+
+            "contrast": round(contrast, 1),
+
+            "glare_pct": glare_pct,
+
+        }
+
+        summary_line = issues[0] if issues else "Document photo is clear and readable."
+
         quality_result = {
 
             "available": True,
@@ -541,6 +547,8 @@ class DocumentCropEnhancer(BaseImageProcessor):
             "readable": len(issues) == 0,
 
             "readability_label": readability_label,
+
+            "summary": summary_line,
 
             "width": cur_w,
 
@@ -550,11 +558,15 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
             "original_height": orig_h,
 
-            "blur_score": round(blur_score, 1),
+            "blur_score": quality_metrics["blur_score"],
 
-            "brightness": round(brightness, 1),
+            "brightness": quality_metrics["brightness"],
 
-            "contrast": round(contrast, 1),
+            "contrast": quality_metrics["contrast"],
+
+            "glare_pct": quality_metrics["glare_pct"],
+
+            "metrics": quality_metrics,
 
             "orientation": orientation,
 
