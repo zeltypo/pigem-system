@@ -44,27 +44,27 @@
       </div>
 
       <!-- FORM: Interactive User Input Form -->
-      <form id="activate-form" class="mt" autocomplete="off" onsubmit="submitActivation(event)">
+      <form id="activate-form" class="mt" autocomplete="off" onsubmit="submitActivation(event)" novalidate>
         <div>
           <label for="act-email">Gmail Address</label>
-          <input id="act-email" type="email" value="" required placeholder="Enter your registered @gmail.com address">
+          <input id="act-email" type="email" value="" placeholder="Enter your registered @gmail.com address">
         </div>
         <div class="mt">
-          <label for="act-username">Customer Username</label>
-          <input id="act-username" type="text" value="" minlength="3" maxlength="30" required placeholder="Choose your username (e.g. juan_delacruz)">
+          <label for="act-username">Create Your Customer Username</label>
+          <input id="act-username" type="text" value="" minlength="3" maxlength="30" placeholder="Choose your username (e.g. juan_delacruz)">
           <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores).</div>
         </div>
         <div class="mt">
           <label for="act-code">6-Digit OTP / Activation Code</label>
-          <input id="act-code" type="text" value="" maxlength="6" required placeholder="Enter 6-digit code from your email">
+          <input id="act-code" type="text" value="" maxlength="6" placeholder="Enter 6-digit code from your email">
         </div>
         <div class="mt">
           <label for="act-pass">Create Password</label>
-          <input id="act-pass" type="password" value="" data-pw-check="1" minlength="8" required placeholder="Create strong password">
+          <input id="act-pass" type="password" value="" data-pw-check="1" minlength="8" placeholder="Create strong password">
         </div>
         <div class="mt">
           <label for="act-pass2">Confirm Password</label>
-          <input id="act-pass2" type="password" value="" minlength="8" required placeholder="Repeat password">
+          <input id="act-pass2" type="password" value="" minlength="8" placeholder="Repeat password">
         </div>
         <button type="submit" class="btn btn-red btn-full mt-big">Activate Account</button>
       </form>
@@ -118,8 +118,8 @@
           if (formEl && (st.alreadyActivated || qCode)) formEl.hidden = true;
           return;
         }
-        if (userEl && !userEl.value && st.username) {
-          userEl.value = st.username;
+        if (userEl && !userEl.value && qUser) {
+          userEl.value = qUser;
         }
       }
     }
@@ -127,24 +127,35 @@
     // Action Handler `submitActivation` (params: event): Validates inputs and persists changes to submit activation.
     async function submitActivation(event) {
       event.preventDefault();
+      if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
       var email = document.getElementById("act-email").value.trim().toLowerCase();
       var username = document.getElementById("act-username").value.trim().toLowerCase();
       var code = document.getElementById("act-code").value.trim();
       var pass = document.getElementById("act-pass").value;
       var pass2 = document.getElementById("act-pass2").value;
+      var hasError = false;
 
-      if (typeof isValidUsername === "function" && !isValidUsername(username)) {
-        showAlert("Invalid Username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).", "warn");
-        return;
+      if (!email || (typeof isCustomerGmail === "function" && !isCustomerGmail(email))) {
+        if (typeof setFieldError === "function") setFieldError("act-email", "Please enter your registered @gmail.com email address.");
+        hasError = true;
+      }
+      if (!username || (typeof isValidUsername === "function" && !isValidUsername(username))) {
+        if (typeof setFieldError === "function") setFieldError("act-username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+        hasError = true;
+      }
+      if (!code || code.length < 6) {
+        if (typeof setFieldError === "function") setFieldError("act-code", "Please enter the 6-digit activation code from your email.");
+        hasError = true;
       }
       if (typeof isStrongPassword === "function" && !isStrongPassword(pass)) {
-        showAlert("Weak Password", "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.", "warn");
-        return;
+        if (typeof setFieldError === "function") setFieldError("act-pass", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+        hasError = true;
       }
       if (pass !== pass2) {
-        showAlert("Password Mismatch", "Your password and confirm password do not match.", "bad");
-        return;
+        if (typeof setFieldError === "function") setFieldError("act-pass2", "Password and Confirm Password do not match.");
+        hasError = true;
       }
+      if (hasError) return;
 
       try {
         var activatedUser = await dbActivateCustomerAccount(email, code, pass, username);
@@ -157,7 +168,14 @@
           "</div>"
         );
       } catch (err) {
-        showAlert("Activation Error", err.message, "bad");
+        var errMsg = err.message || "Could not activate account.";
+        if (errMsg.toLowerCase().indexOf("username") !== -1 && typeof setFieldError === "function") {
+          setFieldError("act-username", errMsg);
+        } else if (errMsg.toLowerCase().indexOf("code") !== -1 && typeof setFieldError === "function") {
+          setFieldError("act-code", errMsg);
+        } else {
+          showAlert("Activation Error", errMsg, "bad");
+        }
       }
     }
 

@@ -1663,3 +1663,66 @@ html[data-theme="dark"] .notice.ok {
     page-break-inside: avoid;
   }
 }
+
+.popup {
+  position: relative;
+}
+
+.popup-close-x {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+}
+.popup-close-x:hover {
+  background: var(--red-soft);
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.field-error {
+  color: var(--bad);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+input.input-invalid,
+select.input-invalid,
+textarea.input-invalid {
+  border-color: var(--bad) !important;
+  box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.12);
+}
+
+.email-otp-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.email-otp-inline input {
+  flex: 1;
+}
+
+.notif-item-clickable {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 10px 8px !important;
+  margin: 0 -8px;
+  transition: background 0.14s ease;
+}
+.notif-item-clickable:hover {
+  background: var(--bg-soft);
+}

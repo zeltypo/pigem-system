@@ -60,6 +60,7 @@ var CONFIG = {
 var DEFAULT_CONTENT = {
   logo_image: "black-logo-white-mode.png",
   dark_logo_image: "white-logo-dark-mode.png",
+  hero_slide_count: 3,
   hero_slides: [],
   area_text: "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.",
   announcement: {
@@ -270,13 +271,30 @@ function makeBadge(status) {
   return '<span class="badge status-' + cssName + '">' + status + "</span>";
 }
 
-function openPopup(htmlContent, isWide) {
+function openPopup(htmlContent, isWideOrOpts) {
   closePopup();
+  var opts = (isWideOrOpts && typeof isWideOrOpts === "object")
+    ? isWideOrOpts
+    : { wide: Boolean(isWideOrOpts), closeOnBackdrop: true, showCloseX: false };
   var back = document.createElement("div");
   back.id = "popup-modal";
   back.className = "popup-back";
-  back.innerHTML = '<div class="popup' + (isWide ? " wide" : "") + '">' + htmlContent + "</div>";
+  var closeBtnHtml = opts.showCloseX
+    ? '<button type="button" class="popup-close-x" id="popup-close-x-btn" aria-label="Close">&times;</button>'
+    : '';
+  back.innerHTML = '<div class="popup' + (opts.wide ? " wide" : "") + '">' + closeBtnHtml + htmlContent + "</div>";
   document.body.appendChild(back);
+  var handleClose = function () {
+    closePopup();
+    if (typeof opts.onClose === "function") opts.onClose();
+  };
+  var xBtn = document.getElementById("popup-close-x-btn");
+  if (xBtn) xBtn.addEventListener("click", handleClose);
+  if (opts.closeOnBackdrop !== false) {
+    back.addEventListener("click", function (ev) {
+      if (ev.target === back) handleClose();
+    });
+  }
   if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles(back);
   if (typeof attachEnterKeyNavigation === "function") attachEnterKeyNavigation(back);
 }
@@ -475,6 +493,7 @@ function attachPasswordRegexChecklist(inputEl) {
 
   var box = document.createElement("div");
   box.className = "pw-regex-box";
+  box.style.display = "none";
   box.innerHTML =
     '<div class="pw-regex-title">Remaining Password Requirements:</div>' +
     '<div class="pw-regex-grid">' +
@@ -490,8 +509,12 @@ function attachPasswordRegexChecklist(inputEl) {
     targetParent.parentNode.insertBefore(box, targetParent.nextSibling);
   }
 
-  function refreshRules() {
+  function refreshRules(forceCheck) {
     var val = String(inputEl.value || "");
+    if (!val && !forceCheck) {
+      box.style.display = "none";
+      return;
+    }
     var rules = evaluatePasswordRules(val);
     var items = box.querySelectorAll("[data-rule]");
     var pendingCount = 0;
@@ -502,12 +525,85 @@ function attachPasswordRegexChecklist(inputEl) {
       items[i].classList.toggle("passed", passed);
       if (!passed) pendingCount++;
     }
-    box.style.display = pendingCount === 0 ? "none" : "block";
+    box.style.display = (val.length > 0 && pendingCount > 0) || (forceCheck && pendingCount > 0) ? "block" : "none";
   }
 
-  inputEl.addEventListener("input", refreshRules);
-  inputEl.addEventListener("focus", refreshRules);
-  refreshRules();
+  inputEl.addEventListener("input", function () { refreshRules(false); });
+  inputEl.addEventListener("blur", function () {
+    if (!inputEl.value) box.style.display = "none";
+  });
+}
+
+function setFieldError(inputOrId, message) {
+  var el = typeof inputOrId === "string" ? document.getElementById(inputOrId) : inputOrId;
+  if (!el) return;
+  el.classList.add("input-invalid");
+  var anchor = el.closest(".email-otp-inline") || el.closest(".pw-wrap") || el;
+  var parent = anchor.parentNode;
+  if (!parent) return;
+  var errId = "ferr-" + (el.id || ("f" + Math.random().toString(36).slice(2, 7)));
+  var errEl = parent.querySelector('.field-error[data-for="' + (el.id || "") + '"]') || document.getElementById(errId);
+  if (!errEl) {
+    errEl = document.createElement("div");
+    errEl.id = errId;
+    errEl.className = "field-error";
+    if (el.id) errEl.setAttribute("data-for", el.id);
+    if (anchor.nextSibling) parent.insertBefore(errEl, anchor.nextSibling);
+    else parent.appendChild(errEl);
+  }
+  errEl.textContent = String(message || "Invalid value.");
+  errEl.style.display = "block";
+}
+
+function clearFieldError(inputOrId) {
+  var el = typeof inputOrId === "string" ? document.getElementById(inputOrId) : inputOrId;
+  if (!el) return;
+  el.classList.remove("input-invalid");
+  var anchor = el.closest(".email-otp-inline") || el.closest(".pw-wrap") || el;
+  var parent = anchor.parentNode;
+  if (!parent) return;
+  var errEl = el.id
+    ? parent.querySelector('.field-error[data-for="' + el.id + '"]')
+    : (anchor.nextSibling && anchor.nextSibling.classList && anchor.nextSibling.classList.contains("field-error") ? anchor.nextSibling : null);
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.style.display = "none";
+  }
+}
+
+function clearAllFieldErrors(rootEl) {
+  var scope = rootEl || document;
+  var errs = scope.querySelectorAll(".field-error");
+  for (var i = 0; i < errs.length; i++) {
+    errs[i].textContent = "";
+    errs[i].style.display = "none";
+  }
+  var invs = scope.querySelectorAll(".input-invalid");
+  for (var j = 0; j < invs.length; j++) {
+    invs[j].classList.remove("input-invalid");
+  }
+}
+
+function formatElapsedTimeAgo(isoDate) {
+  if (!isoDate) return "recently";
+  var t = new Date(isoDate).getTime();
+  if (isNaN(t)) return "recently";
+  var diffMs = Math.max(0, Date.now() - t);
+  var hours = Math.floor(diffMs / 3600000);
+  var days = Math.floor(hours / 24);
+  var months = Math.floor(days / 30);
+  if (months >= 1) {
+    var remDays = days % 30;
+    return months + " month" + (months > 1 ? "s" : "") + (remDays > 0 ? " and " + remDays + " day" + (remDays > 1 ? "s" : "") : "") + " ago";
+  }
+  if (days >= 1) {
+    return days + " day" + (days > 1 ? "s" : "") + " ago";
+  }
+  if (hours >= 1) {
+    return hours + " hour" + (hours > 1 ? "s" : "") + " ago";
+  }
+  var mins = Math.max(1, Math.floor(diffMs / 60000));
+  return mins + " minute" + (mins > 1 ? "s" : "") + " ago";
 }
 
 function initPasswordEyeToggles(rootEl) {
@@ -1037,10 +1133,11 @@ function runPendingConfirmAction() {
   if (typeof fn === "function") fn();
 }
 
-function validatePersonName(name, fieldLabel, allowNA) {
+function validatePersonName(name, fieldLabel, allowNA, allowEmpty) {
   var label = fieldLabel || "Name";
   var clean = String(name || "").trim();
   if (!clean) {
+    if (allowEmpty) return { valid: true, message: "" };
     return { valid: false, message: label + " is required." };
   }
   if (allowNA && /^(n\/a|na|none)$/i.test(clean)) {
@@ -1055,8 +1152,8 @@ function validatePersonName(name, fieldLabel, allowNA) {
   return { valid: true, message: "" };
 }
 
-function isValidPersonName(name, allowNA) {
-  return validatePersonName(name, "Name", allowNA).valid;
+function isValidPersonName(name, allowNA, allowEmpty) {
+  return validatePersonName(name, "Name", allowNA, allowEmpty).valid;
 }
 
 function getMaxAdultBirthDate(minAge) {

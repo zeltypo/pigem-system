@@ -1,6 +1,53 @@
 var dashCurrentUser = null;
 var dashSearchApps = [];
 var dashOnSelectApp = null;
+var dashNotifItems = [];
+var _dashSecurityStarted = false;
+var _dashLastActivityAt = Date.now();
+var _dashSessionTimer = null;
+var _dashIdleTimer = null;
+var DASH_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
+function startDashSecurityWatchers() {
+  if (_dashSecurityStarted || !dashCurrentUser) return;
+  _dashSecurityStarted = true;
+  _dashLastActivityAt = Date.now();
+
+  var touchActivity = function () {
+    _dashLastActivityAt = Date.now();
+  };
+  var evs = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
+  for (var i = 0; i < evs.length; i++) {
+    window.addEventListener(evs[i], touchActivity, { passive: true });
+  }
+
+  _dashIdleTimer = setInterval(function () {
+    if (!dashCurrentUser) return;
+    if (Date.now() - _dashLastActivityAt >= DASH_IDLE_TIMEOUT_MS) {
+      clearInterval(_dashIdleTimer);
+      clearInterval(_dashSessionTimer);
+      signOutAndGoLogin("idle", true);
+    }
+  }, 15000);
+
+  var verifySingleDevice = async function () {
+    if (!dashCurrentUser || typeof dbVerifyActiveSession !== "function") return;
+    try {
+      var chk = await dbVerifyActiveSession();
+      if (chk && chk.valid === false && (chk.reason === "other_device" || chk.reason === "disabled")) {
+        clearInterval(_dashIdleTimer);
+        clearInterval(_dashSessionTimer);
+        signOutAndGoLogin(chk.reason, false);
+      }
+    } catch (e) {}
+  };
+
+  _dashSessionTimer = setInterval(verifySingleDevice, 8000);
+  window.addEventListener("focus", verifySingleDevice);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) verifySingleDevice();
+  });
+}
 
 function initDashUI(user, apps, onSelectAppCallback) {
   dashCurrentUser = user;
@@ -30,6 +77,7 @@ function initDashUI(user, apps, onSelectAppCallback) {
   renderProfileDrawer(user);
   refreshNotifBell(user);
   updateOverviewOnlyVisibility(true);
+  startDashSecurityWatchers();
 
   document.addEventListener("click", function (e) {
     var sWrap = document.querySelector(".top-search");
@@ -163,26 +211,102 @@ function autoLinkUrls(text) {
 async function refreshNotifBell(user) {
   if (!user) return;
   var list = await dbListNotifications(user.email, user.role);
+
+  if (user.role === "admin" && typeof checkApiHealth === "function") {
+    try {
+      var health = await checkApiHealth();
+      if (health && Array.isArray(health.services)) {
+        for (var hIdx = 0; hIdx < health.services.length; hIdx++) {
+          var svc = health.services[hIdx];
+          if (svc && !svc.online) {
+            list.unshift({
+              id: "sys-api-" + hIdx,
+              title: "API Reminder: " + (svc.name || "Service") + " Not Configured / Offline",
+              message: svc.detail || "Review API keys and Vercel environment configuration in the APIs section.",
+              target_tab: "tab-apis",
+              target_id: svc.name || "",
+              created_at: new Date().toISOString()
+            });
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  dashNotifItems = list || [];
   var countEl = document.getElementById("notif-count");
   var bodyEl = document.getElementById("notif-list");
   if (countEl) {
-    countEl.textContent = list.length;
-    countEl.classList.toggle("hidden", list.length === 0);
+    countEl.textContent = dashNotifItems.length;
+    countEl.classList.toggle("hidden", dashNotifItems.length === 0);
   }
   if (bodyEl) {
-    if (list.length === 0) {
+    if (dashNotifItems.length === 0) {
       bodyEl.innerHTML = '<p class="muted" style="font-size:13px">No notifications yet.</p>';
     } else {
       var h = "";
-      for (var i = 0; i < Math.min(list.length, 12); i++) {
-        var n = list[i];
-        h += '<div style="padding:10px 0; border-bottom:1px solid var(--line); font-size:12px">' +
+      for (var i = 0; i < Math.min(dashNotifItems.length, 15); i++) {
+        var n = dashNotifItems[i];
+        h += '<div class="notif-item-clickable" onclick="onNotificationItemClick(' + i + ')" style="padding:10px 0; border-bottom:1px solid var(--line); font-size:12px">' +
           '<b style="display:block; margin-bottom:3px;">' + escapeHtml(n.title) + '</b>' +
           '<div style="line-height:1.5;">' + autoLinkUrls(n.message) + '</div>' +
-          '<div class="muted" style="font-size:11px; margin-top:4px">' + formatDate(n.created_at) + '</div>' +
+          '<div class="muted" style="font-size:11px; margin-top:4px; display:flex; justify-content:space-between;">' +
+            '<span>' + formatDate(n.created_at) + '</span>' +
+            '<span style="color:var(--red); font-weight:700;">Open &rarr;</span>' +
+          '</div>' +
           '</div>';
       }
       bodyEl.innerHTML = h;
+    }
+  }
+}
+
+function onNotificationItemClick(index) {
+  var item = dashNotifItems[index];
+  var m = document.getElementById("notif-modal");
+  if (m) m.classList.add("hidden");
+  if (!item) return;
+
+  var targetTab = item.target_tab || "";
+  var targetId = item.target_id || "";
+  var titleLow = String(item.title || "").toLowerCase();
+  var msgLow = String(item.message || "").toLowerCase();
+
+  if (!targetTab) {
+    if (titleLow.indexOf("password reset") !== -1) targetTab = "tab-accounts";
+    else if (titleLow.indexOf("api") !== -1 || titleLow.indexOf("screening unavailable") !== -1) targetTab = "tab-apis";
+    else if (titleLow.indexOf("application") !== -1 || titleLow.indexOf("correction") !== -1) {
+      if (typeof dashOnSelectApp === "function" && targetId) {
+        dashOnSelectApp(targetId);
+        return;
+      }
+    }
+  }
+
+  if (targetTab && typeof window.openDashTabById === "function") {
+    window.openDashTabById(targetTab, targetId);
+    return;
+  }
+  if (targetTab) {
+    var navBtn = document.querySelector('[data-tab="' + targetTab + '"]');
+    if (navBtn) {
+      navBtn.click();
+      return;
+    }
+  }
+  if (targetId && typeof dashOnSelectApp === "function") {
+    dashOnSelectApp(targetId);
+    return;
+  }
+  if (msgLow && dashSearchApps && dashSearchApps.length) {
+    for (var i = 0; i < dashSearchApps.length; i++) {
+      var ref = String(dashSearchApps[i].ref_no || "").toLowerCase();
+      if (ref && (msgLow.indexOf(ref) !== -1 || titleLow.indexOf(ref) !== -1)) {
+        if (typeof dashOnSelectApp === "function") {
+          dashOnSelectApp(dashSearchApps[i].id);
+          return;
+        }
+      }
     }
   }
 }
@@ -275,6 +399,9 @@ function renderProfileDrawer(user) {
     pwSection +
 
     '<div style="margin-top:16px">' +
+      '<a href="index.html" target="_blank" rel="noopener" class="btn btn-outline" style="width:100%; margin-bottom:8px; display:inline-flex; align-items:center; justify-content:center;">' +
+        '<img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="" class="icon-img" />Open Main Website' +
+      '</a>' +
       '<button type="button" class="btn btn-red" style="width:100%" onclick="signOutAndGoLogin()">Sign Out</button>' +
     '</div>';
   if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles(box);
@@ -342,16 +469,22 @@ async function sendProfilePwOtp() {
 async function confirmDirectProfilePassword() {
   if (!dashCurrentUser) return;
   hideMsg("prof-pw-msg");
+  if (typeof clearFieldError === "function") {
+    clearFieldError("prof-pw-current");
+    clearFieldError("prof-pw-new");
+  }
   var curEl = document.getElementById("prof-pw-current");
   var newEl = document.getElementById("prof-pw-new");
   var curPw = curEl ? curEl.value : "";
   var newPw = newEl ? newEl.value : "";
   if (!curPw) {
-    showMsg("prof-pw-msg", "error", "Please enter your current password.");
+    if (typeof setFieldError === "function") setFieldError("prof-pw-current", "Please enter your current password.");
+    else showMsg("prof-pw-msg", "error", "Please enter your current password.");
     return;
   }
   if (typeof isStrongPassword === "function" && !isStrongPassword(newPw)) {
-    showMsg("prof-pw-msg", "error", "New password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+    if (typeof setFieldError === "function") setFieldError("prof-pw-new", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+    else showMsg("prof-pw-msg", "error", "New password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
     return;
   }
   try {
@@ -360,16 +493,33 @@ async function confirmDirectProfilePassword() {
     if (newEl) newEl.value = "";
     showMsg("prof-pw-msg", "ok", "Password updated successfully.");
   } catch (err) {
-    showMsg("prof-pw-msg", "error", err.message || "Could not update password.");
+    var errMsg = err.message || "Could not update password.";
+    if (typeof setFieldError === "function" && errMsg.toLowerCase().indexOf("current password") !== -1) {
+      setFieldError("prof-pw-current", errMsg);
+    } else if (typeof setFieldError === "function" && errMsg.toLowerCase().indexOf("reuse") !== -1) {
+      setFieldError("prof-pw-new", errMsg);
+    } else {
+      showMsg("prof-pw-msg", "error", errMsg);
+    }
   }
 }
 
 async function confirmProfilePwOtp() {
   if (!dashCurrentUser) return;
+  hideMsg("prof-pw-msg");
+  if (typeof clearFieldError === "function") {
+    clearFieldError("prof-pw-code");
+    clearFieldError("prof-pw-new");
+  }
   var code = document.getElementById("prof-pw-code").value.trim();
   var newPw = document.getElementById("prof-pw-new").value;
+  if (!code || code.length < 6) {
+    if (typeof setFieldError === "function") setFieldError("prof-pw-code", "Please enter the 6-digit verification code.");
+    return;
+  }
   if (typeof isStrongPassword === "function" && !isStrongPassword(newPw)) {
-    showMsg("prof-pw-msg", "error", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+    if (typeof setFieldError === "function") setFieldError("prof-pw-new", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+    else showMsg("prof-pw-msg", "error", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
     return;
   }
   try {
@@ -377,7 +527,14 @@ async function confirmProfilePwOtp() {
     document.getElementById("prof-pw-step2").classList.add("hidden");
     showMsg("prof-pw-msg", "ok", "Password updated!");
   } catch (err) {
-    showMsg("prof-pw-msg", "error", err.message);
+    var msg = err.message || "Could not update password.";
+    if (typeof setFieldError === "function" && msg.toLowerCase().indexOf("code") !== -1) {
+      setFieldError("prof-pw-code", msg);
+    } else if (typeof setFieldError === "function" && msg.toLowerCase().indexOf("reuse") !== -1) {
+      setFieldError("prof-pw-new", msg);
+    } else {
+      showMsg("prof-pw-msg", "error", msg);
+    }
   }
 }
 
@@ -527,3 +684,137 @@ window.addEventListener("DOMContentLoaded", function () {
     }, 1200);
   }
 });
+
+function getLocalTodayIso() {
+  var d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+function getLocalMonthIso() {
+  var d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+
+function getReportTimeframeLabel(tfMode, exactDate, monthStr) {
+  if (tfMode === "daily") return "Daily (" + (exactDate || getLocalTodayIso()) + ")";
+  if (tfMode === "monthly") return "Monthly (" + (monthStr || getLocalMonthIso()) + ")";
+  return "All Time";
+}
+
+function matchesReportTimeframeValue(isoStr, tfMode, exactDate, monthStr) {
+  if (tfMode === "all") return true;
+  if (!isoStr) return false;
+  var d = new Date(isoStr);
+  if (isNaN(d.getTime())) return false;
+  var localYmd = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  if (tfMode === "daily") return localYmd === (exactDate || getLocalTodayIso());
+  if (tfMode === "monthly") return localYmd.slice(0, 7) === (monthStr || getLocalMonthIso());
+  return true;
+}
+
+function renderDashReportView(opts) {
+  var data = opts.data || {};
+  var sumEl = document.getElementById(opts.summaryId);
+  if (sumEl) {
+    sumEl.innerHTML = "<b>" + escapeHtml(data.title || "Report") + "</b> &mdash; Timeframe: <b>" +
+      escapeHtml(data.timeframeLabel || "All Time") + "</b> &bull; Total Matching Records: <b>" +
+      ((data.rows || []).length) + "</b>" +
+      (opts.actorLabel ? (" &bull; Generated by <b>" + escapeHtml(opts.actorLabel) + "</b>") : "");
+  }
+
+  var pTitle = document.getElementById(opts.pieTitleId);
+  var bTitle = document.getElementById(opts.barTitleId);
+  if (pTitle) pTitle.textContent = data.pieTitle || "Distribution";
+  if (bTitle) bTitle.textContent = data.barTitle || "Breakdown";
+
+  renderPieChart(opts.pieBoxId, data.pieSlices || [], data.pieCenter || "Total");
+  renderBars(opts.barBoxId, data.barRows || []);
+
+  var wrap = document.getElementById(opts.tableWrapId);
+  if (!wrap) return;
+  var cols = data.columns || [];
+  var rows = data.rows || [];
+  var badges = data.badges || [];
+  var badgeCol = typeof opts.badgeColIdx === "number" ? opts.badgeColIdx : -1;
+
+  var th = "<thead><tr>";
+  for (var c = 0; c < cols.length; c++) {
+    th += "<th>" + escapeHtml(cols[c]) + "</th>";
+  }
+  th += "</tr></thead>";
+
+  var tb = "<tbody>";
+  if (rows.length === 0) {
+    tb += '<tr><td colspan="' + Math.max(1, cols.length) + '" class="muted">No records found for this date/filter combination.</td></tr>';
+  } else {
+    for (var r = 0; r < rows.length; r++) {
+      tb += "<tr>";
+      for (var k = 0; k < rows[r].length; k++) {
+        var val = rows[r][k];
+        if (k === badgeCol && badges[r]) {
+          tb += '<td><span class="badge ' + badges[r] + '">' + escapeHtml(val) + '</span></td>';
+        } else if (k === 0) {
+          tb += '<td><b>' + escapeHtml(val) + '</b></td>';
+        } else {
+          tb += '<td>' + escapeHtml(val) + '</td>';
+        }
+      }
+      tb += "</tr>";
+    }
+  }
+  tb += "</tbody>";
+  wrap.innerHTML = "<table>" + th + tb + "</table>";
+}
+
+function exportReportToCsv(columns, rows, filename) {
+  var csvRows = [(columns || []).map(function (h) { return '"' + String(h || "").replace(/"/g, '""') + '"'; }).join(",")];
+  for (var i = 0; i < (rows || []).length; i++) {
+    csvRows.push(rows[i].map(function (v) {
+      return '"' + String(v || "").replace(/"/g, '""') + '"';
+    }).join(","));
+  }
+  var blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = filename || "PIGEM-report.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function downloadFormattedHtmlReport(title, timeframeLabel, pieSlices, columns, rows, filename) {
+  var cols = columns || [];
+  var dataRows = rows || [];
+  var rowsHtml = "";
+  for (var i = 0; i < dataRows.length; i++) {
+    rowsHtml += "<tr>" + dataRows[i].map(function (cell) {
+      return "<td style='padding:8px;border:1px solid #d0d5dd;'>" + escapeHtml(cell) + "</td>";
+    }).join("") + "</tr>";
+  }
+  var summaryMetrics = (pieSlices || []).map(function (s) {
+    return "<li style='margin-bottom:4px;'><b>" + escapeHtml(s.label) + ":</b> " + s.value + "</li>";
+  }).join("");
+
+  var htmlDoc =
+    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>" + escapeHtml(title || "Report") + "</title></head>" +
+    "<body style='font-family:Arial,sans-serif;padding:28px;color:#111827;'>" +
+      "<h1 style='margin:0;color:#c8102e;'>PIGEM COMBINED FACILITIES SUPPORT SERVICES</h1>" +
+      "<h2 style='margin:6px 0 12px;'>" + escapeHtml(title || "Operational Report") + "</h2>" +
+      "<p style='font-size:13px;color:#475467;'>Timeframe: <b>" + escapeHtml(timeframeLabel || "All Time") + "</b> | Total Records: <b>" + dataRows.length + "</b> | Generated: " + escapeHtml(new Date().toLocaleString()) + "</p>" +
+      "<ul style='font-size:13px;background:#f8fafc;padding:12px 24px;border:1px solid #e4e7ec;border-radius:8px;'>" + summaryMetrics + "</ul>" +
+      "<table style='width:100%;border-collapse:collapse;font-size:12.5px;margin-top:16px;'>" +
+        "<thead><tr>" + cols.map(function (c) { return "<th style='padding:8px;border:1px solid #d0d5dd;background:#f1f5f9;text-align:left;'>" + escapeHtml(c) + "</th>"; }).join("") + "</tr></thead>" +
+        "<tbody>" + (rowsHtml || "<tr><td colspan='" + Math.max(1, cols.length) + "' style='padding:10px;border:1px solid #d0d5dd;'>No records found.</td></tr>") + "</tbody>" +
+      "</table>" +
+    "</body></html>";
+
+  var blob = new Blob([htmlDoc], { type: "text/html;charset=utf-8;" });
+  var url = URL.createObjectURL(blob);
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = filename || "PIGEM-summary-report.html";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}

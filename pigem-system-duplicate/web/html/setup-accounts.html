@@ -52,33 +52,33 @@
         </div>
 
         <!-- FORM: Interactive User Input Form -->
-        <form class="mt-big" onsubmit="registerSingleAdmin(event)">
+        <form class="mt-big" onsubmit="registerSingleAdmin(event)" novalidate>
           <div class="form-grid three">
             <div>
               <label for="adm-first-name">First Name</label>
-              <input id="adm-first-name" type="text" placeholder="Juan" required>
+              <input id="adm-first-name" type="text" placeholder="Juan">
             </div>
             <div>
               <label for="adm-middle-name">Middle Name</label>
-              <input id="adm-middle-name" type="text" placeholder="Santos (or N/A)" required>
+              <input id="adm-middle-name" type="text" placeholder="Optional">
             </div>
             <div>
               <label for="adm-last-name">Last Name</label>
-              <input id="adm-last-name" type="text" placeholder="Dela Cruz" required>
+              <input id="adm-last-name" type="text" placeholder="Dela Cruz">
             </div>
           </div>
           <div class="mt">
             <label for="adm-username">Administrator Username</label>
-            <input id="adm-username" type="text" minlength="3" maxlength="30" placeholder="pigem_admin" required>
+            <input id="adm-username" type="text" minlength="3" maxlength="30" placeholder="pigem_admin">
             <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores). Administrator signs in with username only.</div>
           </div>
           <div class="mt">
             <label for="adm-pw">Password</label>
-            <input id="adm-pw" type="password" data-pw-check="1" minlength="8" placeholder="Create strong password" required>
+            <input id="adm-pw" type="password" data-pw-check="1" minlength="8" placeholder="Create strong password">
           </div>
           <div class="mt">
             <label for="adm-pw2">Confirm Password</label>
-            <input id="adm-pw2" type="password" minlength="8" placeholder="Repeat password" required>
+            <input id="adm-pw2" type="password" minlength="8" placeholder="Repeat password">
           </div>
 
           <button type="submit" id="btn-save-admin" class="btn btn-red btn-full mt-big">
@@ -135,6 +135,7 @@ window.SYSTEM = "admin";
     // Helper `registerSingleAdmin` (params: event): Executes workflow logic for `registerSingleAdmin`.
     async function registerSingleAdmin(event) {
       event.preventDefault();
+      if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
       var first = document.getElementById("adm-first-name").value.trim();
       var middle = document.getElementById("adm-middle-name").value.trim();
       var last = document.getElementById("adm-last-name").value.trim();
@@ -143,32 +144,29 @@ window.SYSTEM = "admin";
       var pw = document.getElementById("adm-pw").value;
       var pw2 = document.getElementById("adm-pw2").value;
       var btn = document.getElementById("btn-save-admin");
+      var hasError = false;
 
-      if (!first || !last || !username || !pw) {
-        showAlert("Missing Fields", "Please complete First Name, Last Name, Username, and Password.", "warn");
-        return;
-      }
       if (typeof validatePersonName === "function") {
-        var fChk = validatePersonName(first, "First Name", false);
-        var mChk = middle ? validatePersonName(middle, "Middle Name", true) : { valid: true };
-        var lChk = validatePersonName(last, "Last Name", false);
-        if (!fChk.valid || !mChk.valid || !lChk.valid) {
-          showAlert("Invalid Name", [fChk.message, mChk.message, lChk.message].filter(Boolean).join(" "), "warn");
-          return;
-        }
+        var fChk = validatePersonName(first, "First Name", false, false);
+        var mChk = validatePersonName(middle, "Middle Name", true, true);
+        var lChk = validatePersonName(last, "Last Name", false, false);
+        if (!fChk.valid && typeof setFieldError === "function") { setFieldError("adm-first-name", fChk.message); hasError = true; }
+        if (!mChk.valid && typeof setFieldError === "function") { setFieldError("adm-middle-name", mChk.message); hasError = true; }
+        if (!lChk.valid && typeof setFieldError === "function") { setFieldError("adm-last-name", lChk.message); hasError = true; }
       }
-      if (typeof isValidUsername === "function" && !isValidUsername(username)) {
-        showAlert("Invalid Username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).", "warn");
-        return;
+      if (!username || (typeof isValidUsername === "function" && !isValidUsername(username))) {
+        if (typeof setFieldError === "function") setFieldError("adm-username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+        hasError = true;
       }
       if (typeof isStrongPassword === "function" && !isStrongPassword(pw)) {
-        showAlert("Weak Password", "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.", "warn");
-        return;
+        if (typeof setFieldError === "function") setFieldError("adm-pw", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+        hasError = true;
       }
       if (pw !== pw2) {
-        showAlert("Password Mismatch", "Password and Confirm Password do not match.", "warn");
-        return;
+        if (typeof setFieldError === "function") setFieldError("adm-pw2", "Password and Confirm Password do not match.");
+        hasError = true;
       }
+      if (hasError) return;
 
       btn.disabled = true;
       btn.textContent = "Provisioning Admin...";

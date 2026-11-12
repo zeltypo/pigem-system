@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ==========================================================================
-     FILE OVERVIEW: Agent Verification & Provider Encoding Workspace (web/html/agent.html)
-     PURPOSE: Provides overview analytics (bar & pie charts), sub-nav application queues, preliminary ID screening review, and encoding workflow.
+     FILE OVERVIEW: Agent Verification, Provider Encoding & Reports Workspace (web/html/agent.html)
+     PURPOSE: Provides Donut/Bar overview analytics, sub-nav application queues, preliminary ID screening review, encoding workflow, and CSV/HTML Reports.
      HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
      ========================================================================== -->
 
@@ -31,18 +31,16 @@
     <aside class="dash-side">
       <div class="brand brand-stacked">
         <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
-        <div>
-          <b>COMBINED FACILITIES SUPPORT SERVICES</b>
-          <span>AGENT WORKSPACE SYSTEM</span>
-        </div>
+        <span class="brand-org">COMBINED FACILITIES SUPPORT SERVICES</span>
+        <span class="brand-sys">APPLICATION MANAGEMENT SYSTEM</span>
       </div>
 
       <button id="nav-overview" data-nav-label="Overview" data-nav-target="overview" class="active" onclick="showTab('overview')">
-        <span><img data-img="icons/overview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/overview.png" alt="Overview (not available)" class="icon-img" />Overview</span>
+        <span><img data-img="icons/overview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/overview.png" alt="Overview" class="icon-img" />Overview</span>
       </button>
 
       <button type="button" onclick="toggleNavGroup(this)">
-        <span><img data-img="icons/applications.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/applications.png" alt="Applications (not available)" class="icon-img" />Applications</span>
+        <span><img data-img="icons/application.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/application.png" alt="Applications" class="icon-img" />Applications</span>
         <span class="chev">v</span>
       </button>
       <div class="nav-sub">
@@ -73,11 +71,15 @@
       </div>
 
       <button id="nav-links" data-nav-label="Application Links" data-nav-target="links" onclick="showTab('links')">
-        <span><img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="Links (not available)" class="icon-img" />Application Links</span>
+        <span><img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="Links" class="icon-img" />Application Links</span>
+      </button>
+
+      <button id="nav-reports" data-nav-label="Reports and Export" data-nav-target="reports" onclick="showTab('reports')">
+        <span><img data-img="icons/report.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/report.png" alt="Reports" class="icon-img" />Reports</span>
       </button>
 
       <button type="button" data-nav-label="Settings and Theme" data-nav-target="settings" onclick="toggleProfileDrawer()">
-        <span><img data-img="icons/settings.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/settings.png" alt="Settings (not available)" class="icon-img" />Settings</span>
+        <span><img data-img="icons/setting.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/setting.png" alt="Settings" class="icon-img" />Settings</span>
       </button>
 
       <div class="side-foot">© 2026 All Rights Reserved</div>
@@ -86,10 +88,7 @@
     <div class="dash-main">
 
       <div class="dash-top">
-        <div>
-          <b style="font-size:16px">Application Handling Management</b>
-          <div class="muted" style="font-size:12px">Signed in as <span id="top-user-name">Agent</span></div>
-        </div>
+        <div style="flex:1"></div>
 
         <div class="top-actions">
           <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
@@ -126,7 +125,7 @@
           <div class="stat" style="cursor:pointer" onclick="showTab('rejected')"><div class="num" id="st-rejected">0</div><div class="lbl">Rejected Applications</div></div>
         </div>
 
-        <div class="grid-2" style="margin-bottom:20px">
+        <div class="report-charts-grid" style="margin-bottom:20px">
           <div class="card">
             <h3 style="margin-bottom:12px">Application Status Breakdown</h3>
             <div id="chart-agent-pie" style="margin-bottom:14px"></div>
@@ -134,6 +133,7 @@
           </div>
           <div class="card">
             <h3 style="margin-bottom:12px">Plans Requested</h3>
+            <div id="chart-agent-plan-pie" style="margin-bottom:14px"></div>
             <div id="chart-agent-cols"></div>
           </div>
         </div>
@@ -198,6 +198,78 @@
         </div>
       </section>
 
+      <section id="tab-reports" class="hidden">
+        <div class="card" style="margin-bottom:18px">
+          <div class="row between" style="align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px">
+            <div>
+              <h2 style="font-size:20px; margin-bottom:4px">Agent Reports and Analytics</h2>
+              <p class="muted" style="font-size:13px">Review verification volume, handled applications, and referral link performance with daily or monthly filters.</p>
+            </div>
+          </div>
+
+          <div class="sub-nav no-print" role="tablist">
+            <button type="button" class="sub-nav-btn active" id="rep-sub-apps" onclick="setAgentReportSubTab('apps')">Applications Report</button>
+            <button type="button" class="sub-nav-btn" id="rep-sub-mine" onclick="setAgentReportSubTab('mine')">My Handled Report</button>
+            <button type="button" class="sub-nav-btn" id="rep-sub-links" onclick="setAgentReportSubTab('links')">Referral Links Report</button>
+          </div>
+
+          <div class="report-controls no-print">
+            <div class="field">
+              <label for="rep-timeframe">Timeframe</label>
+              <select id="rep-timeframe" onchange="onAgentReportTimeframeChange()">
+                <option value="all">All Time</option>
+                <option value="daily">Daily Report</option>
+                <option value="monthly">Monthly Report</option>
+              </select>
+            </div>
+            <div class="field hidden" id="rep-date-wrap">
+              <label for="rep-date">Select Date</label>
+              <input id="rep-date" type="date" onchange="renderAgentReport()" />
+            </div>
+            <div class="field hidden" id="rep-month-wrap">
+              <label for="rep-month">Select Month</label>
+              <input id="rep-month" type="month" onchange="renderAgentReport()" />
+            </div>
+            <div class="field">
+              <label for="rep-filter-status">Filter</label>
+              <select id="rep-filter-status" onchange="renderAgentReport()">
+                <option value="all">All Records</option>
+              </select>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
+              <button type="button" class="btn btn-outline btn-sm" onclick="window.print()">
+                <img data-img="icons/printer.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/printer.png" alt="Print" class="icon-img" />Print Report
+              </button>
+              <button type="button" class="btn btn-dark btn-sm" onclick="downloadFormattedAgentReport()">
+                <img data-img="icons/downloads.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/downloads.png" alt="Download" class="icon-img" />Download Report
+              </button>
+              <button type="button" class="btn btn-red btn-sm" onclick="exportAgentReportCsv()">
+                <img data-img="icons/downloads.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/downloads.png" alt="CSV" class="icon-img" />Download CSV
+              </button>
+            </div>
+          </div>
+
+          <div id="rep-summary-header" class="notice mt" style="margin-bottom:16px"></div>
+
+          <div class="report-charts-grid">
+            <div class="card" style="background:var(--bg-soft)">
+              <h3 id="rep-pie-title" style="margin-bottom:10px; font-size:15px">Distribution</h3>
+              <div id="chart-report-pie"></div>
+            </div>
+            <div class="card" style="background:var(--bg-soft)">
+              <h3 id="rep-bar-title" style="margin-bottom:10px; font-size:15px">Breakdown</h3>
+              <div id="chart-report-bars"></div>
+            </div>
+          </div>
+
+          <div class="table-wrap" id="report-table-wrap"></div>
+
+          <div class="row no-print" style="justify-content:flex-end; margin-top:14px">
+            <button type="button" class="btn btn-outline btn-sm" onclick="resetAgentReportFilters()">Reset Filters</button>
+          </div>
+        </div>
+      </section>
+
     </div>
   </div>
 
@@ -209,8 +281,8 @@
           <h2 id="det-title" style="font-size:20px; margin-top:4px">Reference</h2>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap">
-          <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantId()"><img data-img="icons/download.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/download.png" alt="Download (not available)" class="icon-img" />Download ID</button>
-          <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()"><img data-img="icons/printer.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/printer.png" alt="Print (not available)" class="icon-img" />Print Copy</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantId()"><img data-img="icons/downloads.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/downloads.png" alt="Download" class="icon-img" />Download ID</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()"><img data-img="icons/printer.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/printer.png" alt="Print" class="icon-img" />Print Copy</button>
           <button type="button" class="btn btn-outline btn-sm" onclick="closeDetailModal()">Close</button>
         </div>
       </div>
@@ -219,7 +291,7 @@
     </div>
   </div>
 
-  <div id="notif-modal" class="modal hidden">
+  <div id="notif-modal" class="modal hidden" onclick="if(event.target===this) toggleNotifModal()">
     <div class="modal-box">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
         <h3>Notifications</h3>

@@ -17,7 +17,8 @@ var SYSTEM_ROLES = {
 };
 
 var SESSION_KEY = "pigem_session_" + SYSTEM;
-var sessionStore = SYSTEM === "customer" ? localStorage : sessionStorage;
+var SESSION_TOKEN_KEY = SESSION_KEY + "_tok";
+var sessionStore = sessionStorage;
 
 var IS_DEMO_MODE = (CONFIG.SUPABASE_URL === "" || CONFIG.SUPABASE_ANON_KEY === "");
 var supabaseClient = null;
@@ -27,6 +28,116 @@ if (!IS_DEMO_MODE && window.supabase) {
   supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
     auth: { storageKey: "pigem-" + SYSTEM, storage: sessionStore }
   });
+}
+
+// Helper `generateSessionToken`: Executes workflow logic for `generateSessionToken`.
+function generateSessionToken() {
+  return "sess-" + Date.now() + "-" + Math.random().toString(36).slice(2, 12);
+}
+
+// Utility `parsePasswordHistory` (params: raw): Normalizes or transforms values (parse password history).
+function parsePasswordHistory(raw) {
+  if (Array.isArray(raw)) return raw.slice();
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {}
+  }
+  return [];
+}
+
+// Validator/Check `checkPasswordHistoryReuse` (params: userRow, newHash): Evaluates rule (check password history reuse) and returns result.
+function checkPasswordHistoryReuse(userRow, newHash) {
+  if (!userRow || !newHash) return { reused: false };
+  var currentHash = String(userRow.password_hash || "");
+  if (currentHash && currentHash === newHash) {
+    var curAt = userRow.password_changed_at || userRow.created_at || "";
+    var timeLabel = typeof formatElapsedTimeAgo === "function" ? formatElapsedTimeAgo(curAt) : "recently";
+    return {
+      reused: true,
+      isCurrent: true,
+      timeAgo: timeLabel,
+      message: "You cannot reuse your current password (last changed " + timeLabel + "). Please choose a new password."
+    };
+  }
+  var hist = parsePasswordHistory(userRow.password_history);
+  for (var i = 0; i < hist.length; i++) {
+    var entry = hist[i];
+    if (entry && entry.hash && String(entry.hash) === newHash) {
+      var oldLabel = typeof formatElapsedTimeAgo === "function" ? formatElapsedTimeAgo(entry.changed_at) : "previously";
+      return {
+        reused: true,
+        isCurrent: false,
+        timeAgo: oldLabel,
+        message: "You cannot reuse a previous password that was changed " + oldLabel + ". Please choose a new password."
+      };
+    }
+  }
+  return { reused: false };
+}
+
+// UI Renderer `buildNextPasswordHistory` (params: userRow): Builds and updates DOM elements for next password history.
+function buildNextPasswordHistory(userRow) {
+  var hist = parsePasswordHistory(userRow && userRow.password_history);
+  if (userRow && userRow.password_hash) {
+    hist.unshift({
+      hash: String(userRow.password_hash),
+      changed_at: userRow.password_changed_at || userRow.created_at || new Date().toISOString()
+    });
+  }
+  return hist.slice(0, 10);
+}
+
+// Database/Storage helper `dbBindSingleDeviceSession` (params: userObj): Performs Supabase cloud operation to bind single device session.
+async function dbBindSingleDeviceSession(userObj) {
+  if (!userObj || !userObj.id) return "";
+  var tok = generateSessionToken();
+  sessionStore.setItem(SESSION_KEY, userObj.id);
+  sessionStore.setItem(SESSION_TOKEN_KEY, tok);
+  userObj.session_token = tok;
+  var users = getDemoUsers();
+  for (var i = 0; i < users.length; i++) {
+    if (users[i].id === userObj.id) {
+      users[i].session_token = tok;
+      break;
+    }
+  }
+  writeSaved("pigem_users", users);
+  if (!IS_DEMO_MODE && supabaseClient) {
+    try {
+      await supabaseClient.from("users").update({ session_token: tok }).eq("id", userObj.id);
+    } catch (e) {}
+  }
+  return tok;
+}
+
+// Database/Storage helper `dbVerifyActiveSession`: Performs Supabase cloud operation to verify active session.
+async function dbVerifyActiveSession() {
+  var currentId = sessionStore.getItem(SESSION_KEY);
+  var localTok = sessionStore.getItem(SESSION_TOKEN_KEY);
+  if (!currentId) return { valid: false, reason: "missing" };
+  if (IS_DEMO_MODE) {
+    var list = getDemoUsers();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === currentId) {
+        if (!list[i].active) return { valid: false, reason: "disabled" };
+        if (localTok && list[i].session_token && list[i].session_token !== localTok) {
+          return { valid: false, reason: "other_device" };
+        }
+        return { valid: true };
+      }
+    }
+    return { valid: false, reason: "missing" };
+  }
+  if (!supabaseClient) return { valid: true };
+  var res = await supabaseClient.from("users").select("id,active,session_token").eq("id", currentId).maybeSingle();
+  if (res.error) return { valid: true };
+  if (!res.data || !res.data.active) return { valid: false, reason: "disabled" };
+  if (localTok && res.data.session_token && res.data.session_token !== localTok) {
+    return { valid: false, reason: "other_device" };
+  }
+  return { valid: true };
 }
 
 // Validator/Check `hashPassword` (params: plainText): Evaluates rule (hash password) and returns result.
@@ -245,7 +356,7 @@ async function dbSignIn(identifier, password) {
       throw new Error("Invalid username or password.");
     }
 
-    sessionStore.setItem(SESSION_KEY, staffUser.id);
+    await dbBindSingleDeviceSession(staffUser);
     await dbAddLoginHistory(staffUser, "login");
     return staffUser;
   }
@@ -342,18 +453,28 @@ async function dbSignIn(identifier, password) {
     throw new Error("This account cannot sign in here.");
   }
 
-  sessionStore.setItem(SESSION_KEY, user.id);
+  await dbBindSingleDeviceSession(user);
   await dbAddLoginHistory(user, "login");
   return user;
 }
 
-// Database/Storage helper `dbSignOut`: Performs Supabase cloud operation to sign out.
-async function dbSignOut() {
+// Database/Storage helper `dbSignOut` (params: clearServerToken): Performs Supabase cloud operation to sign out.
+async function dbSignOut(clearServerToken) {
   var user = await dbGetCurrentUser();
-  if (user) await dbAddLoginHistory(user, "logout");
+  var localTok = sessionStore.getItem(SESSION_TOKEN_KEY);
+  if (user) {
+    await dbAddLoginHistory(user, "logout");
+    if (clearServerToken !== false && !IS_DEMO_MODE && supabaseClient && localTok) {
+      try {
+        await supabaseClient.from("users").update({ session_token: null })
+          .eq("id", user.id).eq("session_token", localTok);
+      } catch (e) {}
+    }
+  }
   sessionStore.removeItem(SESSION_KEY);
-  if (!IS_DEMO_MODE) {
-    await supabaseClient.auth.signOut();
+  sessionStore.removeItem(SESSION_TOKEN_KEY);
+  if (!IS_DEMO_MODE && supabaseClient) {
+    try { await supabaseClient.auth.signOut(); } catch (e) {}
   }
 }
 
@@ -497,6 +618,7 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
   }
 
   var pwHash = await hashPassword(newPassword);
+  var nowIso = new Date().toISOString();
 
   if (IS_DEMO_MODE) {
     var users = getDemoUsers();
@@ -515,11 +637,13 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
           users[i].username = await dbGenerateUniqueUsername(users[i].full_name, cleanEmail);
         }
         users[i].password_hash = pwHash;
+        users[i].password_changed_at = nowIso;
+        users[i].password_history = [];
         delete users[i].password;
         users[i].activated = true;
         users[i].activation_code = "";
         writeSaved("pigem_users", users);
-        sessionStore.setItem(SESSION_KEY, users[i].id);
+        await dbBindSingleDeviceSession(users[i]);
         await dbAddLoginHistory(users[i], "account_activated");
         return users[i];
       }
@@ -560,6 +684,8 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     id: authUserId,
     username: finalUsername,
     password_hash: pwHash,
+    password_changed_at: nowIso,
+    password_history: [],
     activated: true,
     activation_code: null
   }).eq("email", cleanEmail).select("*").maybeSingle();
@@ -572,9 +698,11 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
   } catch (e) {}
 
-  sessionStore.setItem(SESSION_KEY, authUserId);
   var user = (upRes.data) || (await dbGetCurrentUser()) || existing.data;
-  if (user) await dbAddLoginHistory(user, "account_activated");
+  if (user) {
+    await dbBindSingleDeviceSession(user);
+    await dbAddLoginHistory(user, "account_activated");
+  }
   return user;
 }
 
@@ -654,6 +782,73 @@ async function dbGetApplication(appId) {
   return res.data;
 }
 
+// `dbFindDuplicateCustomerApplication` (params: email, appData): Detects same-account duplicate applications by customer email, plan, and pinned location to auto-reject repeats while keeping distinct emails separate.
+async function dbFindDuplicateCustomerApplication(email, appData) {
+  var cleanEmail = String(email || "").trim().toLowerCase();
+  if (!cleanEmail) return { isDuplicate: false };
+  var existingApps = await dbListApplicationsForCustomer(cleanEmail);
+  if (!existingApps || existingApps.length === 0) return { isDuplicate: false };
+
+  var normStr = function (v) {
+    return String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  };
+  var newAddrKey = normStr((appData.house_no || "") + (appData.street || "") + (appData.barangay || "") + (appData.city || ""));
+  var newLat = Number(appData.lat);
+  var newLng = Number(appData.lng);
+  var hasNewCoords = !isNaN(newLat) && !isNaN(newLng) && newLat !== 0 && newLng !== 0;
+
+  for (var i = 0; i < existingApps.length; i++) {
+    var a = existingApps[i];
+    if (String(a.status || "") === "Rejected") continue;
+    var oldAddrKey = normStr((a.house_no || "") + (a.street || "") + (a.barangay || "") + (a.city || ""));
+    var oldLat = Number(a.lat);
+    var oldLng = Number(a.lng);
+    var sameCoords = hasNewCoords && !isNaN(oldLat) && !isNaN(oldLng) &&
+      Math.abs(newLat - oldLat) < 0.00045 && Math.abs(newLng - oldLng) < 0.00045;
+    var sameAddress = Boolean(newAddrKey && oldAddrKey && newAddrKey === oldAddrKey);
+    var samePersonPlan = normStr(a.full_name) === normStr(appData.full_name) &&
+      String(a.plan || a.plan_id || "") === String(appData.plan || appData.plan_id || "");
+
+    if (sameCoords || sameAddress || samePersonPlan) {
+      var locText = (typeof formatAddress === "function" ? formatAddress(a) : "") || a.address_line || "the same installation location";
+      var reasonDetail = sameCoords || sameAddress
+        ? "Duplicate Application at Same Location: This customer account already has an active application (" + a.ref_no + ", Status: " + a.status + ") registered at " + locText + "."
+        : "Duplicate Application Under Same Account: This customer account already has an active application (" + a.ref_no + ", Status: " + a.status + ") for the same subscriber and plan.";
+      return {
+        isDuplicate: true,
+        existingApp: a,
+        reason: reasonDetail
+      };
+    }
+  }
+  return { isDuplicate: false };
+}
+
+// `dbDeclineApplicationCorrection` (params: appId, reasonText): Marks a Needs Correction application as declined by customer choice with optional closure reason and audit log.
+async function dbDeclineApplicationCorrection(appId, reasonText) {
+  var reason = String(reasonText || "").trim() || "Customer chose not to submit the requested correction.";
+  var nowIso = new Date().toISOString();
+  var app = await dbGetApplication(appId);
+  if (!app) throw new Error("Application not found.");
+  var updated = await dbUpdateApplication(appId, {
+    correction_declined: true,
+    correction_declined_reason: reason,
+    correction_declined_at: nowIso,
+    status: "Rejected",
+    customer_instruction: "Application closed because customer chose not to submit the requested correction: " + reason
+  });
+  await dbAddAiLog(appId, "Customer", "Customer chose not to submit correction (" + reason + "). Application closed.");
+  await dbAddNotification({
+    role: "agent",
+    title: "Customer Declined Correction (" + (app.ref_no || appId) + ")",
+    message: (app.full_name || "Customer") + " chose not to proceed with the requested correction on " + (app.ref_no || appId) + ". Reason: " + reason,
+    target_tab: "tab-queue",
+    target_id: appId
+  });
+  await dbAddActivity("correction_declined_by_customer", (app.ref_no || appId) + ": " + reason);
+  return updated;
+}
+
 // Database/Storage helper `dbCreateApplication` (params: appData): Performs Supabase cloud operation to create application.
 async function dbCreateApplication(appData) {
   var now = new Date().toISOString();
@@ -667,7 +862,7 @@ async function dbCreateApplication(appData) {
     original_submission: Object.assign({}, appData),
     corrected_copy: null,
     ai_log: [{ at: now, who: "System", text: "Application submitted and queued for document screening." }],
-    customer_instruction: getDefaultStatusInstruction("Processing", ""),
+    customer_instruction: appData.customer_instruction || getDefaultStatusInstruction(appData.status || "Processing", appData.provider_remarks || ""),
     created_at: now,
     updated_at: now
   });
@@ -762,10 +957,12 @@ async function dbAddNotification(note, roleArg, titleArg, messageArg) {
   };
   var row = {
     user_id: payload.user_id || null,
-    email: payload.email || null,
+    email: payload.email ? String(payload.email).trim().toLowerCase() : null,
     role: payload.role || null,
     title: payload.title || payload.subject || "Notification",
     message: payload.message || payload.body || "",
+    target_tab: payload.target_tab || null,
+    target_id: payload.target_id || null,
     is_read: false,
     created_at: new Date().toISOString()
   };
@@ -782,22 +979,35 @@ async function dbAddNotification(note, roleArg, titleArg, messageArg) {
 // Database/Storage helper `dbListMyNotifications` (params: user): Performs Supabase cloud operation to list my notifications.
 async function dbListMyNotifications(user) {
   if (!user) return [];
+  var isCustomer = String(user.role || "") === "customer";
+  var userEmail = String(user.email || "").trim().toLowerCase();
   if (IS_DEMO_MODE) {
     return readSaved("pigem_notifications", []).filter(function (n) {
+      if (isCustomer) {
+        return (user.id && n.user_id && n.user_id === user.id) ||
+          (userEmail && n.email && String(n.email).trim().toLowerCase() === userEmail);
+      }
       return (n.user_id && n.user_id === user.id) ||
-        (user.email && n.email && n.email === user.email) ||
+        (userEmail && n.email && String(n.email).trim().toLowerCase() === userEmail) ||
         (n.role && n.role === user.role);
     });
   }
   var orParts = [];
   if (user.id) orParts.push("user_id.eq." + user.id);
-  if (user.email) orParts.push("email.eq." + user.email);
-  if (user.role) orParts.push("role.eq." + user.role);
+  if (userEmail) orParts.push("email.eq." + userEmail);
+  if (!isCustomer && user.role) orParts.push("role.eq." + user.role);
   if (orParts.length === 0) return [];
   var res = await supabaseClient.from("notifications").select("*")
     .or(orParts.join(","))
     .order("created_at", { ascending: false }).limit(50);
-  return res.data || [];
+  var rows = res.data || [];
+  if (isCustomer) {
+    rows = rows.filter(function (n) {
+      var nEmail = String(n.email || "").trim().toLowerCase();
+      return (user.id && n.user_id === user.id) || (userEmail && nEmail === userEmail);
+    });
+  }
+  return rows;
 }
 
 // Database/Storage helper `dbAddActivity` (params: action, detail): Performs Supabase cloud operation to add activity.
@@ -1170,6 +1380,7 @@ function getSiteContent() {
   var plans = getActivePlans();
   return {
     logo_image: wc.logo_image || DEFAULT_CONTENT.logo_image || "logo.png",
+    hero_slide_count: Number(wc.hero_slide_count || DEFAULT_CONTENT.hero_slide_count || 3),
     home_slides: wc.hero_slides || DEFAULT_CONTENT.hero_slides,
     about_slides: wc.about_slides || DEFAULT_CONTENT.about_slides,
     client_images: wc.client_images || DEFAULT_CONTENT.client_images,
@@ -1179,7 +1390,7 @@ function getSiteContent() {
     about_lead: (wc.about && wc.about.mission) || DEFAULT_CONTENT.about.mission,
     about_story_1: (wc.about && wc.about.story) || DEFAULT_CONTENT.about.story,
     about_story_2: (wc.about && wc.about.story2) || DEFAULT_CONTENT.about.story2,
-    contact_email: wc.contact_email || "support@pigem.com",
+    contact_email: wc.contact_email || "",
     contact_phone: wc.contact_phone || "101-733 (RED) / (02) 8899-9733",
     contact_address: wc.contact_address || "Dasmariñas City, Cavite",
     announcement: wc.announcement || { active: false, headline: "", body: "" },
@@ -1200,6 +1411,7 @@ function getSiteContent() {
 function saveSiteContent(c) {
   var wc = getWebsiteContent();
   if (c.logo_image) wc.logo_image = c.logo_image;
+  if (c.hero_slide_count != null) wc.hero_slide_count = Number(c.hero_slide_count) || 3;
   if (c.home_slides) wc.hero_slides = c.home_slides;
   if (c.about_slides) wc.about_slides = c.about_slides;
   if (c.client_images) wc.client_images = c.client_images;
@@ -1239,10 +1451,13 @@ async function requireLogin(roles) {
   return await checkPageAccess(roles);
 }
 
-// Helper `signOutAndGoLogin`: Executes workflow logic for `signOutAndGoLogin`.
-async function signOutAndGoLogin() {
+// Helper `signOutAndGoLogin` (params: reasonCode, clearServerToken): Executes workflow logic for `signOutAndGoLogin`.
+async function signOutAndGoLogin(reasonCode, clearServerToken) {
   var page = getLoginPage();
-  await dbSignOut();
+  await dbSignOut(clearServerToken);
+  if (reasonCode) {
+    page += (page.indexOf("?") === -1 ? "?" : "&") + "reason=" + encodeURIComponent(reasonCode);
+  }
   window.location.href = page;
 }
 
@@ -1324,7 +1539,6 @@ async function dbFindAccountForRecovery(queryValue, recoveryMode) {
   var q = String(queryValue || "").trim();
   if (!q) throw new Error("Please enter the required account detail.");
   var qLower = q.toLowerCase();
-  var qDigits = q.replace(/\D/g, "");
 
   var matchedUser = null;
   var matchedApp = null;
@@ -1348,21 +1562,22 @@ async function dbFindAccountForRecovery(queryValue, recoveryMode) {
       if (uRes.data) matchedUser = uRes.data;
       var aRes = await supabaseClient.from("applications").select("*").eq("email", qLower).order("created_at", { ascending: false }).limit(1);
       if (aRes.data && aRes.data.length > 0) matchedApp = aRes.data[0];
-    } else if (qDigits.length >= 10) {
-      var pRes = await supabaseClient.from("applications").select("*").eq("phone", qDigits).order("created_at", { ascending: false }).limit(1);
-      if (pRes.data && pRes.data.length > 0) {
-        matchedApp = pRes.data[0];
-        var ueRes = await supabaseClient.from("users").select("*").eq("email", String(matchedApp.email || "").toLowerCase()).maybeSingle();
-        if (ueRes.data) matchedUser = ueRes.data;
-      }
     } else {
       var unRes = await supabaseClient.from("users").select("*").ilike("username", qLower).maybeSingle();
       if (unRes.data) matchedUser = unRes.data;
       if (!matchedUser) {
+        var refRes = await supabaseClient.from("applications").select("*").ilike("ref_no", qLower).limit(1);
+        if (refRes.data && refRes.data.length > 0) {
+          matchedApp = refRes.data[0];
+          var ueRes = await supabaseClient.from("users").select("*").eq("email", String(matchedApp.email || "").toLowerCase()).maybeSingle();
+          if (ueRes.data) matchedUser = ueRes.data;
+        }
+      }
+      if (!matchedUser) {
         var fnRes = await supabaseClient.from("users").select("*").ilike("full_name", qLower).limit(1);
         if (fnRes.data && fnRes.data.length > 0) matchedUser = fnRes.data[0];
       }
-      if (matchedUser && matchedUser.email) {
+      if (matchedUser && matchedUser.email && !matchedApp) {
         var appByE = await supabaseClient.from("applications").select("*").eq("email", matchedUser.email).order("created_at", { ascending: false }).limit(1);
         if (appByE.data && appByE.data.length > 0) matchedApp = appByE.data[0];
       }
@@ -1373,10 +1588,8 @@ async function dbFindAccountForRecovery(queryValue, recoveryMode) {
     var allApps = await dbListAllApplications();
     for (var j = 0; j < allApps.length; j++) {
       var a = allApps[j];
-      var aPhone = String(a.phone || "").replace(/\D/g, "");
       if (
         String(a.email || "").toLowerCase() === qLower ||
-        (qDigits.length >= 10 && aPhone === qDigits) ||
         String(a.full_name || "").toLowerCase() === qLower ||
         String(a.ref_no || "").toLowerCase() === qLower
       ) {
@@ -1452,6 +1665,7 @@ async function dbFinishPasswordReset(email, code, newPw) {
   var clean = String(email || "").trim().toLowerCase();
   var cleanCode = String(code || "").trim();
   var pwHash = await hashPassword(newPw);
+  var nowIso = new Date().toISOString();
   var users = getDemoUsers();
   var updatedLocal = false;
 
@@ -1460,7 +1674,11 @@ async function dbFinishPasswordReset(email, code, newPw) {
       if (users[i].reset_code && users[i].reset_code !== cleanCode) {
         throw new Error("Invalid 6-digit verification code.");
       }
+      var localReuse = checkPasswordHistoryReuse(users[i], pwHash);
+      if (localReuse.reused) throw new Error(localReuse.message);
+      users[i].password_history = buildNextPasswordHistory(users[i]);
       users[i].password_hash = pwHash;
+      users[i].password_changed_at = nowIso;
       delete users[i].password;
       users[i].activated = true;
       users[i].activation_code = "";
@@ -1477,9 +1695,14 @@ async function dbFinishPasswordReset(email, code, newPw) {
       if (!updatedLocal && String(existing.data.activation_code || "").trim() !== cleanCode) {
         throw new Error("Invalid 6-digit verification code.");
       }
+      var dbReuse = checkPasswordHistoryReuse(existing.data, pwHash);
+      if (dbReuse.reused) throw new Error(dbReuse.message);
+      var nextHist = buildNextPasswordHistory(existing.data);
       await supabaseClient.from("users").update({
         activated: true,
         password_hash: pwHash,
+        password_changed_at: nowIso,
+        password_history: nextHist,
         activation_code: null
       }).eq("email", clean);
 
@@ -1489,6 +1712,8 @@ async function dbFinishPasswordReset(email, code, newPw) {
           username: existing.data.username || (await dbGenerateUniqueUsername(existing.data.full_name || clean, clean)),
           email: clean,
           password_hash: pwHash,
+          password_changed_at: nowIso,
+          password_history: nextHist,
           full_name: existing.data.full_name || clean,
           role: existing.data.role || "customer",
           active: existing.data.active !== false,
@@ -1534,6 +1759,8 @@ async function dbListNotifications(email, role) {
       id: n.id,
       title: n.title || n.subject || "Notification",
       message: n.message || n.body || "",
+      target_tab: n.target_tab || null,
+      target_id: n.target_id || null,
       created_at: n.created_at
     };
   });
@@ -1845,6 +2072,8 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
       full_name: fullName,
       role: targetRole,
       password_hash: pwHash,
+      password_changed_at: new Date().toISOString(),
+      password_history: [],
       active: true,
       activated: true,
       activation_code: null
@@ -1887,18 +2116,36 @@ async function dbAdminResetUserPassword(userId, newPassword) {
     throw new Error("New password must be at least 8 characters.");
   }
   var pwHash = await hashPassword(newPassword);
+  var nowIso = new Date().toISOString();
+  var targetUser = null;
+  var users = getDemoUsers();
+  for (var idx = 0; idx < users.length; idx++) {
+    if (users[idx].id === userId) { targetUser = users[idx]; break; }
+  }
+  if (!IS_DEMO_MODE && supabaseClient) {
+    var curRes = await supabaseClient.from("users").select("*").eq("id", userId).maybeSingle();
+    if (curRes.data) targetUser = curRes.data;
+  }
+  if (targetUser) {
+    var reuse = checkPasswordHistoryReuse(targetUser, pwHash);
+    if (reuse.reused) throw new Error(reuse.message);
+  }
+  var nextHist = buildNextPasswordHistory(targetUser);
   if (!IS_DEMO_MODE && supabaseClient) {
     var res = await supabaseClient.from("users").update({
       activated: true,
       password_hash: pwHash,
+      password_changed_at: nowIso,
+      password_history: nextHist,
       activation_code: null
     }).eq("id", userId).select("*").single();
     if (res.error) throw new Error(res.error.message);
   }
-  var users = getDemoUsers();
   for (var i = 0; i < users.length; i++) {
     if (users[i].id === userId) {
       users[i].password_hash = pwHash;
+      users[i].password_changed_at = nowIso;
+      users[i].password_history = nextHist;
       delete users[i].password;
       users[i].activation_code = "";
     }
@@ -1938,7 +2185,22 @@ async function dbAdminUpdateStaffAccount(userId, changes) {
       var pwCheck = validatePasswordStrength(changes.new_password);
       if (!pwCheck.valid) throw new Error(pwCheck.message);
     }
-    updates.password_hash = await hashPassword(changes.new_password);
+    var curUser = null;
+    if (!IS_DEMO_MODE && supabaseClient) {
+      var cuRes = await supabaseClient.from("users").select("*").eq("id", userId).maybeSingle();
+      curUser = cuRes.data || null;
+    } else {
+      var dl = getDemoUsers();
+      for (var k = 0; k < dl.length; k++) if (dl[k].id === userId) { curUser = dl[k]; break; }
+    }
+    var nextHash = await hashPassword(changes.new_password);
+    if (curUser) {
+      var reuse = checkPasswordHistoryReuse(curUser, nextHash);
+      if (reuse.reused) throw new Error(reuse.message);
+      updates.password_history = buildNextPasswordHistory(curUser);
+    }
+    updates.password_hash = nextHash;
+    updates.password_changed_at = new Date().toISOString();
     updates.activation_code = null;
   }
   var updated = await dbUpdateProfile(userId, updates);
@@ -2004,7 +2266,17 @@ async function dbChangeStaffPasswordDirect(userId, currentPassword, newPassword)
     throw new Error("Current password is incorrect.");
   }
   var nextHash = await hashPassword(newPassword);
-  await dbUpdateProfile(userId, { password_hash: nextHash, activation_code: null });
+  var reuse = checkPasswordHistoryReuse(userObj, nextHash);
+  if (reuse.reused) {
+    throw new Error(reuse.message);
+  }
+  var nowIso = new Date().toISOString();
+  await dbUpdateProfile(userId, {
+    password_hash: nextHash,
+    password_changed_at: nowIso,
+    password_history: buildNextPasswordHistory(userObj),
+    activation_code: null
+  });
   await dbAddActivity("password_changed_self", "@" + (userObj.username || userId));
   return true;
 }
@@ -2032,7 +2304,9 @@ async function dbRequestStaffPasswordReset(username, note) {
   await dbAddNotification({
     role: "admin",
     title: "Password Reset Request: @" + clean,
-    message: detailMsg
+    message: detailMsg,
+    target_tab: "tab-accounts",
+    target_id: found.id
   });
   await dbAddActivity("staff_password_reset_requested", "@" + clean + (note ? " - " + note : ""));
   return {

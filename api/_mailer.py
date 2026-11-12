@@ -37,7 +37,7 @@ def _get_smtp_password() -> str:
 def _get_sender_name() -> str:
     return (
         os.getenv("SMTP_FROM_NAME")
-        or "Combined Facilities Support Services"
+        or "PIGEM Combined Facilities Support Services"
     ).strip()
 
 def _get_sender_email(smtp_user: str = "") -> str:
@@ -50,7 +50,7 @@ def _get_sender_email(smtp_user: str = "") -> str:
         return smtp_user
     if smtp_user:
         return smtp_user
-    return explicit or "donotreply@pigem.ph"
+    return ""
 
 def _get_app_base_url() -> str:
     prod_domain = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or "").strip()
@@ -153,8 +153,8 @@ class BaseEmailTemplateRenderer:
     <div style="margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:12px;color:#475569;">
       <div>Reference Tag: <b>{self._escape(final_ref_tag)}</b></div>
       <p style="margin:8px 0 0;font-size:12px;color:#64748b;">
-        This is an automated service email from Combined Facilities Support Services (PIGEM).
-        Please do not share your one-time codes with anyone.
+        This is an automated service email from PIGEM Combined Facilities Support Services. Please do not reply to this email.
+        For assistance, call Tel: (046) 458-0908 or Hotline: 101-733. Do not share your one-time codes with anyone.
       </p>
       <p style="margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45;">
         {self._escape(_CONFIDENTIALITY_NOTICE)}
@@ -271,27 +271,26 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
             body = f"""
             <p style="margin:0 0 12px;">Dear <b>{customer_name}</b>,</p>
             <p style="margin:0 0 14px;">
-              Thank you for applying for Red Fiber Internet service. To view your application progress, please use the
-              <b>one-time activation link</b> below to create your Customer Portal password and confirm your username.
+              Thank you for applying for Red Fiber Internet service. To track your application progress, please use the
+              <b>one-time activation link</b> below to choose your Customer Portal username and create your account password.
             </p>
             <div style="border:1px solid #cbd5e1;border-radius:6px;padding:14px 16px;margin:14px 0;background:#f8fafc;">
               <div style="margin-bottom:6px;">Application Reference Number: <b>{ref_no}</b></div>
               <div style="margin-bottom:6px;">Selected Plan: <b>{plan_name}</b></div>
               {f'<div style="margin-bottom:6px;">Account Email: <b>{customer_email}</b></div>' if customer_email else ''}
-              {f'<div style="margin-bottom:6px;">Assigned Username: <b>@{suggested_username}</b></div>' if suggested_username else ''}
               <div>One-Time Activation Code: <b style="letter-spacing:2px;font-size:16px;color:#c8102e;">{activation_code}</b></div>
             </div>
             <p style="margin:0 0 8px;font-size:13px;color:#1e293b;">
-              <b>Important:</b> This activation link and code can only be used <b>once</b> to create your account password.
-              After activating, use your username or Gmail address to sign in at:
+              <b>Important:</b> This activation link and code can only be used <b>once</b> to set your username and password.
+              After activating, use your chosen username or Gmail address to sign in at:
               <a href="{self._escape(portal_link)}" style="color:#c8102e;">{self._escape(portal_link)}</a>
             </p>
             """
             return self.wrap_layout(
-                title="Application Received - Create Your Account Password",
+                title="Application Received - Set Up Your Customer Account",
                 subtitle=f"Application Reference: {ref_no}",
                 body_html=body,
-                cta_label="Create Password & Activate Account",
+                cta_label="Create Username & Password",
                 cta_url=activation_link,
                 ref_tag=ref_tag,
             )
@@ -320,8 +319,10 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
               </div>
               <div style="font-size:14px;">{remarks}</div>
             </div>
-            <p style="margin:0;font-size:13px;">
+            <p style="margin:0 0 8px;font-size:13px;">
               Please sign in to your Customer Portal to update the requested field or re-upload a clear photo of your Valid ID.
+              If no update is submitted, automated follow-up reminders are sent after <b>24 hours</b> and at <b>72 hours</b>.
+              You may also indicate in the Customer Portal if you choose not to proceed with this correction.
             </p>
             """
 
@@ -528,14 +529,14 @@ def send(
     plain_fallback = (
         f"{(message or subject or 'Please view this message in an HTML-capable email client.').strip()}\n"
         f"{extra_plain}\n"
-        "This is an automated service message from Combined Facilities Support Services (PIGEM).\n\n"
+        "This is an automated service message from PIGEM Combined Facilities Support Services. Please do not reply to this email. For assistance, call (046) 458-0908 or Hotline 101-733.\n\n"
         f"{_CONFIDENTIALITY_NOTICE}"
     )
 
     msg = EmailMessage()
     msg["Subject"] = subject or "PIGEM Notification"
     msg["From"] = formataddr((sender_name, sender_email))
-    msg["Reply-To"] = formataddr((sender_name, smtp_user or sender_email))
+    msg["Reply-To"] = formataddr((sender_name, smtp_user))
     msg["To"] = recipient
     msg["Date"] = formatdate(localtime=True)
     domain_part = sender_email.split("@")[-1] if "@" in sender_email else "gmail.com"

@@ -7,6 +7,9 @@ CREATE TABLE public.users (
     CHECK (role IN ('admin', 'manager', 'agent', 'customer')),
   phone TEXT,
   password_hash TEXT,
+  password_changed_at TIMESTAMPTZ DEFAULT now(),
+  password_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+  session_token TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
   activated BOOLEAN NOT NULL DEFAULT true,
   activation_code TEXT,
@@ -15,6 +18,8 @@ CREATE TABLE public.users (
   intro TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_users_username ON public.users (username);
 
 CREATE UNIQUE INDEX idx_users_username_lower ON public.users (lower(username));
 CREATE UNIQUE INDEX idx_users_single_admin ON public.users (role) WHERE role = 'admin';
@@ -68,7 +73,7 @@ CREATE TABLE public.applications (
   plan_id TEXT,
   plan_name TEXT,
   first_name TEXT,
-  middle_name TEXT DEFAULT 'N/A',
+  middle_name TEXT,
   last_name TEXT,
   full_name TEXT NOT NULL,
   customer_name TEXT,
@@ -114,6 +119,10 @@ CREATE TABLE public.applications (
   ai_log JSONB NOT NULL DEFAULT '[]'::jsonb,
   status TEXT NOT NULL DEFAULT 'Pending Review',
   correction_note TEXT,
+  correction_declined BOOLEAN NOT NULL DEFAULT false,
+  correction_declined_reason TEXT,
+  correction_declined_at TIMESTAMPTZ,
+  last_correction_reminder_at TIMESTAMPTZ,
   agent_remarks TEXT,
   provider_ref TEXT,
   provider_remarks TEXT,
@@ -193,9 +202,14 @@ CREATE TABLE public.notifications (
   role TEXT,
   title TEXT NOT NULL,
   message TEXT NOT NULL,
+  target_tab TEXT,
+  target_id TEXT,
   is_read BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_notifications_user_id ON public.notifications (user_id);
+CREATE INDEX idx_notifications_email ON public.notifications (email);
 
 CREATE TABLE public.login_history (
   id BIGSERIAL PRIMARY KEY,
@@ -282,6 +296,6 @@ ON CONFLICT (id) DO UPDATE SET
 
 INSERT INTO public.website_content (id, data) VALUES (
   'main',
-  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "area_text": "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.", "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
+  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "hero_slide_count": 3, "area_text": "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.", "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;

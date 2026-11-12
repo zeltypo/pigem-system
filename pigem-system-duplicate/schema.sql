@@ -1,9 +1,16 @@
--- ============================================================
--- PIGEM WEB-BASED INTERNET SERVICE APPLICATION SYSTEM
--- First & Final PostgreSQL Schema (13 Tables + 2 Buckets)
--- ============================================================
+-- ============================================================================
+-- FILE: schema.sql
+-- PURPOSE: Fresh PostgreSQL Schema for PIGEM Cloud Fiber Application System
+-- ----------------------------------------------------------------------------
+-- ARCHITECTURE NOTES:
+--   - 13 normalized CREATE TABLE definitions (zero column ALTER TABLE migrations)
+--   - Customers: @gmail.com email + self-chosen username via one-time /activate
+--   - Internal Staff (Admin/Manager/Agent): strict username-only without email
+--   - Single-device session_token, password_history, target_tab/target_id alerts,
+--     24h/72h correction reminders, correction_declined closure, and CMS slide count
+-- ============================================================================
 
--- 1. USER ACCOUNTS (Admin, Manager, Agent, Customer)
+-- 1. User Accounts: Customers (@gmail.com + chosen username) & Internal Staff (username-only), single-device session_token & password_history
 CREATE TABLE public.users (
   id TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
@@ -13,6 +20,9 @@ CREATE TABLE public.users (
     CHECK (role IN ('admin', 'manager', 'agent', 'customer')),
   phone TEXT,
   password_hash TEXT,
+  password_changed_at TIMESTAMPTZ DEFAULT now(),
+  password_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+  session_token TEXT,
   active BOOLEAN NOT NULL DEFAULT true,
   activated BOOLEAN NOT NULL DEFAULT true,
   activation_code TEXT,
@@ -22,14 +32,14 @@ CREATE TABLE public.users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Migration helper for existing databases where email was previously NOT NULL:
--- ALTER TABLE public.users ALTER COLUMN email DROP NOT NULL;
+CREATE INDEX idx_users_username ON public.users (username);
 
 CREATE UNIQUE INDEX idx_users_username_lower ON public.users (lower(username));
 CREATE UNIQUE INDEX idx_users_single_admin ON public.users (role) WHERE role = 'admin';
 CREATE INDEX idx_users_role ON public.users (role);
 
--- 2. INTERNET SERVICE PLANS
+
+-- 2. Fiber Plans Catalog: Managed via Manager CMS and rendered dynamically on index.html and apply.html
 CREATE TABLE public.plans (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -40,7 +50,8 @@ CREATE TABLE public.plans (
   active BOOLEAN NOT NULL DEFAULT true
 );
 
--- 3. SYSTEM SETTINGS (Screening & Maintenance Switches)
+
+-- 3. Global Technical Settings: Admin toggles for AI Screening (`ai_enabled`) and Maintenance Mode
 CREATE TABLE public.system_settings (
   id TEXT PRIMARY KEY,
   ai_enabled BOOLEAN NOT NULL DEFAULT true,
@@ -49,14 +60,16 @@ CREATE TABLE public.system_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 4. PUBLIC WEBSITE CONTENT (CMS & Announcements)
+
+-- 4. Public Website CMS Content: Brand logos, hero_slide_count (1-4, default 3), hero banners, showcases & announcements
 CREATE TABLE public.website_content (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 5. AGENT REFERRAL & REGISTRATION INVITE LINKS
+
+-- 5. Agent Referral Tracking Links: Maps ?ref=CODE visits and completed applications to Agents
 CREATE TABLE public.agent_links (
   id BIGSERIAL PRIMARY KEY,
   code TEXT UNIQUE NOT NULL,
@@ -69,7 +82,8 @@ CREATE TABLE public.agent_links (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 6. CUSTOMER APPLICATIONS
+
+-- 6. Service Applications: Personal info (optional middle_name), map coordinates, status, and correction decline/reminder state
 CREATE TABLE public.applications (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   ref_no TEXT UNIQUE NOT NULL,
@@ -82,7 +96,7 @@ CREATE TABLE public.applications (
   plan_id TEXT,
   plan_name TEXT,
   first_name TEXT,
-  middle_name TEXT DEFAULT 'N/A',
+  middle_name TEXT,
   last_name TEXT,
   full_name TEXT NOT NULL,
   customer_name TEXT,
@@ -128,6 +142,10 @@ CREATE TABLE public.applications (
   ai_log JSONB NOT NULL DEFAULT '[]'::jsonb,
   status TEXT NOT NULL DEFAULT 'Pending Review',
   correction_note TEXT,
+  correction_declined BOOLEAN NOT NULL DEFAULT false,
+  correction_declined_reason TEXT,
+  correction_declined_at TIMESTAMPTZ,
+  last_correction_reminder_at TIMESTAMPTZ,
   agent_remarks TEXT,
   provider_ref TEXT,
   provider_remarks TEXT,
@@ -143,7 +161,8 @@ CREATE INDEX idx_applications_email ON public.applications (email);
 CREATE INDEX idx_applications_status ON public.applications (status);
 CREATE INDEX idx_applications_created_at ON public.applications (created_at DESC);
 
--- 7. IDENTIFICATION DOCUMENTS
+
+-- 7. Uploaded & Processed ID Documents: Original Front/Back IDs plus OpenCV-cropped working copies
 CREATE TABLE public.documents (
   id BIGSERIAL PRIMARY KEY,
   application_id TEXT NOT NULL REFERENCES public.applications(id) ON DELETE CASCADE,
@@ -159,7 +178,8 @@ CREATE TABLE public.documents (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 8. AI SCREENING RECORDS
+
+-- 8. AI Screening Records: OpenCV quality scores, Gemini Vision OCR text, and preliminary findings for human review
 CREATE TABLE public.screenings (
   id BIGSERIAL PRIMARY KEY,
   application_id TEXT NOT NULL REFERENCES public.applications(id) ON DELETE CASCADE,
@@ -181,7 +201,8 @@ CREATE TABLE public.screenings (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 9. CUSTOMER CORRECTION RECORDS
+
+-- 9. Customer Correction History: Fields updated by Customer in response to Agent-confirmed Needs Correction remarks
 CREATE TABLE public.corrections (
   id BIGSERIAL PRIMARY KEY,
   application_id TEXT NOT NULL REFERENCES public.applications(id) ON DELETE CASCADE,
@@ -192,7 +213,8 @@ CREATE TABLE public.corrections (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 10. PROVIDER UPDATES
+
+-- 10. Provider Encoding Updates: ISP reference numbers, encoding status, and customer instructions recorded by Agents
 CREATE TABLE public.provider_updates (
   id BIGSERIAL PRIMARY KEY,
   application_id TEXT NOT NULL REFERENCES public.applications(id) ON DELETE CASCADE,
@@ -204,7 +226,8 @@ CREATE TABLE public.provider_updates (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 11. IN-SYSTEM NOTIFICATIONS
+
+-- 11. Clickable In-System Notifications: Stores target_tab/target_id deep links for Staff, Admin & Customers
 CREATE TABLE public.notifications (
   id BIGSERIAL PRIMARY KEY,
   user_id TEXT,
@@ -212,11 +235,17 @@ CREATE TABLE public.notifications (
   role TEXT,
   title TEXT NOT NULL,
   message TEXT NOT NULL,
+  target_tab TEXT,
+  target_id TEXT,
   is_read BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 12. LOGIN & LOGOUT HISTORY
+CREATE INDEX idx_notifications_user_id ON public.notifications (user_id);
+CREATE INDEX idx_notifications_email ON public.notifications (email);
+
+
+-- 12. Authentication Audit Log: Records role sign-ins and failed username/login attempts
 CREATE TABLE public.login_history (
   id BIGSERIAL PRIMARY KEY,
   user_id TEXT,
@@ -227,7 +256,8 @@ CREATE TABLE public.login_history (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 13. SYSTEM ACTIVITY LOGS
+
+-- 13. Technical & Operational Audit Logs: Categorized by source (audit_log / api_error) and actor_username
 CREATE TABLE public.system_logs (
   id BIGSERIAL PRIMARY KEY,
   actor_username TEXT,
@@ -237,10 +267,11 @@ CREATE TABLE public.system_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- PERMISSIONS & ROW-LEVEL SECURITY
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 
+
+-- Enable Supabase Row-Level Security (RLS) across all 13 tables with explicit API access policies
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
@@ -269,7 +300,8 @@ CREATE POLICY "Allow all on notifications" ON public.notifications FOR ALL USING
 CREATE POLICY "Allow all on login_history" ON public.login_history FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on system_logs" ON public.system_logs FOR ALL USING (true) WITH CHECK (true);
 
--- STORAGE BUCKETS & ACCESS POLICIES
+
+-- Provision public `website-assets` bucket (including 25 UI icons) and `documents` bucket for Valid IDs
 INSERT INTO storage.buckets (id, name, public) VALUES
   ('website-assets', 'website-assets', true),
   ('documents', 'documents', true)
@@ -285,7 +317,8 @@ CREATE POLICY "Allow access to documents"
   USING (bucket_id = 'documents')
   WITH CHECK (bucket_id = 'documents');
 
--- INITIAL DEFAULT SEED DATA
+
+-- Seed default Red Fiber internet plans idempotently
 INSERT INTO public.plans (id, name, speed, price, tag, featured, active) VALUES
   ('1000', 'Plan 1000', 100, 1000.00, 'Fiber for your home', false, true),
   ('1400', 'Plan 1400', 300, 1400.00, 'Most Chosen', true, true),
@@ -298,14 +331,18 @@ ON CONFLICT (id) DO UPDATE SET
   featured = EXCLUDED.featured,
   active = EXCLUDED.active;
 
+
+-- Seed default Admin runtime switches (AI enabled, Maintenance off)
 INSERT INTO public.system_settings (id, ai_enabled, maintenance_mode, maintenance_message)
 VALUES ('main', true, false, '')
 ON CONFLICT (id) DO UPDATE SET
   ai_enabled = EXCLUDED.ai_enabled,
   maintenance_mode = EXCLUDED.maintenance_mode;
 
+
+-- Seed default homepage brand logos, 3-slide hero count, and coverage area copy
 INSERT INTO public.website_content (id, data) VALUES (
   'main',
-  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "area_text": "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.", "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
+  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "hero_slide_count": 3, "area_text": "Available in select Metro Manila, Bulacan, Cavite, Laguna, Rizal, and Cebu areas.", "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;

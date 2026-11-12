@@ -20,24 +20,23 @@ var activeReportSubTab = "api";
 var lastHealthData = null;
 var lastApiReportRows = [];
 
-// Data Accessor `getLocalTodayIso`: Retrieves or refreshes data to get local today iso.
-function getLocalTodayIso() {
-  var d = new Date();
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-}
-
-// Data Accessor `getLocalMonthIso`: Retrieves or refreshes data to get local month iso.
-function getLocalMonthIso() {
-  var d = new Date();
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-}
+window.openDashTabById = function (tabId, targetId) {
+  var clean = String(tabId || "").replace(/^tab-/, "");
+  if (clean) showTab(clean);
+  if (clean === "accounts" && typeof setAccountSubTab === "function") {
+    if (String(targetId || "").indexOf("reset") !== -1 || adminNotifs.some(function (n) { return String(n.title || "").toLowerCase().indexOf("password reset") !== -1; })) {
+      setAccountSubTab("requests");
+    }
+  }
+};
 
 // Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   currentAdmin = await requireLogin(["admin"]);
   if (!currentAdmin) return;
 
-  document.getElementById("top-user-name").textContent = currentAdmin.full_name;
+  var topNameEl = document.getElementById("top-user-name");
+  if (topNameEl) topNameEl.textContent = currentAdmin.full_name;
   var dEl = document.getElementById("rep-date");
   var mEl = document.getElementById("rep-month");
   if (dEl && !dEl.value) dEl.value = getLocalTodayIso();
@@ -100,7 +99,7 @@ async function refreshAdminData() {
     { label: "Managers", value: rCounts.manager, color: "#d97706" },
     { label: "Admins", value: rCounts.admin, color: "#c8102e" }
   ]);
-  renderColumns("chart-admin-cols", [
+  renderBars("chart-admin-app-bars", [
     { label: "Pending / Encoding", value: pending, color: "#2563eb" },
     { label: "Needs Correction", value: fix, color: "#d97706" },
     { label: "Approved", value: approved, color: "#15803d" },
@@ -493,42 +492,36 @@ function openAddStaffModal(defaultRole) {
   var roleVal = defaultRole === "manager" ? "manager" : "agent";
   var title = roleVal === "manager" ? "Add Internal Manager Account" : "Add Internal Agent Account";
   openPopup(
-    '<div class="row between" style="margin-bottom:8px;">' +
-      '<h3>' + title + '</h3>' +
-      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
-    '</div>' +
+    '<h3 style="margin-bottom:4px;">' + title + '</h3>' +
     '<p class="small muted">Internal staff accounts sign in using Username and Password only (no email required).</p>' +
-    '<form class="mt" onsubmit="submitAddStaffModal(event)">' +
+    '<form class="mt" novalidate onsubmit="submitAddStaffModal(event)">' +
       '<div class="grid-3">' +
-        '<div class="field"><label>First Name *</label><input id="modal-acc-fname" type="text" placeholder="Maria" required /></div>' +
-        '<div class="field"><label>Middle Name</label><input id="modal-acc-mname" type="text" placeholder="Reyes (or N/A)" /></div>' +
-        '<div class="field"><label>Last Name *</label><input id="modal-acc-lname" type="text" placeholder="Santos" required /></div>' +
+        '<div class="field"><label for="modal-acc-fname">First Name</label><input id="modal-acc-fname" type="text" placeholder="Maria" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+        '<div class="field"><label for="modal-acc-mname">Middle Name <span class="muted">(Optional)</span></label><input id="modal-acc-mname" type="text" placeholder="Optional" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+        '<div class="field"><label for="modal-acc-lname">Last Name</label><input id="modal-acc-lname" type="text" placeholder="Santos" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
       '</div>' +
       '<div class="grid-2">' +
-        '<div class="field"><label>Username *</label><input id="modal-acc-username" type="text" minlength="3" maxlength="30" placeholder="maria_santos" required /></div>' +
-        '<div class="field"><label>Internal Role</label>' +
+        '<div class="field"><label for="modal-acc-username">Username</label><input id="modal-acc-username" type="text" minlength="3" maxlength="30" placeholder="maria_santos" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+        '<div class="field"><label for="modal-acc-role">Internal Role</label>' +
           '<select id="modal-acc-role">' +
             '<option value="agent" ' + (roleVal === "agent" ? "selected" : "") + '>Agent (Application Handling)</option>' +
             '<option value="manager" ' + (roleVal === "manager" ? "selected" : "") + '>Manager (Monitoring &amp; CMS)</option>' +
           '</select>' +
         '</div>' +
       '</div>' +
-      '<div class="field"><label>Password *</label><input id="modal-acc-pw" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" required /></div>' +
-      '<div id="modal-acc-err" class="notice bad mt" hidden></div>' +
+      '<div class="field"><label for="modal-acc-pw">Password</label><input id="modal-acc-pw" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
       '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
-        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
         '<button type="submit" id="btn-modal-add-staff" class="btn btn-red">+ Create Account</button>' +
       '</div>' +
     '</form>',
-    true
+    { wide: true, showCloseX: true, closeOnBackdrop: true }
   );
 }
 
 // Action Handler `submitAddStaffModal` (params: event): Validates inputs and persists changes to submit add staff modal.
 async function submitAddStaffModal(event) {
   event.preventDefault();
-  var errBox = document.getElementById("modal-acc-err");
-  if (errBox) errBox.hidden = true;
+  if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
 
   var fname = (document.getElementById("modal-acc-fname").value || "").trim();
   var mname = (document.getElementById("modal-acc-mname").value || "").trim();
@@ -537,23 +530,25 @@ async function submitAddStaffModal(event) {
   var role = document.getElementById("modal-acc-role").value;
   var pw = (document.getElementById("modal-acc-pw").value || "").trim();
 
-  var fChk = validatePersonName(fname, "First Name", false);
-  var mChk = mname ? validatePersonName(mname, "Middle Name", true) : { valid: true };
-  var lChk = validatePersonName(lname, "Last Name", false);
-  if (!fChk.valid || !mChk.valid || !lChk.valid) {
-    if (errBox) { errBox.textContent = [fChk.message, mChk.message, lChk.message].filter(Boolean).join(" "); errBox.hidden = false; }
-    return;
-  }
+  var cleanMid = (mname && mname.toUpperCase() !== "N/A") ? mname : "";
+  var fChk = validatePersonName(fname, "First Name", false, false);
+  var mChk = validatePersonName(cleanMid, "Middle Name", false, true);
+  var lChk = validatePersonName(lname, "Last Name", false, false);
+  var hasErr = false;
+  if (!fChk.valid) { setFieldError("modal-acc-fname", fChk.message); hasErr = true; }
+  if (!mChk.valid) { setFieldError("modal-acc-mname", mChk.message); hasErr = true; }
+  if (!lChk.valid) { setFieldError("modal-acc-lname", lChk.message); hasErr = true; }
   if (!isValidUsername(username)) {
-    if (errBox) { errBox.textContent = "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_)."; errBox.hidden = false; }
-    return;
+    setFieldError("modal-acc-username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+    hasErr = true;
   }
   if (!isStrongPassword(pw)) {
-    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
-    return;
+    setFieldError("modal-acc-pw", PASSWORD_REQUIREMENT_TEXT);
+    hasErr = true;
   }
+  if (hasErr) return;
 
-  var fullName = [fname, (mname && mname.toUpperCase() !== "N/A") ? mname : "", lname].filter(Boolean).join(" ");
+  var fullName = [fname, cleanMid, lname].filter(Boolean).join(" ");
   var btn = document.getElementById("btn-modal-add-staff");
   btn.disabled = true;
   btn.textContent = "Creating...";
@@ -564,7 +559,9 @@ async function submitAddStaffModal(event) {
     await refreshAdminData();
     showAlert("Staff Account Created", "Account for <b>" + escapeHtml(fullName) + "</b> (@" + escapeHtml(created.username) + " - " + role.toUpperCase() + ") is active.", "good");
   } catch (err) {
-    if (errBox) { errBox.textContent = err.message || "Could not create account."; errBox.hidden = false; }
+    var msg = err.message || "Could not create account.";
+    if (msg.toLowerCase().indexOf("username") !== -1) setFieldError("modal-acc-username", msg);
+    else setFieldError("modal-acc-pw", msg);
     btn.disabled = false;
     btn.textContent = "+ Create Account";
   }
@@ -576,15 +573,12 @@ function openEditStaffModal(userId) {
   if (!user) return;
   var isAdminRow = user.role === "admin";
   openPopup(
-    '<div class="row between" style="margin-bottom:8px;">' +
-      '<h3>Edit Account (@' + escapeHtml(user.username || user.full_name) + ')</h3>' +
-      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
-    '</div>' +
-    '<form class="mt" onsubmit="submitEditStaffModal(event, \'' + escapeHtml(user.id) + '\')">' +
-      '<div class="field"><label>Full Name *</label><input id="edit-acc-fullname" type="text" value="' + escapeHtml(user.full_name || "") + '" required /></div>' +
+    '<h3 style="margin-bottom:6px;">Edit Account (@' + escapeHtml(user.username || user.full_name) + ')</h3>' +
+    '<form class="mt" novalidate onsubmit="submitEditStaffModal(event, \'' + escapeHtml(user.id) + '\')">' +
+      '<div class="field"><label for="edit-acc-fullname">Full Name</label><input id="edit-acc-fullname" type="text" value="' + escapeHtml(user.full_name || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
       '<div class="grid-2">' +
-        '<div class="field"><label>Username *</label><input id="edit-acc-username" type="text" minlength="3" maxlength="30" value="' + escapeHtml(user.username || "") + '" required /></div>' +
-        '<div class="field"><label>Role</label>' +
+        '<div class="field"><label for="edit-acc-username">Username</label><input id="edit-acc-username" type="text" minlength="3" maxlength="30" value="' + escapeHtml(user.username || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+        '<div class="field"><label for="edit-acc-role">Role</label>' +
           (isAdminRow
             ? '<input type="text" value="Admin (Provisioned)" readonly />'
             : '<select id="edit-acc-role">' +
@@ -593,36 +587,34 @@ function openEditStaffModal(userId) {
               '</select>') +
         '</div>' +
       '</div>' +
-      '<div class="field"><label>New Password (Optional - leave blank to keep current)</label><input id="edit-acc-pw" type="password" data-pw-check="1" placeholder="Leave blank if unchanged" /></div>' +
-      '<div id="edit-acc-err" class="notice bad mt" hidden></div>' +
+      '<div class="field"><label for="edit-acc-pw">New Password (Optional - leave blank to keep current)</label><input id="edit-acc-pw" type="password" data-pw-check="1" placeholder="Leave blank if unchanged" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
       '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
-        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
         '<button type="submit" id="btn-modal-edit-staff" class="btn btn-red">Save Changes</button>' +
       '</div>' +
     '</form>',
-    true
+    { wide: true, showCloseX: true, closeOnBackdrop: true }
   );
 }
 
 // Action Handler `submitEditStaffModal` (params: event, userId): Validates inputs and persists changes to submit edit staff modal.
 async function submitEditStaffModal(event, userId) {
   event.preventDefault();
-  var errBox = document.getElementById("edit-acc-err");
-  if (errBox) errBox.hidden = true;
+  if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
   var fullName = (document.getElementById("edit-acc-fullname").value || "").trim();
   var username = (document.getElementById("edit-acc-username").value || "").trim().toLowerCase().replace(/^@/, "");
   var roleEl = document.getElementById("edit-acc-role");
   var newPw = (document.getElementById("edit-acc-pw").value || "").trim();
 
-  var nameChk = validatePersonName(fullName, "Full Name", false);
-  if (!nameChk.valid) {
-    if (errBox) { errBox.textContent = nameChk.message; errBox.hidden = false; }
-    return;
+  var nameChk = validatePersonName(fullName, "Full Name", false, false);
+  var hasErr = false;
+  if (!nameChk.valid) { setFieldError("edit-acc-fullname", nameChk.message); hasErr = true; }
+  if (!isValidUsername(username)) {
+    setFieldError("edit-acc-username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+    hasErr = true;
   }
-  if (newPw && !isStrongPassword(newPw)) {
-    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
-    return;
-  }
+  if (newPw && !isStrongPassword(newPw)) { setFieldError("edit-acc-pw", PASSWORD_REQUIREMENT_TEXT); hasErr = true; }
+  if (hasErr) return;
+
   var changes = { full_name: fullName, username: username };
   if (roleEl) changes.role = roleEl.value;
   if (newPw) changes.new_password = newPw;
@@ -634,13 +626,16 @@ async function submitEditStaffModal(event, userId) {
     var updated = await dbAdminUpdateStaffAccount(userId, changes);
     if (currentAdmin && currentAdmin.id === userId) {
       currentAdmin = Object.assign({}, currentAdmin, updated || changes);
-      document.getElementById("top-user-name").textContent = currentAdmin.full_name;
+      var topEl = document.getElementById("top-user-name");
+      if (topEl) topEl.textContent = currentAdmin.full_name;
     }
     closePopup();
     await refreshAdminData();
     showAlert("Account Updated", "Saved changes for @" + escapeHtml(username) + ".", "good");
   } catch (err) {
-    if (errBox) { errBox.textContent = err.message || "Could not update account."; errBox.hidden = false; }
+    var msg = err.message || "Could not update account.";
+    if (msg.toLowerCase().indexOf("reuse") !== -1 || msg.toLowerCase().indexOf("password") !== -1) setFieldError("edit-acc-pw", msg);
+    else setFieldError("edit-acc-username", msg);
     btn.disabled = false;
     btn.textContent = "Save Changes";
   }
@@ -722,23 +717,24 @@ function adminOpenResetPasswordModal(userId, displayLabel) {
   openPopup(
     '<h3>Reset Account Password</h3>' +
     '<p class="small muted mt">Set a new sign-in password for <b>' + escapeHtml(displayLabel) + '</b>.</p>' +
-    '<div class="mt">' +
+    '<div class="field mt">' +
       '<label for="adm-reset-pw">New Password</label>' +
-      '<input id="adm-reset-pw" type="password" data-pw-check="1" placeholder="Enter strong password" />' +
+      '<input id="adm-reset-pw" type="password" data-pw-check="1" placeholder="Enter strong password" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
     '</div>' +
     '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
-      '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
       '<button type="button" class="btn btn-red" onclick="adminConfirmResetPassword()">Update Password</button>' +
-    '</div>'
+    '</div>',
+    { showCloseX: true, closeOnBackdrop: true }
   );
 }
 
 // Helper `adminConfirmResetPassword`: Executes workflow logic for `adminConfirmResetPassword`.
 async function adminConfirmResetPassword() {
+  if (typeof clearFieldError === "function") clearFieldError("adm-reset-pw");
   var pwEl = document.getElementById("adm-reset-pw");
   var newPw = pwEl ? pwEl.value.trim() : "";
   if (!isStrongPassword(newPw)) {
-    showAlert("Password Requirement", PASSWORD_REQUIREMENT_TEXT, "warn");
+    setFieldError("adm-reset-pw", PASSWORD_REQUIREMENT_TEXT);
     return;
   }
   try {
@@ -748,7 +744,7 @@ async function adminConfirmResetPassword() {
     await refreshAdminData();
     showAlert("Password Updated", "Updated sign-in password for " + escapeHtml(window._adminResetTargetLabel) + ".", "good");
   } catch (err) {
-    showAlert("Update Failed", err.message || "Could not update password.", "bad");
+    setFieldError("adm-reset-pw", err.message || "Could not update password.");
   }
 }
 
@@ -912,20 +908,9 @@ function onReportTimeframeChange() {
 // Helper `matchesReportTimeframe` (params: isoDateStr): Executes workflow logic for `matchesReportTimeframe`.
 function matchesReportTimeframe(isoDateStr) {
   var tf = document.getElementById("rep-timeframe") ? document.getElementById("rep-timeframe").value : "all";
-  if (tf === "all") return true;
-  if (!isoDateStr) return false;
-  var d = new Date(isoDateStr);
-  if (isNaN(d.getTime())) return false;
-  var localIso = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-  if (tf === "daily") {
-    var pickedDate = document.getElementById("rep-date") ? document.getElementById("rep-date").value : "";
-    return !pickedDate || localIso === pickedDate;
-  }
-  if (tf === "monthly") {
-    var pickedMonth = document.getElementById("rep-month") ? document.getElementById("rep-month").value : "";
-    return !pickedMonth || localIso.slice(0, 7) === pickedMonth;
-  }
-  return true;
+  var pickedDate = document.getElementById("rep-date") ? document.getElementById("rep-date").value : "";
+  var pickedMonth = document.getElementById("rep-month") ? document.getElementById("rep-month").value : "";
+  return matchesReportTimeframeValue(isoDateStr, tf, pickedDate, pickedMonth);
 }
 
 // Data Accessor `getActiveReportData`: Retrieves or refreshes data to get active report data.
@@ -1060,53 +1045,17 @@ function getActiveReportData() {
 
 // UI Renderer `renderAdminReport`: Builds and updates DOM elements for admin report.
 function renderAdminReport() {
-  var data = getActiveReportData();
-  var sumEl = document.getElementById("rep-summary-header");
-  if (sumEl) {
-    sumEl.innerHTML = "<b>" + escapeHtml(data.title) + "</b> &mdash; Timeframe: <b>" + escapeHtml(data.timeframeLabel) +
-      "</b> &bull; Total Matching Records: <b>" + data.rows.length + "</b> &bull; Generated by <b>" + escapeHtml(getStaffIdentifier(currentAdmin)) + "</b>";
-  }
-
-  var pTitle = document.getElementById("rep-pie-title");
-  var bTitle = document.getElementById("rep-bar-title");
-  if (pTitle) pTitle.textContent = data.pieTitle;
-  if (bTitle) bTitle.textContent = data.barTitle;
-
-  if (typeof renderPieChart === "function") {
-    renderPieChart("chart-report-pie", data.pieSlices, data.pieCenter);
-  }
-  renderBars("chart-report-bars", data.barRows);
-
-  var wrap = document.getElementById("report-table-wrap");
-  if (!wrap) return;
-
-  var th = "<thead><tr>";
-  for (var c = 0; c < data.columns.length; c++) {
-    th += "<th>" + escapeHtml(data.columns[c]) + "</th>";
-  }
-  th += "</tr></thead>";
-
-  var tb = "<tbody>";
-  if (data.rows.length === 0) {
-    tb += '<tr><td colspan="' + data.columns.length + '" class="muted">No records found for this date/filter combination.</td></tr>';
-  } else {
-    for (var r = 0; r < data.rows.length; r++) {
-      tb += "<tr>";
-      for (var k = 0; k < data.rows[r].length; k++) {
-        var val = data.rows[r][k];
-        if (k === 1 && activeReportSubTab === "api" && data.badges[r]) {
-          tb += '<td><span class="badge ' + data.badges[r] + '">' + escapeHtml(val) + '</span></td>';
-        } else if (k === 0) {
-          tb += '<td><b>' + escapeHtml(val) + '</b></td>';
-        } else {
-          tb += '<td>' + escapeHtml(val) + '</td>';
-        }
-      }
-      tb += "</tr>";
-    }
-  }
-  tb += "</tbody>";
-  wrap.innerHTML = "<table>" + th + tb + "</table>";
+  renderDashReportView({
+    data: getActiveReportData(),
+    summaryId: "rep-summary-header",
+    pieTitleId: "rep-pie-title",
+    barTitleId: "rep-bar-title",
+    pieBoxId: "chart-report-pie",
+    barBoxId: "chart-report-bars",
+    tableWrapId: "report-table-wrap",
+    actorLabel: getStaffIdentifier(currentAdmin),
+    badgeColIdx: activeReportSubTab === "api" ? 1 : -1
+  });
 }
 
 // `resetAdminReportFilters`: Clears Daily/Monthly report timeframe and date filters via the Reset button below the report table.
@@ -1125,56 +1074,13 @@ function resetAdminReportFilters() {
 // Helper `exportActiveReportCsv`: Executes workflow logic for `exportActiveReportCsv`.
 function exportActiveReportCsv() {
   var data = getActiveReportData();
-  var csvRows = [data.columns.map(function (h) { return '"' + h.replace(/"/g, '""') + '"'; }).join(",")];
-  for (var i = 0; i < data.rows.length; i++) {
-    csvRows.push(data.rows[i].map(function (v) {
-      return '"' + String(v || "").replace(/"/g, '""') + '"';
-    }).join(","));
-  }
-  var blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
-  var url = URL.createObjectURL(blob);
-  var link = document.createElement("a");
-  link.href = url;
-  link.download = "PIGEM-" + activeReportSubTab + "-report.csv";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  exportReportToCsv(data.columns, data.rows, "PIGEM-" + activeReportSubTab + "-report.csv");
 }
 
 // Helper `downloadFormattedAdminReport`: Executes workflow logic for `downloadFormattedAdminReport`.
 function downloadFormattedAdminReport() {
   var data = getActiveReportData();
-  var rowsHtml = "";
-  for (var i = 0; i < data.rows.length; i++) {
-    rowsHtml += "<tr>" + data.rows[i].map(function (cell) {
-      return "<td style='padding:8px;border:1px solid #d0d5dd;'>" + escapeHtml(cell) + "</td>";
-    }).join("") + "</tr>";
-  }
-  var summaryMetrics = data.pieSlices.map(function (s) {
-    return "<li style='margin-bottom:4px;'><b>" + escapeHtml(s.label) + ":</b> " + s.value + "</li>";
-  }).join("");
-
-  var htmlDoc =
-    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>" + escapeHtml(data.title) + "</title></head>" +
-    "<body style='font-family:Arial,sans-serif;padding:28px;color:#111827;'>" +
-      "<h1 style='margin:0;color:#c8102e;'>COMBINED FACILITIES SUPPORT SERVICES</h1>" +
-      "<h2 style='margin:6px 0 12px;'>" + escapeHtml(data.title) + "</h2>" +
-      "<p style='font-size:13px;color:#475467;'>Timeframe: <b>" + escapeHtml(data.timeframeLabel) + "</b> | Total Records: <b>" + data.rows.length + "</b> | Generated: " + escapeHtml(new Date().toLocaleString()) + "</p>" +
-      "<ul style='font-size:13px;background:#f8fafc;padding:12px 24px;border:1px solid #e4e7ec;border-radius:8px;'>" + summaryMetrics + "</ul>" +
-      "<table style='width:100%;border-collapse:collapse;font-size:12.5px;margin-top:16px;'>" +
-        "<thead><tr>" + data.columns.map(function (c) { return "<th style='padding:8px;border:1px solid #d0d5dd;background:#f1f5f9;text-align:left;'>" + escapeHtml(c) + "</th>"; }).join("") + "</tr></thead>" +
-        "<tbody>" + (rowsHtml || "<tr><td colspan='" + data.columns.length + "' style='padding:10px;border:1px solid #d0d5dd;'>No records found.</td></tr>") + "</tbody>" +
-      "</table>" +
-    "</body></html>";
-
-  var blob = new Blob([htmlDoc], { type: "text/html;charset=utf-8;" });
-  var url = URL.createObjectURL(blob);
-  var link = document.createElement("a");
-  link.href = url;
-  link.download = "PIGEM-" + activeReportSubTab + "-summary-report.html";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-" + activeReportSubTab + "-summary-report.html");
 }
 
 // Helper `resetDemoDatabase`: Executes workflow logic for `resetDemoDatabase`.

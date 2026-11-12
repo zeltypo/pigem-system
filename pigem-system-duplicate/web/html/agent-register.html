@@ -52,36 +52,36 @@
         </div>
 
         <!-- FORM: Interactive User Input Form -->
-        <form class="mt-big" onsubmit="submitAgentInviteRegistration(event)">
+        <form class="mt-big" onsubmit="submitAgentInviteRegistration(event)" novalidate>
           <div class="form-grid three">
             <div>
               <label for="ag-first-name">First Name</label>
-              <input id="ag-first-name" type="text" placeholder="Alex" required>
+              <input id="ag-first-name" type="text" placeholder="Alex">
             </div>
             <div>
               <label for="ag-middle-name">Middle Name</label>
-              <input id="ag-middle-name" type="text" placeholder="Santos (or N/A)" required>
+              <input id="ag-middle-name" type="text" placeholder="Optional">
             </div>
             <div>
               <label for="ag-last-name">Last Name</label>
-              <input id="ag-last-name" type="text" placeholder="Rivera" required>
+              <input id="ag-last-name" type="text" placeholder="Rivera">
             </div>
           </div>
 
           <div class="mt">
             <label for="ag-reg-username">Agent Username</label>
-            <input id="ag-reg-username" type="text" minlength="3" maxlength="30" placeholder="agent_alex" required>
+            <input id="ag-reg-username" type="text" minlength="3" maxlength="30" placeholder="agent_alex">
             <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores). Agents sign in with username only.</div>
           </div>
 
           <div class="mt">
             <label for="ag-reg-pw">Password</label>
-            <input id="ag-reg-pw" type="password" data-pw-check="1" minlength="8" placeholder="Create strong password" required>
+            <input id="ag-reg-pw" type="password" data-pw-check="1" minlength="8" placeholder="Create strong password">
           </div>
 
           <div class="mt">
             <label for="ag-reg-pw2">Confirm Password</label>
-            <input id="ag-reg-pw2" type="password" minlength="8" placeholder="Repeat password" required>
+            <input id="ag-reg-pw2" type="password" minlength="8" placeholder="Repeat password">
           </div>
 
           <button type="submit" id="btn-ag-register" class="btn btn-red btn-full mt-big">
@@ -148,6 +148,7 @@ window.SYSTEM = "staff";
     async function submitAgentInviteRegistration(event) {
       event.preventDefault();
       if (!activeInviteCode) return;
+      if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
 
       var first = document.getElementById("ag-first-name").value.trim();
       var middle = document.getElementById("ag-middle-name").value.trim();
@@ -157,32 +158,29 @@ window.SYSTEM = "staff";
       var pw = document.getElementById("ag-reg-pw").value;
       var pw2 = document.getElementById("ag-reg-pw2").value;
       var btn = document.getElementById("btn-ag-register");
+      var hasError = false;
 
-      if (!first || !last || !username || !pw) {
-        showAlert("Missing Fields", "Please complete all basic information fields.", "warn");
-        return;
-      }
       if (typeof validatePersonName === "function") {
-        var fChk = validatePersonName(first, "First Name", false);
-        var mChk = middle ? validatePersonName(middle, "Middle Name", true) : { valid: true };
-        var lChk = validatePersonName(last, "Last Name", false);
-        if (!fChk.valid || !mChk.valid || !lChk.valid) {
-          showAlert("Invalid Name", [fChk.message, mChk.message, lChk.message].filter(Boolean).join(" "), "warn");
-          return;
-        }
+        var fChk = validatePersonName(first, "First Name", false, false);
+        var mChk = validatePersonName(middle, "Middle Name", true, true);
+        var lChk = validatePersonName(last, "Last Name", false, false);
+        if (!fChk.valid && typeof setFieldError === "function") { setFieldError("ag-first-name", fChk.message); hasError = true; }
+        if (!mChk.valid && typeof setFieldError === "function") { setFieldError("ag-middle-name", mChk.message); hasError = true; }
+        if (!lChk.valid && typeof setFieldError === "function") { setFieldError("ag-last-name", lChk.message); hasError = true; }
       }
-      if (typeof isValidUsername === "function" && !isValidUsername(username)) {
-        showAlert("Invalid Username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).", "warn");
-        return;
+      if (!username || (typeof isValidUsername === "function" && !isValidUsername(username))) {
+        if (typeof setFieldError === "function") setFieldError("ag-reg-username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+        hasError = true;
       }
       if (typeof isStrongPassword === "function" && !isStrongPassword(pw)) {
-        showAlert("Weak Password", "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.", "warn");
-        return;
+        if (typeof setFieldError === "function") setFieldError("ag-reg-pw", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+        hasError = true;
       }
       if (pw !== pw2) {
-        showAlert("Password Mismatch", "Password and Confirm Password do not match.", "warn");
-        return;
+        if (typeof setFieldError === "function") setFieldError("ag-reg-pw2", "Password and Confirm Password do not match.");
+        hasError = true;
       }
+      if (hasError) return;
 
       btn.disabled = true;
       btn.textContent = "Registering Agent Account...";

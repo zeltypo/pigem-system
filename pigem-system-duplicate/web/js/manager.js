@@ -12,9 +12,32 @@
 var currentManager = null;
 var mgrApps = [];
 var mgrUsers = [];
+var mgrLogs = [];
 var activeMgrTab = "overview";
+var activeMgrReportTab = "apps";
 var activeMgrAppId = null;
 var isMgrScreeningOnline = true;
+
+window.openDashTabById = function (tabId, targetId) {
+  var tabMap = {
+    "tab-overview": "overview",
+    "tab-queue": "app-all",
+    "tab-apps": "app-all",
+    "tab-encoding": "app-encoding",
+    "tab-correction": "app-override",
+    "tab-override": "app-override",
+    "tab-approved": "app-approved",
+    "tab-rejected": "app-rejected",
+    "tab-agent-perf": "agent-perf",
+    "tab-agent-links": "agent-links",
+    "tab-reports": "reports"
+  };
+  var resolved = tabMap[tabId] || String(tabId || "").replace(/^tab-/, "");
+  if (resolved) showTab(resolved);
+  if (targetId && mgrApps.some(function (a) { return a.id === targetId; })) {
+    openMgrAppModal(targetId);
+  }
+};
 
 // Validator/Check `checkMgrScreeningService`: Evaluates rule (check mgr screening service) and returns result.
 async function checkMgrScreeningService() {
@@ -98,7 +121,13 @@ window.addEventListener("DOMContentLoaded", async function () {
   currentManager = await requireLogin(["manager", "admin"]);
   if (!currentManager) return;
 
-  document.getElementById("top-user-name").textContent = currentManager.full_name;
+  var topNameEl = document.getElementById("top-user-name");
+  if (topNameEl) topNameEl.textContent = currentManager.full_name;
+  var repDateEl = document.getElementById("rep-date");
+  var repMonthEl = document.getElementById("rep-month");
+  if (repDateEl && typeof getLocalTodayIso === "function") repDateEl.value = getLocalTodayIso();
+  if (repMonthEl && typeof getLocalMonthIso === "function") repMonthEl.value = getLocalMonthIso();
+  populateMgrReportFilters();
   await checkMgrScreeningService();
   await refreshManagerData();
   loadAllCmsEditors();
@@ -132,6 +161,7 @@ window.addEventListener("DOMContentLoaded", async function () {
 async function refreshManagerData() {
   mgrApps = await dbListAllApplications();
   mgrUsers = await dbListUsers();
+  mgrLogs = typeof dbListLogs === "function" ? await dbListLogs() : [];
   updateDashSearchApps(mgrApps);
 
   var pending = 0, fix = 0, approved = 0, rejected = 0;
@@ -175,10 +205,12 @@ async function refreshManagerData() {
     { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
   ]);
   renderCalendar("mgr-calendar", mgrApps);
+  renderMgrRecentActivities();
 
   renderManagerApps();
   renderAgentPerformance();
   await renderManagerLinks();
+  if (activeMgrTab === "reports") renderMgrReport();
 }
 
 // UI State Controller `showTab` (params: tab): Updates modal, tab, or panel state to show tab.
@@ -190,7 +222,7 @@ function showTab(tab) {
     "app-all", "app-encoding", "app-override", "app-approved", "app-rejected",
     "agent-perf", "agent-links",
     "cms-banners", "cms-assets", "cms-about", "cms-plans", "cms-faqs",
-    "promo-broadcast"
+    "promo-broadcast", "reports"
   ];
   for (var i = 0; i < allNavs.length; i++) {
     var btn = document.getElementById("nav-" + allNavs[i]);
@@ -218,6 +250,9 @@ function showTab(tab) {
   document.getElementById("tab-cms-faqs").classList.toggle("hidden", tab !== "cms-faqs");
   var tabPromo = document.getElementById("tab-promo-broadcast");
   if (tabPromo) tabPromo.classList.toggle("hidden", tab !== "promo-broadcast");
+  var tabReports = document.getElementById("tab-reports");
+  if (tabReports) tabReports.classList.toggle("hidden", tab !== "reports");
+  if (tab === "reports") renderMgrReport();
 
   var maintBar = document.getElementById("cms-maint-bar");
   if (maintBar) {
@@ -553,59 +588,55 @@ function renderAgentPerformance() {
 // UI State Controller `openManagerAddAgentModal`: Updates modal, tab, or panel state to open manager add agent modal.
 function openManagerAddAgentModal() {
   openPopup(
-    '<div class="row between" style="margin-bottom:8px;">' +
-      '<h3>Add Verification Agent Account</h3>' +
-      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
-    '</div>' +
+    '<h3 style="margin-bottom:4px;">Add Verification Agent Account</h3>' +
     '<p class="small muted">Create a new Verification Agent account using Username &amp; Password only (no email needed).</p>' +
-    '<form class="mt" onsubmit="submitManagerAddAgent(event)">' +
+    '<form class="mt" novalidate onsubmit="submitManagerAddAgent(event)">' +
       '<div class="grid-3">' +
-        '<div class="field"><label>First Name *</label><input id="mgr-modal-ag-fname" type="text" placeholder="Juan" required /></div>' +
-        '<div class="field"><label>Middle Name</label><input id="mgr-modal-ag-mname" type="text" placeholder="Santos (or N/A)" /></div>' +
-        '<div class="field"><label>Last Name *</label><input id="mgr-modal-ag-lname" type="text" placeholder="Dela Cruz" required /></div>' +
+        '<div class="field"><label for="mgr-modal-ag-fname">First Name</label><input id="mgr-modal-ag-fname" type="text" placeholder="Juan" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+        '<div class="field"><label for="mgr-modal-ag-mname">Middle Name <span class="muted">(Optional)</span></label><input id="mgr-modal-ag-mname" type="text" placeholder="Optional" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+        '<div class="field"><label for="mgr-modal-ag-lname">Last Name</label><input id="mgr-modal-ag-lname" type="text" placeholder="Dela Cruz" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
       '</div>' +
       '<div class="grid-2">' +
-        '<div class="field"><label>Agent Username *</label><input id="mgr-modal-ag-username" type="text" minlength="3" maxlength="30" placeholder="agent_juan" required /></div>' +
-        '<div class="field"><label>Password *</label><input id="mgr-modal-ag-pass" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" required /></div>' +
+        '<div class="field"><label for="mgr-modal-ag-username">Agent Username</label><input id="mgr-modal-ag-username" type="text" minlength="3" maxlength="30" placeholder="agent_juan" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+        '<div class="field"><label for="mgr-modal-ag-pass">Password</label><input id="mgr-modal-ag-pass" type="password" data-pw-check="1" placeholder="Strong password (min 8 chars)" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
       '</div>' +
-      '<div id="mgr-modal-ag-err" class="notice bad mt" hidden></div>' +
       '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
-        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
         '<button type="submit" id="btn-mgr-add-agent" class="btn btn-red">+ Create Agent Account</button>' +
       '</div>' +
     '</form>',
-    true
+    { wide: true, showCloseX: true, closeOnBackdrop: true }
   );
 }
 
 // Action Handler `submitManagerAddAgent` (params: event): Validates inputs and persists changes to submit manager add agent.
 async function submitManagerAddAgent(event) {
   event.preventDefault();
-  var errBox = document.getElementById("mgr-modal-ag-err");
-  if (errBox) errBox.hidden = true;
+  if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
   var fname = (document.getElementById("mgr-modal-ag-fname").value || "").trim();
   var mname = (document.getElementById("mgr-modal-ag-mname").value || "").trim();
   var lname = (document.getElementById("mgr-modal-ag-lname").value || "").trim();
   var username = (document.getElementById("mgr-modal-ag-username").value || "").trim().toLowerCase().replace(/^@/, "");
   var pass = (document.getElementById("mgr-modal-ag-pass").value || "").trim();
 
-  var fChk = validatePersonName(fname, "First Name", false);
-  var mChk = mname ? validatePersonName(mname, "Middle Name", true) : { valid: true };
-  var lChk = validatePersonName(lname, "Last Name", false);
-  if (!fChk.valid || !mChk.valid || !lChk.valid) {
-    if (errBox) { errBox.textContent = [fChk.message, mChk.message, lChk.message].filter(Boolean).join(" "); errBox.hidden = false; }
-    return;
-  }
+  var cleanMid = (mname && mname.toUpperCase() !== "N/A") ? mname : "";
+  var fChk = validatePersonName(fname, "First Name", false, false);
+  var mChk = validatePersonName(cleanMid, "Middle Name", false, true);
+  var lChk = validatePersonName(lname, "Last Name", false, false);
+  var hasErr = false;
+  if (!fChk.valid) { setFieldError("mgr-modal-ag-fname", fChk.message); hasErr = true; }
+  if (!mChk.valid) { setFieldError("mgr-modal-ag-mname", mChk.message); hasErr = true; }
+  if (!lChk.valid) { setFieldError("mgr-modal-ag-lname", lChk.message); hasErr = true; }
   if (!isValidUsername(username)) {
-    if (errBox) { errBox.textContent = "Username must be 3-30 characters using letters, numbers, dots (.), or underscores (_)."; errBox.hidden = false; }
-    return;
+    setFieldError("mgr-modal-ag-username", "Username must be 3-30 characters using letters, numbers, dots (.), or underscores (_).");
+    hasErr = true;
   }
   if (!isStrongPassword(pass)) {
-    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
-    return;
+    setFieldError("mgr-modal-ag-pass", PASSWORD_REQUIREMENT_TEXT);
+    hasErr = true;
   }
+  if (hasErr) return;
 
-  var fullName = [fname, (mname && mname.toUpperCase() !== "N/A") ? mname : "", lname].filter(Boolean).join(" ");
+  var fullName = [fname, cleanMid, lname].filter(Boolean).join(" ");
   var btn = document.getElementById("btn-mgr-add-agent");
   btn.disabled = true;
   btn.textContent = "Creating...";
@@ -618,7 +649,9 @@ async function submitManagerAddAgent(event) {
     await refreshManagerData();
     showAlert("Agent Created", "Agent account for <b>" + escapeHtml(fullName) + "</b> (@" + escapeHtml(username) + ") is ready.", "good");
   } catch (err) {
-    if (errBox) { errBox.textContent = err.message || "Could not create Agent account."; errBox.hidden = false; }
+    var msg = err.message || "Could not create Agent account.";
+    if (msg.toLowerCase().indexOf("username") !== -1) setFieldError("mgr-modal-ag-username", msg);
+    else setFieldError("mgr-modal-ag-pass", msg);
     btn.disabled = false;
     btn.textContent = "+ Create Agent Account";
   }
@@ -629,40 +662,36 @@ function openManagerEditAgentModal(userId) {
   var u = mgrUsers.find(function (x) { return x.id === userId; });
   if (!u) return;
   openPopup(
-    '<div class="row between" style="margin-bottom:8px;">' +
-      '<h3>Edit Agent (@' + escapeHtml(u.username || u.full_name) + ')</h3>' +
-      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
-    '</div>' +
-    '<form class="mt" onsubmit="submitManagerEditAgent(event, \'' + escapeHtml(u.id) + '\')">' +
-      '<div class="field"><label>Full Name *</label><input id="mgr-edit-ag-name" type="text" value="' + escapeHtml(u.full_name || "") + '" required /></div>' +
-      '<div class="field"><label>Username *</label><input id="mgr-edit-ag-user" type="text" minlength="3" maxlength="30" value="' + escapeHtml(u.username || "") + '" required /></div>' +
-      '<div class="field"><label>New Password (Optional - leave blank to keep current)</label><input id="mgr-edit-ag-pw" type="password" data-pw-check="1" placeholder="Leave blank if unchanged" /></div>' +
-      '<div id="mgr-edit-ag-err" class="notice bad mt" hidden></div>' +
+    '<h3 style="margin-bottom:6px;">Edit Agent (@' + escapeHtml(u.username || u.full_name) + ')</h3>' +
+    '<form class="mt" novalidate onsubmit="submitManagerEditAgent(event, \'' + escapeHtml(u.id) + '\')">' +
+      '<div class="field"><label for="mgr-edit-ag-name">Full Name</label><input id="mgr-edit-ag-name" type="text" value="' + escapeHtml(u.full_name || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+      '<div class="field"><label for="mgr-edit-ag-user">Username</label><input id="mgr-edit-ag-user" type="text" minlength="3" maxlength="30" value="' + escapeHtml(u.username || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
+      '<div class="field"><label for="mgr-edit-ag-pw">New Password (Optional - leave blank to keep current)</label><input id="mgr-edit-ag-pw" type="password" data-pw-check="1" placeholder="Leave blank if unchanged" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
       '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
-        '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
         '<button type="submit" id="btn-mgr-edit-agent" class="btn btn-red">Save Changes</button>' +
       '</div>' +
-    '</form>'
+    '</form>',
+    { showCloseX: true, closeOnBackdrop: true }
   );
 }
 
 // Action Handler `submitManagerEditAgent` (params: event, userId): Validates inputs and persists changes to submit manager edit agent.
 async function submitManagerEditAgent(event, userId) {
   event.preventDefault();
-  var errBox = document.getElementById("mgr-edit-ag-err");
-  if (errBox) errBox.hidden = true;
+  if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
   var fullName = (document.getElementById("mgr-edit-ag-name").value || "").trim();
   var username = (document.getElementById("mgr-edit-ag-user").value || "").trim().toLowerCase().replace(/^@/, "");
   var pw = (document.getElementById("mgr-edit-ag-pw").value || "").trim();
-  var nChk = validatePersonName(fullName, "Full Name", false);
-  if (!nChk.valid) {
-    if (errBox) { errBox.textContent = nChk.message; errBox.hidden = false; }
-    return;
+  var nChk = validatePersonName(fullName, "Full Name", false, false);
+  var hasErr = false;
+  if (!nChk.valid) { setFieldError("mgr-edit-ag-name", nChk.message); hasErr = true; }
+  if (!isValidUsername(username)) {
+    setFieldError("mgr-edit-ag-user", "Username must be 3-30 characters using letters, numbers, dots (.), or underscores (_).");
+    hasErr = true;
   }
-  if (pw && !isStrongPassword(pw)) {
-    if (errBox) { errBox.textContent = PASSWORD_REQUIREMENT_TEXT; errBox.hidden = false; }
-    return;
-  }
+  if (pw && !isStrongPassword(pw)) { setFieldError("mgr-edit-ag-pw", PASSWORD_REQUIREMENT_TEXT); hasErr = true; }
+  if (hasErr) return;
+
   var changes = { full_name: fullName, username: username };
   if (pw) changes.new_password = pw;
   var btn = document.getElementById("btn-mgr-edit-agent");
@@ -675,7 +704,9 @@ async function submitManagerEditAgent(event, userId) {
     await refreshManagerData();
     showAlert("Agent Updated", "Updated Agent @" + escapeHtml(username) + ".", "good");
   } catch (err) {
-    if (errBox) { errBox.textContent = err.message || "Could not update Agent."; errBox.hidden = false; }
+    var msg = err.message || "Could not update Agent.";
+    if (msg.toLowerCase().indexOf("reuse") !== -1 || msg.toLowerCase().indexOf("password") !== -1) setFieldError("mgr-edit-ag-pw", msg);
+    else setFieldError("mgr-edit-ag-user", msg);
     btn.disabled = false;
     btn.textContent = "Save Changes";
   }
@@ -688,19 +719,20 @@ function managerOpenResetAgentPwModal(userId, unameLabel) {
   openPopup(
     '<h3>Reset Agent Password</h3>' +
     '<p class="small muted mt">Set a new sign-in password for <b>' + escapeHtml(unameLabel) + '</b>.</p>' +
-    '<div class="mt"><label for="mgr-reset-ag-pw">New Password</label><input id="mgr-reset-ag-pw" type="password" data-pw-check="1" placeholder="Enter strong password" /></div>' +
+    '<div class="field mt"><label for="mgr-reset-ag-pw">New Password</label><input id="mgr-reset-ag-pw" type="password" data-pw-check="1" placeholder="Enter strong password" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" /></div>' +
     '<div class="row mt-big" style="justify-content:flex-end; gap:8px;">' +
-      '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
       '<button type="button" class="btn btn-red" onclick="managerConfirmResetAgentPw()">Update Password</button>' +
-    '</div>'
+    '</div>',
+    { showCloseX: true, closeOnBackdrop: true }
   );
 }
 
 // Helper `managerConfirmResetAgentPw`: Executes workflow logic for `managerConfirmResetAgentPw`.
 async function managerConfirmResetAgentPw() {
+  if (typeof clearFieldError === "function") clearFieldError("mgr-reset-ag-pw");
   var newPw = (document.getElementById("mgr-reset-ag-pw").value || "").trim();
   if (!isStrongPassword(newPw)) {
-    showAlert("Password Requirement", PASSWORD_REQUIREMENT_TEXT, "warn");
+    setFieldError("mgr-reset-ag-pw", PASSWORD_REQUIREMENT_TEXT);
     return;
   }
   try {
@@ -710,7 +742,7 @@ async function managerConfirmResetAgentPw() {
     await refreshManagerData();
     showAlert("Password Updated", "Updated password for " + escapeHtml(window._mgrResetAgentLabel) + ".", "good");
   } catch (err) {
-    showAlert("Update Failed", err.message || "Could not reset password.", "bad");
+    setFieldError("mgr-reset-ag-pw", err.message || "Could not reset password.");
   }
 }
 
@@ -844,11 +876,23 @@ function ensureFourSlides(slides, fallbackSlides) {
 function loadAllCmsEditors() {
   var c = getSiteContent();
   var lib = c.asset_library || DEFAULT_CONTENT.asset_library;
+  var countEl = document.getElementById("cms-hero-slide-count");
+  var activeCount = Math.min(4, Math.max(1, Number(c.hero_slide_count || 3)));
+  if (countEl) {
+    countEl.value = String(activeCount);
+    countEl.onchange = function () {
+      var nextCnt = Math.min(4, Math.max(1, parseInt(countEl.value, 10) || 3));
+      var latest = getSiteContent();
+      var latestLib = latest.asset_library || DEFAULT_CONTENT.asset_library;
+      renderSlideEditorList("cms-home-slides", "home", ensureFourSlides(latest.home_slides, DEFAULT_CONTENT.hero_slides), latestLib.Banners || [], nextCnt);
+      renderSlideEditorList("cms-about-slides", "about", ensureFourSlides(latest.about_slides, DEFAULT_CONTENT.about_slides), latestLib.Banners || [], nextCnt);
+    };
+  }
 
   c.home_slides = ensureFourSlides(c.home_slides, DEFAULT_CONTENT.hero_slides);
   c.about_slides = ensureFourSlides(c.about_slides, DEFAULT_CONTENT.about_slides);
-  renderSlideEditorList("cms-home-slides", "home", c.home_slides, lib.Banners || []);
-  renderSlideEditorList("cms-about-slides", "about", c.about_slides, lib.Banners || []);
+  renderSlideEditorList("cms-home-slides", "home", c.home_slides, lib.Banners || [], activeCount);
+  renderSlideEditorList("cms-about-slides", "about", c.about_slides, lib.Banners || [], activeCount);
 
   renderMediaAssetsEditor(c);
 
@@ -879,13 +923,15 @@ function loadAllCmsEditors() {
   renderFaqEditorRows(c.faqs || []);
 }
 
-// UI Renderer `renderSlideEditorList` (params: boxId, prefix, slides, savedBanners): Builds and updates DOM elements for slide editor list.
-function renderSlideEditorList(boxId, prefix, slides, savedBanners) {
+// UI Renderer `renderSlideEditorList` (params: boxId, prefix, slides, savedBanners, activeCount): Builds and updates DOM elements for slide editor list.
+function renderSlideEditorList(boxId, prefix, slides, savedBanners, activeCount) {
   var box = document.getElementById(boxId);
   if (!box) return;
+  var countLimit = Number(activeCount || (document.getElementById("cms-hero-slide-count") ? document.getElementById("cms-hero-slide-count").value : 3) || 3);
   var html = "";
   for (var i = 0; i < slides.length; i++) {
     var s = slides[i];
+    var isShownOnSite = (i < countLimit);
     var currentImg = s.image || "";
     var allChoices = (savedBanners || []).slice();
     if (currentImg && allChoices.indexOf(currentImg) === -1) allChoices.unshift(currentImg);
@@ -899,19 +945,18 @@ function renderSlideEditorList(boxId, prefix, slides, savedBanners) {
     }
 
     html +=
-      '<div class="card" style="margin-bottom:10px; background:var(--soft)">' +
-        '<div style="display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap">' +
+      '<div class="card" style="margin-bottom:10px; background:var(--soft); opacity:' + (isShownOnSite ? '1' : '0.55') + '">' +
+        '<div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">' +
           '<img id="' + prefix + '-prev-' + i + '" src="' + escapeHtml(getImageUrl(currentImg)) + '" onerror="imageFallback(this, \'' + escapeHtml(currentImg) + '\')" alt="Slide ' + (i + 1) + '" style="width:140px; height:82px; object-fit:cover; border-radius:8px; border:1px solid var(--line); background:#111" />' +
           '<div style="flex:1; min-width:260px">' +
-            '<div class="grid-3">' +
-              '<div class="field"><label>Slide ' + (i + 1) + ' Tag</label><input id="' + prefix + '-tag-' + i + '" type="text" value="' + escapeHtml(s.tag || "") + '" /></div>' +
-              '<div class="field"><label>Headline Title</label><input id="' + prefix + '-title-' + i + '" type="text" value="' + escapeHtml(s.title || "") + '" /></div>' +
-              '<div class="field">' +
-                '<label>Switch Saved Banner (' + allChoices.length + ' available)</label>' +
-                '<select id="' + prefix + '-img-' + i + '" onchange="document.getElementById(\'' + prefix + '-prev-' + i + '\').src = getImageUrl(this.value)">' + optionsHtml + '</select>' +
-              '</div>' +
+            '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
+              '<b>Slide #' + (i + 1) + '</b>' +
+              '<span class="badge ' + (isShownOnSite ? 'badge-green' : 'badge-gray') + '">' + (isShownOnSite ? 'Active' : 'Hidden (Exceeds Count)') + '</span>' +
             '</div>' +
-            '<div class="field" style="margin-bottom:0"><label>Subtitle Text</label><input id="' + prefix + '-text-' + i + '" type="text" value="' + escapeHtml(s.text || "") + '" /></div>' +
+            '<div class="field" style="margin-bottom:0">' +
+              '<label>Switch Saved Banner (' + allChoices.length + ' available)</label>' +
+              '<select id="' + prefix + '-img-' + i + '" onchange="document.getElementById(\'' + prefix + '-prev-' + i + '\').src = getImageUrl(this.value)">' + optionsHtml + '</select>' +
+            '</div>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -1038,24 +1083,23 @@ function getCheckedAssetValues(groupName) {
 // Action Handler `saveBannersCms`: Validates inputs and persists changes to save banners cms.
 function saveBannersCms() {
   var c = getSiteContent();
+  var countEl = document.getElementById("cms-hero-slide-count");
+  var slideCount = countEl ? Math.min(4, Math.max(1, parseInt(countEl.value, 10) || 3)) : 3;
+  c.hero_slide_count = slideCount;
   c.home_slides = ensureFourSlides(c.home_slides, DEFAULT_CONTENT.hero_slides);
   c.about_slides = ensureFourSlides(c.about_slides, DEFAULT_CONTENT.about_slides);
 
   for (var i = 0; i < 4; i++) {
-    c.home_slides[i].tag = document.getElementById("home-tag-" + i).value.trim();
-    c.home_slides[i].title = document.getElementById("home-title-" + i).value.trim();
-    c.home_slides[i].image = document.getElementById("home-img-" + i).value.trim();
-    c.home_slides[i].text = document.getElementById("home-text-" + i).value.trim();
+    var hImg = document.getElementById("home-img-" + i);
+    if (hImg) c.home_slides[i].image = hImg.value.trim();
   }
   for (var j = 0; j < 4; j++) {
-    c.about_slides[j].tag = document.getElementById("about-tag-" + j).value.trim();
-    c.about_slides[j].title = document.getElementById("about-title-" + j).value.trim();
-    c.about_slides[j].image = document.getElementById("about-img-" + j).value.trim();
-    c.about_slides[j].text = document.getElementById("about-text-" + j).value.trim();
+    var aImg = document.getElementById("about-img-" + j);
+    if (aImg) c.about_slides[j].image = aImg.value.trim();
   }
   saveSiteContent(c);
-  dbAddLog(getStaffIdentifier(currentManager), "Updated 4 Home and 4 About Hero Banners in Website Content (CMS)");
-  showMsg("cms-banners-msg", "ok", "4-Slide Hero Banners saved! Click 'Preview Live Website' to inspect.");
+  dbAddLog(getStaffIdentifier(currentManager), "Updated Hero Banner settings (" + slideCount + " active slides) in Website Content (CMS)");
+  showMsg("cms-banners-msg", "ok", "Hero Banners saved (" + slideCount + " slide(s) active)! Click 'Preview Live Website' to inspect.");
 }
 
 // Action Handler `saveAboutCms`: Validates inputs and persists changes to save about cms.
@@ -1194,8 +1238,14 @@ async function sendManagerPromoBroadcast() {
       var siteData = getSiteContent();
       siteData.announcement = { active: true, headline: headline, body: body };
       saveSiteContent(siteData);
-      await dbAddNotification(null, "customer", headline, body);
-      showMsg("promo-msg", "ok", "Announcement published on the public website banner and Customer Portal notifications.");
+      for (var cu = 0; cu < mgrUsers.length; cu++) {
+        var custUser = mgrUsers[cu];
+        var custEmail = String(custUser.email || "").trim().toLowerCase();
+        if (custUser.role === "customer" && custUser.active !== false && isCustomerGmail(custEmail)) {
+          await dbAddNotification({ user_id: custUser.id, email: custEmail, title: headline, message: body });
+        }
+      }
+      showMsg("promo-msg", "ok", "Announcement published on the public website banner and active customer notifications.");
     } else {
       var siteAll = getSiteContent();
       siteAll.announcement = { active: true, headline: headline, body: body };
@@ -1226,7 +1276,7 @@ async function sendManagerPromoBroadcast() {
         var cEmail = targetList[k];
         var mailOut = await apiSendPromotionalEmail(cEmail, optedNames[cEmail], headline, body, activePlans);
         if (mailOut && mailOut.sent) sentCount++;
-        await dbAddNotification(cEmail, "customer", headline, body);
+        await dbAddNotification({ email: cEmail, title: headline, message: body });
       }
       showMsg(
         "promo-msg",
@@ -1244,4 +1294,224 @@ async function sendManagerPromoBroadcast() {
     btn.disabled = false;
     btn.textContent = "Publish and Dispatch Announcement";
   }
+}
+
+// UI Renderer `renderMgrRecentActivities`: Builds and updates DOM elements for mgr recent activities.
+function renderMgrRecentActivities() {
+  var box = document.getElementById("mgr-recent-activities");
+  if (!box) return;
+  var agentUsers = (mgrUsers || []).filter(function (u) { return u.role === "agent"; });
+  var agentHtml = "";
+  for (var i = 0; i < agentUsers.length; i++) {
+    var ag = agentUsers[i];
+    var handled = mgrApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, ag); });
+    var appCount = handled.filter(function (a) { return a.status === "Approved" || a.status === "Submitted to Provider"; }).length;
+    var activeCount = handled.filter(function (a) { return a.status === "Under Agent Review" || a.status === "Encoding" || a.status === "Needs Correction"; }).length;
+    agentHtml +=
+      '<div style="padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg-soft);min-width:190px;flex:1;">' +
+        '<b>' + escapeHtml(ag.full_name || ("@" + ag.username)) + '</b>' +
+        '<div class="small muted" style="margin-top:3px;">Active: <b>' + activeCount + '</b> &bull; Approved: <b>' + appCount + '</b></div>' +
+      '</div>';
+  }
+  var logs = (mgrLogs || []).slice(0, 8);
+  var logHtml = "";
+  if (logs.length === 0) {
+    logHtml = '<div class="muted small" style="padding:8px 0;">No recent activity entries recorded yet.</div>';
+  } else {
+    for (var l = 0; l < logs.length; l++) {
+      var item = logs[l];
+      var actor = item.actor_username ? ("@" + item.actor_username) : (item.actor_email || "system");
+      logHtml +=
+        '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;">' +
+          '<span><b>' + escapeHtml(actor) + '</b> &mdash; ' + escapeHtml(item.action || "") + '</span>' +
+          '<span class="muted" style="white-space:nowrap;">' + formatDate(item.created_at) + '</span>' +
+        '</div>';
+    }
+  }
+  box.innerHTML =
+    (agentHtml ? '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">' + agentHtml + '</div>' : '') +
+    '<div>' + logHtml + '</div>';
+}
+
+// UI State Controller `setMgrReportSubTab` (params: subTab): Updates modal, tab, or panel state to set mgr report sub tab.
+function setMgrReportSubTab(subTab) {
+  activeMgrReportTab = subTab || "apps";
+  var tabs = ["apps", "agents"];
+  for (var i = 0; i < tabs.length; i++) {
+    var b = document.getElementById("rep-sub-" + tabs[i]);
+    if (b) b.classList.toggle("active", tabs[i] === activeMgrReportTab);
+  }
+  populateMgrReportFilters();
+  renderMgrReport();
+}
+
+// Helper `populateMgrReportFilters`: Executes workflow logic for `populateMgrReportFilters`.
+function populateMgrReportFilters() {
+  var sel = document.getElementById("rep-filter-status");
+  if (!sel) return;
+  if (activeMgrReportTab === "agents") {
+    sel.innerHTML =
+      '<option value="all">All Agents</option>' +
+      '<option value="active">Active Only</option>' +
+      '<option value="inactive">Disabled Only</option>';
+    return;
+  }
+  sel.innerHTML =
+    '<option value="all">All Statuses</option>' +
+    '<option value="Pending Review">Pending Review</option>' +
+    '<option value="Under Agent Review">Under Agent Review</option>' +
+    '<option value="Encoding">Encoding</option>' +
+    '<option value="Needs Correction">Needs Correction</option>' +
+    '<option value="Approved">Approved</option>' +
+    '<option value="Rejected">Rejected</option>';
+}
+
+// Helper `onMgrReportTimeframeChange`: Executes workflow logic for `onMgrReportTimeframeChange`.
+function onMgrReportTimeframeChange() {
+  var tfEl = document.getElementById("rep-timeframe");
+  var tf = tfEl ? tfEl.value : "all";
+  var dw = document.getElementById("rep-date-wrap");
+  var mw = document.getElementById("rep-month-wrap");
+  if (dw) dw.classList.toggle("hidden", tf !== "daily");
+  if (mw) mw.classList.toggle("hidden", tf !== "monthly");
+  renderMgrReport();
+}
+
+// Data Accessor `getMgrReportData`: Retrieves or refreshes data to get mgr report data.
+function getMgrReportData() {
+  var tfEl = document.getElementById("rep-timeframe");
+  var dEl = document.getElementById("rep-date");
+  var mEl = document.getElementById("rep-month");
+  var fEl = document.getElementById("rep-filter-status");
+  var tfMode = tfEl ? tfEl.value : "all";
+  var exactDate = dEl ? dEl.value : "";
+  var monthStr = mEl ? mEl.value : "";
+  var filterVal = fEl ? fEl.value : "all";
+  var tfLabel = getReportTimeframeLabel(tfMode, exactDate, monthStr);
+
+  if (activeMgrReportTab === "agents") {
+    var agents = (mgrUsers || []).filter(function (u) {
+      if (u.role !== "agent") return false;
+      if (filterVal === "active" && u.active === false) return false;
+      if (filterVal === "inactive" && u.active !== false) return false;
+      return true;
+    });
+    var scopedApps = mgrApps.filter(function (a) {
+      return matchesReportTimeframeValue(a.created_at, tfMode, exactDate, monthStr);
+    });
+    var agentSlices = agents.map(function (ag, idx) {
+      var palette = ["#2563eb", "#15803d", "#d97706", "#c8102e", "#0284c7", "#7c3aed"];
+      var count = scopedApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, ag); }).length;
+      return {
+        label: ag.full_name || ("@" + ag.username),
+        value: count,
+        color: palette[idx % palette.length]
+      };
+    });
+    return {
+      title: "Agent Productivity Report",
+      timeframeLabel: tfLabel,
+      pieTitle: "Applications Handled by Agent",
+      barTitle: "Agent Workload Comparison",
+      pieCenter: "Assigned",
+      pieSlices: agentSlices,
+      barRows: agentSlices,
+      columns: ["Agent Name", "Username", "Status", "Total Handled", "Approved", "Needs Correction", "Rejected"],
+      rows: agents.map(function (ag) {
+        var mine = scopedApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, ag); });
+        return [
+          ag.full_name || "-",
+          "@" + (ag.username || "-"),
+          ag.active === false ? "Disabled" : "Active",
+          String(mine.length),
+          String(mine.filter(function (a) { return a.status === "Approved" || a.status === "Submitted to Provider"; }).length),
+          String(mine.filter(function (a) { return a.status === "Needs Correction"; }).length),
+          String(mine.filter(function (a) { return a.status === "Rejected"; }).length)
+        ];
+      }),
+      badges: []
+    };
+  }
+
+  var appRows = mgrApps.filter(function (a) {
+    if (!matchesReportTimeframeValue(a.created_at, tfMode, exactDate, monthStr)) return false;
+    if (filterVal === "all") return true;
+    return String(a.status || "") === filterVal;
+  });
+  var aPend = appRows.filter(function (a) { return a.status === "Pending Review" || a.status === "Under Agent Review" || a.status === "Encoding"; }).length;
+  var aFix = appRows.filter(function (a) { return a.status === "Needs Correction"; }).length;
+  var aApp = appRows.filter(function (a) { return a.status === "Approved" || a.status === "Submitted to Provider"; }).length;
+  var aRej = appRows.filter(function (a) { return a.status === "Rejected"; }).length;
+
+  return {
+    title: "Applications Pipeline Report",
+    timeframeLabel: tfLabel,
+    pieTitle: "Applications by Status",
+    barTitle: "Application Volume Summary",
+    pieCenter: "Apps",
+    pieSlices: [
+      { label: "Pending / Encoding", value: aPend, color: "#2563eb" },
+      { label: "Needs Correction", value: aFix, color: "#d97706" },
+      { label: "Approved", value: aApp, color: "#15803d" },
+      { label: "Rejected", value: aRej, color: "#dc2626" }
+    ],
+    barRows: [
+      { label: "Pending / Encoding", value: aPend, color: "#2563eb" },
+      { label: "Needs Correction", value: aFix, color: "#d97706" },
+      { label: "Approved", value: aApp, color: "#15803d" },
+      { label: "Rejected", value: aRej, color: "#dc2626" }
+    ],
+    columns: ["Reference No.", "Applicant Name", "Plan", "City", "Assigned Agent", "Status", "Submitted At"],
+    rows: appRows.map(function (a) {
+      return [
+        a.reference_no || a.ref_no || "-",
+        a.full_name || "-",
+        a.plan_name || "-",
+        a.city || "-",
+        a.assigned_agent || "Unassigned",
+        a.status || "-",
+        formatDate(a.created_at)
+      ];
+    }),
+    badges: []
+  };
+}
+
+// UI Renderer `renderMgrReport`: Builds and updates DOM elements for mgr report.
+function renderMgrReport() {
+  renderDashReportView({
+    data: getMgrReportData(),
+    summaryId: "rep-summary-header",
+    pieTitleId: "rep-pie-title",
+    barTitleId: "rep-bar-title",
+    pieBoxId: "chart-report-pie",
+    barBoxId: "chart-report-bars",
+    tableWrapId: "report-table-wrap",
+    actorLabel: getStaffIdentifier(currentManager)
+  });
+}
+
+// Helper `resetMgrReportFilters`: Executes workflow logic for `resetMgrReportFilters`.
+function resetMgrReportFilters() {
+  var tfEl = document.getElementById("rep-timeframe");
+  var dEl = document.getElementById("rep-date");
+  var mEl = document.getElementById("rep-month");
+  var fEl = document.getElementById("rep-filter-status");
+  if (tfEl) tfEl.value = "all";
+  if (dEl) dEl.value = getLocalTodayIso();
+  if (mEl) mEl.value = getLocalMonthIso();
+  if (fEl) fEl.value = "all";
+  onMgrReportTimeframeChange();
+}
+
+// Helper `exportMgrReportCsv`: Executes workflow logic for `exportMgrReportCsv`.
+function exportMgrReportCsv() {
+  var data = getMgrReportData();
+  exportReportToCsv(data.columns, data.rows, "PIGEM-manager-" + activeMgrReportTab + "-report.csv");
+}
+
+// Helper `downloadFormattedMgrReport`: Executes workflow logic for `downloadFormattedMgrReport`.
+function downloadFormattedMgrReport() {
+  var data = getMgrReportData();
+  downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-manager-" + activeMgrReportTab + "-report.html");
 }

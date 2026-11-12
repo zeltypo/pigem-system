@@ -24,7 +24,7 @@
     <div class="container topbar-inner">
       <div class="brand" style="display:flex; align-items:center; gap:10px;">
         <img src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
-        <div><b style="cursor:default; user-select:none;">Combined Facilities Support Services</b></div>
+        <div><b style="cursor:default; user-select:none;">PIGEM Combined Facilities Support Services</b></div>
       </div>
 
       <!-- SECTION: Primary Navigation Links -->
@@ -46,6 +46,8 @@
       </div>
     </div>
 
+    <div id="cust-correction-banner" class="hidden" style="margin-bottom:18px;"></div>
+
     <div class="grid-4" style="margin-bottom:22px">
       <div class="stat"><div class="num" id="st-total">0</div><div class="lbl">My Applications</div></div>
       <div class="stat"><div class="num" id="st-proc">0</div><div class="lbl">Processing</div></div>
@@ -65,7 +67,7 @@
     </div>
   </main>
 
-  <div id="notif-modal" class="modal hidden">
+  <div id="notif-modal" class="modal hidden" onclick="if(event.target===this) toggleNotifModal()">
     <div class="modal-box">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
         <h3>My Notifications</h3>

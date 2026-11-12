@@ -49,20 +49,16 @@ function hideReqTip(el) {
 
 // Helper `flashErrorBubble` (params: fieldId, fieldName, message): Executes workflow logic for `flashErrorBubble`.
 function flashErrorBubble(fieldId, fieldName, message) {
-  var asterisk = document.querySelector('.req[data-req-for="' + fieldId + '"]');
-  if (!asterisk) return;
-
-  var old = asterisk.querySelectorAll(".req-bubble");
-  for (var i = 0; i < old.length; i++) old[i].remove();
-
-  var bubble = document.createElement("span");
-  bubble.className = "req-bubble error-pop";
-  bubble.innerHTML = "<b style='color:#fff;display:block;margin-bottom:2px;'>" + fieldName + " Required</b>" + message;
-  asterisk.appendChild(bubble);
-
-  setTimeout(function () {
-    if (bubble && bubble.parentNode) bubble.remove();
-  }, 4500);
+  var targetMap = {
+    agree_sub: "agree_sub_wrap",
+    id_front: "id-front-box",
+    id_back: "id-back-box",
+    contact_otp: "email"
+  };
+  var targetId = targetMap[fieldId] || fieldId;
+  if (typeof setFieldError === "function") {
+    setFieldError(targetId, message);
+  }
 }
 
 // UI State Controller `setupDeviceUploadUI`: Updates modal, tab, or panel state to setup device upload ui.
@@ -122,12 +118,6 @@ function initApplyPage() {
     setTimeout(showApplySecurityCaptchaModal, 150);
   } else {
     applyCaptchaVerified = true;
-    var cCard = document.getElementById("apply-captcha-card");
-    var cCheck = document.getElementById("apply-captcha-check");
-    if (cCard && cCheck) {
-      cCard.classList.add("verified");
-      cCheck.innerHTML = "&#10003;";
-    }
   }
 }
 
@@ -137,20 +127,15 @@ function attachApplyLiveValidation() {
   if (dobEl && typeof getMaxAdultBirthDate === "function") {
     dobEl.setAttribute("max", getMaxAdultBirthDate(18));
     var checkDob = function () {
-      var warn = document.getElementById("birth-date-warn");
-      if (!warn) return;
       if (!dobEl.value) {
-        warn.hidden = true;
-        warn.textContent = "";
+        if (typeof clearFieldError === "function") clearFieldError("birth_date");
         return;
       }
       var res = validateAdultBirthDate(dobEl.value, 18);
-      if (!res.valid) {
-        warn.hidden = false;
-        warn.textContent = res.message;
-      } else {
-        warn.hidden = true;
-        warn.textContent = "";
+      if (!res.valid && typeof setFieldError === "function") {
+        setFieldError("birth_date", res.message);
+      } else if (typeof clearFieldError === "function") {
+        clearFieldError("birth_date");
       }
     };
     dobEl.addEventListener("change", checkDob);
@@ -158,56 +143,69 @@ function attachApplyLiveValidation() {
   }
 
   var nameIds = [
-    { id: "first_name", label: "First Name", allowNA: false },
-    { id: "middle_name", label: "Middle Name", allowNA: true },
-    { id: "last_name", label: "Last Name", allowNA: false }
+    { id: "first_name", label: "First Name", allowNA: false, allowEmpty: false },
+    { id: "middle_name", label: "Middle Name", allowNA: true, allowEmpty: true },
+    { id: "last_name", label: "Last Name", allowNA: false, allowEmpty: false }
   ];
-  var checkNames = function () {
-    var wrap = document.getElementById("name-warn-wrap");
-    var box = document.getElementById("name-warn");
-    if (!wrap || !box) return;
-    var errs = [];
-    for (var i = 0; i < nameIds.length; i++) {
-      var el = document.getElementById(nameIds[i].id);
-      if (el && el.value.trim()) {
-        var r = validatePersonName(el.value, nameIds[i].label, nameIds[i].allowNA);
-        if (!r.valid) errs.push(r.message);
+  var attachNameCheck = function (spec) {
+    var el = document.getElementById(spec.id);
+    if (!el) return;
+    var checkOne = function () {
+      var val = el.value.trim();
+      if (!val) {
+        if (typeof clearFieldError === "function") clearFieldError(spec.id);
+        return;
       }
-    }
-    if (errs.length > 0) {
-      box.textContent = errs.join(" ");
-      wrap.hidden = false;
-    } else {
-      wrap.hidden = true;
-      box.textContent = "";
-    }
+      var r = validatePersonName(val, spec.label, spec.allowNA, spec.allowEmpty);
+      if (!r.valid && typeof setFieldError === "function") {
+        setFieldError(spec.id, r.message);
+      } else if (typeof clearFieldError === "function") {
+        clearFieldError(spec.id);
+      }
+    };
+    el.addEventListener("input", checkOne);
+    el.addEventListener("blur", checkOne);
   };
   for (var n = 0; n < nameIds.length; n++) {
-    var nEl = document.getElementById(nameIds[n].id);
-    if (nEl) {
-      nEl.addEventListener("input", checkNames);
-      nEl.addEventListener("blur", checkNames);
-    }
+    attachNameCheck(nameIds[n]);
+  }
+
+  var emailEl = document.getElementById("email");
+  if (emailEl) {
+    emailEl.addEventListener("input", function () {
+      if (typeof clearFieldError === "function") clearFieldError("email");
+      if (verifiedEmailAddress && emailEl.value.trim().toLowerCase() !== verifiedEmailAddress) {
+        isContactOtpVerified = false;
+        var st = document.getElementById("email-otp-inline-status");
+        if (st) st.style.display = "none";
+        var btn = document.getElementById("btn-send-otp");
+        if (btn) btn.textContent = "Send Email OTP";
+      }
+    });
+  }
+
+  var phoneEl = document.getElementById("phone");
+  if (phoneEl) {
+    phoneEl.addEventListener("input", function () {
+      if (typeof clearFieldError === "function") clearFieldError("phone");
+    });
   }
 
   var altPhoneEl = document.getElementById("phone_alt");
   if (altPhoneEl) {
     var checkAltPhone = function () {
-      var warn = document.getElementById("phone-alt-warn");
-      if (!warn) return;
       var raw = altPhoneEl.value.trim();
       if (!raw) {
-        warn.hidden = true;
-        warn.textContent = "";
+        if (typeof clearFieldError === "function") clearFieldError("phone_alt");
         return;
       }
       var digits = raw.replace(/\D/g, "");
       if (digits.length !== 11 || !FORM_VALIDATOR.isValidMobile(digits)) {
-        warn.hidden = false;
-        warn.textContent = "Secondary mobile number must be 11 digits starting with 09 (or leave blank).";
-      } else {
-        warn.hidden = true;
-        warn.textContent = "";
+        if (typeof setFieldError === "function") {
+          setFieldError("phone_alt", "Secondary mobile number must be 11 digits starting with 09 (or leave blank).");
+        }
+      } else if (typeof clearFieldError === "function") {
+        clearFieldError("phone_alt");
       }
     };
     altPhoneEl.addEventListener("input", checkAltPhone);
@@ -266,8 +264,8 @@ async function handleMobileQrUpload(side, inputEl) {
 function showApplySecurityCaptchaModal() {
   openPopup(
     '<div class="center" style="padding:10px 4px;">' +
-      '<div style="width:48px;height:48px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;"><img data-img="icons/shield.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/shield.png" alt="Security (not available)" class="icon-img" /></div>' +
-      '<h3 style="font-size:18px;margin-bottom:4px;">Security Verification</h3>' +
+      '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><img data-img="icons/shield.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/shield.png" alt="Security" style="width:26px;height:26px;display:block;margin:0;object-fit:contain;" /></div>' +
+      '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
       '<div id="g-apply-recaptcha-wrap" style="display:flex;justify-content:center;margin:16px auto;min-height:78px;">' +
         '<div id="g-apply-recaptcha-box" class="g-recaptcha" data-sitekey="' + CONFIG.RECAPTCHA_SITE_KEY + '" data-callback="onApplyCaptchaVerified"></div>' +
@@ -284,10 +282,8 @@ function showApplySecurityCaptchaModal() {
           '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="row mt-big" style="justify-content:center;">' +
-        '<button type="button" class="btn btn-outline btn-small" onclick="window.location.href=\'index.html\'">Return to Home</button>' +
-      '</div>' +
-    '</div>'
+    '</div>',
+    { showCloseX: true, closeOnBackdrop: true }
   );
 
   if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
@@ -489,6 +485,7 @@ function openPhoneQrModal() {
 
 // Helper `sendContactOtp`: Executes workflow logic for `sendContactOtp`.
 async function sendContactOtp() {
+  if (typeof clearFieldError === "function") clearFieldError("email");
   var email = document.getElementById("email").value.trim().toLowerCase();
 
   if (!email || !isCustomerGmail(email)) {
@@ -518,58 +515,67 @@ async function sendContactOtp() {
     otpRec.refTag
   );
 
-  var row = document.getElementById("otp-Verify-row");
-  if (row) row.hidden = false;
-  var inp = document.getElementById("contact_otp_code");
-  if (inp) {
-    inp.disabled = false;
-    inp.value = "";
-  }
-
-  var statusText = document.getElementById("otp-status-text");
-  if (statusText) {
-    if (emailRes && emailRes.sent) {
-      statusText.innerHTML =
-        "<b>6-Digit Email OTP sent!</b> Check <b>" + escapeHtml(email) +
-        "</b> (Ref no: <b>" + escapeHtml(otpRec.refTag) + "</b>). Valid for 5 minutes.";
-    } else {
-      var errDetail = (emailRes && emailRes.reason) || "Could not deliver verification email right now.";
-      statusText.innerHTML = "<span style='color:#dc2626;font-weight:700;'>Email delivery notice:</span> " + escapeHtml(errDetail);
-    }
-  }
-
   btn.disabled = false;
   btn.textContent = "Resend Email OTP";
+
+  openApplyOtpModal(email, otpRec.refTag, emailRes);
 }
 
-// Helper `verifyContactOtp`: Executes workflow logic for `verifyContactOtp`.
-function verifyContactOtp() {
+// UI State Controller `openApplyOtpModal` (params: email, refTag, emailRes): Updates modal, tab, or panel state to open apply otp modal.
+function openApplyOtpModal(email, refTag, emailRes) {
+  var sentOk = !(emailRes && emailRes.sent === false);
+  var statusLine = sentOk
+    ? 'We sent a 6-digit verification code to <b>' + escapeHtml(email) + '</b> (Ref no: <b>' + escapeHtml(refTag || "VSCF") + '</b>). Valid for 5 minutes.'
+    : '<span style="color:#dc2626;font-weight:700;">Delivery notice:</span> ' + escapeHtml((emailRes && emailRes.reason) || "Could not deliver email right now.");
+
+  openPopup(
+    '<h3 style="margin:0 0 6px;">Email Verification (OTP)</h3>' +
+    '<p class="small muted" style="line-height:1.5;">' + statusLine + '</p>' +
+    '<div class="mt-big">' +
+      '<label for="modal-contact-otp-code">Enter 6-Digit Email OTP</label>' +
+      '<input id="modal-contact-otp-code" type="text" maxlength="6" inputmode="numeric" placeholder="000000" style="text-align:center;font-size:20px;font-weight:800;letter-spacing:6px;">' +
+    '</div>' +
+    '<div class="row between mt-big" style="gap:8px;">' +
+      '<button type="button" class="btn btn-outline btn-small" onclick="sendContactOtp()">Resend OTP</button>' +
+      '<button type="button" class="btn btn-red" onclick="verifyContactOtpModal()">Verify Email OTP</button>' +
+    '</div>',
+    { showCloseX: true, closeOnBackdrop: true }
+  );
+  setTimeout(function () {
+    var inp = document.getElementById("modal-contact-otp-code");
+    if (inp) inp.focus();
+  }, 60);
+}
+
+// Helper `verifyContactOtpModal`: Executes workflow logic for `verifyContactOtpModal`.
+function verifyContactOtpModal() {
+  if (typeof clearFieldError === "function") clearFieldError("modal-contact-otp-code");
   var email = document.getElementById("email").value.trim().toLowerCase();
-  var entered = (document.getElementById("contact_otp_code").value || "").trim();
+  var codeInp = document.getElementById("modal-contact-otp-code");
+  var entered = (codeInp ? codeInp.value : "").trim();
   var check = typeof verifySecuredOtp === "function"
     ? verifySecuredOtp("apply_email_" + email, entered)
     : { valid: false, reason: "Please request an OTP first." };
 
   if (!check.valid) {
-    flashErrorBubble("contact_otp", "Email OTP", check.reason || "Incorrect 6-digit OTP code.");
+    if (typeof setFieldError === "function" && codeInp) {
+      setFieldError("modal-contact-otp-code", check.reason || "Incorrect 6-digit OTP code.");
+    }
     return;
   }
 
   isContactOtpVerified = true;
   verifiedEmailAddress = email;
-  var badge = document.getElementById("otp-badge");
-  if (badge) {
-    badge.hidden = false;
-    badge.className = "badge status-approved";
-    badge.textContent = "Email Verified";
-  }
-  var input = document.getElementById("contact_otp_code");
-  if (input) input.disabled = true;
+  closePopup();
 
-  var statusText = document.getElementById("otp-status-text");
-  if (statusText) {
-    statusText.innerHTML = "<span style='color:var(--good);font-weight:700;'>Email address verified (Ref no: " + escapeHtml(check.refTag || "VSCF") + ").</span>";
+  var btn = document.getElementById("btn-send-otp");
+  if (btn) btn.textContent = "Email Verified";
+  var st = document.getElementById("email-otp-inline-status");
+  if (st) {
+    st.style.display = "block";
+    st.innerHTML = '<span class="badge status-approved">Verified</span> <span style="color:var(--good);font-weight:600;">Email verified (Ref no: ' + escapeHtml(check.refTag || "VSCF") + ').</span>';
   }
+  if (typeof clearFieldError === "function") clearFieldError("email");
 }
 
 // Action Handler `updateIdFormatHint`: Validates inputs and persists changes to update id format hint.
@@ -669,6 +675,8 @@ function showPanel(index) {
 
 // Validator/Check `validateCurrentPanel`: Evaluates rule (validate current panel) and returns result.
 function validateCurrentPanel() {
+  var panelEl = document.getElementById("panel-" + currentPanel);
+  if (typeof clearAllFieldErrors === "function" && panelEl) clearAllFieldErrors(panelEl);
   var firstInvalidEl = null;
 
   // Helper `markInvalid` (params: fieldId, name, msg, elToFocus): Executes workflow logic for `markInvalid`.
@@ -681,7 +689,7 @@ function validateCurrentPanel() {
 
   if (currentPanel === 0) {
     if (!selectedPlanId) {
-      markInvalid("plan", "Plan Selection", "Please pick an internet plan.");
+      markInvalid("plan-choice-box", "Plan Selection", "Please pick an internet plan.");
       return false;
     }
     return true;
@@ -693,41 +701,15 @@ function validateCurrentPanel() {
     var last = document.getElementById("last_name").value.trim();
     var birth = document.getElementById("birth_date").value;
 
-    if (!middle) {
-      middle = "N/A";
-      document.getElementById("middle_name").value = "N/A";
-    }
-
-    var fCheck = validatePersonName(first, "First Name", false);
-    var mCheck = validatePersonName(middle, "Middle Name", true);
-    var lCheck = validatePersonName(last, "Last Name", false);
+    var fCheck = validatePersonName(first, "First Name", false, false);
+    var mCheck = validatePersonName(middle, "Middle Name", true, true);
+    var lCheck = validatePersonName(last, "Last Name", false, false);
     var dobCheck = validateAdultBirthDate(birth, 18);
 
-    var nameErrs = [];
-    if (!fCheck.valid) { markInvalid("first_name", "First Name", fCheck.message); nameErrs.push(fCheck.message); }
-    if (!mCheck.valid) { markInvalid("middle_name", "Middle Name", mCheck.message); nameErrs.push(mCheck.message); }
-    if (!lCheck.valid) { markInvalid("last_name", "Last Name", lCheck.message); nameErrs.push(lCheck.message); }
-
-    var nWrap = document.getElementById("name-warn-wrap");
-    var nBox = document.getElementById("name-warn");
-    if (nWrap && nBox) {
-      if (nameErrs.length > 0) {
-        nBox.textContent = nameErrs.join(" ");
-        nWrap.hidden = false;
-      } else {
-        nWrap.hidden = true;
-        nBox.textContent = "";
-      }
-    }
-
-    var dobWarn = document.getElementById("birth-date-warn");
-    if (!dobCheck.valid) {
-      markInvalid("birth_date", "Birth Date (18+ Required)", dobCheck.message);
-      if (dobWarn) { dobWarn.hidden = false; dobWarn.textContent = dobCheck.message; }
-    } else if (dobWarn) {
-      dobWarn.hidden = true;
-      dobWarn.textContent = "";
-    }
+    if (!fCheck.valid) markInvalid("first_name", "First Name", fCheck.message);
+    if (!mCheck.valid) markInvalid("middle_name", "Middle Name", mCheck.message);
+    if (!lCheck.valid) markInvalid("last_name", "Last Name", lCheck.message);
+    if (!dobCheck.valid) markInvalid("birth_date", "Birth Date", dobCheck.message);
 
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -744,20 +726,14 @@ function validateCurrentPanel() {
     var phoneAltDigits = phoneAltRaw.replace(/\D/g, "");
 
     if (!email || !isCustomerGmail(email)) markInvalid("email", "Gmail Address", "Enter a valid @gmail.com address.");
+    else if (!isContactOtpVerified || verifiedEmailAddress !== email) {
+      markInvalid("contact_otp", "Email OTP", "Click 'Send Email OTP' on the right to verify your Gmail address.", document.getElementById("btn-send-otp"));
+    }
     if (!FORM_VALIDATOR.isValidMobile(phone)) markInvalid("phone", "Mobile Number", "Enter a valid 11-digit mobile number starting with 09.");
 
-    var altWarn = document.getElementById("phone-alt-warn");
     if (phoneAltRaw && (phoneAltDigits.length !== 11 || !FORM_VALIDATOR.isValidMobile(phoneAltDigits))) {
       var altMsg = "Secondary mobile number must be an 11-digit number starting with 09 (or leave blank).";
       markInvalid("phone_alt", "Secondary Mobile Number", altMsg, document.getElementById("phone_alt"));
-      if (altWarn) { altWarn.hidden = false; altWarn.textContent = altMsg; }
-    } else if (altWarn) {
-      altWarn.hidden = true;
-      altWarn.textContent = "";
-    }
-
-    if (!isContactOtpVerified || verifiedEmailAddress !== email) {
-      markInvalid("contact_otp", "Email OTP", "Please send and verify your 6-digit Email OTP code.", document.getElementById("btn-send-otp"));
     }
 
     if (firstInvalidEl) {
@@ -815,14 +791,6 @@ function validateCurrentPanel() {
   if (currentPanel === 5) {
     if (!document.getElementById("agree_sub").checked) {
       markInvalid("agree_sub", "Terms Agreement", "Please check to accept the Subscriber Certificate.");
-    }
-    if (!applyCaptchaVerified) {
-      var card = document.getElementById("apply-captcha-card");
-      if (card) {
-        card.style.borderColor = "#c8102e";
-        setTimeout(function () { card.style.borderColor = "#cbd5e1"; }, 1500);
-      }
-      markInvalid("agree_sub", "Security Verification", "Please verify the 'I\'m not a robot' CAPTCHA before submitting.");
     }
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1054,6 +1022,47 @@ function advanceLoadingStep(stepNum) {
   }
 }
 
+// `resetApplyWizardToStep1`: Resets the Application Form wizard back to Step 1 cleanly after modal dismissal or duplicate auto-rejection.
+function resetApplyWizardToStep1() {
+  var loadingScreen = document.getElementById("panel-loading");
+  if (loadingScreen) loadingScreen.hidden = true;
+  var fieldIds = [
+    "first_name", "middle_name", "last_name", "birth_date", "email", "phone", "phone_alt",
+    "house_no", "house_suffix", "unit_no", "floor_no", "street", "subdivision",
+    "barangay", "city", "province", "landmark", "remarks", "id_number"
+  ];
+  for (var i = 0; i < fieldIds.length; i++) {
+    var el = document.getElementById(fieldIds[i]);
+    if (el) el.value = "";
+  }
+  var bldgEl = document.getElementById("building_name");
+  if (bldgEl) bldgEl.value = "N/A";
+  var agree1 = document.getElementById("agree_sub");
+  var agree2 = document.getElementById("agree_tu");
+  if (agree1) agree1.checked = false;
+  if (agree2) agree2.checked = false;
+  selectedFrontFile = null;
+  selectedBackFile = null;
+  isContactOtpVerified = false;
+  verifiedEmailAddress = "";
+  var otpBtn = document.getElementById("btn-send-otp");
+  if (otpBtn) otpBtn.textContent = "Send Email OTP";
+  var otpSt = document.getElementById("email-otp-inline-status");
+  if (otpSt) otpSt.style.display = "none";
+  var warnBox = document.getElementById("id-screen-warn");
+  if (warnBox) warnBox.hidden = true;
+  var fpBox = document.getElementById("id-front-preview-box");
+  var bpBox = document.getElementById("id-back-preview-box");
+  if (fpBox) fpBox.hidden = true;
+  if (bpBox) bpBox.hidden = true;
+  var fnLbl = document.getElementById("id-front-filename");
+  var bnLbl = document.getElementById("id-back-filename");
+  if (fnLbl) fnLbl.textContent = "No Front ID photo selected yet";
+  if (bnLbl) bnLbl.textContent = "No Back ID photo selected yet";
+  if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
+  showPanel(0);
+}
+
 // Action Handler `submitRegistration`: Validates inputs and persists changes to submit registration.
 async function submitRegistration() {
   if (!validateCurrentPanel()) return;
@@ -1154,7 +1163,18 @@ async function submitRegistration() {
     };
 
     advanceLoadingStep(3);
-    var saved = await dbCreateApplication(Object.assign({}, addrData, {
+    var latNum = parseFloat(document.getElementById("lat").value);
+    var lngNum = parseFloat(document.getElementById("lng").value);
+    var dupCheck = typeof dbFindDuplicateCustomerApplication === "function"
+      ? await dbFindDuplicateCustomerApplication(email, Object.assign({}, addrData, {
+          lat: latNum,
+          lng: lngNum,
+          plan: selectedPlanId,
+          full_name: fullName
+        }))
+      : { isDuplicate: false };
+
+    var baseAppPayload = Object.assign({}, addrData, {
       customer_id: accountInfo.user.id,
       agent_id: referralAgentId,
       agent_link_code: referralAgentId,
@@ -1169,8 +1189,8 @@ async function submitRegistration() {
       phone_alt: document.getElementById("phone_alt").value.trim(),
       email: email,
       address_line: formatAddress(addrData),
-      lat: parseFloat(document.getElementById("lat").value),
-      lng: parseFloat(document.getElementById("lng").value),
+      lat: latNum,
+      lng: lngNum,
       id_type: idType,
       id_number: idNumber,
       id_image_url: frontPath,
@@ -1180,7 +1200,55 @@ async function submitRegistration() {
       remarks: document.getElementById("remarks").value.trim(),
       agree_tu: document.getElementById("agree_tu").checked,
       screening: screening
-    }));
+    });
+
+    if (dupCheck && dupCheck.isDuplicate) {
+      var rejectedSaved = await dbCreateApplication(Object.assign({}, baseAppPayload, {
+        status: "Rejected",
+        provider_remarks: dupCheck.reason,
+        customer_instruction: "Auto-Rejected: " + dupCheck.reason
+      }));
+      await dbAddNotification({
+        user_id: accountInfo.user.id,
+        email: email,
+        subject: "Application Auto-Rejected (Duplicate) - " + rejectedSaved.ref_no,
+        body: dupCheck.reason,
+        target_tab: "tab-apps",
+        target_id: rejectedSaved.id
+      });
+      await dbAddNotification({
+        role: "agent",
+        subject: "Duplicate Application Auto-Rejected - " + rejectedSaved.ref_no,
+        body: fullName + " (" + email + ") auto-rejected: " + dupCheck.reason,
+        target_tab: "tab-queue",
+        target_id: rejectedSaved.id
+      });
+      if (typeof apiSendStatusEmail === "function") {
+        await apiSendStatusEmail(email, fullName, rejectedSaved.ref_no, "Rejected", dupCheck.reason);
+      }
+      await dbAddActivity("application_auto_rejected_duplicate", rejectedSaved.ref_no + " (" + email + ")");
+      for (var dk = 1; dk <= 3; dk++) {
+        var dItem = document.getElementById("step-ld-" + dk);
+        if (dItem) {
+          dItem.className = "reg-step-item done";
+          dItem.querySelector(".reg-step-icon").innerHTML = "&#10003;";
+        }
+      }
+      openPopup(
+        '<div class="center">' +
+          '<h3 style="color:#b42318;">Application Auto-Rejected</h3>' +
+          '<p class="small muted mt">Reference Number: <b>' + escapeHtml(rejectedSaved.ref_no) + '</b></p>' +
+          '<div class="notice mt" style="text-align:left;line-height:1.6;border-color:#fca5a5;background:#fef2f2;color:#991b1b;">' +
+            '<b>Reason:</b> ' + escapeHtml(dupCheck.reason) +
+          '</div>' +
+          '<p class="small muted mt">Click outside or press X to return to Step 1.</p>' +
+        '</div>',
+        { showCloseX: true, closeOnBackdrop: true, onClose: resetApplyWizardToStep1 }
+      );
+      return;
+    }
+
+    var saved = await dbCreateApplication(baseAppPayload);
 
     if (!screeningActive) {
       var pausedScreening = Object.assign({}, screening, {
@@ -1222,9 +1290,9 @@ async function submitRegistration() {
       "Status: Processing\n\n" +
       "Please check your email notification for your 6-digit Activation OTP Code and Account Activation link.";
 
-    await dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body });
-    await dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no });
-    await dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")" });
+    await dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body, target_tab: "tab-apps", target_id: saved.id });
+    await dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no, target_tab: "tab-queue", target_id: saved.id });
+    await dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")", target_tab: "tab-queue", target_id: saved.id });
     await apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);
     await dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")");
 
@@ -1236,11 +1304,7 @@ async function submitRegistration() {
       }
     }
 
-    var assignedUname = (accountInfo.user && accountInfo.user.username) ? accountInfo.user.username : "";
     var isAlreadyActive = accountInfo.status === "active";
-    var directActivateHref = "activate.html?email=" + encodeURIComponent(email) +
-      "&code=" + encodeURIComponent(accountInfo.code || "") +
-      "&username=" + encodeURIComponent(assignedUname);
 
     openPopup(
       '<div class="center">' +
@@ -1250,18 +1314,13 @@ async function submitRegistration() {
         '<div class="notice mt" style="text-align:left;line-height:1.6;">' +
           '<b>Account Summary:</b><br>' +
           'Customer Email: <b>' + escapeHtml(email) + '</b><br>' +
-          (assignedUname ? ('Assigned Username: <b>@' + escapeHtml(assignedUname) + '</b><br>') : '') +
           (isAlreadyActive
-            ? 'Your Customer Account is already activated. Sign in anytime to track your application.'
-            : 'We also emailed your one-time activation link to <b>' + escapeHtml(email) + '</b>. Create your Customer Account password now using the button below to track your application!') +
+            ? 'Your Customer Account is already active. You may sign in anytime to track your application.'
+            : 'We emailed your one-time activation link to <b>' + escapeHtml(email) + '</b>. Please check your Gmail inbox to create your own username and password and activate your Customer Account.') +
         '</div>' +
-        '<div class="row mt-big" style="justify-content:center;gap:10px;flex-wrap:wrap;">' +
-          (isAlreadyActive
-            ? '<a class="btn btn-red" href="login.html">Go to Customer Login</a>'
-            : '<a class="btn btn-red" href="' + directActivateHref + '">Create Password &amp; Activate Account</a>') +
-          '<a class="btn btn-outline" href="index.html">Return to Home</a>' +
-        '</div>' +
-      '</div>'
+        '<p class="small muted mt">Click outside or press X to return to Step 1.</p>' +
+      '</div>',
+      { showCloseX: true, closeOnBackdrop: true, onClose: resetApplyWizardToStep1 }
     );
   } catch (err) {
     if (loadingScreen) loadingScreen.hidden = true;

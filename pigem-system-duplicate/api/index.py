@@ -252,7 +252,7 @@ async def screen_document(
 def send_notification(data: EmailRequest, user=Depends(_auth.require_login)):
     """
     Sends clean, RA 10173 privacy-safe HTML emails via Gmail SMTP strictly to
-    @gmail.com Customer addresses (skips internal @pigem.com business accounts).
+    @gmail.com Customer addresses (skips internal username-only staff accounts).
     """
     return _mailer.send(
         to=data.to,

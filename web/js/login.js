@@ -122,27 +122,6 @@ function resetLoginFieldsAndCaptcha() {
   renderLoginCaptchaBox();
 }
 
-function loadRememberedIdentifier() {
-  var sys = window.SYSTEM || "customer";
-  var saved = localStorage.getItem("pigem_remember_" + sys);
-  var emailEl = document.getElementById("email");
-  var remEl = document.getElementById("remember-me");
-  if (saved && emailEl) {
-    emailEl.value = saved;
-    if (remEl) remEl.checked = true;
-  }
-}
-
-function saveRememberedIdentifier(identifier) {
-  var sys = window.SYSTEM || "customer";
-  var remEl = document.getElementById("remember-me");
-  if (remEl && remEl.checked && identifier) {
-    localStorage.setItem("pigem_remember_" + sys, identifier);
-  } else {
-    localStorage.removeItem("pigem_remember_" + sys);
-  }
-}
-
 async function checkAdminProvisionState() {
   if (window.SYSTEM !== "admin" || typeof dbHasAdminAccount !== "function") return;
   var box = document.getElementById("admin-provision-box");
@@ -151,10 +130,31 @@ async function checkAdminProvisionState() {
   box.hidden = Boolean(hasAdmin);
 }
 
+function showSessionReasonBanner() {
+  var params = new URLSearchParams(window.location.search);
+  var reason = String(params.get("reason") || "").toLowerCase();
+  var banner = document.getElementById("login-attempt-banner");
+  if (!reason || !banner) return;
+  if (reason === "idle") {
+    banner.hidden = false;
+    banner.innerHTML = "<b>Session Ended:</b> You missed your active session — you were automatically logged out due to inactivity. Please sign in again.";
+  } else if (reason === "other_device") {
+    banner.hidden = false;
+    banner.innerHTML = "<b>Signed Out:</b> Another browser or device recently logged into this account, so this session was automatically signed out.";
+  } else if (reason === "disabled") {
+    banner.hidden = false;
+    banner.innerHTML = "<b>Account Disabled:</b> This account has been deactivated. Contact System Admin at Tel: <b>(046) 458-0908</b>.";
+  }
+}
+
 window.addEventListener("DOMContentLoaded", function () {
-  loadRememberedIdentifier();
+  showSessionReasonBanner();
   renderLoginCaptchaBox();
   checkAdminProvisionState();
+  var idEl = document.getElementById("email");
+  var pwEl = document.getElementById("password");
+  if (idEl && typeof clearFieldError === "function") idEl.addEventListener("input", function () { clearFieldError("email"); });
+  if (pwEl && typeof clearFieldError === "function") pwEl.addEventListener("input", function () { clearFieldError("password"); });
 });
 
 function showLockoutPopup() {
@@ -178,30 +178,35 @@ function showLockoutPopup() {
 
 function openStaffResetRequestModal() {
   openPopup(
-    '<div class="row between" style="margin-bottom:8px;">' +
-      '<h3>Staff Password Reset Request</h3>' +
-      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+    '<h3 style="margin:0 0 6px;">Haven\'t Access / Reset Password</h3>' +
+    '<div class="notice mt" style="font-size:12.5px; line-height:1.5; margin-bottom:12px;">' +
+      '<b>Internal Access Support:</b> Internal Agents and Managers sign in by Username only. Forgot your password or locked out? Contact System Admin at Tel: <b>(046) 458-0908</b> / Hotline: <b>101-733</b> or submit a reset request below.' +
     '</div>' +
-    '<p class="small muted">Internal Agents and Managers use username-only accounts. Submit your username below to notify the System Administrator, or call <b>(046) 458-0908</b>.</p>' +
-    '<form class="mt" onsubmit="submitStaffResetRequest(event)">' +
+    '<form class="mt" onsubmit="submitStaffResetRequest(event)" novalidate>' +
       '<label for="staff-reset-username">Your Staff Username</label>' +
-      '<input id="staff-reset-username" type="text" placeholder="e.g. maria_santos" required>' +
+      '<input id="staff-reset-username" type="text" placeholder="e.g. maria_santos">' +
       '<label for="staff-reset-note" class="mt">Optional Note / Contact Extension</label>' +
       '<input id="staff-reset-note" type="text" placeholder="e.g. Forgot password - Cavite Desk">' +
       '<div id="staff-reset-feedback" class="mt"></div>' +
       '<button type="submit" id="btn-staff-reset-submit" class="btn btn-red btn-full mt-big">Send Request to System Admin</button>' +
-    '</form>'
+    '</form>',
+    { showCloseX: true, closeOnBackdrop: true }
   );
 }
 
 async function submitStaffResetRequest(event) {
   event.preventDefault();
+  if (typeof clearFieldError === "function") clearFieldError("staff-reset-username");
   var unameEl = document.getElementById("staff-reset-username");
   var noteEl = document.getElementById("staff-reset-note");
   var fbEl = document.getElementById("staff-reset-feedback");
   var btn = document.getElementById("btn-staff-reset-submit");
   var uname = unameEl ? unameEl.value.trim() : "";
   var note = noteEl ? noteEl.value.trim() : "";
+  if (!uname) {
+    if (typeof setFieldError === "function") setFieldError("staff-reset-username", "Please enter your staff username.");
+    return;
+  }
   if (fbEl) fbEl.innerHTML = "";
   btn.disabled = true;
   btn.textContent = "Sending Request...";
@@ -211,9 +216,8 @@ async function submitStaffResetRequest(event) {
       fbEl.innerHTML = '<div class="notice ok"><b>Request Sent!</b> System Administrator has been notified to reset the password for <b>@' + escapeHtml(info.username) + '</b>. You may also reach Admin Support at Tel: <b>(046) 458-0908</b>.</div>';
     }
   } catch (err) {
-    if (fbEl) {
-      fbEl.innerHTML = '<div class="notice bad">' + escapeHtml(err.message || "Could not submit reset request.") + '</div>';
-    }
+    if (typeof setFieldError === "function") setFieldError("staff-reset-username", err.message || "Could not submit reset request.");
+    else if (fbEl) fbEl.innerHTML = '<div class="notice bad">' + escapeHtml(err.message || "Could not submit reset request.") + '</div>';
   } finally {
     btn.disabled = false;
     btn.textContent = "Send Request to System Admin";
@@ -222,6 +226,7 @@ async function submitStaffResetRequest(event) {
 
 async function handleLogin(event) {
   event.preventDefault();
+  if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
 
   var isAdmin = (window.SYSTEM === "admin");
   var isStaff = (window.SYSTEM === "staff");
@@ -235,32 +240,47 @@ async function handleLogin(event) {
   var pwEl = document.getElementById("password");
   var identifier = (emailEl ? emailEl.value : "").trim().toLowerCase();
   var password = pwEl ? pwEl.value : "";
+  var hasError = false;
 
-  if (isAdmin || isStaff) {
+  if (!identifier) {
+    if (typeof setFieldError === "function") setFieldError("email", (isAdmin || isStaff) ? "Please enter your username." : "Please enter your username or email address.");
+    hasError = true;
+  } else if (isAdmin || isStaff) {
     if (identifier.indexOf("@") !== -1) {
-      resetLoginFieldsAndCaptcha();
-      showAlert("Username Required", "Internal Admin, Manager, and Agent accounts sign in by Username only.", "warn");
-      return;
+      if (typeof setFieldError === "function") setFieldError("email", "Internal Admin, Manager, and Agent accounts sign in by Username only.");
+      hasError = true;
+    } else {
+      var cleanU = identifier.replace(/^@/, "");
+      if (typeof isValidUsername === "function" && !isValidUsername(cleanU)) {
+        if (typeof setFieldError === "function") setFieldError("email", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+        hasError = true;
+      } else {
+        identifier = cleanU;
+      }
     }
-    var cleanU = identifier.replace(/^@/, "");
-    if (typeof isValidUsername === "function" && !isValidUsername(cleanU)) {
-      resetLoginFieldsAndCaptcha();
-      showAlert("Invalid Username", "Please enter your valid username (3 to 30 characters: letters, numbers, dots, underscores).", "warn");
-      return;
-    }
-    identifier = cleanU;
   } else {
     if (identifier.indexOf("@") !== -1) {
       if (typeof isCustomerGmail === "function" && !isCustomerGmail(identifier)) {
-        resetLoginFieldsAndCaptcha();
-        showAlert("Gmail or Username Required", "Customer Login accepts Customer usernames or @gmail.com email addresses only.", "warn");
-        return;
+        if (typeof setFieldError === "function") setFieldError("email", "Customer Login accepts Customer usernames or @gmail.com email addresses only.");
+        hasError = true;
       }
     } else if (typeof isValidUsername === "function" && !isValidUsername(identifier.replace(/^@/, ""))) {
-      resetLoginFieldsAndCaptcha();
-      showAlert("Invalid Username", "Please enter a valid username (3 to 30 characters) or @gmail.com email address.", "warn");
-      return;
+      if (typeof setFieldError === "function") setFieldError("email", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_), or enter your @gmail.com.");
+      hasError = true;
     }
+  }
+
+  if (!password) {
+    if (typeof setFieldError === "function") setFieldError("password", "Please enter your password.");
+    hasError = true;
+  }
+
+  if (hasError) {
+    if (typeof grecaptcha !== "undefined" && grecaptcha.reset) {
+      try { grecaptcha.reset(); } catch (e) {}
+    }
+    loginCaptchaVerified = false;
+    return;
   }
 
   if (!loginCaptchaVerified && typeof grecaptcha !== "undefined" && grecaptcha.getResponse) {
@@ -276,7 +296,11 @@ async function handleLogin(event) {
       card.style.borderColor = "#c8102e";
       setTimeout(function () { card.style.borderColor = "#cbd5e1"; }, 1500);
     }
-    showAlert("Security Check", "Please check the 'I\'m not a robot' box before signing in.", "warn");
+    var bannerCap = document.getElementById("login-attempt-banner");
+    if (bannerCap) {
+      bannerCap.hidden = false;
+      bannerCap.innerHTML = "<b>Security Check:</b> Please complete the 'I'm not a robot' verification before signing in.";
+    }
     return;
   }
 
@@ -290,7 +314,6 @@ async function handleLogin(event) {
     loginAttempts = 0;
     var bannerEl = document.getElementById("login-attempt-banner");
     if (bannerEl) bannerEl.hidden = true;
-    saveRememberedIdentifier(identifier);
     window.location.href = getHomeForRole(user.role);
   } catch (err) {
     resetLoginFieldsAndCaptcha();
@@ -300,11 +323,11 @@ async function handleLogin(event) {
 
     var banner = document.getElementById("login-attempt-banner");
     if (isAdmin) {
+      if (typeof setFieldError === "function") setFieldError("password", err.message || "Invalid Administrator username or password.");
       if (banner) {
         banner.hidden = false;
         banner.innerHTML = "<b>Sign In Failed:</b> " + escapeHtml(err.message || "Invalid Administrator username or password.");
       }
-      showAlert("Sign In Failed", err.message || "Invalid Administrator username or password.", "bad");
       return;
     }
 
@@ -319,16 +342,12 @@ async function handleLogin(event) {
     } else {
       var remaining = MAX_ATTEMPTS - loginAttempts;
       var msgText = (err.message || "Invalid username or password.") + " (Failed attempt " + loginAttempts + " of " + MAX_ATTEMPTS + ", " + remaining + " remaining)";
+      if (typeof setFieldError === "function") setFieldError("password", msgText);
       if (banner) {
         banner.hidden = false;
         banner.innerHTML = "<b>Sign In Failed:</b> " + escapeHtml(msgText) +
           (isStaff ? "<br><span class='small'>Contact System Admin: Tel (046) 458-0908 | Hotline 101-733</span>" : "");
       }
-      showAlert(
-        "Sign In Failed",
-        msgText + (isStaff ? "<br><br>Need help? Contact System Admin at <b>(046) 458-0908</b> or use <b>Forgot Password?</b>." : ""),
-        "bad"
-      );
     }
   }
 }
@@ -358,61 +377,54 @@ function switchRecoveryTab(tabName) {
 }
 
 function renderRecoveryStep1() {
-  var tab = _recoveryState.tab || "password";
+  var tab = (_recoveryState.tab === "username") ? "username" : "password";
+  _recoveryState.tab = tab;
   var isPw = tab === "password";
   var isUser = tab === "username";
-  var isEmail = tab === "email";
 
-  var fieldLabel = isEmail ? "Registered Mobile Number or Full Name" : "Registered Email Address (Gmail)";
-  var fieldPlaceholder = isEmail ? "09171234567 or Juan Dela Cruz" : "yourname@gmail.com";
-  var fieldType = isEmail ? "text" : "email";
+  var fieldLabel = "Registered Gmail Address";
+  var fieldPlaceholder = "yourname@gmail.com";
   var helperDesc = isPw
-    ? "Enter your registered email address to receive a 6-digit verification code and reset your password."
-    : (isUser
-      ? "Enter your registered email address to verify your identity and recover your username."
-      : "Forgot your email address? Enter your registered 11-digit mobile number or full name to verify and recover your email.");
+    ? "Enter your registered @gmail.com email address to receive a 6-digit verification code and reset your password."
+    : "Enter your registered @gmail.com email address to verify your identity and recover your Customer Username.";
 
   openPopup(
-    '<div class="row between" style="margin-bottom:8px;">' +
-      '<h3 style="margin:0;">What would you like to recover?</h3>' +
-      '<button type="button" class="btn btn-small" onclick="closePopup()">Back to Login</button>' +
-    '</div>' +
-    '<p class="small muted">Select what you need help recovering below:</p>' +
+    '<h3 style="margin:0 0 6px;">Account Recovery</h3>' +
+    '<p class="small muted">Recover your Customer Portal Username or Password:</p>' +
     '<div class="recovery-tabs mt">' +
       '<button type="button" class="recovery-tab-btn' + (isPw ? " active" : "") + '" onclick="switchRecoveryTab(\'password\')">' +
-        '<b>Password</b><span>I forgot my password</span>' +
+        '<b>Forgot Password</b><span>Reset your password via Gmail OTP</span>' +
       '</button>' +
       '<button type="button" class="recovery-tab-btn' + (isUser ? " active" : "") + '" onclick="switchRecoveryTab(\'username\')">' +
-        '<b>Username</b><span>I forgot my username</span>' +
-      '</button>' +
-      '<button type="button" class="recovery-tab-btn' + (isEmail ? " active" : "") + '" onclick="switchRecoveryTab(\'email\')">' +
-        '<b>Email Address</b><span>I forgot my email</span>' +
+        '<b>Forgot Username</b><span>Retrieve your @username</span>' +
       '</button>' +
     '</div>' +
     '<div class="mt-big">' +
       '<p class="small muted" style="margin-bottom:10px;">' + helperDesc + '</p>' +
       '<label for="recovery-query-input">' + fieldLabel + '</label>' +
-      '<input id="recovery-query-input" type="' + fieldType + '" placeholder="' + fieldPlaceholder + '" value="' + escapeHtml(_recoveryState.query || "") + '">' +
+      '<input id="recovery-query-input" type="email" placeholder="' + fieldPlaceholder + '" value="' + escapeHtml(_recoveryState.query || "") + '">' +
     '</div>' +
     '<div class="row between mt-big">' +
       '<button type="button" class="btn" onclick="closePopup()">&larr; Back to Login</button>' +
       '<button type="button" id="btn-recovery-send" class="btn btn-red" onclick="startRecoveryVerification()">Continue</button>' +
     '</div>' +
     '<div class="small muted mt" style="border-top:1px solid var(--line); padding-top:10px; font-size:12px;">' +
-      'Outdated email address? Call our hotline at <b>(046) 458-0908</b> or <b>101-733 (RED)</b> for assistance.' +
-    '</div>'
+      'Forgot or lost access to your registered Gmail address? Contact Customer Support at Tel: <b>(046) 458-0908</b> or Hotline: <b>101-733 (RED)</b>.' +
+    '</div>',
+    { showCloseX: true, closeOnBackdrop: true }
   );
 }
 
 async function startRecoveryVerification() {
+  if (typeof clearFieldError === "function") clearFieldError("recovery-query-input");
   var inp = document.getElementById("recovery-query-input");
   var query = inp ? inp.value.trim() : "";
   if (!query) {
-    showAlert("Field Required", "Please enter your account detail to continue.", "warn");
+    if (typeof setFieldError === "function") setFieldError("recovery-query-input", "Please enter your registered @gmail.com email address.");
     return;
   }
-  if (_recoveryState.tab !== "email" && typeof isCustomerGmail === "function" && !isCustomerGmail(query)) {
-    showAlert("Gmail Required", "Please enter a valid @gmail.com email address, or switch to the 'Email Address' tab if you forgot your email.", "warn");
+  if (typeof isCustomerGmail === "function" && !isCustomerGmail(query)) {
+    if (typeof setFieldError === "function") setFieldError("recovery-query-input", "Please enter a valid @gmail.com email address.");
     return;
   }
 
@@ -442,7 +454,7 @@ async function startRecoveryVerification() {
       btn.disabled = false;
       btn.textContent = "Continue";
     }
-    showAlert("Account Not Found", err.message || "Could not find a matching account.", "bad");
+    if (typeof setFieldError === "function") setFieldError("recovery-query-input", err.message || "Could not find a matching account.");
   }
 }
 
@@ -562,9 +574,11 @@ async function resendRecoveryOtpCode() {
 }
 
 function verifyRecoveryPinCode() {
+  if (typeof clearFieldError === "function") clearFieldError("recovery-otp-msg-anchor");
   var entered = getEnteredOtpSquaresCode();
+  var timerBox = document.getElementById("recovery-timer-box");
   if (entered.length < 6) {
-    showAlert("Incomplete Code", "Please enter all 6 digits of your verification code.", "warn");
+    if (timerBox) timerBox.innerHTML = '<div class="field-error" style="text-align:center;">Please enter all 6 digits of your verification code.</div>';
     return;
   }
   var info = _recoveryState.account;
@@ -575,7 +589,7 @@ function verifyRecoveryPinCode() {
     : { valid: entered === String(info.code) };
 
   if (!check.valid) {
-    showAlert("Invalid Code", check.reason || "The 6-digit verification code is incorrect.", "bad");
+    if (timerBox) timerBox.innerHTML = '<div class="field-error" style="text-align:center;">' + escapeHtml(check.reason || "The 6-digit verification code is incorrect.") + '</div>';
     return;
   }
 
@@ -591,23 +605,8 @@ function verifyRecoveryPinCode() {
       '<div class="row between mt-big">' +
         '<button type="button" class="btn" onclick="closePopup()">Close</button>' +
         '<button type="button" class="btn btn-red" onclick="fillRecoveredLogin(\'' + escapeHtml(info.username) + '\')">Use Username to Sign In</button>' +
-      "</div>"
-    );
-    return;
-  }
-
-  if (_recoveryState.tab === "email") {
-    openPopup(
-      "<h3>Email Address Recovered</h3>" +
-      '<div class="notice good mt">' +
-        "Your registered Customer Email Address and Username are:<br>" +
-        '<div style="font-size:17px;font-weight:800;margin-top:6px;">' + escapeHtml(info.email) + "</div>" +
-        '<div class="small muted" style="margin-top:4px;">Username: <b>@' + escapeHtml(info.username) + "</b></div>" +
-      "</div>" +
-      '<div class="row between mt-big">' +
-        '<button type="button" class="btn" onclick="closePopup()">Close</button>' +
-        '<button type="button" class="btn btn-red" onclick="fillRecoveredLogin(\'' + escapeHtml(info.email) + '\')">Use Email to Sign In</button>' +
-      "</div>"
+      "</div>",
+      { showCloseX: true, closeOnBackdrop: true }
     );
     return;
   }
@@ -626,7 +625,8 @@ function verifyRecoveryPinCode() {
     '<div class="row between mt-big">' +
       '<button type="button" class="btn" onclick="closePopup()">Cancel</button>' +
       '<button type="button" class="btn btn-red" onclick="confirmResetPassword()">Save New Password</button>' +
-    "</div>"
+    "</div>",
+    { showCloseX: true, closeOnBackdrop: true }
   );
 }
 
@@ -637,17 +637,21 @@ function fillRecoveredLogin(val) {
 }
 
 async function confirmResetPassword() {
+  if (typeof clearFieldError === "function") {
+    clearFieldError("rec-new-pw");
+    clearFieldError("rec-new-pw2");
+  }
   var info = _recoveryState.account;
   if (!info) return;
   var pw = document.getElementById("rec-new-pw").value;
   var pw2 = document.getElementById("rec-new-pw2").value;
 
   if (typeof isStrongPassword === "function" && !isStrongPassword(pw)) {
-    showAlert("Weak Password", "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.", "warn");
+    if (typeof setFieldError === "function") setFieldError("rec-new-pw", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
     return;
   }
   if (pw !== pw2) {
-    showAlert("Password Mismatch", "New Password and Confirm Password do not match.", "warn");
+    if (typeof setFieldError === "function") setFieldError("rec-new-pw2", "New Password and Confirm Password do not match.");
     return;
   }
 
@@ -656,6 +660,6 @@ async function confirmResetPassword() {
     loginAttempts = 0;
     showAlert("Password Updated", "Your password has been updated. You can now sign in with your username or email.", "good");
   } catch (err) {
-    showAlert("Reset Failed", err.message || "Could not update password.", "bad");
+    if (typeof setFieldError === "function") setFieldError("rec-new-pw", err.message || "Could not update password.");
   }
 }

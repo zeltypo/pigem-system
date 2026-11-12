@@ -11,8 +11,21 @@
 
 var currentAgent = null;
 var allApps = [];
+var agentLinks = [];
 var activeBranch = "overview";
+var activeAgentReportTab = "apps";
 var activeDetailAppId = null;
+
+window.openDashTabById = function (tabId, targetId) {
+  var cleanTab = String(tabId || "").replace(/^tab-/, "");
+  if (cleanTab) {
+    if (cleanTab === "apps") cleanTab = "queue";
+    showTab(cleanTab);
+  }
+  if (targetId && findAppById(targetId)) {
+    openAppDetail(targetId);
+  }
+};
 var activeCopyMode = "latest";
 var activeIdImgMode = "cropped";
 var pendingProofDataUrl = "";
@@ -207,7 +220,13 @@ window.addEventListener("DOMContentLoaded", async function () {
   currentAgent = await requireLogin(["agent", "manager", "admin"]);
   if (!currentAgent) return;
 
-  document.getElementById("top-user-name").textContent = currentAgent.full_name;
+  var topUserEl = document.getElementById("top-user-name");
+  if (topUserEl) topUserEl.textContent = currentAgent.full_name;
+  var repDateEl = document.getElementById("rep-date");
+  var repMonthEl = document.getElementById("rep-month");
+  if (repDateEl && typeof getLocalTodayIso === "function") repDateEl.value = getLocalTodayIso();
+  if (repMonthEl && typeof getLocalMonthIso === "function") repMonthEl.value = getLocalMonthIso();
+  populateAgentReportFilters();
   await checkAgentScreeningService();
   await refreshAgentData();
   initDashUI(currentAgent, allApps, openAppDetail);
@@ -309,18 +328,24 @@ async function refreshAgentData(silent) {
       { label: "Plan 1400", value: planCounts["1400"], color: "#0f172a" },
       { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
     ]);
+    renderPieChart("chart-agent-plan-pie", [
+      { label: "Plan 1000", value: planCounts["1000"], color: "#c8102e" },
+      { label: "Plan 1400", value: planCounts["1400"], color: "#0f172a" },
+      { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
+    ], "Plans");
     renderCalendar("agent-calendar", allApps);
     await renderAgentLinks();
   }
 
   renderAgentCards();
+  if (activeBranch === "reports") renderAgentReport();
 }
 
 // UI State Controller `showTab` (params: branch): Updates modal, tab, or panel state to show tab.
 function showTab(branch) {
   if (branch === "encoded") branch = "encoding";
   activeBranch = branch;
-  var navIds = ["overview", "queue", "claimed", "encoding", "correction", "approved", "rejected", "links"];
+  var navIds = ["overview", "queue", "claimed", "encoding", "correction", "approved", "rejected", "links", "reports"];
   for (var i = 0; i < navIds.length; i++) {
     var btn = document.getElementById("nav-" + navIds[i]);
     if (btn) btn.classList.toggle("active", navIds[i] === branch);
@@ -339,6 +364,8 @@ function showTab(branch) {
 
   document.getElementById("tab-overview").classList.toggle("hidden", branch !== "overview");
   document.getElementById("tab-links").classList.toggle("hidden", branch !== "links");
+  var repTabEl = document.getElementById("tab-reports");
+  if (repTabEl) repTabEl.classList.toggle("hidden", branch !== "reports");
 
   var isAppBranch = (
     branch === "queue" ||
@@ -350,6 +377,7 @@ function showTab(branch) {
   );
   document.getElementById("tab-apps").classList.toggle("hidden", !isAppBranch);
   updateOverviewOnlyVisibility(branch === "overview");
+  if (branch === "reports") renderAgentReport();
 
   if (isAppBranch) {
     var titles = {
@@ -1127,7 +1155,8 @@ async function renderAgentLinks() {
   var body = document.getElementById("agent-links-body");
   if (!body) return;
   var links = await dbListAgentLinks();
-  var referralOnly = links.filter(function (l) { return String(l.code || "").indexOf("INV-") !== 0; });
+  agentLinks = links || [];
+  var referralOnly = agentLinks.filter(function (l) { return String(l.code || "").indexOf("INV-") !== 0; });
   if (referralOnly.length === 0) {
     body.innerHTML = '<tr><td colspan="5" class="muted">No links generated yet.</td></tr>';
     return;
@@ -1147,4 +1176,187 @@ async function renderAgentLinks() {
       '</tr>';
   }
   body.innerHTML = html;
+}
+
+// UI State Controller `setAgentReportSubTab` (params: subTab): Updates modal, tab, or panel state to set agent report sub tab.
+function setAgentReportSubTab(subTab) {
+  activeAgentReportTab = subTab || "apps";
+  var tabs = ["apps", "mine", "links"];
+  for (var i = 0; i < tabs.length; i++) {
+    var b = document.getElementById("rep-sub-" + tabs[i]);
+    if (b) b.classList.toggle("active", tabs[i] === activeAgentReportTab);
+  }
+  populateAgentReportFilters();
+  renderAgentReport();
+}
+
+// Helper `populateAgentReportFilters`: Executes workflow logic for `populateAgentReportFilters`.
+function populateAgentReportFilters() {
+  var sel = document.getElementById("rep-filter-status");
+  if (!sel) return;
+  if (activeAgentReportTab === "links") {
+    sel.innerHTML = '<option value="all">All Referral Links</option>';
+    return;
+  }
+  sel.innerHTML =
+    '<option value="all">All Statuses</option>' +
+    '<option value="Pending Review">Pending Review</option>' +
+    '<option value="Under Agent Review">Under Agent Review</option>' +
+    '<option value="Encoding">Encoding</option>' +
+    '<option value="Needs Correction">Needs Correction</option>' +
+    '<option value="Approved">Approved</option>' +
+    '<option value="Rejected">Rejected</option>';
+}
+
+// Helper `onAgentReportTimeframeChange`: Executes workflow logic for `onAgentReportTimeframeChange`.
+function onAgentReportTimeframeChange() {
+  var tfEl = document.getElementById("rep-timeframe");
+  var tf = tfEl ? tfEl.value : "all";
+  var dw = document.getElementById("rep-date-wrap");
+  var mw = document.getElementById("rep-month-wrap");
+  if (dw) dw.classList.toggle("hidden", tf !== "daily");
+  if (mw) mw.classList.toggle("hidden", tf !== "monthly");
+  renderAgentReport();
+}
+
+// Data Accessor `getAgentReportData`: Retrieves or refreshes data to get agent report data.
+function getAgentReportData() {
+  var tfEl = document.getElementById("rep-timeframe");
+  var dEl = document.getElementById("rep-date");
+  var mEl = document.getElementById("rep-month");
+  var fEl = document.getElementById("rep-filter-status");
+  var tfMode = tfEl ? tfEl.value : "all";
+  var exactDate = dEl ? dEl.value : "";
+  var monthStr = mEl ? mEl.value : "";
+  var filterVal = fEl ? fEl.value : "all";
+  var tfLabel = getReportTimeframeLabel(tfMode, exactDate, monthStr);
+
+  if (activeAgentReportTab === "links") {
+    var referralOnly = (agentLinks || []).filter(function (l) {
+      return String(l.code || "").indexOf("INV-") !== 0 && matchesReportTimeframeValue(l.created_at, tfMode, exactDate, monthStr);
+    });
+    var codeAppCounts = {};
+    for (var ai = 0; ai < allApps.length; ai++) {
+      var refCode = allApps[ai].agent_link_code || "";
+      if (refCode) codeAppCounts[refCode] = (codeAppCounts[refCode] || 0) + 1;
+    }
+    var usedCnt = referralOnly.filter(function (l) { return (codeAppCounts[l.code] || 0) > 0; }).length;
+    var unusedCnt = referralOnly.length - usedCnt;
+    return {
+      title: "Referral Links Report",
+      timeframeLabel: tfLabel,
+      pieTitle: "Link Conversion Status",
+      barTitle: "Link Utilization Breakdown",
+      pieCenter: "Links",
+      pieSlices: [
+        { label: "With Applications", value: usedCnt, color: "#15803d" },
+        { label: "No Applications Yet", value: unusedCnt, color: "#64748b" }
+      ],
+      barRows: [
+        { label: "With Applications", value: usedCnt, color: "#15803d" },
+        { label: "No Applications Yet", value: unusedCnt, color: "#64748b" }
+      ],
+      columns: ["Referral Code", "Customer / Note", "Applications Received", "Created By", "Created At"],
+      rows: referralOnly.map(function (l) {
+        return [
+          l.code || "-",
+          l.note || "-",
+          String(codeAppCounts[l.code] || 0),
+          l.agent_id || "-",
+          formatDate(l.created_at)
+        ];
+      }),
+      badges: []
+    };
+  }
+
+  var baseList = activeAgentReportTab === "mine"
+    ? allApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, currentAgent); })
+    : allApps.slice();
+
+  var appRows = baseList.filter(function (a) {
+    if (!matchesReportTimeframeValue(a.created_at, tfMode, exactDate, monthStr)) return false;
+    if (filterVal === "all") return true;
+    return String(a.status || "") === filterVal;
+  });
+
+  var cntPend = appRows.filter(function (a) { return a.status === "Pending Review" || a.status === "Under Agent Review"; }).length;
+  var cntEnc = appRows.filter(function (a) { return a.status === "Encoding"; }).length;
+  var cntFix = appRows.filter(function (a) { return a.status === "Needs Correction"; }).length;
+  var cntApp = appRows.filter(function (a) { return a.status === "Approved" || a.status === "Submitted to Provider"; }).length;
+  var cntRej = appRows.filter(function (a) { return a.status === "Rejected"; }).length;
+
+  return {
+    title: activeAgentReportTab === "mine" ? "My Handled Applications Report" : "Applications Queue Report",
+    timeframeLabel: tfLabel,
+    pieTitle: "Applications by Status",
+    barTitle: "Verification Pipeline Summary",
+    pieCenter: "Apps",
+    pieSlices: [
+      { label: "Pending / Claimed", value: cntPend, color: "#2563eb" },
+      { label: "Encoding", value: cntEnc, color: "#0284c7" },
+      { label: "Needs Correction", value: cntFix, color: "#d97706" },
+      { label: "Approved", value: cntApp, color: "#15803d" },
+      { label: "Rejected", value: cntRej, color: "#dc2626" }
+    ],
+    barRows: [
+      { label: "Pending / Claimed", value: cntPend, color: "#2563eb" },
+      { label: "Encoding", value: cntEnc, color: "#0284c7" },
+      { label: "Needs Correction", value: cntFix, color: "#d97706" },
+      { label: "Approved", value: cntApp, color: "#15803d" },
+      { label: "Rejected", value: cntRej, color: "#dc2626" }
+    ],
+    columns: ["Reference No.", "Applicant Name", "Plan", "City", "Assigned Agent", "Status", "Submitted At"],
+    rows: appRows.map(function (a) {
+      return [
+        a.reference_no || a.ref_no || "-",
+        a.full_name || "-",
+        a.plan_name || "-",
+        a.city || "-",
+        a.assigned_agent || "Unassigned",
+        a.status || "-",
+        formatDate(a.created_at)
+      ];
+    }),
+    badges: []
+  };
+}
+
+// UI Renderer `renderAgentReport`: Builds and updates DOM elements for agent report.
+function renderAgentReport() {
+  renderDashReportView({
+    data: getAgentReportData(),
+    summaryId: "rep-summary-header",
+    pieTitleId: "rep-pie-title",
+    barTitleId: "rep-bar-title",
+    pieBoxId: "chart-report-pie",
+    barBoxId: "chart-report-bars",
+    tableWrapId: "report-table-wrap",
+    actorLabel: getStaffIdentifier(currentAgent)
+  });
+}
+
+// Helper `resetAgentReportFilters`: Executes workflow logic for `resetAgentReportFilters`.
+function resetAgentReportFilters() {
+  var tfEl = document.getElementById("rep-timeframe");
+  var dEl = document.getElementById("rep-date");
+  var mEl = document.getElementById("rep-month");
+  var fEl = document.getElementById("rep-filter-status");
+  if (tfEl) tfEl.value = "all";
+  if (dEl) dEl.value = getLocalTodayIso();
+  if (mEl) mEl.value = getLocalMonthIso();
+  if (fEl) fEl.value = "all";
+  onAgentReportTimeframeChange();
+}
+
+// Helper `exportAgentReportCsv`: Executes workflow logic for `exportAgentReportCsv`.
+function exportAgentReportCsv() {
+  var data = getAgentReportData();
+  exportReportToCsv(data.columns, data.rows, "PIGEM-agent-" + activeAgentReportTab + "-report.csv");
+}
+
+// Helper `downloadFormattedAgentReport`: Executes workflow logic for `downloadFormattedAgentReport`.
+function downloadFormattedAgentReport() {
+  var data = getAgentReportData();
+  downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-agent-" + activeAgentReportTab + "-report.html");
 }

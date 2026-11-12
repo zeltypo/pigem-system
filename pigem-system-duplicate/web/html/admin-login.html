@@ -12,7 +12,7 @@
 
   <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
-  <title>Admin Login | Combined Facilities Support Services</title>
+  <title>Admin Login | PIGEM Combined Facilities Support Services</title>
 
   <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
@@ -26,7 +26,7 @@
   <header class="simple-bar">
     <div class="container" style="display:flex; align-items:center; gap:12px;">
       <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
-      <span style="font-weight:700; font-size:16px; cursor:default; user-select:none;">Combined Facilities Support Services</span>
+      <span style="font-weight:700; font-size:16px; cursor:default; user-select:none;">PIGEM Combined Facilities Support Services</span>
     </div>
   </header>
 
@@ -49,22 +49,15 @@
       <div id="login-attempt-banner" class="notice bad mt" hidden></div>
 
       <!-- FORM: Interactive User Input Form -->
-      <form class="mt-big" onsubmit="handleLogin(event)">
+      <form class="mt-big" onsubmit="handleLogin(event)" novalidate>
         <div>
           <label for="email">Administrator Username</label>
-          <input id="email" type="text" autocomplete="username" placeholder="Enter admin username (e.g. pigem_admin)" required>
+          <input id="email" type="text" autocomplete="username" placeholder="Enter admin username (e.g. pigem_admin)">
         </div>
 
         <div class="mt">
           <label for="password">Password</label>
-          <input id="password" type="password" placeholder="Enter your password" required>
-        </div>
-
-        <div class="row between mt" style="align-items:center;">
-          <label class="check" style="margin:0; font-weight:500; font-size:13px;">
-            <input id="remember-me" type="checkbox">
-            <span>Remember me</span>
-          </label>
+          <input id="password" type="password" placeholder="Enter your password">
         </div>
 
         <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">

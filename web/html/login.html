@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
-  <title>Customer Login | Combined Facilities Support Services</title>
+  <title>Customer Login | PIGEM Combined Facilities Support Services</title>
 
   <link rel="stylesheet" href="../style.css">
 
@@ -30,25 +30,20 @@
         <p class="small muted mt" style="margin-top:4px;">Sign in using your username or email</p>
       </div>
 
-      <form class="mt-big" onsubmit="handleLogin(event)">
+      <div id="login-attempt-banner" class="notice bad mt" hidden></div>
+
+      <form class="mt-big" onsubmit="handleLogin(event)" novalidate>
         <div>
           <label for="email">Username or Email</label>
-          <input id="email" type="text" autocomplete="username" placeholder="username or yourname@gmail.com" required>
+          <input id="email" type="text" autocomplete="username" placeholder="username or yourname@gmail.com">
         </div>
 
         <div class="mt">
           <div class="row between">
             <label for="password" style="margin:0">Password</label>
-            <a href="#" class="small" style="color:var(--red); font-weight:600;" onclick="openForgotModal(); return false;">Forgot Password or Can't Log In?</a>
+            <a href="#" class="small" style="color:var(--red); font-weight:600;" onclick="openForgotModal(); return false;">Forgot Username or Password?</a>
           </div>
-          <input id="password" type="password" class="mt" placeholder="Enter your password" required>
-        </div>
-
-        <div class="row between mt" style="align-items:center;">
-          <label class="check" style="margin:0; font-weight:500; font-size:13px;">
-            <input id="remember-me" type="checkbox">
-            <span>Remember me</span>
-          </label>
+          <input id="password" type="password" class="mt" placeholder="Enter your password">
         </div>
 
         <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">

@@ -23,9 +23,11 @@ function openApplyWithCaptcha(planId) {
 // UI State Controller `showGoogleCaptchaPopup`: Updates modal, tab, or panel state to show google captcha popup.
 function showGoogleCaptchaPopup() {
   openPopup(
-    '<div class="center" style="padding:10px 4px;">' +
-      '<div style="width:48px;height:48px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto 12px;"><img data-img="icons/shield.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/shield.png" alt="Security (not available)" class="icon-img" /></div>' +
-      '<h3 style="font-size:18px;margin-bottom:4px;">Security Verification</h3>' +
+    '<div class="center" style="padding:14px 4px 6px;">' +
+      '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">' +
+        '<img data-img="icons/shield.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/shield.png" alt="Security" style="width:26px;height:26px;display:block;margin:0;object-fit:contain;" />' +
+      '</div>' +
+      '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
       '<div id="g-recaptcha-wrap" style="display:flex;justify-content:center;margin:16px auto;min-height:78px;">' +
         '<div id="g-recaptcha-box" class="g-recaptcha" data-sitekey="' + CONFIG.RECAPTCHA_SITE_KEY + '" data-callback="onGoogleCaptchaPassed"></div>' +
@@ -42,10 +44,8 @@ function showGoogleCaptchaPopup() {
           '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="row mt-big" style="justify-content:center;">' +
-        '<button type="button" class="btn btn-outline btn-small" onclick="closePopup()">Cancel</button>' +
-      '</div>' +
-    '</div>'
+    '</div>',
+    { showCloseX: true, closeOnBackdrop: true }
   );
 
   if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
@@ -142,7 +142,9 @@ function initHomePage() {
     }
   }
 
-  startSlider("home-slider", content.hero_slides || DEFAULT_CONTENT.hero_slides);
+  var rawHeroSlides = content.hero_slides || DEFAULT_CONTENT.hero_slides || [];
+  var slideCountLimit = Math.max(1, Math.min(4, Number(content.hero_slide_count || DEFAULT_CONTENT.hero_slide_count || 3)));
+  startSlider("home-slider", rawHeroSlides.slice(0, slideCountLimit));
 
   var areaBar = document.getElementById("area-bar");
   if (areaBar && content.area_text) {

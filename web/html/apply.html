@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
-  <title>Application Form | Combined Facilities Support Services</title>
+  <title>Application Form | PIGEM Combined Facilities Support Services</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
@@ -59,24 +59,20 @@
 
       <div class="form-grid mt">
         <div>
-          <label for="first_name">First Name <span class="req" data-req-for="first_name" onmouseenter="showReqTip(this, 'First Name', 'Enter your legal first name.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="first_name">First Name</label>
           <input id="first_name" type="text" placeholder="Juan">
         </div>
         <div>
-          <label for="middle_name">Middle Name <span class="req" data-req-for="middle_name" onmouseenter="showReqTip(this, 'Middle Name', 'Enter your middle name or type N/A if none.')" onmouseleave="hideReqTip(this)">*</span></label>
-          <input id="middle_name" type="text" placeholder="Santos (or N/A)">
+          <label for="middle_name">Middle Name</label>
+          <input id="middle_name" type="text" placeholder="Optional">
         </div>
         <div>
-          <label for="last_name">Last Name <span class="req" data-req-for="last_name" onmouseenter="showReqTip(this, 'Last Name', 'Enter your family surname.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="last_name">Last Name</label>
           <input id="last_name" type="text" placeholder="Dela Cruz">
         </div>
         <div>
-          <label for="birth_date">Birth Date <span class="req" data-req-for="birth_date" onmouseenter="showReqTip(this, 'Birth Date', 'Applicant must be at least 18 years old.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="birth_date">Birth Date</label>
           <input id="birth_date" type="date">
-          <div id="birth-date-warn" class="small mt" style="color:#b42318;font-weight:600;" hidden></div>
-        </div>
-        <div class="full" id="name-warn-wrap" hidden>
-          <div id="name-warn" class="notice bad small"></div>
         </div>
       </div>
 
@@ -92,34 +88,20 @@
 
       <div class="form-grid mt">
         <div class="full">
-          <label for="email">Email Address (Gmail) <span class="req" data-req-for="email" onmouseenter="showReqTip(this, 'Email Address', 'Enter your active Gmail address.')" onmouseleave="hideReqTip(this)">*</span></label>
-          <input id="email" type="email" placeholder="juandelacruz@gmail.com">
+          <label for="email">Email Address (Gmail)</label>
+          <div class="email-otp-inline">
+            <input id="email" type="email" placeholder="juandelacruz@gmail.com">
+            <button type="button" id="btn-send-otp" class="btn btn-small btn-red" style="white-space:nowrap;" onclick="sendContactOtp()">Send Email OTP</button>
+          </div>
+          <div id="email-otp-inline-status" class="small mt" style="display:none;"></div>
         </div>
         <div>
-          <label for="phone">Primary Mobile Number <span class="req" data-req-for="phone" onmouseenter="showReqTip(this, 'Mobile Number', 'Enter active 11-digit mobile number (e.g. 09171234567).')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="phone">Primary Mobile Number</label>
           <input id="phone" type="tel" placeholder="09171234567">
         </div>
         <div>
           <label for="phone_alt">Secondary Mobile Number</label>
           <input id="phone_alt" type="tel" maxlength="11" placeholder="Optional 11-digit number (09...)">
-          <div id="phone-alt-warn" class="small mt" style="color:#b42318;font-weight:600;" hidden></div>
-        </div>
-
-        <div class="full">
-          <div class="upload-box" style="background:var(--bg-soft);">
-            <div class="row between" style="align-items:center; flex-wrap:wrap; gap:10px;">
-              <div>
-                <b style="font-size:14px;">Email Verification (OTP) <span class="req" data-req-for="contact_otp" onmouseenter="showReqTip(this, 'Email OTP', 'Verify your Gmail address with a 6-digit code (valid for 5 minutes).')" onmouseleave="hideReqTip(this)">*</span></b>
-                <p id="otp-status-text" class="small muted">Send a one-time 6-digit OTP code to verify your Gmail address.</p>
-              </div>
-              <button type="button" id="btn-send-otp" class="btn btn-small btn-red" onclick="sendContactOtp()">Send Email OTP</button>
-            </div>
-            <div id="otp-Verify-row" class="row mt" style="gap:8px; align-items:center; flex-wrap:wrap;" hidden>
-              <input id="contact_otp_code" type="text" maxlength="6" placeholder="Enter 6-digit Email OTP" style="max-width:190px;">
-              <button type="button" class="btn btn-small btn-dark" onclick="verifyContactOtp()">Verify Email OTP</button>
-              <span id="otp-badge" class="badge" hidden>Verified</span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -147,7 +129,7 @@
       <h4 class="mt-big">Installation Address Details</h4>
       <div class="form-grid three mt">
         <div>
-          <label for="house_no">House / Lot No. <span class="req" data-req-for="house_no" onmouseenter="showReqTip(this, 'House No.', 'Enter house, block, or lot number.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="house_no">House / Lot No.</label>
           <input id="house_no" type="text" placeholder="Blk 42 Lot 19">
         </div>
         <div>
@@ -159,7 +141,7 @@
           <input id="unit_no" type="text" placeholder="Optional">
         </div>
         <div>
-          <label for="unit_type">Unit Type <span class="req" data-req-for="unit_type" onmouseenter="showReqTip(this, 'Unit Type', 'Select property type.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="unit_type">Unit Type</label>
           <select id="unit_type">
             <option value="Residential">Residential House</option>
             <option value="Apartment / Townhouse">Apartment / Townhouse</option>
@@ -172,34 +154,34 @@
           <input id="floor_no" type="text" placeholder="e.g. 1st, 2nd (Optional)">
         </div>
         <div>
-          <label for="building_name">Building / Apartment Name <span class="req" data-req-for="building_name" onmouseenter="showReqTip(this, 'Building Name', 'Enter building name or N/A.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="building_name">Building / Apartment Name</label>
           <input id="building_name" type="text" value="N/A">
         </div>
       </div>
 
       <div class="form-grid mt">
         <div>
-          <label for="street">Street Name <span class="req" data-req-for="street" onmouseenter="showReqTip(this, 'Street Name', 'Enter street name.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="street">Street Name</label>
           <input id="street" type="text" placeholder="Sampaguita St.">
         </div>
         <div>
-          <label for="subdivision">Subdivision / Village <span class="req" data-req-for="subdivision" onmouseenter="showReqTip(this, 'Subdivision', 'Enter village or subdivision name.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="subdivision">Subdivision / Village</label>
           <input id="subdivision" type="text" placeholder="Summerwind Village">
         </div>
         <div>
-          <label for="barangay">Barangay <span class="req" data-req-for="barangay" onmouseenter="showReqTip(this, 'Barangay', 'Enter barangay.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="barangay">Barangay</label>
           <input id="barangay" type="text" placeholder="Brgy. Burol Main">
         </div>
         <div>
-          <label for="city">City / Municipality <span class="req" data-req-for="city" onmouseenter="showReqTip(this, 'City', 'Enter city or municipality.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="city">City / Municipality</label>
           <input id="city" type="text" placeholder="Dasmariñas City">
         </div>
         <div>
-          <label for="province">District / Province <span class="req" data-req-for="province" onmouseenter="showReqTip(this, 'Province', 'Enter province.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="province">District / Province</label>
           <input id="province" type="text" placeholder="Cavite">
         </div>
         <div>
-          <label for="landmark">Nearest Landmark <span class="req" data-req-for="landmark" onmouseenter="showReqTip(this, 'Landmark', 'Provide nearby store, gate, or school.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="landmark">Nearest Landmark</label>
           <input id="landmark" type="text" placeholder="Near Subdivision Gate / Clubhouse">
         </div>
         <div class="full">
@@ -273,7 +255,7 @@
 
       <div class="form-grid mt">
         <div>
-          <label for="id_type">Primary Valid ID Type <span class="req" data-req-for="id_type" onmouseenter="showReqTip(this, 'ID Type', 'Select government-issued ID type.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="id_type">Primary Valid ID Type</label>
           <select id="id_type" onchange="updateIdFormatHint()">
             <option value="">-- Select Valid ID --</option>
             <option value="Philippine National ID (PhilSys)">Philippine National ID (PhilSys)</option>
@@ -287,14 +269,14 @@
           </select>
         </div>
         <div>
-          <label for="id_number">Primary ID Number <span class="req" data-req-for="id_number" onmouseenter="showReqTip(this, 'ID Number', 'Enter number printed on card.')" onmouseleave="hideReqTip(this)">*</span></label>
+          <label for="id_number">Primary ID Number</label>
           <input id="id_number" type="text" placeholder="Enter ID number on card">
           <div id="id-format-hint" class="small muted mt" style="font-size:12px;"></div>
         </div>
 
         <div>
-          <label>Front of Valid ID <span class="req" data-req-for="id_front" onmouseenter="showReqTip(this, 'Front ID', 'Upload clear photo of the FRONT of your ID.')" onmouseleave="hideReqTip(this)">*</span></label>
-          <div class="upload-box">
+          <label>Front of Valid ID</label>
+          <div class="upload-box" id="id-front-box">
             <div id="id-front-filename" class="small muted">No Front ID photo selected yet</div>
             <input id="id_front" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('front', this)">
             <input id="id_front_cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('front', this)">
@@ -309,8 +291,8 @@
         </div>
 
         <div>
-          <label>Back of Valid ID <span class="req" data-req-for="id_back" onmouseenter="showReqTip(this, 'Back ID', 'Upload clear photo of the BACK of your ID.')" onmouseleave="hideReqTip(this)">*</span></label>
-          <div class="upload-box">
+          <label>Back of Valid ID</label>
+          <div class="upload-box" id="id-back-box">
             <div id="id-back-filename" class="small muted">No Back ID photo selected yet</div>
             <input id="id_back" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('back', this)">
             <input id="id_back_cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('back', this)">
@@ -347,10 +329,10 @@
       </div>
 
       <div class="mt-big">
-        <label class="check">
+        <label class="check" id="agree_sub_wrap">
           <input id="agree_sub" type="checkbox">
           <span>
-            <b>I accept and agree to the Subscriber Certificate and Terms of Service <span class="req" data-req-for="agree_sub" onmouseenter="showReqTip(this, 'Agreement', 'Required to complete registration.')" onmouseleave="hideReqTip(this)">*</span></b>
+            <b>I accept and agree to the Subscriber Certificate and Terms of Service</b>
           </span>
         </label>
         <label class="check mt">
@@ -360,19 +342,6 @@
             I authorize basic credit bureau verification to expedite line provisioning.
           </span>
         </label>
-      </div>
-
-      <div class="mt-big">
-        <div id="apply-captcha-card" class="captcha-container" onclick="triggerApplyCaptcha()">
-          <div style="display:flex;align-items:center;gap:12px;">
-            <div id="apply-captcha-check" class="captcha-box-inner"></div>
-            <span id="apply-captcha-text" style="font-weight:600;font-size:14px;color:var(--text);">I'm not a robot</span>
-          </div>
-          <div style="text-align:right;line-height:1.2;">
-            <div style="font-size:11px;font-weight:800;color:var(--muted);">CAPTCHA</div>
-            <div style="font-size:10px;color:var(--muted);">Security Verification</div>
-          </div>
-        </div>
       </div>
 
       <div class="row between mt-big">
