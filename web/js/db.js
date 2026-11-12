@@ -81,14 +81,16 @@ async function dbBindSingleDeviceSession(userObj) {
   sessionStore.setItem(SESSION_KEY, userObj.id);
   sessionStore.setItem(SESSION_TOKEN_KEY, tok);
   userObj.session_token = tok;
-  var users = getDemoUsers();
-  for (var i = 0; i < users.length; i++) {
-    if (users[i].id === userObj.id) {
-      users[i].session_token = tok;
-      break;
+  if (IS_DEMO_MODE) {
+    var users = getDemoUsers();
+    for (var i = 0; i < users.length; i++) {
+      if (users[i].id === userObj.id) {
+        users[i].session_token = tok;
+        break;
+      }
     }
+    writeSaved("pigem_users", users);
   }
-  writeSaved("pigem_users", users);
   if (!IS_DEMO_MODE && supabaseClient) {
     try {
       await supabaseClient.from("users").update({ session_token: tok }).eq("id", userObj.id);
@@ -105,7 +107,7 @@ async function dbVerifyActiveSession() {
     var list = getDemoUsers();
     for (var i = 0; i < list.length; i++) {
       if (list[i].id === currentId) {
-        if (!list[i].active) return { valid: false, reason: "disabled" };
+        if (list[i].active === false) return { valid: false, reason: "disabled" };
         if (localTok && list[i].session_token && list[i].session_token !== localTok) {
           return { valid: false, reason: "other_device" };
         }
@@ -115,9 +117,10 @@ async function dbVerifyActiveSession() {
     return { valid: false, reason: "missing" };
   }
   if (!supabaseClient) return { valid: true };
-  var res = await supabaseClient.from("users").select("id,active,session_token").eq("id", currentId).maybeSingle();
+  var res = await supabaseClient.from("users").select("id,active,session_token,role").eq("id", currentId).maybeSingle();
   if (res.error) return { valid: true };
-  if (!res.data || !res.data.active) return { valid: false, reason: "disabled" };
+  if (!res.data) return { valid: false, reason: "missing" };
+  if (res.data.active === false) return { valid: false, reason: "disabled" };
   if (localTok && res.data.session_token && res.data.session_token !== localTok) {
     return { valid: false, reason: "other_device" };
   }
@@ -174,11 +177,6 @@ async function dbIsUsernameTaken(username, excludeUserId) {
   var clean = String(username || "").trim().toLowerCase();
   if (!clean) return false;
 
-  var localMatch = findDemoUserByUsername(clean);
-  if (localMatch && localMatch.id !== excludeUserId) {
-    return true;
-  }
-
   if (!IS_DEMO_MODE && supabaseClient) {
     var res = await supabaseClient.from("users").select("id, username").ilike("username", clean).limit(5);
     if (res.data && res.data.length > 0) {
@@ -186,6 +184,12 @@ async function dbIsUsernameTaken(username, excludeUserId) {
         if (res.data[i].id !== excludeUserId) return true;
       }
     }
+    return false;
+  }
+
+  var localMatch = findDemoUserByUsername(clean);
+  if (localMatch && localMatch.id !== excludeUserId) {
+    return true;
   }
   return false;
 }
@@ -236,20 +240,20 @@ function getLoginPage() {
 }
 
 async function dbGetCurrentUser() {
-
   var currentId = sessionStore.getItem(SESSION_KEY);
   if (currentId) {
+    if (!IS_DEMO_MODE && supabaseClient) {
+      var dbUser = await supabaseClient.from("users").select("*").eq("id", currentId).maybeSingle();
+      if (dbUser.data && dbUser.data.active !== false) return dbUser.data;
+      return null;
+    }
     var localUsers = getDemoUsers();
     for (var i = 0; i < localUsers.length; i++) {
-      if (localUsers[i].id === currentId && localUsers[i].active) return localUsers[i];
-    }
-    if (!IS_DEMO_MODE) {
-      var dbUser = await supabaseClient.from("users").select("*").eq("id", currentId).maybeSingle();
-      if (dbUser.data && dbUser.data.active) return dbUser.data;
+      if (localUsers[i].id === currentId && localUsers[i].active !== false) return localUsers[i];
     }
   }
 
-  if (IS_DEMO_MODE) return null;
+  if (IS_DEMO_MODE || !supabaseClient) return null;
 
   var sessionRes = await supabaseClient.auth.getSession();
   var session = sessionRes.data.session;
@@ -258,6 +262,7 @@ async function dbGetCurrentUser() {
   var authUser = session.user;
   var res = await supabaseClient.from("users").select("*").eq("email", authUser.email).maybeSingle();
   if (!res.data) {
+    if (SYSTEM !== "customer") return null;
     var displayName = (authUser.user_metadata && authUser.user_metadata.full_name) || authUser.email;
     var generatedUsername = await dbGenerateUniqueUsername(displayName, authUser.email);
     var row = {
@@ -272,7 +277,8 @@ async function dbGetCurrentUser() {
     await supabaseClient.from("users").upsert(row, { onConflict: "email" });
     return row;
   }
-  if (!res.data.active) return null;
+  if (res.data.active === false) return null;
+  if (SYSTEM_ROLES[SYSTEM] && SYSTEM_ROLES[SYSTEM].indexOf(res.data.role) === -1) return null;
   return res.data;
 }
 
@@ -293,20 +299,28 @@ async function dbSignIn(identifier, password) {
       throw new Error("Please enter a valid username (3-30 characters).");
     }
 
-    var staffUser = findDemoUserByUsername(cleanStaffUser);
-    if (!staffUser && !IS_DEMO_MODE && supabaseClient) {
+    var staffUser = null;
+    if (!IS_DEMO_MODE && supabaseClient) {
       var staffRes = await supabaseClient.from("users").select("*").ilike("username", cleanStaffUser).maybeSingle();
       if (staffRes.data) staffUser = staffRes.data;
+    } else {
+      staffUser = findDemoUserByUsername(cleanStaffUser);
     }
 
     if (!staffUser) {
       throw new Error("Invalid username or password.");
     }
-    if (!staffUser.active) {
+    if (staffUser.active === false) {
       throw new Error("This account is disabled. Please contact the System Administrator.");
     }
     if (SYSTEM_ROLES[SYSTEM].indexOf(staffUser.role) === -1) {
-      throw new Error("This account cannot sign in on this portal.");
+      if (staffUser.role === "admin") {
+        throw new Error("Administrator accounts must sign in on the Admin Login page.");
+      }
+      if (staffUser.role === "agent" || staffUser.role === "manager") {
+        throw new Error("Agent and Manager accounts must sign in on the Internal Login page.");
+      }
+      throw new Error("Customer accounts must sign in on the Customer Login page.");
     }
 
     var passMatched = Boolean(
@@ -348,16 +362,17 @@ async function dbSignIn(identifier, password) {
     if (typeof isValidUsername === "function" && !isValidUsername(cleanCustUser)) {
       throw new Error("Please enter a valid username (3-30 characters) or @gmail.com email address.");
     }
-    var localByUser = findDemoUserByUsername(cleanCustUser);
-    if (localByUser) {
-      preloadedDbRow = localByUser;
-      cleanEmail = String(localByUser.email || "").trim().toLowerCase();
-    }
-    if (!cleanEmail && !IS_DEMO_MODE && supabaseClient) {
+    if (!IS_DEMO_MODE && supabaseClient) {
       var uRes = await supabaseClient.from("users").select("*").ilike("username", cleanCustUser).maybeSingle();
       if (uRes.data) {
         preloadedDbRow = uRes.data;
         cleanEmail = String(uRes.data.email || "").trim().toLowerCase();
+      }
+    } else {
+      var localByUser = findDemoUserByUsername(cleanCustUser);
+      if (localByUser) {
+        preloadedDbRow = localByUser;
+        cleanEmail = String(localByUser.email || "").trim().toLowerCase();
       }
     }
     if (preloadedDbRow && preloadedDbRow.role && preloadedDbRow.role !== "customer") {
@@ -372,17 +387,21 @@ async function dbSignIn(identifier, password) {
   }
 
   var user = null;
-  var found = findDemoUserByEmail(cleanEmail);
-  if (found && (found.password === password || found.password_hash === enteredHash || found.password === enteredHash)) {
-    if (found.role === "customer" && !found.activated) {
-      throw new Error("Please activate your account first using the activation link sent to your email.");
+  if (IS_DEMO_MODE) {
+    var found = findDemoUserByEmail(cleanEmail);
+    if (found && (found.password === password || found.password_hash === enteredHash || found.password === enteredHash)) {
+      if (found.role === "customer" && !found.activated) {
+        throw new Error("Please activate your account first using the activation link sent to your email.");
+      }
+      if (found.active === false) throw new Error("This account is disabled. Please contact PIGEM.");
+      if (!found.username) {
+        found.username = await dbGenerateUniqueUsername(found.full_name, found.email);
+      }
+      user = found;
+    } else {
+      throw new Error("Invalid username/email or password.");
     }
-    if (!found.active) throw new Error("This account is disabled. Please contact PIGEM.");
-    if (!found.username) {
-      found.username = await dbGenerateUniqueUsername(found.full_name, found.email);
-    }
-    user = found;
-  } else if (!IS_DEMO_MODE && supabaseClient) {
+  } else if (supabaseClient) {
     var dbRow = preloadedDbRow ? { data: preloadedDbRow } : await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
     var rowData = dbRow.data;
     if (rowData) {
@@ -392,7 +411,7 @@ async function dbSignIn(identifier, password) {
       if (rowData.role === "customer" && !rowData.activated) {
         throw new Error("Please create your password first using the one-time activation link sent to your Gmail.");
       }
-      if (!rowData.active) throw new Error("This account is disabled. Please contact PIGEM.");
+      if (rowData.active === false) throw new Error("This account is disabled. Please contact PIGEM.");
 
       var rowMatch = Boolean(
         (rowData.password_hash && rowData.password_hash === enteredHash) ||
@@ -416,7 +435,7 @@ async function dbSignIn(identifier, password) {
       var res = await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: password });
       if (res.error) throw new Error(res.error.message);
       user = await dbGetCurrentUser();
-      if (!user) throw new Error("This account is disabled. Please contact PIGEM.");
+      if (!user) throw new Error("Account record not found or disabled. Please contact PIGEM.");
     }
   } else {
     throw new Error("Invalid username/email or password.");
@@ -465,8 +484,23 @@ async function dbGetToken() {
 
 async function checkPageAccess(allowedRoles) {
   if (typeof allowedRoles === "string") allowedRoles = [allowedRoles];
+  if (sessionStore.getItem(SESSION_KEY) && typeof dbVerifyActiveSession === "function") {
+    var chk = await dbVerifyActiveSession();
+    if (chk && chk.valid === false) {
+      await signOutAndGoLogin(chk.reason === "other_device" || chk.reason === "disabled" ? chk.reason : "", false);
+      return null;
+    }
+  }
   var user = await dbGetCurrentUser();
-  if (!user || allowedRoles.indexOf(user.role) === -1) {
+  if (!user) {
+    window.location.href = getLoginPage();
+    return null;
+  }
+  if (allowedRoles.indexOf(user.role) === -1) {
+    if (SYSTEM_ROLES[SYSTEM] && SYSTEM_ROLES[SYSTEM].indexOf(user.role) !== -1 && typeof getHomeForRole === "function") {
+      window.location.href = getHomeForRole(user.role);
+      return null;
+    }
     window.location.href = getLoginPage();
     return null;
   }
@@ -1313,6 +1347,7 @@ function getSiteContent() {
   var plans = getActivePlans();
   return {
     logo_image: wc.logo_image || DEFAULT_CONTENT.logo_image || "logo.png",
+    dark_logo_image: wc.dark_logo_image || DEFAULT_CONTENT.dark_logo_image || "white-logo-dark-mode.png",
     hero_slide_count: Number(wc.hero_slide_count || DEFAULT_CONTENT.hero_slide_count || 3),
     home_slides: wc.hero_slides || DEFAULT_CONTENT.hero_slides,
     about_slides: wc.about_slides || DEFAULT_CONTENT.about_slides,
@@ -1343,6 +1378,7 @@ function getSiteContent() {
 function saveSiteContent(c) {
   var wc = getWebsiteContent();
   if (c.logo_image) wc.logo_image = c.logo_image;
+  if (c.dark_logo_image) wc.dark_logo_image = c.dark_logo_image;
   if (c.hero_slide_count != null) wc.hero_slide_count = Number(c.hero_slide_count) || 3;
   if (c.home_slides) wc.hero_slides = c.home_slides;
   if (c.about_slides) wc.about_slides = c.about_slides;
@@ -2184,10 +2220,12 @@ async function dbChangeStaffPasswordDirect(userId, currentPassword, newPassword)
 async function dbRequestStaffPasswordReset(username, note) {
   var clean = String(username || "").trim().toLowerCase().replace(/^@/, "");
   if (!clean) throw new Error("Please enter your staff username.");
-  var found = findDemoUserByUsername(clean);
-  if (!found && !IS_DEMO_MODE && supabaseClient) {
+  var found = null;
+  if (!IS_DEMO_MODE && supabaseClient) {
     var res = await supabaseClient.from("users").select("*").ilike("username", clean).maybeSingle();
     found = res.data || null;
+  } else {
+    found = findDemoUserByUsername(clean);
   }
   if (!found) {
     throw new Error("No staff account was found with username '@" + clean + "'.");

@@ -45,10 +45,14 @@ function startDashSecurityWatchers() {
     if (!dashCurrentUser || typeof dbVerifyActiveSession !== "function") return;
     try {
       var chk = await dbVerifyActiveSession();
-      if (chk && chk.valid === false && (chk.reason === "other_device" || chk.reason === "disabled")) {
+      if (chk && chk.valid === false) {
         clearInterval(_dashIdleTimer);
         clearInterval(_dashSessionTimer);
-        signOutAndGoLogin(chk.reason, false);
+        if (chk.reason === "other_device" || chk.reason === "disabled") {
+          signOutAndGoLogin(chk.reason, false);
+        } else {
+          signOutAndGoLogin("", false);
+        }
       }
     } catch (e) {}
   };

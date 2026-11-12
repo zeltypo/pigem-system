@@ -370,7 +370,11 @@ function startSlider(sliderId, slides) {
   var box = document.getElementById(sliderId);
   if (!box) return;
 
-  if (!slides || slides.length === 0) {
+  var validSlides = (slides || []).filter(function (s) {
+    return s && String(s.image || "").trim() !== "";
+  });
+
+  if (validSlides.length === 0) {
     box.innerHTML = "";
     box.style.display = "none";
     clearInterval(sliderTimers[sliderId]);
@@ -380,25 +384,26 @@ function startSlider(sliderId, slides) {
 
   var html = "";
   var dots = "";
-  for (var i = 0; i < slides.length; i++) {
+  for (var i = 0; i < validSlides.length; i++) {
     html +=
       '<div class="slide' + (i === 0 ? " active" : "") + '">' +
-        '<img src="' + getImageUrl(slides[i].image) + '" onerror="imageFallback(this, \'' + slides[i].image + '\')" alt="' + (slides[i].title || "Banner (not available)") + '">' +
-        (slides[i].title || slides[i].text
-          ? '<div class="slide-text"><div class="container"><h1>' + (slides[i].title || "") + "</h1><p>" + (slides[i].text || "") + "</p></div></div>"
-          : "") +
+        '<img src="' + getImageUrl(validSlides[i].image) + '" onerror="imageFallback(this, \'' + validSlides[i].image + '\')" alt="Banner Slide ' + (i + 1) + '">' +
       "</div>";
     dots += '<button class="' + (i === 0 ? "active" : "") + '" onclick="goToSlide(\'' + sliderId + "', " + i + ')" aria-label="Slide ' + (i + 1) + '"></button>';
   }
-  html +=
-    '<button class="slider-arrow prev" onclick="moveSlide(\'' + sliderId + '\', -1)" aria-label="Previous">&#8249;</button>' +
-    '<button class="slider-arrow next" onclick="moveSlide(\'' + sliderId + '\', 1)" aria-label="Next">&#8250;</button>' +
-    '<div class="slider-dots">' + dots + "</div>";
+  if (validSlides.length > 1) {
+    html +=
+      '<button class="slider-arrow prev" onclick="moveSlide(\'' + sliderId + '\', -1)" aria-label="Previous">&#8249;</button>' +
+      '<button class="slider-arrow next" onclick="moveSlide(\'' + sliderId + '\', 1)" aria-label="Next">&#8250;</button>' +
+      '<div class="slider-dots">' + dots + "</div>";
+  }
   box.innerHTML = html;
   box.setAttribute("data-index", "0");
 
   clearInterval(sliderTimers[sliderId]);
-  sliderTimers[sliderId] = setInterval(function () { moveSlide(sliderId, 1); }, 5000);
+  if (validSlides.length > 1) {
+    sliderTimers[sliderId] = setInterval(function () { moveSlide(sliderId, 1); }, 5000);
+  }
 }
 
 // Helper `goToSlide` (params: sliderId, index): Executes workflow logic for `goToSlide`.

@@ -865,11 +865,12 @@ async function renderManagerLinks() {
 function ensureFourSlides(slides, fallbackSlides) {
   var arr = (slides || []).slice();
   var fb = fallbackSlides || [];
-  while (arr.length < 4) {
-    var nextFb = fb[arr.length] || { tag: "PIGEM FIBER", image: "", title: "Slide " + (arr.length + 1), text: "Upload banner from library or enter description." };
-    arr.push(Object.assign({}, nextFb));
+  var out = [];
+  for (var i = 0; i < 4; i++) {
+    var cur = arr[i] || fb[i] || {};
+    out.push({ image: String(cur.image || "").trim() });
   }
-  return arr.slice(0, 4);
+  return out;
 }
 
 // Data Accessor `loadAllCmsEditors`: Retrieves or refreshes data to load all cms editors.
@@ -947,14 +948,14 @@ function renderSlideEditorList(boxId, prefix, slides, savedBanners, activeCount)
     html +=
       '<div class="card" style="margin-bottom:10px; background:var(--soft); opacity:' + (isShownOnSite ? '1' : '0.55') + '">' +
         '<div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">' +
-          '<img id="' + prefix + '-prev-' + i + '" src="' + escapeHtml(getImageUrl(currentImg)) + '" onerror="imageFallback(this, \'' + escapeHtml(currentImg) + '\')" alt="Slide ' + (i + 1) + '" style="width:140px; height:82px; object-fit:cover; border-radius:8px; border:1px solid var(--line); background:#111" />' +
-          '<div style="flex:1; min-width:260px">' +
+          '<img id="' + prefix + '-prev-' + i + '" src="' + escapeHtml(getImageUrl(currentImg)) + '" onerror="imageFallback(this, \'' + escapeHtml(currentImg) + '\')" alt="Slide ' + (i + 1) + '" style="width:160px; height:auto; max-height:96px; object-fit:contain; border-radius:8px; border:1px solid var(--line); background:#111" />' +
+          '<div style="flex:1; min-width:240px">' +
             '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
               '<b>Slide #' + (i + 1) + '</b>' +
-              '<span class="badge ' + (isShownOnSite ? 'badge-green' : 'badge-gray') + '">' + (isShownOnSite ? 'Active' : 'Hidden (Exceeds Count)') + '</span>' +
+              '<span class="badge ' + (isShownOnSite ? 'badge-green' : 'badge-gray') + '">' + (isShownOnSite ? 'Active' : 'Hidden') + '</span>' +
             '</div>' +
             '<div class="field" style="margin-bottom:0">' +
-              '<label>Switch Saved Banner (' + allChoices.length + ' available)</label>' +
+              '<label>Banner Picture (' + allChoices.length + ' available)</label>' +
               '<select id="' + prefix + '-img-' + i + '" onchange="document.getElementById(\'' + prefix + '-prev-' + i + '\').src = getImageUrl(this.value)">' + optionsHtml + '</select>' +
             '</div>' +
           '</div>' +
@@ -1010,15 +1011,29 @@ function renderAssetCheckboxGallery(boxId, groupName, allSaved, activeList) {
   for (var j = 0; j < merged.length; j++) {
     var path = merged[j];
     var checked = (activeList || []).indexOf(path) !== -1 ? "checked" : "";
-    var shortLabel = path.indexOf("data:") === 0 ? ("Uploaded #" + (j + 1)) : path;
     html +=
-      '<label class="card" style="display:flex; align-items:center; gap:10px; padding:10px; cursor:pointer; margin:0">' +
+      '<label class="card" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:10px; cursor:pointer; margin:0; text-align:center;">' +
+        '<img src="' + escapeHtml(getImageUrl(path)) + '" onerror="imageFallback(this, \'' + escapeHtml(path) + '\')" alt="Picture ' + (j + 1) + '" style="width:100%; height:72px; object-fit:contain; border:1px solid var(--line); border-radius:6px; background:#fff; padding:4px" />' +
         '<input type="checkbox" name="cms-asset-' + groupName + '" value="' + escapeHtml(path) + '" ' + checked + ' style="width:18px; height:18px" />' +
-        '<img src="' + escapeHtml(getImageUrl(path)) + '" onerror="imageFallback(this, \'' + escapeHtml(path) + '\')" alt="" style="width:56px; height:42px; object-fit:contain; border:1px solid var(--line); border-radius:6px; background:#fff; padding:2px" />' +
-        '<span style="font-size:12px; word-break:break-all">' + escapeHtml(shortLabel) + '</span>' +
       '</label>';
   }
   box.innerHTML = html;
+}
+
+// UI State Controller `toggleAllCmsAssets` (params: groupName): Updates modal, tab, or panel state to toggle all cms assets.
+function toggleAllCmsAssets(groupName) {
+  var boxes = document.querySelectorAll('input[name="cms-asset-' + groupName + '"]');
+  if (!boxes || boxes.length === 0) return;
+  var allChecked = true;
+  for (var i = 0; i < boxes.length; i++) {
+    if (!boxes[i].checked) {
+      allChecked = false;
+      break;
+    }
+  }
+  for (var j = 0; j < boxes.length; j++) {
+    boxes[j].checked = !allChecked;
+  }
 }
 
 // Helper `uploadNewBucketAsset` (params: category, fileInputId, msgId): Executes workflow logic for `uploadNewBucketAsset`.
@@ -1086,17 +1101,19 @@ function saveBannersCms() {
   var countEl = document.getElementById("cms-hero-slide-count");
   var slideCount = countEl ? Math.min(4, Math.max(1, parseInt(countEl.value, 10) || 3)) : 3;
   c.hero_slide_count = slideCount;
-  c.home_slides = ensureFourSlides(c.home_slides, DEFAULT_CONTENT.hero_slides);
-  c.about_slides = ensureFourSlides(c.about_slides, DEFAULT_CONTENT.about_slides);
+  var nextHome = [];
+  var nextAbout = [];
 
   for (var i = 0; i < 4; i++) {
     var hImg = document.getElementById("home-img-" + i);
-    if (hImg) c.home_slides[i].image = hImg.value.trim();
+    nextHome.push({ image: hImg ? hImg.value.trim() : "" });
   }
   for (var j = 0; j < 4; j++) {
     var aImg = document.getElementById("about-img-" + j);
-    if (aImg) c.about_slides[j].image = aImg.value.trim();
+    nextAbout.push({ image: aImg ? aImg.value.trim() : "" });
   }
+  c.home_slides = nextHome;
+  c.about_slides = nextAbout;
   saveSiteContent(c);
   dbAddLog(getStaffIdentifier(currentManager), "Updated Hero Banner settings (" + slideCount + " active slides) in Website Content (CMS)");
   showMsg("cms-banners-msg", "ok", "Hero Banners saved (" + slideCount + " slide(s) active)! Click 'Preview Live Website' to inspect.");
