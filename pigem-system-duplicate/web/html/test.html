@@ -114,6 +114,7 @@
       border-radius: 999px;
       background: #f1f5f9;
       color: #334155;
+      white-space: nowrap;
     }
     .sec-desc {
       margin: 0 0 14px;
@@ -199,28 +200,32 @@
     .test-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
     }
     .test-item {
       display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      padding: 11px 13px;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px 14px;
       border: 1px solid var(--line);
-      border-radius: 9px;
+      border-radius: 10px;
       background: #fff;
-      cursor: pointer;
       transition: background 0.15s, border-color 0.15s;
     }
     .test-item:hover {
       border-color: #cbd5e1;
-      background: #f8fafc;
     }
     .test-item.done {
       background: var(--good-soft);
       border-color: var(--good-border);
     }
-    .test-item input[type="checkbox"] {
+    .test-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      cursor: pointer;
+    }
+    .test-top input[type="checkbox"] {
       width: 19px;
       height: 19px;
       margin-top: 2px;
@@ -271,6 +276,31 @@
       color: var(--muted);
       font-size: 12.8px;
     }
+    .item-comment-wrap {
+      padding-left: 31px;
+    }
+    .item-comment-input {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      font-size: 12.5px;
+      font-family: inherit;
+      background: #f8fafc;
+      color: var(--text);
+      resize: vertical;
+      min-height: 36px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .item-comment-input:focus {
+      outline: none;
+      border-color: var(--red);
+      background: #fff;
+    }
+    .item-comment-input.has-text {
+      background: #fffbeb;
+      border-color: #fde68a;
+    }
     .note-box {
       width: 100%;
       margin-top: 8px;
@@ -280,12 +310,13 @@
       font-size: 13px;
       font-family: inherit;
       resize: vertical;
-      min-height: 64px;
+      min-height: 68px;
     }
     @media print {
       .topbar { position: static; background: #fff; color: #000; box-shadow: none; border-bottom: 2px solid #000; }
       .btn-row, .filter-select { display: none !important; }
       .card { break-inside: avoid; box-shadow: none; }
+      .item-comment-input { border: 1px solid #94a3b8; background: #fff !important; }
     }
   </style>
 </head>
@@ -311,9 +342,9 @@
     <section class="card">
       <h2>
         <span>Quick Portal Links &amp; Tester Controls</span>
-        <span class="sec-badge" id="save-indicator">Auto-saved in browser</span>
+        <span class="sec-badge" id="save-indicator">Auto-saved permanently in browser</span>
       </h2>
-      <p class="sec-desc">Click any portal below to open it in a new tab, then check off each item as you verify it. Your checkboxes are saved automatically.</p>
+      <p class="sec-desc">Click any portal below to open it in a new tab. Check off each item and write your experience or remarks in its comment box. All checkboxes and comments are permanently saved in your browser and will <b>not reset</b> even when the website is updated.</p>
 
       <div class="links-grid">
         <a class="portal-link" href="index.html" target="_blank">Public Home Page<span>/index.html</span></a>
@@ -335,11 +366,14 @@
             <option value="all">Show All Test Items (54)</option>
             <option value="pending">Show Unchecked / Remaining Only</option>
             <option value="done">Show Completed Only</option>
+            <option value="commented">Show Items With Comments Only</option>
             <option value="ai">Show AI &amp; Document Screening Tests Only</option>
           </select>
         </div>
         <div class="btn-row">
-          <button type="button" class="btn" onclick="checkAllVisible(true)">Check All</button>
+          <button type="button" class="btn" onclick="exportBackupJson()">Backup File</button>
+          <button type="button" class="btn" onclick="document.getElementById('import-file').click()">Restore Backup</button>
+          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBackupJson(this)">
           <button type="button" class="btn" onclick="resetAll()">Reset Checkboxes</button>
           <button type="button" class="btn btn-red" onclick="window.print()">Print / Save PDF</button>
         </div>
@@ -349,15 +383,16 @@
     <div id="sections-root"></div>
 
     <section class="card">
-      <h2><span>Tester Remarks &amp; Observations</span></h2>
-      <p class="sec-desc">Record any observations, reference numbers tested (e.g., REF-...), or feedback below:</p>
-      <textarea id="tester-notes" class="note-box" placeholder="Write your testing notes, Reference Numbers tested, or comments here..." oninput="saveMeta()"></textarea>
+      <h2><span>Overall Tester Summary &amp; General Notes</span></h2>
+      <p class="sec-desc">Record overall summary notes, Reference Numbers tested (e.g., REF-...), or general feedback below:</p>
+      <textarea id="tester-notes" class="note-box" placeholder="Write your overall testing summary, Reference Numbers tested, or general feedback here..." oninput="saveMeta()"></textarea>
     </section>
 
   </main>
 
   <script>
     var STORAGE_KEY = "pigem_master_tester_checklist_v1";
+    var BACKUP_STORAGE_KEY = "pigem_master_tester_checklist_permanent_backup";
 
     var TEST_SECTIONS = [
       {
@@ -467,17 +502,27 @@
 
     var state = {
       checked: {},
+      comments: {},
       testerName: "",
       testerNotes: ""
     };
 
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
     function loadState() {
       try {
-        var raw = localStorage.getItem(STORAGE_KEY);
+        var raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(BACKUP_STORAGE_KEY);
         if (raw) {
           var parsed = JSON.parse(raw);
           if (parsed && typeof parsed === "object") {
             state.checked = parsed.checked || {};
+            state.comments = parsed.comments || {};
             state.testerName = parsed.testerName || "";
             state.testerNotes = parsed.testerNotes || "";
           }
@@ -491,11 +536,13 @@
 
     function saveState() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        var serialized = JSON.stringify(state);
+        localStorage.setItem(STORAGE_KEY, serialized);
+        localStorage.setItem(BACKUP_STORAGE_KEY, serialized);
         var ind = document.getElementById("save-indicator");
         if (ind) {
-          ind.textContent = "Saved just now";
-          setTimeout(function () { ind.textContent = "Auto-saved in browser"; }, 1200);
+          ind.textContent = "Saved in browser";
+          setTimeout(function () { ind.textContent = "Auto-saved permanently in browser"; }, 1200);
         }
       } catch (e) {}
       updateProgress();
@@ -509,10 +556,51 @@
       saveState();
     }
 
-    function toggleItem(id) {
-      state.checked[id] = !state.checked[id];
+    function saveItemComment(id, el) {
+      var val = el ? el.value : "";
+      state.comments[id] = val;
+      if (el) {
+        if (val.trim().length > 0) {
+          el.classList.add("has-text");
+        } else {
+          el.classList.remove("has-text");
+        }
+      }
       saveState();
-      renderChecklist();
+    }
+
+    function toggleItem(id, cbEl) {
+      var isChecked = cbEl ? Boolean(cbEl.checked) : !state.checked[id];
+      state.checked[id] = isChecked;
+      saveState();
+
+      var filterEl = document.getElementById("filter-mode");
+      var mode = filterEl ? filterEl.value : "all";
+      if (mode === "pending" || mode === "done") {
+        renderChecklist();
+        return;
+      }
+
+      var row = document.getElementById("row-" + id);
+      if (row) {
+        if (isChecked) row.classList.add("done");
+        else row.classList.remove("done");
+      }
+      updateSectionBadges();
+    }
+
+    function updateSectionBadges() {
+      for (var s = 0; s < TEST_SECTIONS.length; s++) {
+        var sec = TEST_SECTIONS[s];
+        var secDone = 0;
+        for (var i = 0; i < sec.items.length; i++) {
+          if (state.checked[sec.items[i].id]) secDone++;
+        }
+        var badge = document.getElementById("badge-" + sec.id);
+        if (badge) {
+          badge.textContent = secDone + " / " + sec.items.length + " Done";
+        }
+      }
     }
 
     function updateProgress() {
@@ -546,10 +634,12 @@
         for (var i = 0; i < sec.items.length; i++) {
           var item = sec.items[i];
           var isDone = Boolean(state.checked[item.id]);
+          var cmt = String(state.comments[item.id] || "").trim();
           if (isDone) secDone++;
 
           if (mode === "pending" && isDone) continue;
           if (mode === "done" && !isDone) continue;
+          if (mode === "commented" && !cmt) continue;
           if (mode === "ai" && !item.ai) continue;
           visibleItems.push(item);
         }
@@ -557,23 +647,31 @@
         if (visibleItems.length === 0) continue;
 
         html += '<section class="card">';
-        html += '<h2><span>' + sec.title + '</span><span class="sec-badge">' + secDone + ' / ' + sec.items.length + ' Done</span></h2>';
+        html += '<h2><span>' + sec.title + '</span><span class="sec-badge" id="badge-' + sec.id + '">' + secDone + ' / ' + sec.items.length + ' Done</span></h2>';
         html += '<p class="sec-desc">' + sec.desc + '</p>';
         html += '<div class="test-list">';
 
         for (var j = 0; j < visibleItems.length; j++) {
           var it = visibleItems[j];
           var checked = Boolean(state.checked[it.id]);
+          var commentVal = String(state.comments[it.id] || "");
+          var hasTextClass = commentVal.trim().length > 0 ? " has-text" : "";
+
           html +=
-            '<label class="test-item' + (checked ? ' done' : '') + '">' +
-              '<input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleItem(\'' + it.id + '\')">' +
-              '<div class="test-content">' +
-                '<span class="test-id">' + it.id + '</span>' +
-                (it.ai ? '<span class="ai-tag">AI SCREENING</span>' : '') +
-                '<span class="test-title">' + it.title + '</span>' +
-                '<span class="test-desc">' + it.desc + '</span>' +
+            '<div id="row-' + it.id + '" class="test-item' + (checked ? ' done' : '') + '">' +
+              '<label class="test-top">' +
+                '<input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleItem(\'' + it.id + '\', this)">' +
+                '<div class="test-content">' +
+                  '<span class="test-id">' + it.id + '</span>' +
+                  (it.ai ? '<span class="ai-tag">AI SCREENING</span>' : '') +
+                  '<span class="test-title">' + it.title + '</span>' +
+                  '<span class="test-desc">' + it.desc + '</span>' +
+                '</div>' +
+              '</label>' +
+              '<div class="item-comment-wrap">' +
+                '<textarea class="item-comment-input' + hasTextClass + '" rows="1" placeholder="Write tester experience, result, or comment for ' + it.id + '..." oninput="saveItemComment(\'' + it.id + '\', this)">' + escapeHtml(commentVal) + '</textarea>' +
               '</div>' +
-            '</label>';
+            '</div>';
         }
 
         html += '</div></section>';
@@ -587,19 +685,46 @@
       updateProgress();
     }
 
-    function checkAllVisible(val) {
-      for (var s = 0; s < TEST_SECTIONS.length; s++) {
-        var items = TEST_SECTIONS[s].items;
-        for (var i = 0; i < items.length; i++) {
-          state.checked[items[i].id] = Boolean(val);
+    function exportBackupJson() {
+      var dataStr = JSON.stringify(state, null, 2);
+      var blob = new Blob([dataStr], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      var safeName = (state.testerName || "tester").replace(/[^a-zA-Z0-9_-]/g, "_");
+      a.href = url;
+      a.download = "pigem_test_progress_" + safeName + ".json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    }
+
+    function importBackupJson(inputEl) {
+      var file = inputEl && inputEl.files && inputEl.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          var parsed = JSON.parse(e.target.result);
+          if (parsed && typeof parsed === "object") {
+            state.checked = Object.assign({}, state.checked, parsed.checked || {});
+            state.comments = Object.assign({}, state.comments, parsed.comments || {});
+            if (parsed.testerName) state.testerName = parsed.testerName;
+            if (parsed.testerNotes) state.testerNotes = parsed.testerNotes;
+            saveState();
+            loadState();
+            renderChecklist();
+          }
+        } catch (err) {
+          alert("Could not read backup file.");
         }
-      }
-      saveState();
-      renderChecklist();
+        inputEl.value = "";
+      };
+      reader.readAsText(file);
     }
 
     function resetAll() {
-      if (!confirm("Reset all checkboxes to unchecked?")) return;
+      if (!confirm("Reset all checkboxes? (Your typed comments will be kept unless you clear them manually)")) return;
       state.checked = {};
       saveState();
       renderChecklist();
