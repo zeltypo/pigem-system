@@ -1055,26 +1055,115 @@ async function dbAddNotification(note, roleArg, titleArg, messageArg) {
     writeSaved("pigem_notifications", all.slice(0, 300));
     return row;
   }
-  await supabaseClient.from("notifications").insert(row);
+  var insRes = await supabaseClient.from("notifications").insert(row).select("*").maybeSingle();
+  return (insRes && insRes.data) || row;
+}
+
+function getNotifReadStorageKey(user) {
+  var uid = (user && (user.id || user.username || user.email || user.role)) || "guest";
+  return "pigem_notif_read_" + String(uid).toLowerCase().replace(/[^a-z0-9@._-]/g, "_");
+}
+
+function getLocalReadNotifMap(user) {
+  return readSaved(getNotifReadStorageKey(user), {});
+}
+
+function saveLocalReadNotifMap(user, map) {
+  writeSaved(getNotifReadStorageKey(user), map || {});
+}
+
+async function dbMarkNotificationRead(notifId, user) {
+  if (notifId == null || notifId === "") return;
+  var activeUser = user || (await dbGetCurrentUser());
+  var readMap = getLocalReadNotifMap(activeUser);
+  readMap[String(notifId)] = 1;
+  saveLocalReadNotifMap(activeUser, readMap);
+
+  var localList = readSaved("pigem_notifications", []);
+  var changedLocal = false;
+  for (var i = 0; i < localList.length; i++) {
+    if (String(localList[i].id) === String(notifId)) {
+      localList[i].is_read = true;
+      changedLocal = true;
+    }
+  }
+  if (changedLocal) writeSaved("pigem_notifications", localList);
+
+  if (!IS_DEMO_MODE && supabaseClient) {
+    try {
+      await supabaseClient.from("notifications").update({ is_read: true }).eq("id", notifId);
+    } catch (e) {}
+  }
+}
+
+async function dbMarkAllNotificationsRead(user) {
+  var activeUser = user || (await dbGetCurrentUser());
+  var list = await dbListMyNotifications(activeUser);
+  var readMap = getLocalReadNotifMap(activeUser);
+  var ids = [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && list[i].id != null) {
+      readMap[String(list[i].id)] = 1;
+      if (!list[i].is_read) ids.push(list[i].id);
+    }
+  }
+  saveLocalReadNotifMap(activeUser, readMap);
+
+  var localList = readSaved("pigem_notifications", []);
+  var changedLocal = false;
+  for (var j = 0; j < localList.length; j++) {
+    if (readMap[String(localList[j].id)]) {
+      localList[j].is_read = true;
+      changedLocal = true;
+    }
+  }
+  if (changedLocal) writeSaved("pigem_notifications", localList);
+
+  if (!IS_DEMO_MODE && supabaseClient && ids.length > 0) {
+    try {
+      await supabaseClient.from("notifications").update({ is_read: true }).in("id", ids);
+    } catch (e) {}
+  }
 }
 
 async function dbListMyNotifications(user) {
   if (!user) return [];
   var isCustomer = String(user.role || "") === "customer";
   var userEmail = String(user.email || "").trim().toLowerCase();
+  var userUname = String(user.username || "").replace(/^@/, "").trim().toLowerCase();
+  var readMap = getLocalReadNotifMap(user);
+
+  var matchesUserId = function (nUserId) {
+    if (!nUserId) return false;
+    var cleanN = String(nUserId).trim().toLowerCase();
+    var cleanNoAt = cleanN.replace(/^@/, "");
+    if (user.id && String(user.id).toLowerCase() === cleanN) return true;
+    if (userUname && (cleanNoAt === userUname || cleanN === "@" + userUname)) return true;
+    if (userEmail && cleanN === userEmail) return true;
+    return false;
+  };
+
   if (IS_DEMO_MODE) {
     return readSaved("pigem_notifications", []).filter(function (n) {
       if (isCustomer) {
-        return (user.id && n.user_id && n.user_id === user.id) ||
+        return matchesUserId(n.user_id) ||
           (userEmail && n.email && String(n.email).trim().toLowerCase() === userEmail);
       }
-      return (n.user_id && n.user_id === user.id) ||
+      return matchesUserId(n.user_id) ||
         (userEmail && n.email && String(n.email).trim().toLowerCase() === userEmail) ||
         (n.role && n.role === user.role);
+    }).map(function (n) {
+      return Object.assign({}, n, {
+        is_read: Boolean(n.is_read || (n.id != null && readMap[String(n.id)]))
+      });
     });
   }
   var orParts = [];
   if (user.id) orParts.push("user_id.eq." + user.id);
+  if (userUname) {
+    orParts.push("user_id.eq." + userUname);
+    orParts.push("user_id.eq.@" + userUname);
+  }
   if (userEmail) orParts.push("email.eq." + userEmail);
   if (!isCustomer && user.role) orParts.push("role.eq." + user.role);
   if (orParts.length === 0) return [];
@@ -1085,10 +1174,14 @@ async function dbListMyNotifications(user) {
   if (isCustomer) {
     rows = rows.filter(function (n) {
       var nEmail = String(n.email || "").trim().toLowerCase();
-      return (user.id && n.user_id === user.id) || (userEmail && nEmail === userEmail);
+      return matchesUserId(n.user_id) || (userEmail && nEmail === userEmail);
     });
   }
-  return rows;
+  return rows.map(function (n) {
+    return Object.assign({}, n, {
+      is_read: Boolean(n.is_read || (n.id != null && readMap[String(n.id)]))
+    });
+  });
 }
 
 async function dbAddActivity(action, detail) {
@@ -1821,9 +1914,11 @@ async function dbUploadIdPhoto(file, label, customerId) {
   return await dbUploadDocument(file, "applications/" + safeOwner + "/corrections", label || "id-update");
 }
 
-async function dbListNotifications(email, role) {
-  var u = await dbGetCurrentUser();
-  var list = await dbListMyNotifications(u || { id: "", email: email, role: role });
+async function dbListNotifications(emailOrUser, role) {
+  var u = (emailOrUser && typeof emailOrUser === "object")
+    ? emailOrUser
+    : ((await dbGetCurrentUser()) || { id: "", email: emailOrUser, role: role });
+  var list = await dbListMyNotifications(u);
   return list.map(function (n) {
     return {
       id: n.id,
@@ -1831,6 +1926,7 @@ async function dbListNotifications(email, role) {
       message: n.message || n.body || "",
       target_tab: n.target_tab || null,
       target_id: n.target_id || null,
+      is_read: Boolean(n.is_read),
       created_at: n.created_at
     };
   });

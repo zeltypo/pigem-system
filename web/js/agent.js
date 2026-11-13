@@ -7,12 +7,22 @@ var activeDetailAppId = null;
 
 window.openDashTabById = function (tabId, targetId) {
   var cleanTab = String(tabId || "").replace(/^tab-/, "");
+  var targetApp = targetId ? findAppById(targetId) : null;
+  if (targetApp && (!cleanTab || cleanTab === "apps" || cleanTab === "queue")) {
+    var st = targetApp.status || "Pending Review";
+    if (st === "Encoding") cleanTab = "encoding";
+    else if (st === "Needs Correction") cleanTab = "correction";
+    else if (st === "Approved" || st === "Submitted to Provider") cleanTab = "approved";
+    else if (st === "Rejected") cleanTab = "rejected";
+    else if (targetApp.assigned_agent && isAssignedToStaff(targetApp.assigned_agent, currentAgent)) cleanTab = "claimed";
+    else cleanTab = "queue";
+  }
   if (cleanTab) {
     if (cleanTab === "apps") cleanTab = "queue";
     showTab(cleanTab);
   }
-  if (targetId && findAppById(targetId)) {
-    openAppDetail(targetId);
+  if (targetApp) {
+    openAppDetail(targetApp.id);
   }
 };
 var activeCopyMode = "latest";
@@ -1087,7 +1097,14 @@ async function saveAgentDecision(newStatus) {
     var targetSummaryLabel = FIELD_SUMMARY_LABELS[chosenField] || (rawValidator ? rawValidator : "Information / Document Clarification");
     var recipientEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email;
 
-    await dbAddNotification(recipientEmail, "customer", custTitle, remarks);
+    await dbAddNotification({
+      email: recipientEmail,
+      role: "customer",
+      title: custTitle,
+      message: remarks,
+      target_tab: "tab-apps",
+      target_id: app.id
+    });
     var mailRes = await apiSendStatusEmail(recipientEmail, app.full_name, app.reference_no, newStatus, remarks, targetSummaryLabel);
     if (mailRes && mailRes.sent) {
       emailNoticeNote = " Email notification sent to " + recipientEmail + ".";

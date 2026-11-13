@@ -1,13 +1,3 @@
-// ============================================================================
-// FILE: web/js/config.js
-// PURPOSE: Global Cloud Configuration, Strict OOP/Helper Validators & UI Modals
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS / BROWSER APIS USED:
-//   - Browser `window`, `document`, `localStorage`, and `CustomEvent` APIs
-//   - Exports global `CONFIG`, `validatePersonName`, `validateAdultBirthDate`,
-//     `getStaffIdentifier`, `isAssignedToStaff`, and `attachEnterKeyNavigation`
-// ============================================================================
-
 var ROOT = window.ROOT || "";
 
 var CONFIG = {
@@ -143,7 +133,6 @@ var DEFAULT_CONTENT = {
   ]
 };
 
-// Data Accessor `getImageUrl` (params: filePath): Retrieves or refreshes data to get image url.
 function getImageUrl(filePath) {
   if (!filePath) return "";
   if (filePath.indexOf("data:") === 0 || filePath.indexOf("http://") === 0 || filePath.indexOf("https://") === 0) return filePath;
@@ -152,12 +141,10 @@ function getImageUrl(filePath) {
   return base + "/storage/v1/object/public/website-assets/" + clean;
 }
 
-// Helper `imageFallback` (params: img, filePath): Executes workflow logic for `imageFallback`.
 function imageFallback(img, filePath) {
   img.onerror = null;
 }
 
-// UI State Controller `showSystemMaintenanceNotice` (params: customMsg): Updates modal, tab, or panel state to show system maintenance notice.
 function showSystemMaintenanceNotice(customMsg) {
   var existing = document.getElementById("sys-maintenance-banner");
   if (existing) return;
@@ -170,7 +157,6 @@ function showSystemMaintenanceNotice(customMsg) {
   }
 }
 
-// Data Accessor `getActiveThemeLogoFilename`: Retrieves or refreshes data to get active theme logo filename.
 function getActiveThemeLogoFilename() {
   var wc = getWebsiteContent();
   var isDark = document.documentElement.getAttribute("data-theme") === "dark";
@@ -179,7 +165,6 @@ function getActiveThemeLogoFilename() {
   return isDark ? darkLogo : lightLogo;
 }
 
-// Data Accessor `loadPageImages`: Retrieves or refreshes data to load page images.
 function loadPageImages() {
   var activeLogo = getActiveThemeLogoFilename();
 
@@ -201,40 +186,33 @@ function loadPageImages() {
   }
 }
 
-// Data Accessor `readSaved` (params: key, defaultValue): Retrieves or refreshes data to read saved.
 function readSaved(key, defaultValue) {
   var raw = localStorage.getItem(key);
   if (!raw) return defaultValue;
   try { return JSON.parse(raw); } catch (e) { return defaultValue; }
 }
 
-// Helper `writeSaved` (params: key, value): Executes workflow logic for `writeSaved`.
 function writeSaved(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-// Data Accessor `getActivePlans`: Retrieves or refreshes data to get active plans.
 function getActivePlans() { return readSaved("pigem_plans", CONFIG.PLANS); }
-// Action Handler `saveActivePlans` (params: plans): Validates inputs and persists changes to save active plans.
 function saveActivePlans(plans) {
   writeSaved("pigem_plans", plans);
   if (typeof dbSaveLivePlans === "function") dbSaveLivePlans(plans);
 }
 
-// Data Accessor `getWebsiteContent`: Retrieves or refreshes data to get website content.
 function getWebsiteContent() {
   var saved = readSaved("pigem_website_content", {});
   var merged = Object.assign({}, DEFAULT_CONTENT, saved);
   merged.asset_library = Object.assign({}, DEFAULT_CONTENT.asset_library, saved.asset_library || {});
   return merged;
 }
-// Action Handler `saveWebsiteContent` (params: content): Validates inputs and persists changes to save website content.
 function saveWebsiteContent(content) {
   writeSaved("pigem_website_content", content);
   if (typeof dbSaveLiveWebsiteContent === "function") dbSaveLiveWebsiteContent(content);
 }
 
-// Data Accessor `getSystemSettings`: Retrieves or refreshes data to get system settings.
 function getSystemSettings() {
   return Object.assign({
     ai_enabled: true,
@@ -242,30 +220,25 @@ function getSystemSettings() {
     maintenance_message: "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly."
   }, readSaved("pigem_system_settings", {}));
 }
-// Action Handler `saveSystemSettings` (params: settings): Validates inputs and persists changes to save system settings.
 function saveSystemSettings(settings) {
   writeSaved("pigem_system_settings", settings);
   if (typeof dbSaveLiveSystemSettings === "function") dbSaveLiveSystemSettings(settings);
 }
 
-// Utility `formatPeso` (params: amount): Normalizes or transforms values (format peso).
 function formatPeso(amount) {
   return "₱" + Number(amount).toLocaleString("en-US");
 }
 
-// Utility `formatDate` (params: dateString): Normalizes or transforms values (format date).
 function formatDate(dateString) {
   if (!dateString) return "-";
   return new Date(dateString).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }
 
-// Utility `formatDay` (params: dateString): Normalizes or transforms values (format day).
 function formatDay(dateString) {
   if (!dateString) return "-";
   return new Date(dateString).toLocaleDateString("en-US", { dateStyle: "medium" });
 }
 
-// Data Accessor `getPlanById` (params: planId): Retrieves or refreshes data to get plan by id.
 function getPlanById(planId) {
   var plans = getActivePlans();
   for (var i = 0; i < plans.length; i++) {
@@ -274,7 +247,6 @@ function getPlanById(planId) {
   return { id: planId, name: "Plan " + planId, speed: "-", price: planId };
 }
 
-// Data Accessor `getIdType` (params: name): Retrieves or refreshes data to get id type.
 function getIdType(name) {
   for (var i = 0; i < CONFIG.ID_TYPES.length; i++) {
     if (CONFIG.ID_TYPES[i].name === name) return CONFIG.ID_TYPES[i];
@@ -282,7 +254,6 @@ function getIdType(name) {
   return { name: name, hint: "Type the number exactly as printed.", pattern: /^[A-Z0-9]{4,25}$/ };
 }
 
-// Utility `formatAddress` (params: app): Normalizes or transforms values (format address).
 function formatAddress(app) {
   var parts = [
     app.house_no ? app.house_no + (app.house_suffix ? " " + app.house_suffix : "") : "",
@@ -302,7 +273,6 @@ function formatAddress(app) {
   return clean.join(", ");
 }
 
-// Utility `normalizeGeoText` (params: text): Normalizes or transforms values (normalize geo text).
 function normalizeGeoText(text) {
   var raw = String(text || "");
   if (typeof raw.normalize === "function") {
@@ -317,7 +287,6 @@ function normalizeGeoText(text) {
     .trim();
 }
 
-// Validator/Check `isWithinPhilippinesBounds` (params: lat, lng): Evaluates rule (is within philippines bounds) and returns result.
 function isWithinPhilippinesBounds(lat, lng) {
   var la = Number(lat);
   var lo = Number(lng);
@@ -325,7 +294,6 @@ function isWithinPhilippinesBounds(lat, lng) {
   return la >= 4.2 && la <= 21.6 && lo >= 116.0 && lo <= 127.2;
 }
 
-// Validator/Check `isServiceArea` (params: addressText): Evaluates rule (is service area) and returns result.
 function isServiceArea(addressText) {
   var text = normalizeGeoText(addressText);
   if (!text) return false;
@@ -336,7 +304,6 @@ function isServiceArea(addressText) {
   return false;
 }
 
-// Helper `evaluateMapLocation` (params: lat, lng, reverseData): Executes workflow logic for `evaluateMapLocation`.
 function evaluateMapLocation(lat, lng, reverseData) {
   var boundsOk = isWithinPhilippinesBounds(lat, lng);
   var addr = (reverseData && reverseData.address) ? reverseData.address : {};
@@ -367,7 +334,6 @@ function evaluateMapLocation(lat, lng, reverseData) {
   };
 }
 
-// Helper `doesPinMatchAddressFields` (params: pinState, typedCity, typedProv): Executes workflow logic for `doesPinMatchAddressFields`.
 function doesPinMatchAddressFields(pinState, typedCity, typedProv) {
   if (!pinState || !pinState.resolved) return { matches: true, reason: "" };
   var hayParts = [
@@ -407,7 +373,6 @@ function doesPinMatchAddressFields(pinState, typedCity, typedProv) {
   return { matches: true, reason: "" };
 }
 
-// Data Accessor `getApplicationCoverageInfo` (params: app): Retrieves or refreshes data to get application coverage info.
 function getApplicationCoverageInfo(app) {
   if (!app) return { inPhilippines: true, serviceable: true, label: "Serviceable Area" };
   var scr = app.screening || {};
@@ -435,7 +400,6 @@ function getApplicationCoverageInfo(app) {
   };
 }
 
-// Data Accessor `getCoverageBadgeHtml` (params: app, alwaysShow): Retrieves or refreshes data to get coverage badge html.
 function getCoverageBadgeHtml(app, alwaysShow) {
   var cov = getApplicationCoverageInfo(app);
   if (!cov.inPhilippines) {
@@ -447,7 +411,6 @@ function getCoverageBadgeHtml(app, alwaysShow) {
   return alwaysShow ? '<span class="badge badge-green">Serviceable Area</span>' : "";
 }
 
-// Data Accessor `getDefaultStatusInstruction` (params: status, note): Retrieves or refreshes data to get default status instruction.
 function getDefaultStatusInstruction(status, note) {
   if (status === "Needs Correction") return note || "Please update the information or ID requested below.";
   if (status === "Encoding") return note || "Your application passed initial verification and is now being encoded into the provider portal.";
@@ -456,13 +419,11 @@ function getDefaultStatusInstruction(status, note) {
   return "We are reviewing your application. Please check your email for updates.";
 }
 
-// Helper `makeBadge` (params: status): Executes workflow logic for `makeBadge`.
 function makeBadge(status) {
   var cssName = String(status || "Processing").toLowerCase().replace(/ /g, "-");
   return '<span class="badge status-' + cssName + '">' + status + "</span>";
 }
 
-// UI State Controller `openPopup` (params: htmlContent, isWideOrOpts): Updates modal, tab, or panel state to open popup.
 function openPopup(htmlContent, isWideOrOpts) {
   closePopup();
   var opts = (isWideOrOpts && typeof isWideOrOpts === "object")
@@ -491,13 +452,11 @@ function openPopup(htmlContent, isWideOrOpts) {
   if (typeof attachEnterKeyNavigation === "function") attachEnterKeyNavigation(back);
 }
 
-// UI State Controller `closePopup`: Updates modal, tab, or panel state to close popup.
 function closePopup() {
   var existing = document.getElementById("popup-modal");
   if (existing) existing.remove();
 }
 
-// UI State Controller `showAlert` (params: title, message, type): Updates modal, tab, or panel state to show alert.
 function showAlert(title, message, type) {
   openPopup(
     "<h3>" + title + "</h3>" +
@@ -506,7 +465,6 @@ function showAlert(title, message, type) {
   );
 }
 
-// Helper `previewImage` (params: filePath, titleText): Executes workflow logic for `previewImage`.
 function previewImage(filePath, titleText) {
   var headerHtml = titleText
     ? '<div class="row between"><h3>' + escapeHtml(titleText) + '</h3><button class="btn btn-small" onclick="closePopup()">Close</button></div>'
@@ -518,13 +476,11 @@ function previewImage(filePath, titleText) {
   );
 }
 
-// UI State Controller `toggleMenu`: Updates modal, tab, or panel state to toggle menu.
 function toggleMenu() {
   document.body.classList.toggle("menu-open");
 }
 
 var sliderTimers = {};
-// Helper `startSlider` (params: sliderId, slides): Executes workflow logic for `startSlider`.
 function startSlider(sliderId, slides) {
   var box = document.getElementById(sliderId);
   if (!box) return;
@@ -565,7 +521,6 @@ function startSlider(sliderId, slides) {
   }
 }
 
-// Helper `goToSlide` (params: sliderId, index): Executes workflow logic for `goToSlide`.
 function goToSlide(sliderId, index) {
   var box = document.getElementById(sliderId);
   var slides = box.querySelectorAll(".slide");
@@ -580,7 +535,6 @@ function goToSlide(sliderId, index) {
   box.setAttribute("data-index", String(index));
 }
 
-// Helper `moveSlide` (params: sliderId, step): Executes workflow logic for `moveSlide`.
 function moveSlide(sliderId, step) {
   var box = document.getElementById(sliderId);
   var current = Number(box.getAttribute("data-index") || 0);
@@ -589,7 +543,6 @@ function moveSlide(sliderId, step) {
 
 var stripTimers = {};
 
-// UI Renderer `buildStrip` (params: stripId, files, titlePrefix): Builds and updates DOM elements for strip.
 function buildStrip(stripId, files, titlePrefix) {
   var box = document.getElementById(stripId);
   if (!box) return;
@@ -646,7 +599,6 @@ function buildStrip(stripId, files, titlePrefix) {
   }, 25);
 }
 
-// Data Accessor `getHomeForRole` (params: role): Retrieves or refreshes data to get home for role.
 function getHomeForRole(role) {
   var r = String(role || "").toLowerCase();
   if (r === "admin") return ROOT + "admin.html";
@@ -655,7 +607,6 @@ function getHomeForRole(role) {
   return ROOT + "customer.html";
 }
 
-// Helper `evaluatePasswordRules` (params: pw): Executes workflow logic for `evaluatePasswordRules`.
 function evaluatePasswordRules(pw) {
   var val = String(pw || "");
   return {
@@ -667,7 +618,6 @@ function evaluatePasswordRules(pw) {
   };
 }
 
-// Validator/Check `isStrongPassword` (params: pw): Evaluates rule (is strong password) and returns result.
 function isStrongPassword(pw) {
   var r = evaluatePasswordRules(pw);
   return Boolean(r.length && r.upper && r.lower && r.digit && r.special);
@@ -675,14 +625,12 @@ function isStrongPassword(pw) {
 
 var PASSWORD_REQUIREMENT_TEXT = "Password must be at least 8 characters and include 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special symbol.";
 
-// Data Accessor `getSiteBaseUrl`: Retrieves or refreshes data to get site base url.
 function getSiteBaseUrl() {
   var path = window.location.pathname || "/";
   var folder = path.substring(0, path.lastIndexOf("/"));
   return window.location.origin + folder;
 }
 
-// Helper `attachPasswordRegexChecklist` (params: inputEl): Executes workflow logic for `attachPasswordRegexChecklist`.
 function attachPasswordRegexChecklist(inputEl) {
   if (!inputEl || inputEl.getAttribute("data-regex-attached") === "1") return;
   var id = inputEl.id || "";
@@ -720,7 +668,6 @@ function attachPasswordRegexChecklist(inputEl) {
     targetParent.parentNode.insertBefore(box, targetParent.nextSibling);
   }
 
-  // Data Accessor `refreshRules` (params: forceCheck): Retrieves or refreshes data to refresh rules.
   function refreshRules(forceCheck) {
     var val = String(inputEl.value || "");
     if (!val && !forceCheck) {
@@ -746,7 +693,6 @@ function attachPasswordRegexChecklist(inputEl) {
   });
 }
 
-// UI State Controller `setFieldError` (params: inputOrId, message): Updates modal, tab, or panel state to set field error.
 function setFieldError(inputOrId, message) {
   var el = typeof inputOrId === "string" ? document.getElementById(inputOrId) : inputOrId;
   if (!el) return;
@@ -768,7 +714,6 @@ function setFieldError(inputOrId, message) {
   errEl.style.display = "block";
 }
 
-// Helper `clearFieldError` (params: inputOrId): Executes workflow logic for `clearFieldError`.
 function clearFieldError(inputOrId) {
   var el = typeof inputOrId === "string" ? document.getElementById(inputOrId) : inputOrId;
   if (!el) return;
@@ -785,7 +730,6 @@ function clearFieldError(inputOrId) {
   }
 }
 
-// Helper `clearAllFieldErrors` (params: rootEl): Executes workflow logic for `clearAllFieldErrors`.
 function clearAllFieldErrors(rootEl) {
   var scope = rootEl || document;
   var errs = scope.querySelectorAll(".field-error");
@@ -799,7 +743,6 @@ function clearAllFieldErrors(rootEl) {
   }
 }
 
-// Utility `formatElapsedTimeAgo` (params: isoDate): Normalizes or transforms values (format elapsed time ago).
 function formatElapsedTimeAgo(isoDate) {
   if (!isoDate) return "recently";
   var t = new Date(isoDate).getTime();
@@ -822,7 +765,6 @@ function formatElapsedTimeAgo(isoDate) {
   return mins + " minute" + (mins > 1 ? "s" : "") + " ago";
 }
 
-// Helper `initPasswordEyeToggles` (params: rootEl): Executes workflow logic for `initPasswordEyeToggles`.
 function initPasswordEyeToggles(rootEl) {
   var container = rootEl || document;
   var pwInputs = container.querySelectorAll('input[type="password"], input[data-pw-field="1"]');
@@ -878,7 +820,6 @@ function initPasswordEyeToggles(rootEl) {
   }
 }
 
-// UI State Controller `setupPublicHeader`: Updates modal, tab, or panel state to setup public header.
 async function setupPublicHeader() {
   if (typeof dbGetCurrentUser !== "function") return;
   var user = await dbGetCurrentUser();
@@ -896,7 +837,6 @@ async function setupPublicHeader() {
   }
 }
 
-// Validator/Check `isManagerOrAdminPreview`: Evaluates rule (is manager or admin preview) and returns result.
 function isManagerOrAdminPreview() {
   if (window.location.search.indexOf("preview_cms=1") !== -1) {
     sessionStorage.setItem("pigem_cms_preview", "1");
@@ -908,7 +848,6 @@ function isManagerOrAdminPreview() {
   return false;
 }
 
-// Validator/Check `checkPublicMaintenance`: Evaluates rule (check public maintenance) and returns result.
 function checkPublicMaintenance() {
   var path = window.location.pathname.toLowerCase();
   var isCoveredPage =
@@ -957,7 +896,6 @@ function checkPublicMaintenance() {
     '</main>';
 }
 
-// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   if (typeof initPasswordEyeToggles === "function") {
     initPasswordEyeToggles();
@@ -1061,22 +999,18 @@ class ApplicantFormValidator extends BaseFieldValidator {
 
 var FORM_VALIDATOR = new ApplicantFormValidator();
 
-// Validator/Check `isCustomerGmail` (params: email): Evaluates rule (is customer gmail) and returns result.
 function isCustomerGmail(email) {
   return FORM_VALIDATOR.isCustomerGmail(email);
 }
 
-// Validator/Check `isStaffBusinessEmail` (params: email): Evaluates rule (is staff business email) and returns result.
 function isStaffBusinessEmail(email) {
   return FORM_VALIDATOR.isStaffBusinessEmail(email);
 }
 
-// Validator/Check `isValidUsername` (params: username): Evaluates rule (is valid username) and returns result.
 function isValidUsername(username) {
   return FORM_VALIDATOR.isValidUsername(username);
 }
 
-// Helper `sanitizeUsernameSeed` (params: fullName, email): Executes workflow logic for `sanitizeUsernameSeed`.
 function sanitizeUsernameSeed(fullName, email) {
   var emailPart = String(email || "").split("@")[0].toLowerCase().replace(/[^a-z0-9._]/g, "");
   var namePart = String(fullName || "").toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9._]/g, "");
@@ -1205,7 +1139,6 @@ var _tourState = {
   userKey: ""
 };
 
-// Helper `startDashboardTour` (params: portalName, forceManual): Executes workflow logic for `startDashboardTour`.
 function startDashboardTour(portalName, forceManual) {
   var p = String(portalName || window.DASH_PORTAL || "").toLowerCase();
   if (!DASHBOARD_TUTORIAL_STEPS[p]) return;
@@ -1228,7 +1161,6 @@ function startDashboardTour(portalName, forceManual) {
   renderDashboardTourStep();
 }
 
-// UI Renderer `renderDashboardTourStep`: Builds and updates DOM elements for dashboard tour step.
 function renderDashboardTourStep() {
   removeDashboardTourElements();
   var steps = _tourState.steps || [];
@@ -1296,13 +1228,11 @@ function renderDashboardTourStep() {
   }
 }
 
-// Helper `stepDashboardTour` (params: delta): Executes workflow logic for `stepDashboardTour`.
 function stepDashboardTour(delta) {
   _tourState.index += delta;
   renderDashboardTourStep();
 }
 
-// Helper `removeDashboardTourElements`: Executes workflow logic for `removeDashboardTourElements`.
 function removeDashboardTourElements() {
   var old = document.getElementById("dashboard-tour-bubble");
   if (old) old.remove();
@@ -1312,7 +1242,6 @@ function removeDashboardTourElements() {
   }
 }
 
-// Helper `finishDashboardTour`: Executes workflow logic for `finishDashboardTour`.
 function finishDashboardTour() {
   if (_tourState.userKey) {
     localStorage.setItem(_tourState.userKey, "1");
@@ -1320,7 +1249,6 @@ function finishDashboardTour() {
   removeDashboardTourElements();
 }
 
-// UI State Controller `showPortalGuide` (params: guideId, onDone): Updates modal, tab, or panel state to show portal guide.
 function showPortalGuide(guideId, onDone) {
   var map = {
     customer_portal_guide: "customer",
@@ -1336,13 +1264,11 @@ function showPortalGuide(guideId, onDone) {
   if (typeof onDone === "function") onDone();
 }
 
-// Helper `finishPortalGuide`: Executes workflow logic for `finishPortalGuide`.
 function finishPortalGuide() {
   finishDashboardTour();
   closePopup();
 }
 
-// UI State Controller `openConfirmPopup` (params: title, messageHtml, confirmLabel, onConfirm, isDanger): Updates modal, tab, or panel state to open confirm popup.
 function openConfirmPopup(title, messageHtml, confirmLabel, onConfirm, isDanger) {
   window._pendingConfirmAction = typeof onConfirm === "function" ? onConfirm : null;
   var btnClass = isDanger ? "btn btn-red" : "btn btn-green";
@@ -1359,7 +1285,6 @@ function openConfirmPopup(title, messageHtml, confirmLabel, onConfirm, isDanger)
   );
 }
 
-// Helper `runPendingConfirmAction`: Executes workflow logic for `runPendingConfirmAction`.
 function runPendingConfirmAction() {
   var fn = window._pendingConfirmAction;
   window._pendingConfirmAction = null;
@@ -1367,7 +1292,6 @@ function runPendingConfirmAction() {
   if (typeof fn === "function") fn();
 }
 
-// `validatePersonName` (params: name, fieldLabel, allowNA, allowEmpty): Enforces letters, spaces, hyphens, apostrophes, and periods only on applicant/staff names (no digits or symbols).
 function validatePersonName(name, fieldLabel, allowNA, allowEmpty) {
   var label = fieldLabel || "Name";
   var clean = String(name || "").trim();
@@ -1387,12 +1311,10 @@ function validatePersonName(name, fieldLabel, allowNA, allowEmpty) {
   return { valid: true, message: "" };
 }
 
-// Validator/Check `isValidPersonName` (params: name, allowNA, allowEmpty): Evaluates rule (is valid person name) and returns result.
 function isValidPersonName(name, allowNA, allowEmpty) {
   return validatePersonName(name, "Name", allowNA, allowEmpty).valid;
 }
 
-// `getMaxAdultBirthDate` (params: minAge): Computes the latest allowed YYYY-MM-DD birth date so applicants must be at least minAge (18+) years old.
 function getMaxAdultBirthDate(minAge) {
   var years = typeof minAge === "number" ? minAge : 18;
   var now = new Date();
@@ -1402,7 +1324,6 @@ function getMaxAdultBirthDate(minAge) {
   return y + "-" + m + "-" + d;
 }
 
-// `validateAdultBirthDate` (params: dateStr, minAge): Validates birth date format, rejects future dates, and enforces the minimum age requirement (default 18).
 function validateAdultBirthDate(dateStr, minAge) {
   var years = typeof minAge === "number" ? minAge : 18;
   var clean = String(dateStr || "").trim();
@@ -1441,7 +1362,6 @@ function validateAdultBirthDate(dateStr, minAge) {
   return { valid: true, age: age, message: "" };
 }
 
-// `getStaffIdentifier` (params: user): Returns `@username` (falling back to email) as the canonical assignment identifier for internal staff without email.
 function getStaffIdentifier(user) {
   if (!user) return "";
   if (user.username) {
@@ -1450,7 +1370,6 @@ function getStaffIdentifier(user) {
   return String(user.email || user.full_name || "").trim();
 }
 
-// `isAssignedToStaff` (params: assignedVal, staffUser): Matches an application's `assigned_agent` string against a staff user's username or legacy email identifier.
 function isAssignedToStaff(assignedVal, staffUser) {
   var val = String(assignedVal || "").trim().toLowerCase();
   if (!val || !staffUser) return false;
@@ -1461,11 +1380,9 @@ function isAssignedToStaff(assignedVal, staffUser) {
   return false;
 }
 
-// `attachEnterKeyNavigation` (params: rootEl): Binds Enter-key flow inside forms/modals so pressing Enter advances to the next input and submits on the last field.
 function attachEnterKeyNavigation(rootEl) {
   if (window.__pigemEnterNavBound) return;
   window.__pigemEnterNavBound = true;
-  // Event Listener: Initializes handlers or syncs state when `keydown` fires
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.altKey) return;
     var el = e.target;

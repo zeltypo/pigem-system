@@ -1,14 +1,3 @@
-// ============================================================================
-// FILE: web/js/api.js
-// PURPOSE: Serverless Python FastAPI Client for Screening, Captcha & Gmail SMTP
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js -> `CONFIG` base URL and activation/portal route helpers
-//   2. Browser Fetch    -> Calls `/api/verify-captcha`, `/api/screen`, `/api/screen-async`,
-//                          `/api/notify`, `/api/polite-remark`, and `/api/health`
-// ============================================================================
-
-// Helper `_getPortalBaseUrl`: Executes workflow logic for `_getPortalBaseUrl`.
 function _getPortalBaseUrl() {
   var origin = "https://pigem-system-web.vercel.app";
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
@@ -23,13 +12,11 @@ function _getPortalBaseUrl() {
   return origin;
 }
 
-// Helper `_apiEndpoint` (params: path): Executes workflow logic for `_apiEndpoint`.
 function _apiEndpoint(path) {
   var base = (typeof CONFIG !== "undefined" && CONFIG.API_URL) ? CONFIG.API_URL : "/api";
   return base.replace(/\/$/, "") + path;
 }
 
-// Helper `generateOtpRefTag`: Executes workflow logic for `generateOtpRefTag`.
 function generateOtpRefTag() {
   var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   var tag = "";
@@ -39,7 +26,6 @@ function generateOtpRefTag() {
   return tag;
 }
 
-// Helper `apiVerifyCaptcha` (params: token): Executes workflow logic for `apiVerifyCaptcha`.
 async function apiVerifyCaptcha(token) {
   var clean = String(token || "").trim();
   if (!clean) return { verified: false };
@@ -58,7 +44,6 @@ async function apiVerifyCaptcha(token) {
   }
 }
 
-// Helper `apiStartBackgroundScreening` (params: applicationId): Executes workflow logic for `apiStartBackgroundScreening`.
 function apiStartBackgroundScreening(applicationId) {
   if (!applicationId) return Promise.resolve({ queued: false });
 
@@ -90,7 +75,6 @@ function apiStartBackgroundScreening(applicationId) {
   })();
 }
 
-// Helper `apiRunScreening` (params: idFrontFile, customerDetails, idBackFile): Executes workflow logic for `apiRunScreening`.
 async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
   var offlineResult = {
     preliminary: true,
@@ -172,7 +156,6 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
   }
 }
 
-// Helper `apiSendEmail` (params: toEmail, subjectText, messageText, options): Executes workflow logic for `apiSendEmail`.
 async function apiSendEmail(toEmail, subjectText, messageText, options) {
   options = options || {};
   if (typeof options === "string") {
@@ -227,7 +210,6 @@ async function apiSendEmail(toEmail, subjectText, messageText, options) {
   }
 }
 
-// Helper `apiSendOtpEmail` (params: toEmail, code, purpose, recipientName, refTag): Executes workflow logic for `apiSendOtpEmail`.
 async function apiSendOtpEmail(toEmail, code, purpose, recipientName, refTag) {
   var pName = recipientName || "Valued Subscriber";
   var tag = refTag || generateOtpRefTag();
@@ -248,7 +230,6 @@ async function apiSendOtpEmail(toEmail, code, purpose, recipientName, refTag) {
   });
 }
 
-// Helper `apiSendApplicationConfirmationEmail` (params: toEmail, customerName, refNo, planObj, addressStr, accountInfo): Executes workflow logic for `apiSendApplicationConfirmationEmail`.
 async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo, planObj, addressStr, accountInfo) {
   var p = planObj || {};
   var tag = generateOtpRefTag();
@@ -283,7 +264,6 @@ async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo,
   });
 }
 
-// Helper `apiSendCorrectionEmail` (params: toEmail, customerName, refNo, remarks, targetSummary): Executes workflow logic for `apiSendCorrectionEmail`.
 async function apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, targetSummary) {
   var tag = generateOtpRefTag();
   var subj = "PIGEM Action Needed - Reference No. " + refNo + " (Ref no: " + tag + ")";
@@ -301,7 +281,6 @@ async function apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, tar
   });
 }
 
-// Helper `apiSendStatusEmail` (params: toEmail, customerName, refNo, status, remarks, targetSummary): Executes workflow logic for `apiSendStatusEmail`.
 async function apiSendStatusEmail(toEmail, customerName, refNo, status, remarks, targetSummary) {
   var st = (status || "").toLowerCase();
   if (st.indexOf("correction") !== -1 || st.indexOf("need") !== -1) {
@@ -328,7 +307,6 @@ async function apiSendStatusEmail(toEmail, customerName, refNo, status, remarks,
   });
 }
 
-// Helper `apiSendPromotionalEmail` (params: toEmail, customerName, headline, bodyText, promoPlans): Executes workflow logic for `apiSendPromotionalEmail`.
 async function apiSendPromotionalEmail(toEmail, customerName, headline, bodyText, promoPlans) {
   var tag = generateOtpRefTag();
   var subj = headline + " - PIGEM Support Services";
@@ -345,7 +323,6 @@ async function apiSendPromotionalEmail(toEmail, customerName, headline, bodyText
   });
 }
 
-// Helper `apiCheckHealth`: Executes workflow logic for `apiCheckHealth`.
 async function apiCheckHealth() {
   var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   var timer = controller ? setTimeout(function () { controller.abort(); }, 8000) : null;
@@ -361,7 +338,6 @@ async function apiCheckHealth() {
   }
 }
 
-// Helper `apiGeneratePoliteRemark` (params: rawRemark, chosenField): Executes workflow logic for `apiGeneratePoliteRemark`.
 async function apiGeneratePoliteRemark(rawRemark, chosenField) {
   var text = String(rawRemark || "").trim();
   var field = chosenField || "auto";

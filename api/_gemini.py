@@ -806,19 +806,39 @@ class GeminiScreeningService(BaseLanguageClient):
 
     ]
 
+    _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
     def _get_config(self) -> tuple:
 
-        api_key = (getenv("GEMINI_API_KEY") or "").strip()
+        or_key = (getenv("OPENROUTER_API_KEY") or "").strip()
 
-        model = (getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
+        gem_key = (getenv("GEMINI_API_KEY") or "").strip()
 
-        return api_key, model
+        if not or_key and gem_key.startswith("sk-or-"):
+
+            or_key, gem_key = gem_key, ""
+
+        model = (getenv("OPENROUTER_MODEL") or getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
+
+        return (or_key or gem_key), model
+
+    def _get_keys(self) -> tuple:
+
+        or_key = (getenv("OPENROUTER_API_KEY") or "").strip()
+
+        gem_key = (getenv("GEMINI_API_KEY") or "").strip()
+
+        if not or_key and gem_key.startswith("sk-or-"):
+
+            or_key, gem_key = gem_key, ""
+
+        return or_key, gem_key
 
     def is_available(self) -> bool:
 
-        api_key, _ = self._get_config()
+        or_key, gem_key = self._get_keys()
 
-        return bool(api_key)
+        return bool(or_key or gem_key)
 
     def _detect_mime_type(self, image_bytes: bytes) -> str:
 
@@ -831,6 +851,148 @@ class GeminiScreeningService(BaseLanguageClient):
             return "image/webp"
 
         return "image/jpeg"
+
+    def _to_openrouter_model(self, model_name: str) -> str:
+
+        m = (model_name or "gemini-2.5-flash").strip()
+
+        if m == "gemini-flash-latest":
+
+            m = "gemini-2.5-flash"
+
+        if "/" not in m and m.startswith("gemini"):
+
+            return f"google/{m}"
+
+        return m
+
+    def _call_openrouter(
+
+        self,
+
+        or_key: str,
+
+        parts: list,
+
+        expect_json: bool = True,
+
+        max_tokens: int = 2048,
+
+        temperature: float = 0.0,
+
+        system_instruction: str = "",
+
+        models_to_try: list = None,
+
+    ) -> str:
+
+        if not or_key:
+
+            return ""
+
+        content_blocks = []
+
+        for p in parts or []:
+
+            if "text" in p and p.get("text"):
+
+                content_blocks.append({"type": "text", "text": str(p["text"])})
+
+            elif "inline_data" in p and isinstance(p.get("inline_data"), dict):
+
+                inl = p["inline_data"]
+
+                mime = inl.get("mime_type") or "image/jpeg"
+
+                b64 = inl.get("data") or ""
+
+                if b64:
+
+                    content_blocks.append({
+
+                        "type": "image_url",
+
+                        "image_url": {"url": f"data:{mime};base64,{b64}"},
+
+                    })
+
+        messages = []
+
+        if system_instruction:
+
+            messages.append({"role": "system", "content": system_instruction})
+
+        messages.append({"role": "user", "content": content_blocks})
+
+        headers = {
+
+            "Authorization": f"Bearer {or_key}",
+
+            "Content-Type": "application/json",
+
+            "HTTP-Referer": "https://pigem-system-web.vercel.app",
+
+            "X-Title": "PIGEM Application Screening",
+
+        }
+
+        for raw_model in models_to_try or ["gemini-2.5-flash"]:
+
+            or_model = self._to_openrouter_model(raw_model)
+
+            for enforce_zdr in (True, False):
+
+                body = {
+
+                    "model": or_model,
+
+                    "messages": messages,
+
+                    "temperature": temperature,
+
+                    "top_p": 0.1,
+
+                    "max_tokens": max_tokens,
+
+                }
+
+                if expect_json:
+
+                    body["response_format"] = {"type": "json_object"}
+
+                if "2.5-flash" in or_model:
+
+                    body["reasoning"] = {"max_tokens": 0}
+
+                if enforce_zdr:
+
+                    body["provider"] = {"zdr": True, "data_collection": "deny"}
+
+                try:
+
+                    reply = httpx.post(self._OPENROUTER_URL, headers=headers, json=body, timeout=20)
+
+                    if reply.status_code == 200:
+
+                        data = reply.json()
+
+                        choices = data.get("choices") or []
+
+                        if choices:
+
+                            msg = choices[0].get("message") or {}
+
+                            txt = str(msg.get("content") or "").strip()
+
+                            if txt:
+
+                                return txt
+
+                except Exception:
+
+                    continue
+
+        return ""
 
     def _call_gemini(
 
@@ -852,9 +1014,47 @@ class GeminiScreeningService(BaseLanguageClient):
 
     ) -> str:
 
-        api_key, primary_model = self._get_config()
+        or_key, gem_key = self._get_keys()
 
-        if not api_key:
+        _, primary_model = self._get_config()
+
+        if not or_key and not gem_key:
+
+            return ""
+
+        models_to_try = [model_override.strip() or primary_model]
+
+        for fallback_model in ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest"):
+
+            if fallback_model not in models_to_try:
+
+                models_to_try.append(fallback_model)
+
+        if or_key:
+
+            or_out = self._call_openrouter(
+
+                or_key=or_key,
+
+                parts=parts,
+
+                expect_json=expect_json,
+
+                max_tokens=max_tokens,
+
+                temperature=temperature,
+
+                system_instruction=system_instruction,
+
+                models_to_try=models_to_try,
+
+            )
+
+            if or_out:
+
+                return or_out
+
+        if not gem_key:
 
             return ""
 
@@ -889,19 +1089,15 @@ class GeminiScreeningService(BaseLanguageClient):
 
             "Content-Type": "application/json",
 
-            "X-goog-api-key": api_key,
+            "X-goog-api-key": gem_key,
 
         }
 
-        models_to_try = [model_override.strip() or primary_model]
-
-        for fallback_model in ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest"):
-
-            if fallback_model not in models_to_try:
-
-                models_to_try.append(fallback_model)
-
         for model_name in models_to_try:
+
+            if "/" in model_name:
+
+                model_name = model_name.split("/", 1)[-1]
 
             url = f"{self._API_BASE}/{model_name}:generateContent"
 

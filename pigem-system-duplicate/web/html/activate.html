@@ -1,25 +1,17 @@
 <!DOCTYPE html>
-<!-- ==========================================================================
-     FILE OVERVIEW: One-Time Customer Account Password Setup & Activation Page (web/html/activate.html)
-     PURPOSE: Allows newly registered applicants to verify their one-time activation link/code once, confirm username, and set their account password.
-     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
-     ========================================================================== -->
 
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Customer Account Activation | Combined Facilities Support Services</title>
 
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
 </head>
 <body class="gray-bg">
 
-  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="simple-bar">
     <div class="container" style="display:flex; align-items:center; gap:12px;">
       <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
@@ -27,7 +19,6 @@
     </div>
   </header>
 
-  <!-- SECTION: Main Page Content Container -->
   <main class="auth-page" style="min-height:calc(100vh - 62px);">
     <div class="card auth-card">
       <div class="auth-head">
@@ -43,7 +34,6 @@
         </div>
       </div>
 
-      <!-- FORM: Interactive User Input Form -->
       <form id="activate-form" class="mt" autocomplete="off" onsubmit="submitActivation(event)" novalidate>
         <div>
           <label for="act-email">Gmail Address <span class="req-mark">*</span></label>
@@ -71,22 +61,16 @@
     </div>
   </main>
 
-  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
 window.SYSTEM = "customer";
   </script>
 
-  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
 
-  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
-  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
-    // Helper `initActivatePage`: Executes workflow logic for `initActivatePage`.
     async function initActivatePage() {
       var params = new URLSearchParams(window.location.search);
       var qEmail = (params.get("email") || "").trim().toLowerCase();
@@ -129,7 +113,6 @@ window.SYSTEM = "customer";
       }
     }
 
-    // Action Handler `submitActivation` (params: event): Validates inputs and persists changes to submit activation.
     async function submitActivation(event) {
       event.preventDefault();
       if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();

@@ -485,11 +485,13 @@ async function saveMgrOverride() {
   if (agentEmail && agentEmail !== app.assigned_agent) {
     var targetAg = mgrUsers.find(function (u) { return isAssignedToStaff(agentEmail, u); });
     await dbAddNotification({
-      user_id: targetAg ? targetAg.id : null,
+      user_id: targetAg ? targetAg.id : agentEmail,
       email: targetAg ? targetAg.email : null,
       role: "agent",
       title: "Application Assigned: " + app.reference_no,
-      message: "Manager " + currentManager.full_name + " assigned application " + app.reference_no + " (" + agentEmail + ") to your workspace queue."
+      message: "Manager " + currentManager.full_name + " assigned application " + app.reference_no + " (" + agentEmail + ") to your workspace queue.",
+      target_tab: "tab-claimed",
+      target_id: app.id
     });
   }
 
@@ -497,12 +499,14 @@ async function saveMgrOverride() {
   if (shouldNotifyCust) {
     var custLabel = (newStatus === "Needs Correction") ? "Update Needed" : newStatus;
     var custEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email;
-    await dbAddNotification(
-      custEmail,
-      "customer",
-      "Application " + custLabel + " (" + app.reference_no + ")",
-      effectiveRemarks || ("Your application status has been updated to " + custLabel + ".")
-    );
+    await dbAddNotification({
+      email: custEmail,
+      role: "customer",
+      title: "Application " + custLabel + " (" + app.reference_no + ")",
+      message: effectiveRemarks || ("Your application status has been updated to " + custLabel + "."),
+      target_tab: "tab-apps",
+      target_id: app.id
+    });
     if (newStatus === "Needs Correction") {
       await apiSendCorrectionEmail(
         custEmail,

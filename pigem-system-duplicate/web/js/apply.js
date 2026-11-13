@@ -1,14 +1,3 @@
-// ============================================================================
-// FILE: web/js/apply.js
-// PURPOSE: Application Wizard, Mobile QR ID Capture & Pre-Submit Screening
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. Google reCAPTCHA v2 & Leaflet 1.9.4 -> Anti-bot check and Cavite map pinning
-//   2. web/js/config.js -> 18+ age validation, letters-only name validation, ID regex rules
-//   3. web/js/db.js     -> QR mobile session upload/polling, application save, activation code
-//   4. web/js/api.js    -> Synchronous pre-submit `/api/screen` validation & confirmation email
-// ============================================================================
-
 var currentPanel = 0;
 var TOTAL_PANELS = 6;
 var selectedPlanId = "1000";
@@ -31,7 +20,6 @@ var SECTION_TITLES = [
   "Subscriber Declaration and Consent"
 ];
 
-// UI State Controller `showReqTip` (params: el, fieldName, detail): Updates modal, tab, or panel state to show req tip.
 function showReqTip(el, fieldName, detail) {
   hideReqTip(el);
   var bubble = document.createElement("span");
@@ -40,14 +28,12 @@ function showReqTip(el, fieldName, detail) {
   el.appendChild(bubble);
 }
 
-// UI State Controller `hideReqTip` (params: el): Updates modal, tab, or panel state to hide req tip.
 function hideReqTip(el) {
   if (!el) return;
   var old = el.querySelector(".req-bubble:not(.error-pop)");
   if (old) old.remove();
 }
 
-// Helper `flashErrorBubble` (params: fieldId, fieldName, message): Executes workflow logic for `flashErrorBubble`.
 function flashErrorBubble(fieldId, fieldName, message) {
   var targetMap = {
     agree_sub: "agree_sub_wrap",
@@ -61,7 +47,6 @@ function flashErrorBubble(fieldId, fieldName, message) {
   }
 }
 
-// UI State Controller `setupDeviceUploadUI`: Updates modal, tab, or panel state to setup device upload ui.
 function setupDeviceUploadUI() {
   var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 768);
   var camBtns = document.querySelectorAll(".phone-only-btn");
@@ -84,7 +69,6 @@ var _qrPollTimer = null;
 var _qrActiveSid = "";
 var _qrLoadedUrls = { front: "", back: "" };
 
-// Helper `initApplyPage`: Executes workflow logic for `initApplyPage`.
 function initApplyPage() {
   var params = new URLSearchParams(window.location.search);
   var qrUpload = params.get("qr_upload");
@@ -111,7 +95,6 @@ function initApplyPage() {
   renderPlanChoices();
   setupDeviceUploadUI();
   attachApplyLiveValidation();
-  // Event Listener: Initializes handlers or syncs state when `resize` fires
   window.addEventListener("resize", setupDeviceUploadUI);
 
   if (sessionStorage.getItem("pigem_captcha_verified") !== "true") {
@@ -121,7 +104,6 @@ function initApplyPage() {
   }
 }
 
-// Helper `attachApplyLiveValidation`: Executes workflow logic for `attachApplyLiveValidation`.
 function attachApplyLiveValidation() {
   var dobEl = document.getElementById("birth_date");
   if (dobEl && typeof getMaxAdultBirthDate === "function") {
@@ -213,7 +195,6 @@ function attachApplyLiveValidation() {
   }
 }
 
-// `initMobileQrMode` (params: sid): Initializes the mobile-only QR ID capture view (`?qr_upload=1&sid=...`) directly on the Front/Back camera uploader.
 function initMobileQrMode(sid) {
   _qrActiveSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
   var prog = document.querySelector(".prog");
@@ -230,7 +211,6 @@ function initMobileQrMode(sid) {
   if (badge) badge.textContent = "Session: " + _qrActiveSid;
 }
 
-// Helper `handleMobileQrUpload` (params: side, inputEl): Executes workflow logic for `handleMobileQrUpload`.
 async function handleMobileQrUpload(side, inputEl) {
   var file = inputEl && inputEl.files && inputEl.files[0];
   if (!file) return;
@@ -266,7 +246,6 @@ async function handleMobileQrUpload(side, inputEl) {
   }
 }
 
-// UI State Controller `showApplySecurityCaptchaModal`: Updates modal, tab, or panel state to show apply security captcha modal.
 function showApplySecurityCaptchaModal() {
   openPopup(
     '<div class="center" style="padding:10px 4px;">' +
@@ -312,7 +291,6 @@ function showApplySecurityCaptchaModal() {
   }
 }
 
-// Helper `onApplyCaptchaVerified` (params: token): Executes workflow logic for `onApplyCaptchaVerified`.
 async function onApplyCaptchaVerified(token) {
   if (token && typeof apiVerifyCaptcha === "function") {
     var vRes = await apiVerifyCaptcha(token);
@@ -332,7 +310,6 @@ async function onApplyCaptchaVerified(token) {
   }
 }
 
-// Helper `triggerApplyPopupCaptcha`: Executes workflow logic for `triggerApplyPopupCaptcha`.
 function triggerApplyPopupCaptcha() {
   var check = document.getElementById("apply-popup-captcha-check");
   var card = document.getElementById("apply-popup-captcha-card");
@@ -352,7 +329,6 @@ function triggerApplyPopupCaptcha() {
   }, 600);
 }
 
-// UI Renderer `renderPlanChoices`: Builds and updates DOM elements for plan choices.
 function renderPlanChoices() {
   var plans = getActivePlans();
   var box = document.getElementById("plan-choice-box");
@@ -371,7 +347,6 @@ function renderPlanChoices() {
   box.innerHTML = html;
 }
 
-// Helper `pickPlan` (params: planId): Executes workflow logic for `pickPlan`.
 function pickPlan(planId) {
   selectedPlanId = String(planId);
   renderPlanChoices();
@@ -379,7 +354,6 @@ function pickPlan(planId) {
 
 var applyCaptchaVerified = false;
 
-// Helper `triggerApplyCaptcha`: Executes workflow logic for `triggerApplyCaptcha`.
 function triggerApplyCaptcha() {
   if (applyCaptchaVerified) return;
   var check = document.getElementById("apply-captcha-check");
@@ -398,7 +372,6 @@ function triggerApplyCaptcha() {
   }, 600);
 }
 
-// Helper `applyQrRemoteFile` (params: side, url): Executes workflow logic for `applyQrRemoteFile`.
 async function applyQrRemoteFile(side, url) {
   if (!url || _qrLoadedUrls[side] === url) return;
   _qrLoadedUrls[side] = url;
@@ -441,7 +414,6 @@ async function applyQrRemoteFile(side, url) {
   } catch (e) {}
 }
 
-// Helper `stopPhoneQrPolling`: Executes workflow logic for `stopPhoneQrPolling`.
 function stopPhoneQrPolling() {
   if (_qrPollTimer) {
     clearInterval(_qrPollTimer);
@@ -449,7 +421,6 @@ function stopPhoneQrPolling() {
   }
 }
 
-// `openPhoneQrModal`: Opens the QR code modal containing the session link and polls Supabase until mobile photos arrive.
 function openPhoneQrModal() {
   stopPhoneQrPolling();
   if (!_qrActiveSid) {
@@ -489,7 +460,6 @@ function openPhoneQrModal() {
   }, 2500);
 }
 
-// Helper `sendContactOtp`: Executes workflow logic for `sendContactOtp`.
 async function sendContactOtp() {
   if (typeof clearFieldError === "function") clearFieldError("email");
   var email = document.getElementById("email").value.trim().toLowerCase();
@@ -527,7 +497,6 @@ async function sendContactOtp() {
   openApplyOtpModal(email, otpRec.refTag, emailRes);
 }
 
-// UI State Controller `openApplyOtpModal` (params: email, refTag, emailRes): Updates modal, tab, or panel state to open apply otp modal.
 function openApplyOtpModal(email, refTag, emailRes) {
   var sentOk = !(emailRes && emailRes.sent === false);
   var statusLine = sentOk
@@ -553,7 +522,6 @@ function openApplyOtpModal(email, refTag, emailRes) {
   }, 60);
 }
 
-// Helper `verifyContactOtpModal`: Executes workflow logic for `verifyContactOtpModal`.
 function verifyContactOtpModal() {
   if (typeof clearFieldError === "function") clearFieldError("modal-contact-otp-code");
   var email = document.getElementById("email").value.trim().toLowerCase();
@@ -584,7 +552,6 @@ function verifyContactOtpModal() {
   if (typeof clearFieldError === "function") clearFieldError("email");
 }
 
-// Action Handler `updateIdFormatHint`: Validates inputs and persists changes to update id format hint.
 function updateIdFormatHint() {
   var type = document.getElementById("id_type").value;
   var hintEl = document.getElementById("id-format-hint");
@@ -597,7 +564,6 @@ function updateIdFormatHint() {
   hintEl.textContent = (meta && meta.hint) ? meta.hint : "Type the ID number exactly as printed.";
 }
 
-// Helper `handleIdFileSelect` (params: side, inputEl): Executes workflow logic for `handleIdFileSelect`.
 function handleIdFileSelect(side, inputEl) {
   var file = inputEl && inputEl.files && inputEl.files[0];
   if (!file) return;
@@ -652,7 +618,6 @@ function handleIdFileSelect(side, inputEl) {
   }
 }
 
-// UI State Controller `showPanel` (params: index): Updates modal, tab, or panel state to show panel.
 function showPanel(index) {
   currentPanel = index;
   for (var i = 0; i < TOTAL_PANELS; i++) {
@@ -673,13 +638,11 @@ function showPanel(index) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// Validator/Check `validateCurrentPanel`: Evaluates rule (validate current panel) and returns result.
 function validateCurrentPanel() {
   var panelEl = document.getElementById("panel-" + currentPanel);
   if (typeof clearAllFieldErrors === "function" && panelEl) clearAllFieldErrors(panelEl);
   var firstInvalidEl = null;
 
-  // Helper `markInvalid` (params: fieldId, name, msg, elToFocus): Executes workflow logic for `markInvalid`.
   function markInvalid(fieldId, name, msg, elToFocus) {
     flashErrorBubble(fieldId, name, msg);
     if (!firstInvalidEl) {
@@ -852,7 +815,6 @@ var _pinLookupPromise = null;
 var _pinLookupResolve = null;
 var _mapInputsBound = false;
 
-// UI Renderer `renderCoverageBannerBox` (params: banner, bg, border, color, title, body): Builds and updates DOM elements for coverage banner box.
 function renderCoverageBannerBox(banner, bg, border, color, title, body) {
   banner.hidden = false;
   banner.className = "notice mt";
@@ -870,7 +832,6 @@ function renderCoverageBannerBox(banner, bg, border, color, title, body) {
   banner.appendChild(div);
 }
 
-// Data Accessor `refreshCoverageBanner`: Retrieves or refreshes data to refresh coverage banner.
 function refreshCoverageBanner() {
   var banner = document.getElementById("map-coverage-banner");
   if (!banner) return;
@@ -938,7 +899,6 @@ function refreshCoverageBanner() {
   );
 }
 
-// Helper `bindMapFieldListeners`: Executes workflow logic for `bindMapFieldListeners`.
 function bindMapFieldListeners() {
   if (_mapInputsBound) return;
   _mapInputsBound = true;
@@ -957,7 +917,6 @@ function bindMapFieldListeners() {
   }
 }
 
-// Helper `nextPanel`: Executes workflow logic for `nextPanel`.
 async function nextPanel() {
   if (currentPanel === 3) {
     var latVal = parseFloat(document.getElementById("lat").value);
@@ -982,14 +941,12 @@ async function nextPanel() {
   }
 }
 
-// Helper `prevPanel`: Executes workflow logic for `prevPanel`.
 function prevPanel() {
   if (currentPanel > 0) {
     showPanel(currentPanel - 1);
   }
 }
 
-// Helper `initMapPin`: Executes workflow logic for `initMapPin`.
 function initMapPin() {
   bindMapFieldListeners();
   if (!leafletMap) {
@@ -1030,7 +987,6 @@ function initMapPin() {
   }, 150);
 }
 
-// Action Handler `updatePinAndAddress` (params: lat, lng): Validates inputs and persists changes to update pin and address.
 async function updatePinAndAddress(lat, lng) {
   var mySeq = ++_pinSeq;
   if (_pinLookupResolve) {
@@ -1147,7 +1103,6 @@ async function updatePinAndAddress(lat, lng) {
   refreshCoverageBanner();
 }
 
-// Helper `searchMapAddress`: Executes workflow logic for `searchMapAddress`.
 async function searchMapAddress() {
   var q = document.getElementById("map-search").value.trim();
   if (!q) return;
@@ -1191,7 +1146,6 @@ async function searchMapAddress() {
   await updatePinAndAddress(lat, lng);
 }
 
-// Helper `useCurrentLocation`: Executes workflow logic for `useCurrentLocation`.
 function useCurrentLocation() {
   initMapPin();
   var statusEl = document.getElementById("map-status");
@@ -1208,7 +1162,6 @@ function useCurrentLocation() {
   }
   if (statusEl) statusEl.textContent = "Detecting current GPS location...";
 
-  // Helper `onGeoSuccess` (params: pos): Executes workflow logic for `onGeoSuccess`.
   function onGeoSuccess(pos) {
     if (btn) {
       btn.disabled = false;
@@ -1224,7 +1177,6 @@ function useCurrentLocation() {
     updatePinAndAddress(lat, lng);
   }
 
-  // Helper `onGeoError`: Executes workflow logic for `onGeoError`.
   function onGeoError() {
     navigator.geolocation.getCurrentPosition(
       onGeoSuccess,
@@ -1247,7 +1199,6 @@ function useCurrentLocation() {
   );
 }
 
-// Helper `advanceLoadingStep` (params: stepNum): Executes workflow logic for `advanceLoadingStep`.
 function advanceLoadingStep(stepNum) {
   for (var i = 1; i <= 3; i++) {
     var el = document.getElementById("step-ld-" + i);
@@ -1265,7 +1216,6 @@ function advanceLoadingStep(stepNum) {
   }
 }
 
-// `resetApplyWizardToStep1`: Resets the Application Form wizard back to Step 1 cleanly after modal dismissal or duplicate auto-rejection.
 function resetApplyWizardToStep1() {
   var loadingScreen = document.getElementById("panel-loading");
   if (loadingScreen) loadingScreen.hidden = true;
@@ -1306,7 +1256,6 @@ function resetApplyWizardToStep1() {
   showPanel(0);
 }
 
-// Action Handler `submitRegistration`: Validates inputs and persists changes to submit registration.
 async function submitRegistration() {
   if (!validateCurrentPanel()) return;
 

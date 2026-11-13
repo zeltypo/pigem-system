@@ -1,14 +1,3 @@
-// ============================================================================
-// FILE: web/js/manager.js
-// PURPOSE: Manager Operations, Overview Charts, Agent CRUD Modals & Website CMS
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js  -> Plan schemas, `getStaffIdentifier`, `isAssignedToStaff`, modals
-//   2. web/js/db.js      -> Agent provisioning/CRUD, applications overview & CMS persistence
-//   3. web/js/api.js     -> Status emails and promotional broadcasts
-//   4. web/js/dash-ui.js -> Overview-only avatar/notifications, pie/bar charts & navigation
-// ============================================================================
-
 var currentManager = null;
 var mgrApps = [];
 var mgrUsers = [];
@@ -39,7 +28,6 @@ window.openDashTabById = function (tabId, targetId) {
   }
 };
 
-// Validator/Check `checkMgrScreeningService`: Evaluates rule (check mgr screening service) and returns result.
 async function checkMgrScreeningService() {
   var banner = document.getElementById("mgr-screening-banner");
   if (!isAiEnabled()) {
@@ -63,13 +51,11 @@ async function checkMgrScreeningService() {
   return true;
 }
 
-// Validator/Check `isMgrScreeningActive` (params: app): Evaluates rule (is mgr screening active) and returns result.
 function isMgrScreeningActive(app) {
   var scr = (app && app.screening) || {};
   return scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running";
 }
 
-// Utility `formatMgrEta` (params: seconds): Normalizes or transforms values (format mgr eta).
 function formatMgrEta(seconds) {
   var sec = Number(seconds || 0);
   if (!sec || sec <= 0) return "";
@@ -80,7 +66,6 @@ function formatMgrEta(seconds) {
   return "~" + sec + "s left";
 }
 
-// Data Accessor `getMgrScreeningBadge` (params: app): Retrieves or refreshes data to get mgr screening badge.
 function getMgrScreeningBadge(app) {
   var scr = app.screening || {};
   var state = scr.state || "";
@@ -118,7 +103,6 @@ function getMgrScreeningBadge(app) {
 
 window.PORTAL_ALLOWED_ROLES = ["manager"];
 
-// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   currentManager = await requireLogin(["manager"]);
   if (!currentManager) return;
@@ -159,7 +143,6 @@ window.addEventListener("DOMContentLoaded", async function () {
   }, 5000);
 });
 
-// Data Accessor `refreshManagerData`: Retrieves or refreshes data to refresh manager data.
 async function refreshManagerData() {
   mgrApps = await dbListAllApplications();
   mgrUsers = await dbListUsers();
@@ -215,7 +198,6 @@ async function refreshManagerData() {
   if (activeMgrTab === "reports") renderMgrReport();
 }
 
-// UI State Controller `showTab` (params: tab): Updates modal, tab, or panel state to show tab.
 function showTab(tab) {
   if (tab === "app-encoded") tab = "app-approved";
   activeMgrTab = tab;
@@ -286,7 +268,6 @@ function showTab(tab) {
   }
 }
 
-// Action Handler `updateCmsMaintenanceBarUI`: Validates inputs and persists changes to update cms maintenance bar ui.
 function updateCmsMaintenanceBarUI() {
   var badge = document.getElementById("cms-maint-badge");
   var btn = document.getElementById("cms-maint-toggle-btn");
@@ -304,7 +285,6 @@ function updateCmsMaintenanceBarUI() {
   }
 }
 
-// Helper `finishCmsAndDisableMaintenance`: Executes workflow logic for `finishCmsAndDisableMaintenance`.
 function finishCmsAndDisableMaintenance() {
   if (isMaintenanceOn()) {
     openConfirmPopup(
@@ -336,7 +316,6 @@ function finishCmsAndDisableMaintenance() {
   }
 }
 
-// UI Renderer `renderManagerApps`: Builds and updates DOM elements for manager apps.
 function renderManagerApps() {
   var box = document.getElementById("mgr-apps-list");
   if (!box) return;
@@ -395,7 +374,6 @@ function renderManagerApps() {
   box.innerHTML = html;
 }
 
-// Data Accessor `findMgrApp` (params: id): Retrieves or refreshes data to find mgr app.
 function findMgrApp(id) {
   for (var i = 0; i < mgrApps.length; i++) {
     if (mgrApps[i].id === id) return mgrApps[i];
@@ -403,7 +381,6 @@ function findMgrApp(id) {
   return null;
 }
 
-// UI State Controller `openMgrAppModal` (params: appId): Updates modal, tab, or panel state to open mgr app modal.
 function openMgrAppModal(appId) {
   activeMgrAppId = appId;
   var app = findMgrApp(appId);
@@ -476,12 +453,10 @@ function openMgrAppModal(appId) {
   document.getElementById("mgr-modal").classList.remove("hidden");
 }
 
-// UI State Controller `closeMgrModal`: Updates modal, tab, or panel state to close mgr modal.
 function closeMgrModal() {
   document.getElementById("mgr-modal").classList.add("hidden");
 }
 
-// Action Handler `saveMgrOverride`: Validates inputs and persists changes to save mgr override.
 async function saveMgrOverride() {
   var app = findMgrApp(activeMgrAppId);
   if (!app) return;
@@ -510,11 +485,13 @@ async function saveMgrOverride() {
   if (agentEmail && agentEmail !== app.assigned_agent) {
     var targetAg = mgrUsers.find(function (u) { return isAssignedToStaff(agentEmail, u); });
     await dbAddNotification({
-      user_id: targetAg ? targetAg.id : null,
+      user_id: targetAg ? targetAg.id : agentEmail,
       email: targetAg ? targetAg.email : null,
       role: "agent",
       title: "Application Assigned: " + app.reference_no,
-      message: "Manager " + currentManager.full_name + " assigned application " + app.reference_no + " (" + agentEmail + ") to your workspace queue."
+      message: "Manager " + currentManager.full_name + " assigned application " + app.reference_no + " (" + agentEmail + ") to your workspace queue.",
+      target_tab: "tab-claimed",
+      target_id: app.id
     });
   }
 
@@ -522,12 +499,14 @@ async function saveMgrOverride() {
   if (shouldNotifyCust) {
     var custLabel = (newStatus === "Needs Correction") ? "Update Needed" : newStatus;
     var custEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email;
-    await dbAddNotification(
-      custEmail,
-      "customer",
-      "Application " + custLabel + " (" + app.reference_no + ")",
-      effectiveRemarks || ("Your application status has been updated to " + custLabel + ".")
-    );
+    await dbAddNotification({
+      email: custEmail,
+      role: "customer",
+      title: "Application " + custLabel + " (" + app.reference_no + ")",
+      message: effectiveRemarks || ("Your application status has been updated to " + custLabel + "."),
+      target_tab: "tab-apps",
+      target_id: app.id
+    });
     if (newStatus === "Needs Correction") {
       await apiSendCorrectionEmail(
         custEmail,
@@ -546,7 +525,6 @@ async function saveMgrOverride() {
   showAlert("Saved", "Application " + app.reference_no + " has been updated.");
 }
 
-// UI Renderer `renderAgentPerformance`: Builds and updates DOM elements for agent performance.
 function renderAgentPerformance() {
   var body = document.getElementById("mgr-agent-body");
   if (!body) return;
@@ -594,7 +572,6 @@ function renderAgentPerformance() {
   body.innerHTML = html || '<tr><td colspan="7" class="muted">No agents found.</td></tr>';
 }
 
-// UI State Controller `openManagerAddAgentModal`: Updates modal, tab, or panel state to open manager add agent modal.
 function openManagerAddAgentModal() {
   openPopup(
     '<h3 style="margin-bottom:4px;">Add Verification Agent Account</h3>' +
@@ -617,7 +594,6 @@ function openManagerAddAgentModal() {
   );
 }
 
-// Action Handler `submitManagerAddAgent` (params: event): Validates inputs and persists changes to submit manager add agent.
 async function submitManagerAddAgent(event) {
   event.preventDefault();
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
@@ -666,7 +642,6 @@ async function submitManagerAddAgent(event) {
   }
 }
 
-// UI State Controller `openManagerEditAgentModal` (params: userId): Updates modal, tab, or panel state to open manager edit agent modal.
 function openManagerEditAgentModal(userId) {
   var u = mgrUsers.find(function (x) { return x.id === userId; });
   if (!u) return;
@@ -684,7 +659,6 @@ function openManagerEditAgentModal(userId) {
   );
 }
 
-// Action Handler `submitManagerEditAgent` (params: event, userId): Validates inputs and persists changes to submit manager edit agent.
 async function submitManagerEditAgent(event, userId) {
   event.preventDefault();
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
@@ -721,7 +695,6 @@ async function submitManagerEditAgent(event, userId) {
   }
 }
 
-// Helper `managerOpenResetAgentPwModal` (params: userId, unameLabel): Executes workflow logic for `managerOpenResetAgentPwModal`.
 function managerOpenResetAgentPwModal(userId, unameLabel) {
   window._mgrResetAgentId = userId;
   window._mgrResetAgentLabel = unameLabel;
@@ -736,7 +709,6 @@ function managerOpenResetAgentPwModal(userId, unameLabel) {
   );
 }
 
-// Helper `managerConfirmResetAgentPw`: Executes workflow logic for `managerConfirmResetAgentPw`.
 async function managerConfirmResetAgentPw() {
   if (typeof clearFieldError === "function") clearFieldError("mgr-reset-ag-pw");
   var newPw = (document.getElementById("mgr-reset-ag-pw").value || "").trim();
@@ -755,7 +727,6 @@ async function managerConfirmResetAgentPw() {
   }
 }
 
-// Helper `managerToggleAgentActive` (params: userId, nextState): Executes workflow logic for `managerToggleAgentActive`.
 async function managerToggleAgentActive(userId, nextState) {
   if (!nextState && currentManager && userId === currentManager.id) {
     showAlert("Action Blocked", "You cannot disable your own active account.", "warn");
@@ -770,7 +741,6 @@ async function managerToggleAgentActive(userId, nextState) {
   }
 }
 
-// Helper `managerDeleteAgent` (params: userId, label): Executes workflow logic for `managerDeleteAgent`.
 function managerDeleteAgent(userId, label) {
   openConfirmPopup(
     "Delete Agent Account?",
@@ -789,7 +759,6 @@ function managerDeleteAgent(userId, label) {
   );
 }
 
-// UI State Controller `openManagerInviteModal`: Updates modal, tab, or panel state to open manager invite modal.
 function openManagerInviteModal() {
   openPopup(
     '<div class="row between" style="margin-bottom:8px;">' +
@@ -808,7 +777,6 @@ function openManagerInviteModal() {
   );
 }
 
-// Helper `generateManagerAgentInvite`: Executes workflow logic for `generateManagerAgentInvite`.
 async function generateManagerAgentInvite() {
   var noteEl = document.getElementById("mgr-invite-note");
   var note = noteEl ? noteEl.value.trim() : "";
@@ -827,7 +795,6 @@ async function generateManagerAgentInvite() {
   }
 }
 
-// Helper `copyManagerInviteUrl`: Executes workflow logic for `copyManagerInviteUrl`.
 function copyManagerInviteUrl() {
   var inp = document.getElementById("mgr-invite-url");
   if (!inp || !inp.value) return;
@@ -840,7 +807,6 @@ function copyManagerInviteUrl() {
   showAlert("Copied", "Private Agent Registration Link copied to clipboard.");
 }
 
-// UI Renderer `renderManagerLinks`: Builds and updates DOM elements for manager links.
 async function renderManagerLinks() {
   var body = document.getElementById("mgr-links-body");
   if (!body) return;
@@ -878,7 +844,6 @@ async function renderManagerLinks() {
   body.innerHTML = html;
 }
 
-// Helper `ensureFourSlides` (params: slides, fallbackSlides): Executes workflow logic for `ensureFourSlides`.
 function ensureFourSlides(slides, fallbackSlides) {
   var arr = (slides || []).slice();
   var fb = fallbackSlides || [];
@@ -893,7 +858,6 @@ function ensureFourSlides(slides, fallbackSlides) {
 var _cmsBucketRefreshPromise = null;
 var _cmsInitialBucketSynced = false;
 
-// Data Accessor `refreshCmsWebsiteAssetsFromBucket`: Retrieves or refreshes data to refresh cms website assets from bucket.
 async function refreshCmsWebsiteAssetsFromBucket() {
   if (_cmsBucketRefreshPromise) return _cmsBucketRefreshPromise;
   if (typeof dbSyncLiveSettingsAndContent !== "function") return;
@@ -910,7 +874,6 @@ async function refreshCmsWebsiteAssetsFromBucket() {
   return _cmsBucketRefreshPromise;
 }
 
-// Data Accessor `loadAllCmsEditors` (params: skipBucketRefresh): Retrieves or refreshes data to load all cms editors.
 function loadAllCmsEditors(skipBucketRefresh) {
   if (!skipBucketRefresh && !_cmsInitialBucketSynced) {
     refreshCmsWebsiteAssetsFromBucket();
@@ -964,7 +927,6 @@ function loadAllCmsEditors(skipBucketRefresh) {
   renderFaqEditorRows(c.faqs || []);
 }
 
-// UI Renderer `renderSlideEditorList` (params: boxId, prefix, slides, savedBanners, activeCount): Builds and updates DOM elements for slide editor list.
 function renderSlideEditorList(boxId, prefix, slides, savedBanners, activeCount) {
   var box = document.getElementById(boxId);
   if (!box) return;
@@ -1005,7 +967,6 @@ function renderSlideEditorList(boxId, prefix, slides, savedBanners, activeCount)
   box.innerHTML = html;
 }
 
-// UI Renderer `renderMediaAssetsEditor` (params: c): Builds and updates DOM elements for media assets editor.
 function renderMediaAssetsEditor(c) {
   var lib = c.asset_library || DEFAULT_CONTENT.asset_library;
   var logos = (lib.Logos || ["black-logo-white-mode.png", "white-logo-dark-mode.png"]).slice();
@@ -1039,7 +1000,6 @@ function renderMediaAssetsEditor(c) {
   renderAssetCheckboxGallery("cms-permits-gallery", "permit", lib.Permits || [], c.permit_images || []);
 }
 
-// UI Renderer `renderAssetCheckboxGallery` (params: boxId, groupName, allSaved, activeList): Builds and updates DOM elements for asset checkbox gallery.
 function renderAssetCheckboxGallery(boxId, groupName, allSaved, activeList) {
   var box = document.getElementById(boxId);
   if (!box) return;
@@ -1060,7 +1020,6 @@ function renderAssetCheckboxGallery(boxId, groupName, allSaved, activeList) {
   box.innerHTML = html;
 }
 
-// UI State Controller `toggleAllCmsAssets` (params: groupName): Updates modal, tab, or panel state to toggle all cms assets.
 function toggleAllCmsAssets(groupName) {
   var boxes = document.querySelectorAll('input[name="cms-asset-' + groupName + '"]');
   if (!boxes || boxes.length === 0) return;
@@ -1076,7 +1035,6 @@ function toggleAllCmsAssets(groupName) {
   }
 }
 
-// Helper `uploadNewBucketAsset` (params: category, fileInputId, msgId): Executes workflow logic for `uploadNewBucketAsset`.
 async function uploadNewBucketAsset(category, fileInputId, msgId) {
   var inp = document.getElementById(fileInputId);
   var file = inp && inp.files ? inp.files[0] : null;
@@ -1123,7 +1081,6 @@ async function uploadNewBucketAsset(category, fileInputId, msgId) {
   }
 }
 
-// Action Handler `saveMediaAssetsCms`: Validates inputs and persists changes to save media assets cms.
 async function saveMediaAssetsCms() {
   var c = getSiteContent();
   var logoSel = document.getElementById("cms-active-logo");
@@ -1148,7 +1105,6 @@ async function saveMediaAssetsCms() {
   }
 }
 
-// Data Accessor `getCheckedAssetValues` (params: groupName): Retrieves or refreshes data to get checked asset values.
 function getCheckedAssetValues(groupName) {
   var boxes = document.querySelectorAll('input[name="cms-asset-' + groupName + '"]:checked');
   var out = [];
@@ -1156,7 +1112,6 @@ function getCheckedAssetValues(groupName) {
   return out;
 }
 
-// Action Handler `saveBannersCms`: Validates inputs and persists changes to save banners cms.
 async function saveBannersCms() {
   var c = getSiteContent();
   var countEl = document.getElementById("cms-hero-slide-count");
@@ -1187,7 +1142,6 @@ async function saveBannersCms() {
   }
 }
 
-// Action Handler `saveAboutCms`: Validates inputs and persists changes to save about cms.
 function saveAboutCms() {
   var c = getSiteContent();
   c.about_lead = document.getElementById("cms-about-lead").value.trim();
@@ -1201,7 +1155,6 @@ function saveAboutCms() {
   showMsg("cms-about-msg", "ok", "About PIGEM and Contact information saved!");
 }
 
-// Action Handler `savePlansCms`: Validates inputs and persists changes to save plans cms.
 function savePlansCms() {
   var c = getSiteContent();
   for (var i = 0; i < c.plans.length; i++) {
@@ -1222,7 +1175,6 @@ function savePlansCms() {
 
 var currentEditingFaqs = [];
 
-// UI Renderer `renderFaqEditorRows` (params: faqs): Builds and updates DOM elements for faq editor rows.
 function renderFaqEditorRows(faqs) {
   currentEditingFaqs = faqs.slice();
   var box = document.getElementById("cms-faqs-list");
@@ -1237,14 +1189,12 @@ function renderFaqEditorRows(faqs) {
   box.innerHTML = html;
 }
 
-// Helper `addFaqCmsRow`: Executes workflow logic for `addFaqCmsRow`.
 function addFaqCmsRow() {
   syncFaqInputs();
   currentEditingFaqs.push({ q: "New Question?", a: "Write the answer here." });
   renderFaqEditorRows(currentEditingFaqs);
 }
 
-// Helper `syncFaqInputs`: Executes workflow logic for `syncFaqInputs`.
 function syncFaqInputs() {
   for (var i = 0; i < currentEditingFaqs.length; i++) {
     var qEl = document.getElementById("faq-q-" + i);
@@ -1256,7 +1206,6 @@ function syncFaqInputs() {
   }
 }
 
-// Action Handler `saveFaqsCms`: Validates inputs and persists changes to save faqs cms.
 function saveFaqsCms() {
   syncFaqInputs();
   var c = getSiteContent();
@@ -1266,14 +1215,12 @@ function saveFaqsCms() {
   showMsg("cms-faqs-msg", "ok", "FAQs saved!");
 }
 
-// UI State Controller `togglePromoTarget`: Updates modal, tab, or panel state to toggle promo target.
 function togglePromoTarget() {
   var t = document.getElementById("promo-target").value;
   var wrap = document.getElementById("promo-test-email-wrap");
   if (wrap) wrap.style.display = (t === "test") ? "block" : "none";
 }
 
-// Helper `clearSiteAnnouncement`: Executes workflow logic for `clearSiteAnnouncement`.
 function clearSiteAnnouncement() {
   var c = getSiteContent();
   c.announcement = { active: false, headline: "", body: "" };
@@ -1282,7 +1229,6 @@ function clearSiteAnnouncement() {
   showMsg("promo-msg", "ok", "Public website announcement banner has been cleared.");
 }
 
-// Helper `sendManagerPromoBroadcast`: Executes workflow logic for `sendManagerPromoBroadcast`.
 async function sendManagerPromoBroadcast() {
   var btn = document.getElementById("btn-send-promo");
   var headline = document.getElementById("promo-headline").value.trim();
@@ -1381,7 +1327,6 @@ async function sendManagerPromoBroadcast() {
   }
 }
 
-// UI Renderer `renderMgrRecentActivities`: Builds and updates DOM elements for mgr recent activities.
 function renderMgrRecentActivities() {
   var box = document.getElementById("mgr-recent-activities");
   if (!box) return;
@@ -1418,7 +1363,6 @@ function renderMgrRecentActivities() {
     '<div>' + logHtml + '</div>';
 }
 
-// UI State Controller `setMgrReportSubTab` (params: subTab): Updates modal, tab, or panel state to set mgr report sub tab.
 function setMgrReportSubTab(subTab) {
   activeMgrReportTab = subTab || "apps";
   var tabs = ["apps", "agents"];
@@ -1430,7 +1374,6 @@ function setMgrReportSubTab(subTab) {
   renderMgrReport();
 }
 
-// Helper `populateMgrReportFilters`: Executes workflow logic for `populateMgrReportFilters`.
 function populateMgrReportFilters() {
   var sel = document.getElementById("rep-filter-status");
   if (!sel) return;
@@ -1451,7 +1394,6 @@ function populateMgrReportFilters() {
     '<option value="Rejected">Rejected</option>';
 }
 
-// Helper `onMgrReportTimeframeChange`: Executes workflow logic for `onMgrReportTimeframeChange`.
 function onMgrReportTimeframeChange() {
   var tfEl = document.getElementById("rep-timeframe");
   var tf = tfEl ? tfEl.value : "all";
@@ -1462,7 +1404,6 @@ function onMgrReportTimeframeChange() {
   renderMgrReport();
 }
 
-// Data Accessor `getMgrReportData`: Retrieves or refreshes data to get mgr report data.
 function getMgrReportData() {
   var tfEl = document.getElementById("rep-timeframe");
   var dEl = document.getElementById("rep-date");
@@ -1562,7 +1503,6 @@ function getMgrReportData() {
   };
 }
 
-// UI Renderer `renderMgrReport`: Builds and updates DOM elements for mgr report.
 function renderMgrReport() {
   renderDashReportView({
     data: getMgrReportData(),
@@ -1576,7 +1516,6 @@ function renderMgrReport() {
   });
 }
 
-// Helper `resetMgrReportFilters`: Executes workflow logic for `resetMgrReportFilters`.
 function resetMgrReportFilters() {
   var tfEl = document.getElementById("rep-timeframe");
   var dEl = document.getElementById("rep-date");
@@ -1589,13 +1528,11 @@ function resetMgrReportFilters() {
   onMgrReportTimeframeChange();
 }
 
-// Helper `exportMgrReportCsv`: Executes workflow logic for `exportMgrReportCsv`.
 function exportMgrReportCsv() {
   var data = getMgrReportData();
   exportReportToCsv(data.columns, data.rows, "PIGEM-manager-" + activeMgrReportTab + "-report.csv");
 }
 
-// Helper `downloadFormattedMgrReport`: Executes workflow logic for `downloadFormattedMgrReport`.
 function downloadFormattedMgrReport() {
   var data = getMgrReportData();
   downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-manager-" + activeMgrReportTab + "-report.html");

@@ -1,15 +1,3 @@
-// ============================================================================
-// FILE: web/js/login.js
-// PURPOSE: Role-Based Sign-In (Customer Gmail/Username vs. Staff Username-Only)
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. Inline Portal Config (`window.LOGIN_SYSTEM`) -> Customer / Staff / Admin gatekeeper
-//   2. Google reCAPTCHA v2 (`recaptcha/api.js`)     -> Anti-bot sign-in verification
-//   3. web/js/config.js -> Password rules, `attachEnterKeyNavigation` & modal helpers
-//   4. web/js/db.js     -> `dbSignIn`, `dbRequestStaffPasswordReset`, OTP password recovery
-//   5. web/js/api.js    -> `apiVerifyCaptcha` and `apiSendOtpEmail`
-// ============================================================================
-
 var loginCaptchaVerified = false;
 var loginAttempts = 0;
 var MAX_ATTEMPTS = 5;
@@ -38,7 +26,6 @@ window.onLoginCaptchaExpired = function () {
   loginCaptchaVerified = false;
 };
 
-// UI Renderer `renderLoginCaptchaBox`: Builds and updates DOM elements for login captcha box.
 function renderLoginCaptchaBox() {
   var box = document.getElementById("login-captcha-box");
   if (!box) return;
@@ -46,7 +33,6 @@ function renderLoginCaptchaBox() {
   var siteKey = CONFIG.RECAPTCHA_SITE_KEY;
   box.innerHTML = '<div id="g-login-recaptcha" class="g-recaptcha" data-sitekey="' + siteKey + '" data-callback="onLoginCaptchaVerified" data-expired-callback="onLoginCaptchaExpired"></div>';
 
-  // Helper `tryRenderGoogle`: Executes workflow logic for `tryRenderGoogle`.
   function tryRenderGoogle() {
     if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
       try {
@@ -80,7 +66,6 @@ function renderLoginCaptchaBox() {
   }
 }
 
-// UI Renderer `renderLoginCaptchaFallback` (params: box): Builds and updates DOM elements for login captcha fallback.
 function renderLoginCaptchaFallback(box) {
   if (!box) return;
   box.innerHTML =
@@ -96,7 +81,6 @@ function renderLoginCaptchaFallback(box) {
     '</div>';
 }
 
-// Helper `triggerLoginCaptcha`: Executes workflow logic for `triggerLoginCaptcha`.
 function triggerLoginCaptcha() {
   if (loginCaptchaVerified) return;
   var check = document.getElementById("login-captcha-check");
@@ -115,7 +99,6 @@ function triggerLoginCaptcha() {
   }, 450);
 }
 
-// Helper `resetLoginFieldsAndCaptcha`: Executes workflow logic for `resetLoginFieldsAndCaptcha`.
 function resetLoginFieldsAndCaptcha() {
   var emailEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
@@ -131,7 +114,6 @@ function resetLoginFieldsAndCaptcha() {
   renderLoginCaptchaBox();
 }
 
-// Validator/Check `checkAdminProvisionState`: Evaluates rule (check admin provision state) and returns result.
 async function checkAdminProvisionState() {
   if (window.SYSTEM !== "admin" || typeof dbHasAdminAccount !== "function") return;
   var box = document.getElementById("admin-provision-box");
@@ -140,7 +122,6 @@ async function checkAdminProvisionState() {
   box.hidden = Boolean(hasAdmin);
 }
 
-// UI State Controller `showSessionReasonBanner`: Updates modal, tab, or panel state to show session reason banner.
 function showSessionReasonBanner() {
   var params = new URLSearchParams(window.location.search);
   var reason = String(params.get("reason") || "").toLowerCase();
@@ -173,7 +154,6 @@ function showSessionReasonBanner() {
   return true;
 }
 
-// Helper `redirectIfAlreadySignedIn`: Executes workflow logic for `redirectIfAlreadySignedIn`.
 async function redirectIfAlreadySignedIn() {
   if (typeof dbGetCurrentUser !== "function") return;
   if (typeof sessionStore !== "undefined" && typeof SESSION_KEY !== "undefined" && !sessionStore.getItem(SESSION_KEY)) return;
@@ -193,7 +173,6 @@ async function redirectIfAlreadySignedIn() {
   } catch (e) {}
 }
 
-// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", function () {
   var hasReason = showSessionReasonBanner();
   renderLoginCaptchaBox();
@@ -207,7 +186,6 @@ window.addEventListener("DOMContentLoaded", function () {
   if (pwEl && typeof clearFieldError === "function") pwEl.addEventListener("input", function () { clearFieldError("password"); });
 });
 
-// UI State Controller `showLockoutPopup`: Updates modal, tab, or panel state to show lockout popup.
 function showLockoutPopup() {
   var isCustomer = (window.SYSTEM === "customer");
   var msgHtml = isCustomer
@@ -227,7 +205,6 @@ function showLockoutPopup() {
   );
 }
 
-// `openStaffResetRequestModal`: Opens the internal Forgot Password request modal showing Administrator contact info on the Staff Login page.
 function openStaffResetRequestModal() {
   openPopup(
     '<h3 style="margin:0 0 6px;">Haven\'t Access / Reset Password</h3>' +
@@ -246,7 +223,6 @@ function openStaffResetRequestModal() {
   );
 }
 
-// `submitStaffResetRequest` (params: event): Submits a forgot-password request by username to notify the System Administrator in-system.
 async function submitStaffResetRequest(event) {
   event.preventDefault();
   if (typeof clearFieldError === "function") clearFieldError("staff-reset-username");
@@ -277,7 +253,6 @@ async function submitStaffResetRequest(event) {
   }
 }
 
-// Helper `handleLogin` (params: event): Executes workflow logic for `handleLogin`.
 async function handleLogin(event) {
   event.preventDefault();
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
@@ -406,7 +381,6 @@ async function handleLogin(event) {
   }
 }
 
-// Helper `stopRecoveryCountdown`: Executes workflow logic for `stopRecoveryCountdown`.
 function stopRecoveryCountdown() {
   if (_recoveryState.timerId) {
     clearInterval(_recoveryState.timerId);
@@ -414,7 +388,6 @@ function stopRecoveryCountdown() {
   }
 }
 
-// UI State Controller `openForgotModal` (params: initialTab): Updates modal, tab, or panel state to open forgot modal.
 function openForgotModal(initialTab) {
   if (window.SYSTEM !== "customer") {
     showAlert("Administrator Managed", "Internal staff credentials are managed by the System Administrator.", "warn");
@@ -427,13 +400,11 @@ function openForgotModal(initialTab) {
   renderRecoveryStep1();
 }
 
-// Helper `switchRecoveryTab` (params: tabName): Executes workflow logic for `switchRecoveryTab`.
 function switchRecoveryTab(tabName) {
   _recoveryState.tab = tabName;
   renderRecoveryStep1();
 }
 
-// UI Renderer `renderRecoveryStep1`: Builds and updates DOM elements for recovery step1.
 function renderRecoveryStep1() {
   var tab = (_recoveryState.tab === "username") ? "username" : "password";
   _recoveryState.tab = tab;
@@ -473,7 +444,6 @@ function renderRecoveryStep1() {
   );
 }
 
-// Helper `startRecoveryVerification`: Executes workflow logic for `startRecoveryVerification`.
 async function startRecoveryVerification() {
   if (typeof clearFieldError === "function") clearFieldError("recovery-query-input");
   var inp = document.getElementById("recovery-query-input");
@@ -517,7 +487,6 @@ async function startRecoveryVerification() {
   }
 }
 
-// UI Renderer `renderRecoveryOtpPinModal`: Builds and updates DOM elements for recovery otp pin modal.
 function renderRecoveryOtpPinModal() {
   var info = _recoveryState.account;
   if (!info) return;
@@ -551,7 +520,6 @@ function renderRecoveryOtpPinModal() {
   if (firstSq) firstSq.focus();
 }
 
-// Helper `handleOtpSquareInput` (params: el, idx): Executes workflow logic for `handleOtpSquareInput`.
 function handleOtpSquareInput(el, idx) {
   var val = String(el.value || "").replace(/\D/g, "");
   el.value = val ? val.slice(-1) : "";
@@ -561,7 +529,6 @@ function handleOtpSquareInput(el, idx) {
   }
 }
 
-// Helper `handleOtpSquareKey` (params: ev, idx): Executes workflow logic for `handleOtpSquareKey`.
 function handleOtpSquareKey(ev, idx) {
   if (ev.key === "Backspace" && !ev.target.value && idx > 0) {
     var prev = document.querySelector('#recovery-otp-squares .otp-sq[data-sq="' + (idx - 1) + '"]');
@@ -572,7 +539,6 @@ function handleOtpSquareKey(ev, idx) {
   }
 }
 
-// Data Accessor `getEnteredOtpSquaresCode`: Retrieves or refreshes data to get entered otp squares code.
 function getEnteredOtpSquaresCode() {
   var boxes = document.querySelectorAll("#recovery-otp-squares .otp-sq");
   var code = "";
@@ -582,20 +548,17 @@ function getEnteredOtpSquaresCode() {
   return code;
 }
 
-// Utility `formatTimerMMSS` (params: sec): Normalizes or transforms values (format timer mmss).
 function formatTimerMMSS(sec) {
   var m = Math.floor(sec / 60);
   var s = sec % 60;
   return (m < 10 ? "0" + m : String(m)) + ":" + (s < 10 ? "0" + s : String(s));
 }
 
-// Helper `startRecoveryCountdownTimer`: Executes workflow logic for `startRecoveryCountdownTimer`.
 function startRecoveryCountdownTimer() {
   stopRecoveryCountdown();
   var timerBox = document.getElementById("recovery-timer-box");
   if (!timerBox) return;
 
-  // UI Renderer `renderTick`: Builds and updates DOM elements for tick.
   function renderTick() {
     var box = document.getElementById("recovery-timer-box");
     if (!box) {
@@ -615,7 +578,6 @@ function startRecoveryCountdownTimer() {
   _recoveryState.timerId = setInterval(renderTick, 1000);
 }
 
-// Helper `resendRecoveryOtpCode`: Executes workflow logic for `resendRecoveryOtpCode`.
 async function resendRecoveryOtpCode() {
   var box = document.getElementById("recovery-timer-box");
   if (box) {
@@ -640,7 +602,6 @@ async function resendRecoveryOtpCode() {
   }
 }
 
-// Helper `verifyRecoveryPinCode`: Executes workflow logic for `verifyRecoveryPinCode`.
 function verifyRecoveryPinCode() {
   if (typeof clearFieldError === "function") clearFieldError("recovery-otp-msg-anchor");
   var entered = getEnteredOtpSquaresCode();
@@ -698,14 +659,12 @@ function verifyRecoveryPinCode() {
   );
 }
 
-// Helper `fillRecoveredLogin` (params: val): Executes workflow logic for `fillRecoveredLogin`.
 function fillRecoveredLogin(val) {
   closePopup();
   var emailEl = document.getElementById("email");
   if (emailEl) emailEl.value = val;
 }
 
-// Action Handler `confirmResetPassword`: Validates inputs and persists changes to confirm reset password.
 async function confirmResetPassword() {
   if (typeof clearFieldError === "function") {
     clearFieldError("rec-new-pw");

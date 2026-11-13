@@ -1,14 +1,3 @@
-// ============================================================================
-// FILE: web/js/customer.js
-// PURPOSE: Customer Self-Service Portal (Status Tracking & Targeted Corrections)
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js  -> System maintenance checks and accessible alert modals
-//   2. web/js/db.js      -> Customer application queries and ID photo resubmission
-//   3. web/js/api.js     -> Background re-screening when updated IDs are submitted
-//   4. web/js/dash-ui.js -> Shared topbar, notifications bell, and account settings drawer
-// ============================================================================
-
 var currentCustomer = null;
 var myApps = [];
 var selectedAppId = null;
@@ -22,7 +11,6 @@ window.openDashTabById = function (tabId, targetId) {
 
 window.PORTAL_ALLOWED_ROLES = ["customer"];
 
-// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   currentCustomer = await requireLogin(["customer"]);
   if (!currentCustomer) return;
@@ -39,7 +27,6 @@ window.addEventListener("DOMContentLoaded", async function () {
   }, 8000);
 });
 
-// `promptCustomerCorrectionReminder` (params: apps): Displays the 24-hour / 72-hour Needs Correction reminder banner and once-per-session popup on Customer login.
 function promptCustomerCorrectionReminder(apps) {
   var pendingFixes = (apps || []).filter(function (a) {
     return a.status === "Needs Correction" && !a.correction_declined;
@@ -90,7 +77,6 @@ function promptCustomerCorrectionReminder(apps) {
   }
 }
 
-// UI Renderer `renderAppList`: Builds and updates DOM elements for app list.
 function renderAppList() {
   var listEl = document.getElementById("cust-app-list");
   if (!listEl) return;
@@ -121,7 +107,6 @@ function renderAppList() {
   listEl.innerHTML = html;
 }
 
-// Data Accessor `loadMyApplications`: Retrieves or refreshes data to load my applications.
 async function loadMyApplications() {
   myApps = await dbListApplicationsForCustomer(currentCustomer.email);
 
@@ -153,7 +138,6 @@ async function loadMyApplications() {
   renderSelectedApp();
 }
 
-// Data Accessor `findMyApp` (params: id): Retrieves or refreshes data to find my app.
 function findMyApp(id) {
   for (var i = 0; i < myApps.length; i++) {
     if (myApps[i].id === id) return myApps[i];
@@ -161,14 +145,12 @@ function findMyApp(id) {
   return null;
 }
 
-// Helper `selectMyApp` (params: id): Executes workflow logic for `selectMyApp`.
 function selectMyApp(id) {
   selectedAppId = id;
   renderAppList();
   renderSelectedApp();
 }
 
-// UI Renderer `renderSelectedApp`: Builds and updates DOM elements for selected app.
 function renderSelectedApp() {
   var box = document.getElementById("cust-detail-box");
   var app = findMyApp(selectedAppId);
@@ -319,7 +301,6 @@ function renderSelectedApp() {
   box.innerHTML = html;
 }
 
-// `confirmDeclineCorrection` (params: appId): Opens the confirmation dialog for the Customer 'I choose not to correct' action.
 function confirmDeclineCorrection(appId) {
   var app = findMyApp(appId);
   if (!app || typeof openPopup !== "function") return;
@@ -340,7 +321,6 @@ function confirmDeclineCorrection(appId) {
   );
 }
 
-// `executeDeclineCorrection` (params: appId): Persists customer correction decline closure and refreshes the Customer Portal queue.
 async function executeDeclineCorrection(appId) {
   var app = findMyApp(appId);
   if (!app) return;
@@ -367,7 +347,6 @@ async function executeDeclineCorrection(appId) {
   }
 }
 
-// Action Handler `submitCustomerCorrection` (params: appId): Validates inputs and persists changes to submit customer correction.
 async function submitCustomerCorrection(appId) {
   var app = findMyApp(appId);
   if (!app) return;

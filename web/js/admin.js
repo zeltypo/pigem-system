@@ -337,7 +337,7 @@ async function checkApiHealth() {
 
 function getPasswordResetRequests() {
   return (adminNotifs || []).filter(function (n) {
-    return String(n.title || "").indexOf("Password Reset Request:") === 0;
+    return !n.is_read && String(n.title || "").indexOf("Password Reset Request:") === 0;
   });
 }
 
@@ -709,9 +709,33 @@ async function adminConfirmResetPassword() {
   }
   try {
     await dbAdminResetUserPassword(window._adminResetTargetId, newPw);
+    var targetLabelLow = String(window._adminResetTargetLabel || "").toLowerCase();
+    for (var nIdx = 0; nIdx < (adminNotifs || []).length; nIdx++) {
+      var n = adminNotifs[nIdx];
+      if (String(n.title || "").indexOf("Password Reset Request:") === 0) {
+        if (
+          (n.target_id && String(n.target_id) === String(window._adminResetTargetId)) ||
+          (targetLabelLow && String(n.title || "").toLowerCase().indexOf(targetLabelLow) !== -1)
+        ) {
+          n.is_read = true;
+          if (typeof dbMarkNotificationRead === "function") {
+            await dbMarkNotificationRead(n.id, currentAdmin);
+          }
+        }
+      }
+    }
+    var targetUserObj = adminUsers.find(function (u) { return u.id === window._adminResetTargetId; });
+    await dbAddNotification({
+      user_id: window._adminResetTargetId,
+      role: targetUserObj ? targetUserObj.role : null,
+      title: "Password Reset Completed",
+      message: "Your internal account password has been updated by the System Administrator.",
+      target_tab: "tab-overview"
+    });
     await dbAddLog(getStaffIdentifier(currentAdmin), "Reset password for " + window._adminResetTargetLabel);
     closePopup();
     await refreshAdminData();
+    if (typeof refreshNotifBell === "function") await refreshNotifBell(currentAdmin);
     showAlert("Password Updated", "Updated sign-in password for " + escapeHtml(window._adminResetTargetLabel) + ".", "good");
   } catch (err) {
     setFieldError("adm-reset-pw", err.message || "Could not update password.");

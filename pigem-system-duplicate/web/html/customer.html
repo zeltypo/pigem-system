@@ -1,9 +1,4 @@
 <!DOCTYPE html>
-<!-- ==========================================================================
-     FILE OVERVIEW: Customer Application Tracking & Self-Service Correction Portal (web/html/customer.html)
-     PURPOSE: Displays simplified application status (Processing, Approved, Rejected) and lets customers submit requested updates.
-     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
-     ========================================================================== -->
 
 <html lang="en">
 <head>
@@ -11,15 +6,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>My Applications - PIGEM Customer Portal</title>
 
-  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" type="image/png" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" />
 
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
 
-  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="topbar">
     <div class="container topbar-inner">
       <div class="brand" style="display:flex; align-items:center; gap:10px;">
@@ -27,7 +19,6 @@
         <div><b style="cursor:default; user-select:none;">PIGEM Combined Facilities Support Services</b></div>
       </div>
 
-      <!-- SECTION: Primary Navigation Links -->
       <nav class="nav-links">
         <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">
           <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
@@ -37,7 +28,6 @@
     </div>
   </header>
 
-  <!-- SECTION: Main Page Content Container -->
   <main class="container" style="padding:32px 20px 64px">
     <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; margin-bottom:20px">
       <div>
@@ -87,27 +77,20 @@
     </div>
   </div>
 
-  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
 window.SYSTEM = "customer";
   </script>
 
-  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
 
-  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
 
-  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for captcha verification, ID screening & Gmail SMTP emails -->
   <script src="../js/api.js"></script>
 
-  <!-- IMPORT: Shared dashboard shell controller (sidebar nav, theme toggle, Overview-only controls, pie/bar charts) -->
   <script src="../js/dash-ui.js"></script>
 
-  <!-- IMPORT: Customer portal controller loading applications and targeted correction uploads -->
   <script src="../js/customer.js"></script>
 </body>
 </html>

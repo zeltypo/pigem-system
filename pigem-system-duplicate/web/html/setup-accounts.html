@@ -1,25 +1,17 @@
 <!DOCTYPE html>
-<!-- ==========================================================================
-     FILE OVERVIEW: One-Time System Administrator Provisioning Utility (web/html/setup-accounts.html)
-     PURPOSE: One-time setup page (auto-locks once 1 Admin exists) for registering the sole username-only Admin account.
-     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
-     ========================================================================== -->
 
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Admin Account Provisioning | Combined Facilities Support Services</title>
 
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
 
-  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="simple-bar">
     <div class="container" style="display:flex; align-items:center; gap:12px;">
       <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
@@ -27,7 +19,6 @@
     </div>
   </header>
 
-  <!-- SECTION: Main Page Content Container -->
   <main class="auth-page">
     <div class="card auth-card" style="max-width:480px;">
 
@@ -51,7 +42,6 @@
           <p class="small muted mt" style="margin-top:4px;">Create the sole Administrator account to manage internal staff credentials.</p>
         </div>
 
-        <!-- FORM: Interactive User Input Form -->
         <form class="mt-big" onsubmit="registerSingleAdmin(event)" novalidate>
           <div class="form-grid three">
             <div>
@@ -98,22 +88,16 @@
     </div>
   </main>
 
-  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
 window.SYSTEM = "admin";
   </script>
 
-  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
 
-  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
-  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
-    // Helper `initProvisioningPage`: Executes workflow logic for `initProvisioningPage`.
     async function initProvisioningPage() {
       var loadingEl = document.getElementById("provision-loading-box");
       var lockedEl = document.getElementById("provision-locked-box");
@@ -132,7 +116,6 @@ window.SYSTEM = "admin";
       }
     }
 
-    // Helper `registerSingleAdmin` (params: event): Executes workflow logic for `registerSingleAdmin`.
     async function registerSingleAdmin(event) {
       event.preventDefault();
       if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();

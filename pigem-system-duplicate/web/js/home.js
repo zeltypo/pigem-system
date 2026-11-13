@@ -1,16 +1,5 @@
-// ============================================================================
-// FILE: web/js/home.js
-// PURPOSE: Public Home Page Controller (Fiber Plans, Announcements & CMS Render)
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. Google reCAPTCHA v2 (`recaptcha/api.js`) -> Exposes global `grecaptcha`
-//   2. @supabase/supabase-js@2 + web/js/db.js   -> Loads live plans & CMS data
-//   3. web/js/config.js                         -> Plan defaults & asset URL resolvers
-// ============================================================================
-
 var pendingApplyPlanId = null;
 
-// UI State Controller `openApplyWithCaptcha` (params: planId): Updates modal, tab, or panel state to open apply with captcha.
 function openApplyWithCaptcha(planId) {
   pendingApplyPlanId = planId || "";
   if (sessionStorage.getItem("pigem_captcha_verified") === "true") {
@@ -20,7 +9,6 @@ function openApplyWithCaptcha(planId) {
   showGoogleCaptchaPopup();
 }
 
-// UI State Controller `showGoogleCaptchaPopup`: Updates modal, tab, or panel state to show google captcha popup.
 function showGoogleCaptchaPopup() {
   openPopup(
     '<div class="center" style="padding:14px 4px 6px;">' +
@@ -68,7 +56,6 @@ function showGoogleCaptchaPopup() {
   }
 }
 
-// Helper `onGoogleCaptchaPassed` (params: token): Executes workflow logic for `onGoogleCaptchaPassed`.
 async function onGoogleCaptchaPassed(token) {
   if (token && typeof apiVerifyCaptcha === "function") {
     var checkRes = await apiVerifyCaptcha(token);
@@ -83,7 +70,6 @@ async function onGoogleCaptchaPassed(token) {
   window.location.href = targetUrl;
 }
 
-// Helper `triggerHomeCaptcha`: Executes workflow logic for `triggerHomeCaptcha`.
 function triggerHomeCaptcha() {
   var check = document.getElementById("home-captcha-check");
   var card = document.getElementById("home-captcha-card");
@@ -103,7 +89,6 @@ function triggerHomeCaptcha() {
   }, 600);
 }
 
-// UI Renderer `buildPlanCard` (params: plan): Builds and updates DOM elements for plan card.
 function buildPlanCard(plan) {
   var borderClass = plan.featured ? "card plan red-border" : "card plan";
   var buttonClass = plan.featured ? "btn btn-red btn-full" : "btn btn-full";
@@ -125,7 +110,6 @@ function buildPlanCard(plan) {
   );
 }
 
-// Helper `initHomePage`: Executes workflow logic for `initHomePage`.
 function initHomePage() {
   var content = getWebsiteContent();
 

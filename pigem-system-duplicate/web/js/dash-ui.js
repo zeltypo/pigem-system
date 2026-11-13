@@ -1,13 +1,3 @@
-// ============================================================================
-// FILE: web/js/dash-ui.js
-// PURPOSE: Shared Dashboard Shell UI (Session Lock, 15m Idle Timeout, Charts & Reports)
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js -> Global `CONFIG`, popup helpers, and `renderPieChart` support
-//   2. web/js/db.js     -> `dbListMyNotifications`, `dbVerifyActiveSessionToken`, `dbSignOut`
-//   3. web/js/api.js    -> `apiSendOtpEmail` for Customer profile password updates
-// ============================================================================
-
 var dashCurrentUser = null;
 var dashSearchApps = [];
 var dashOnSelectApp = null;
@@ -20,7 +10,6 @@ var DASH_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 var _dashSessionRedirecting = false;
 
-// Helper `startDashSecurityWatchers`: Executes workflow logic for `startDashSecurityWatchers`.
 function startDashSecurityWatchers() {
   if (_dashSecurityStarted || !dashCurrentUser) return;
   _dashSecurityStarted = true;
@@ -70,13 +59,10 @@ function startDashSecurityWatchers() {
   };
 
   _dashSessionTimer = setInterval(verifySingleDevice, 8000);
-  // Event Listener: Initializes handlers or syncs state when `focus` fires
   window.addEventListener("focus", verifySingleDevice);
-  // Event Listener: Initializes handlers or syncs state when `visibilitychange` fires
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) verifySingleDevice();
   });
-  // Event Listener: Initializes handlers or syncs state when `storage` fires
   window.addEventListener("storage", function (ev) {
     if (!ev || (typeof SESSION_KEY !== "undefined" && (ev.key === SESSION_KEY || ev.key === SESSION_TOKEN_KEY))) {
       verifySingleDevice();
@@ -84,7 +70,16 @@ function startDashSecurityWatchers() {
   });
 }
 
-// Helper `initDashUI` (params: user, apps, onSelectAppCallback): Executes workflow logic for `initDashUI`.
+var _dashNotifTimer = null;
+
+function toggleDashSidebar() {
+  document.body.classList.toggle("dash-sidebar-open");
+}
+
+function closeDashSidebar() {
+  document.body.classList.remove("dash-sidebar-open");
+}
+
 function initDashUI(user, apps, onSelectAppCallback) {
   dashCurrentUser = user;
   dashSearchApps = apps || [];
@@ -104,9 +99,12 @@ function initDashUI(user, apps, onSelectAppCallback) {
 
   var splash = document.getElementById("splash");
   if (splash) {
-    setTimeout(function () {
-      splash.classList.add("hide");
-    }, 1200);
+    splash.classList.add("hide");
+  }
+
+  var topNameEl = document.getElementById("top-user-name");
+  if (topNameEl && user && user.full_name) {
+    topNameEl.textContent = user.full_name;
   }
 
   renderAvatarBtn(user);
@@ -115,7 +113,25 @@ function initDashUI(user, apps, onSelectAppCallback) {
   updateOverviewOnlyVisibility(true);
   startDashSecurityWatchers();
 
-  // Event Listener: Initializes handlers or syncs state when `click` fires
+  if (_dashNotifTimer) clearInterval(_dashNotifTimer);
+  _dashNotifTimer = setInterval(function () {
+    if (dashCurrentUser && !document.hidden && !_dashSessionRedirecting) {
+      refreshNotifBell(dashCurrentUser);
+    }
+  }, 10000);
+
+  var sideEl = document.querySelector(".dash-side");
+  if (sideEl && !sideEl.getAttribute("data-mob-bound")) {
+    sideEl.setAttribute("data-mob-bound", "1");
+    sideEl.addEventListener("click", function (ev) {
+      var btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+      if (!btn) return;
+      var oc = String(btn.getAttribute("onclick") || "");
+      if (oc.indexOf("toggleNavGroup") !== -1) return;
+      closeDashSidebar();
+    });
+  }
+
   document.addEventListener("click", function (e) {
     var sWrap = document.querySelector(".top-search");
     var sDrop = document.getElementById("top-search-results");
@@ -125,34 +141,21 @@ function initDashUI(user, apps, onSelectAppCallback) {
   });
 }
 
-// `updateOverviewOnlyVisibility` (params: isOverview): Shows Overview-exclusive header controls (notifications bell, Manager/Agent avatar) only when Overview tab is active.
 function updateOverviewOnlyVisibility(isOverview) {
   var notifBtn = document.getElementById("notif-btn");
-  var notifModal = document.getElementById("notif-modal");
-  if (notifBtn && notifBtn.classList.contains("overview-only-notif")) {
-    notifBtn.classList.toggle("overview-hidden", !isOverview);
-  }
-  if (!isOverview && notifModal) {
-    notifModal.classList.add("hidden");
+  if (notifBtn) {
+    notifBtn.classList.remove("overview-hidden");
   }
   var avatarBtn = document.getElementById("avatar-btn");
-  if (avatarBtn && avatarBtn.classList.contains("overview-only-avatar")) {
-    avatarBtn.classList.toggle("overview-hidden", !isOverview);
-  }
-  if (!isOverview) {
-    var drawer = document.getElementById("profile-drawer");
-    if (drawer && avatarBtn && avatarBtn.classList.contains("overview-only-avatar")) {
-      drawer.classList.add("hidden");
-    }
+  if (avatarBtn) {
+    avatarBtn.classList.remove("overview-hidden");
   }
 }
 
-// Action Handler `updateDashSearchApps` (params: apps): Validates inputs and persists changes to update dash search apps.
 function updateDashSearchApps(apps) {
   dashSearchApps = apps || [];
 }
 
-// UI State Controller `setThemeMode` (params: mode): Updates modal, tab, or panel state to set theme mode.
 function setThemeMode(mode) {
   writeSaved("pigem_theme", mode);
   var effective = mode;
@@ -176,7 +179,6 @@ function setThemeMode(mode) {
   }
 }
 
-// UI State Controller `toggleNavGroup` (params: btn): Updates modal, tab, or panel state to toggle nav group.
 function toggleNavGroup(btn) {
   var next = btn.nextElementSibling;
   if (!next) return;
@@ -185,7 +187,6 @@ function toggleNavGroup(btn) {
   if (arrow) arrow.textContent = isHidden ? ">" : "v";
 }
 
-// Helper `onTopSearchInput` (params: inputEl): Executes workflow logic for `onTopSearchInput`.
 function onTopSearchInput(inputEl) {
   var q = (inputEl.value || "").trim().toLowerCase();
   var box = document.getElementById("top-search-results");
@@ -229,7 +230,6 @@ function onTopSearchInput(inputEl) {
   box.classList.remove("hidden");
 }
 
-// Helper `jumpToNav` (params: target): Executes workflow logic for `jumpToNav`.
 function jumpToNav(target) {
   var box = document.getElementById("top-search-results");
   if (box) box.classList.add("hidden");
@@ -238,7 +238,6 @@ function jumpToNav(target) {
   }
 }
 
-// Helper `jumpToApp` (params: appId): Executes workflow logic for `jumpToApp`.
 function jumpToApp(appId) {
   var box = document.getElementById("top-search-results");
   if (box) box.classList.add("hidden");
@@ -247,16 +246,15 @@ function jumpToApp(appId) {
   }
 }
 
-// Helper `autoLinkUrls` (params: text): Executes workflow logic for `autoLinkUrls`.
 function autoLinkUrls(text) {
   var escaped = escapeHtml(text || "");
   return escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:var(--red); text-decoration:underline; word-break:break-all;">$1</a>');
 }
 
-// Data Accessor `refreshNotifBell` (params: user): Retrieves or refreshes data to refresh notif bell.
 async function refreshNotifBell(user) {
   if (!user) return;
-  var list = await dbListNotifications(user.email, user.role);
+  var list = await dbListNotifications(user, user.role);
+  var localReadMap = (typeof getLocalReadNotifMap === "function") ? getLocalReadNotifMap(user) : {};
 
   if (user.role === "admin" && typeof checkApiHealth === "function") {
     try {
@@ -265,12 +263,14 @@ async function refreshNotifBell(user) {
         for (var hIdx = 0; hIdx < health.services.length; hIdx++) {
           var svc = health.services[hIdx];
           if (svc && !svc.online) {
+            var sysNotifId = "sys-api-" + hIdx;
             list.unshift({
-              id: "sys-api-" + hIdx,
+              id: sysNotifId,
               title: "API Reminder: " + (svc.name || "Service") + " Not Configured / Offline",
               message: svc.detail || "Review API keys and Vercel environment configuration in the APIs section.",
               target_tab: "tab-apis",
               target_id: svc.name || "",
+              is_read: Boolean(localReadMap[sysNotifId]),
               created_at: new Date().toISOString()
             });
           }
@@ -280,25 +280,43 @@ async function refreshNotifBell(user) {
   }
 
   dashNotifItems = list || [];
+  renderNotifBellState();
+}
+
+function renderNotifBellState() {
   var countEl = document.getElementById("notif-count");
   var bodyEl = document.getElementById("notif-list");
+  var unreadCount = 0;
+  for (var u = 0; u < dashNotifItems.length; u++) {
+    if (!dashNotifItems[u].is_read) unreadCount++;
+  }
   if (countEl) {
-    countEl.textContent = dashNotifItems.length;
-    countEl.classList.toggle("hidden", dashNotifItems.length === 0);
+    countEl.textContent = unreadCount;
+    countEl.classList.toggle("hidden", unreadCount === 0);
   }
   if (bodyEl) {
     if (dashNotifItems.length === 0) {
-      bodyEl.innerHTML = '<p class="muted" style="font-size:13px">No notifications yet.</p>';
+      bodyEl.innerHTML = '<div class="notif-empty"><p class="muted" style="font-size:13px; text-align:center; padding:18px 8px;">No notifications yet.</p></div>';
     } else {
       var h = "";
-      for (var i = 0; i < Math.min(dashNotifItems.length, 15); i++) {
+      if (unreadCount > 0) {
+        h += '<div style="display:flex; justify-content:space-between; align-items:center; padding:0 2px 10px; margin-bottom:6px; border-bottom:1px solid var(--line); font-size:12px;">' +
+          '<span class="muted"><b>' + unreadCount + '</b> unread notification' + (unreadCount === 1 ? '' : 's') + '</span>' +
+          '<button type="button" class="link-btn" style="font-size:12px;" onclick="markAllDashNotificationsRead()">Mark all as read</button>' +
+        '</div>';
+      }
+      for (var i = 0; i < Math.min(dashNotifItems.length, 20); i++) {
         var n = dashNotifItems[i];
-        h += '<div class="notif-item-clickable" onclick="onNotificationItemClick(' + i + ')" style="padding:10px 0; border-bottom:1px solid var(--line); font-size:12px">' +
-          '<b style="display:block; margin-bottom:3px;">' + escapeHtml(n.title) + '</b>' +
-          '<div style="line-height:1.5;">' + autoLinkUrls(n.message) + '</div>' +
-          '<div class="muted" style="font-size:11px; margin-top:4px; display:flex; justify-content:space-between;">' +
+        var isUnread = !n.is_read;
+        h += '<div class="notif-item-clickable' + (isUnread ? ' notif-unread' : '') + '" onclick="onNotificationItemClick(' + i + ')">' +
+          '<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:3px;">' +
+            '<b style="font-size:13px; color:var(--text);">' + escapeHtml(n.title) + '</b>' +
+            (isUnread ? '<span class="notif-unread-dot" title="Unread"></span>' : '') +
+          '</div>' +
+          '<div style="line-height:1.5; font-size:12.5px; color:var(--muted);">' + autoLinkUrls(n.message) + '</div>' +
+          '<div class="muted" style="font-size:11px; margin-top:6px; display:flex; justify-content:space-between; align-items:center;">' +
             '<span>' + formatDate(n.created_at) + '</span>' +
-            '<span style="color:var(--red); font-weight:700;">Open &rarr;</span>' +
+            '<span style="color:var(--red); font-weight:700;">View &rarr;</span>' +
           '</div>' +
           '</div>';
       }
@@ -307,26 +325,67 @@ async function refreshNotifBell(user) {
   }
 }
 
-// Helper `onNotificationItemClick` (params: index): Executes workflow logic for `onNotificationItemClick`.
+async function markAllDashNotificationsRead() {
+  for (var i = 0; i < dashNotifItems.length; i++) {
+    dashNotifItems[i].is_read = true;
+    if (dashNotifItems[i].id && String(dashNotifItems[i].id).indexOf("sys-api-") === 0 && typeof dbMarkNotificationRead === "function") {
+      await dbMarkNotificationRead(dashNotifItems[i].id, dashCurrentUser);
+    }
+  }
+  if (typeof dbMarkAllNotificationsRead === "function") {
+    await dbMarkAllNotificationsRead(dashCurrentUser);
+  }
+  renderNotifBellState();
+}
+
 function onNotificationItemClick(index) {
   var item = dashNotifItems[index];
   var m = document.getElementById("notif-modal");
   if (m) m.classList.add("hidden");
   if (!item) return;
 
+  item.is_read = true;
+  if (item.id != null && typeof dbMarkNotificationRead === "function") {
+    dbMarkNotificationRead(item.id, dashCurrentUser);
+  }
+  renderNotifBellState();
+
   var targetTab = item.target_tab || "";
   var targetId = item.target_id || "";
   var titleLow = String(item.title || "").toLowerCase();
   var msgLow = String(item.message || "").toLowerCase();
+  var combinedLow = titleLow + " " + msgLow;
+  var role = (dashCurrentUser && dashCurrentUser.role) ? String(dashCurrentUser.role).toLowerCase() : "";
+
+  if (!targetId && dashSearchApps && dashSearchApps.length) {
+    for (var i = 0; i < dashSearchApps.length; i++) {
+      var ref = String(dashSearchApps[i].reference_no || dashSearchApps[i].ref_no || "").toLowerCase();
+      if (ref && combinedLow.indexOf(ref) !== -1) {
+        targetId = dashSearchApps[i].id;
+        break;
+      }
+    }
+  }
 
   if (!targetTab) {
-    if (titleLow.indexOf("password reset") !== -1) targetTab = "tab-accounts";
-    else if (titleLow.indexOf("api") !== -1 || titleLow.indexOf("screening unavailable") !== -1) targetTab = "tab-apis";
-    else if (titleLow.indexOf("application") !== -1 || titleLow.indexOf("correction") !== -1) {
-      if (typeof dashOnSelectApp === "function" && targetId) {
-        dashOnSelectApp(targetId);
-        return;
-      }
+    if (titleLow.indexOf("password reset") !== -1) {
+      targetTab = "tab-accounts";
+      if (!targetId) targetId = "reset";
+    } else if (titleLow.indexOf("api") !== -1) {
+      targetTab = role === "admin" ? "tab-apis" : "tab-overview";
+    } else if (titleLow.indexOf("screening") !== -1) {
+      if (role === "admin") targetTab = "tab-ai";
+      else if (role === "manager") targetTab = "tab-app-all";
+      else if (role === "agent") targetTab = "tab-queue";
+      else targetTab = "tab-overview";
+    } else if (titleLow.indexOf("maintenance") !== -1 || titleLow.indexOf("website") !== -1) {
+      if (role === "admin") targetTab = "tab-maintenance";
+      else if (role === "manager") targetTab = "tab-cms-banners";
+      else targetTab = "tab-overview";
+    } else if (targetId || titleLow.indexOf("application") !== -1 || titleLow.indexOf("correction") !== -1 || titleLow.indexOf("update") !== -1) {
+      if (role === "agent") targetTab = "tab-queue";
+      else if (role === "manager") targetTab = "tab-app-all";
+      else if (role === "customer") targetTab = "tab-apps";
     }
   }
 
@@ -335,43 +394,27 @@ function onNotificationItemClick(index) {
     return;
   }
   if (targetTab) {
-    var navBtn = document.querySelector('[data-tab="' + targetTab + '"]');
+    var navBtn = document.querySelector('[data-tab="' + targetTab + '"], [data-nav-target="' + String(targetTab).replace(/^tab-/, "") + '"]');
     if (navBtn) {
       navBtn.click();
-      return;
     }
   }
   if (targetId && typeof dashOnSelectApp === "function") {
     dashOnSelectApp(targetId);
-    return;
-  }
-  if (msgLow && dashSearchApps && dashSearchApps.length) {
-    for (var i = 0; i < dashSearchApps.length; i++) {
-      var ref = String(dashSearchApps[i].ref_no || "").toLowerCase();
-      if (ref && (msgLow.indexOf(ref) !== -1 || titleLow.indexOf(ref) !== -1)) {
-        if (typeof dashOnSelectApp === "function") {
-          dashOnSelectApp(dashSearchApps[i].id);
-          return;
-        }
-      }
-    }
   }
 }
 
-// UI State Controller `toggleNotifModal`: Updates modal, tab, or panel state to toggle notif modal.
 function toggleNotifModal() {
   var m = document.getElementById("notif-modal");
   if (m) m.classList.toggle("hidden");
 }
 
-// Data Accessor `getInitials` (params: name): Retrieves or refreshes data to get initials.
 function getInitials(name) {
   var parts = String(name || "U").trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   return String(name || "U").slice(0, 2).toUpperCase();
 }
 
-// UI Renderer `renderAvatarBtn` (params: user): Builds and updates DOM elements for avatar btn.
 function renderAvatarBtn(user) {
   var btn = document.getElementById("avatar-btn");
   if (!btn || !user) return;
@@ -382,13 +425,11 @@ function renderAvatarBtn(user) {
   }
 }
 
-// UI State Controller `toggleProfileDrawer`: Updates modal, tab, or panel state to toggle profile drawer.
 function toggleProfileDrawer() {
   var d = document.getElementById("profile-drawer");
   if (d) d.classList.toggle("hidden");
 }
 
-// UI Renderer `renderProfileDrawer` (params: user): Builds and updates DOM elements for profile drawer.
 function renderProfileDrawer(user) {
   var box = document.getElementById("profile-drawer-body");
   if (!box || !user) return;
@@ -461,7 +502,6 @@ function renderProfileDrawer(user) {
 
 var pendingAvatarDataUrl = "";
 
-// Helper `onProfilePhotoPick` (params: inputEl): Executes workflow logic for `onProfilePhotoPick`.
 function onProfilePhotoPick(inputEl) {
   var file = inputEl.files && inputEl.files[0];
   if (!file) return;
@@ -472,7 +512,6 @@ function onProfilePhotoPick(inputEl) {
   reader.readAsDataURL(file);
 }
 
-// Action Handler `saveProfileChanges`: Validates inputs and persists changes to save profile changes.
 async function saveProfileChanges() {
   if (!dashCurrentUser) return;
   hideMsg("prof-msg");
@@ -508,7 +547,6 @@ async function saveProfileChanges() {
   }
 }
 
-// Helper `sendProfilePwOtp`: Executes workflow logic for `sendProfilePwOtp`.
 async function sendProfilePwOtp() {
   if (!dashCurrentUser) return;
   try {
@@ -521,7 +559,6 @@ async function sendProfilePwOtp() {
   }
 }
 
-// `confirmDirectProfilePassword`: Validates password strength rules and updates an internal staff member's password without external email OTP.
 async function confirmDirectProfilePassword() {
   if (!dashCurrentUser) return;
   hideMsg("prof-pw-msg");
@@ -560,7 +597,6 @@ async function confirmDirectProfilePassword() {
   }
 }
 
-// Action Handler `confirmProfilePwOtp`: Validates inputs and persists changes to confirm profile pw otp.
 async function confirmProfilePwOtp() {
   if (!dashCurrentUser) return;
   hideMsg("prof-pw-msg");
@@ -595,7 +631,6 @@ async function confirmProfilePwOtp() {
   }
 }
 
-// `renderPieChart` (params: boxId, slices, centerTitle): Renders a clean CSS conic-gradient SVG/HTML donut pie chart with interactive percentage legend items.
 function renderPieChart(boxId, slices, centerTitle) {
   var box = document.getElementById(boxId);
   if (!box) return;
@@ -647,7 +682,6 @@ function renderPieChart(boxId, slices, centerTitle) {
     '</div>';
 }
 
-// UI Renderer `renderBars` (params: boxId, rows): Builds and updates DOM elements for bars.
 function renderBars(boxId, rows) {
   var box = document.getElementById(boxId);
   if (!box) return;
@@ -669,7 +703,6 @@ function renderBars(boxId, rows) {
   box.innerHTML = html;
 }
 
-// UI Renderer `renderColumns` (params: boxId, cols): Builds and updates DOM elements for columns.
 function renderColumns(boxId, cols) {
   var box = document.getElementById(boxId);
   if (!box) return;
@@ -691,7 +724,6 @@ function renderColumns(boxId, cols) {
   box.innerHTML = html;
 }
 
-// UI Renderer `renderCalendar` (params: boxId, apps): Builds and updates DOM elements for calendar.
 function renderCalendar(boxId, apps) {
   var box = document.getElementById(boxId);
   if (!box) return;
@@ -737,36 +769,31 @@ function renderCalendar(boxId, apps) {
   box.innerHTML = html;
 }
 
-// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", function () {
   var splash = document.getElementById("splash");
   if (splash) {
     setTimeout(function () {
       splash.classList.add("hide");
-    }, 1200);
+    }, 250);
   }
 });
 
-// Data Accessor `getLocalTodayIso`: Retrieves or refreshes data to get local today iso.
 function getLocalTodayIso() {
   var d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
-// Data Accessor `getLocalMonthIso`: Retrieves or refreshes data to get local month iso.
 function getLocalMonthIso() {
   var d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
 }
 
-// Data Accessor `getReportTimeframeLabel` (params: tfMode, exactDate, monthStr): Retrieves or refreshes data to get report timeframe label.
 function getReportTimeframeLabel(tfMode, exactDate, monthStr) {
   if (tfMode === "daily") return "Daily (" + (exactDate || getLocalTodayIso()) + ")";
   if (tfMode === "monthly") return "Monthly (" + (monthStr || getLocalMonthIso()) + ")";
   return "All Time";
 }
 
-// Helper `matchesReportTimeframeValue` (params: isoStr, tfMode, exactDate, monthStr): Executes workflow logic for `matchesReportTimeframeValue`.
 function matchesReportTimeframeValue(isoStr, tfMode, exactDate, monthStr) {
   if (tfMode === "all") return true;
   if (!isoStr) return false;
@@ -778,7 +805,6 @@ function matchesReportTimeframeValue(isoStr, tfMode, exactDate, monthStr) {
   return true;
 }
 
-// `renderDashReportView` (params: opts): Shared Dash UI helper rendering printable/exportable HTML & CSV reports with Daily/Monthly filtering across Agent, Manager, and Admin.
 function renderDashReportView(opts) {
   var data = opts.data || {};
   var sumEl = document.getElementById(opts.summaryId);
@@ -833,7 +859,6 @@ function renderDashReportView(opts) {
   wrap.innerHTML = "<table>" + th + tb + "</table>";
 }
 
-// `exportReportToCsv` (params: columns, rows, filename): Shared CSV serializer escaping commas, quotes, and newlines for downloadable report spreadsheets.
 function exportReportToCsv(columns, rows, filename) {
   var csvRows = [(columns || []).map(function (h) { return '"' + String(h || "").replace(/"/g, '""') + '"'; }).join(",")];
   for (var i = 0; i < (rows || []).length; i++) {
@@ -851,7 +876,6 @@ function exportReportToCsv(columns, rows, filename) {
   document.body.removeChild(link);
 }
 
-// `downloadFormattedHtmlReport` (params: title, timeframeLabel, pieSlices, columns, rows, filename): Builds and downloads a formatted PIGEM Combined Facilities Support Services standalone HTML report file.
 function downloadFormattedHtmlReport(title, timeframeLabel, pieSlices, columns, rows, filename) {
   var cols = columns || [];
   var dataRows = rows || [];

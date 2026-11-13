@@ -1,31 +1,21 @@
 <!DOCTYPE html>
-<!-- ==========================================================================
-     FILE OVERVIEW: Guided Online Fiber Service Application Wizard & Mobile QR ID Capture (web/html/apply.html)
-     PURPOSE: Guides applicants through Plan Selection, 18+ Personal Details, Gmail OTP, Cavite Map Pinning, Desktop/Phone QR ID Upload, and Pre-Submit Screening.
-     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
-     ========================================================================== -->
 
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Application Form | Combined Facilities Support Services</title>
 
-  <!-- IMPORT: Leaflet 1.9.4 CSS stylesheet for interactive Cavite map pinning -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
 
-  <!-- IMPORT: Google reCAPTCHA v2 client widget script for anti-bot protection -->
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
 
-  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="simple-bar">
     <div class="container" style="justify-content:space-between;">
       <div style="display:flex; align-items:center; gap:12px;">
@@ -38,7 +28,6 @@
     </div>
   </header>
 
-  <!-- SECTION: Main Page Content Container -->
   <main class="form-wrap">
 
     <div class="card" style="margin-bottom:18px;">
@@ -442,22 +431,16 @@
     </section>
   </main>
 
-  <!-- IMPORT: Leaflet 1.9.4 JavaScript mapping engine for customer address coordinates -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
 
-  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
 
-  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for captcha verification, ID screening & Gmail SMTP emails -->
   <script src="../js/api.js"></script>
 
-  <!-- IMPORT: Guided application wizard controller handling strict validation, QR mobile upload & pre-submit screening -->
   <script src="../js/apply.js"></script>
 </body>
 </html>

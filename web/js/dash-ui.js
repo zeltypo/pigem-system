@@ -70,6 +70,16 @@ function startDashSecurityWatchers() {
   });
 }
 
+var _dashNotifTimer = null;
+
+function toggleDashSidebar() {
+  document.body.classList.toggle("dash-sidebar-open");
+}
+
+function closeDashSidebar() {
+  document.body.classList.remove("dash-sidebar-open");
+}
+
 function initDashUI(user, apps, onSelectAppCallback) {
   dashCurrentUser = user;
   dashSearchApps = apps || [];
@@ -89,9 +99,12 @@ function initDashUI(user, apps, onSelectAppCallback) {
 
   var splash = document.getElementById("splash");
   if (splash) {
-    setTimeout(function () {
-      splash.classList.add("hide");
-    }, 1200);
+    splash.classList.add("hide");
+  }
+
+  var topNameEl = document.getElementById("top-user-name");
+  if (topNameEl && user && user.full_name) {
+    topNameEl.textContent = user.full_name;
   }
 
   renderAvatarBtn(user);
@@ -99,6 +112,25 @@ function initDashUI(user, apps, onSelectAppCallback) {
   refreshNotifBell(user);
   updateOverviewOnlyVisibility(true);
   startDashSecurityWatchers();
+
+  if (_dashNotifTimer) clearInterval(_dashNotifTimer);
+  _dashNotifTimer = setInterval(function () {
+    if (dashCurrentUser && !document.hidden && !_dashSessionRedirecting) {
+      refreshNotifBell(dashCurrentUser);
+    }
+  }, 10000);
+
+  var sideEl = document.querySelector(".dash-side");
+  if (sideEl && !sideEl.getAttribute("data-mob-bound")) {
+    sideEl.setAttribute("data-mob-bound", "1");
+    sideEl.addEventListener("click", function (ev) {
+      var btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+      if (!btn) return;
+      var oc = String(btn.getAttribute("onclick") || "");
+      if (oc.indexOf("toggleNavGroup") !== -1) return;
+      closeDashSidebar();
+    });
+  }
 
   document.addEventListener("click", function (e) {
     var sWrap = document.querySelector(".top-search");
@@ -111,22 +143,12 @@ function initDashUI(user, apps, onSelectAppCallback) {
 
 function updateOverviewOnlyVisibility(isOverview) {
   var notifBtn = document.getElementById("notif-btn");
-  var notifModal = document.getElementById("notif-modal");
-  if (notifBtn && notifBtn.classList.contains("overview-only-notif")) {
-    notifBtn.classList.toggle("overview-hidden", !isOverview);
-  }
-  if (!isOverview && notifModal) {
-    notifModal.classList.add("hidden");
+  if (notifBtn) {
+    notifBtn.classList.remove("overview-hidden");
   }
   var avatarBtn = document.getElementById("avatar-btn");
-  if (avatarBtn && avatarBtn.classList.contains("overview-only-avatar")) {
-    avatarBtn.classList.toggle("overview-hidden", !isOverview);
-  }
-  if (!isOverview) {
-    var drawer = document.getElementById("profile-drawer");
-    if (drawer && avatarBtn && avatarBtn.classList.contains("overview-only-avatar")) {
-      drawer.classList.add("hidden");
-    }
+  if (avatarBtn) {
+    avatarBtn.classList.remove("overview-hidden");
   }
 }
 
@@ -231,7 +253,8 @@ function autoLinkUrls(text) {
 
 async function refreshNotifBell(user) {
   if (!user) return;
-  var list = await dbListNotifications(user.email, user.role);
+  var list = await dbListNotifications(user, user.role);
+  var localReadMap = (typeof getLocalReadNotifMap === "function") ? getLocalReadNotifMap(user) : {};
 
   if (user.role === "admin" && typeof checkApiHealth === "function") {
     try {
@@ -240,12 +263,14 @@ async function refreshNotifBell(user) {
         for (var hIdx = 0; hIdx < health.services.length; hIdx++) {
           var svc = health.services[hIdx];
           if (svc && !svc.online) {
+            var sysNotifId = "sys-api-" + hIdx;
             list.unshift({
-              id: "sys-api-" + hIdx,
+              id: sysNotifId,
               title: "API Reminder: " + (svc.name || "Service") + " Not Configured / Offline",
               message: svc.detail || "Review API keys and Vercel environment configuration in the APIs section.",
               target_tab: "tab-apis",
               target_id: svc.name || "",
+              is_read: Boolean(localReadMap[sysNotifId]),
               created_at: new Date().toISOString()
             });
           }
@@ -255,25 +280,43 @@ async function refreshNotifBell(user) {
   }
 
   dashNotifItems = list || [];
+  renderNotifBellState();
+}
+
+function renderNotifBellState() {
   var countEl = document.getElementById("notif-count");
   var bodyEl = document.getElementById("notif-list");
+  var unreadCount = 0;
+  for (var u = 0; u < dashNotifItems.length; u++) {
+    if (!dashNotifItems[u].is_read) unreadCount++;
+  }
   if (countEl) {
-    countEl.textContent = dashNotifItems.length;
-    countEl.classList.toggle("hidden", dashNotifItems.length === 0);
+    countEl.textContent = unreadCount;
+    countEl.classList.toggle("hidden", unreadCount === 0);
   }
   if (bodyEl) {
     if (dashNotifItems.length === 0) {
-      bodyEl.innerHTML = '<p class="muted" style="font-size:13px">No notifications yet.</p>';
+      bodyEl.innerHTML = '<div class="notif-empty"><p class="muted" style="font-size:13px; text-align:center; padding:18px 8px;">No notifications yet.</p></div>';
     } else {
       var h = "";
-      for (var i = 0; i < Math.min(dashNotifItems.length, 15); i++) {
+      if (unreadCount > 0) {
+        h += '<div style="display:flex; justify-content:space-between; align-items:center; padding:0 2px 10px; margin-bottom:6px; border-bottom:1px solid var(--line); font-size:12px;">' +
+          '<span class="muted"><b>' + unreadCount + '</b> unread notification' + (unreadCount === 1 ? '' : 's') + '</span>' +
+          '<button type="button" class="link-btn" style="font-size:12px;" onclick="markAllDashNotificationsRead()">Mark all as read</button>' +
+        '</div>';
+      }
+      for (var i = 0; i < Math.min(dashNotifItems.length, 20); i++) {
         var n = dashNotifItems[i];
-        h += '<div class="notif-item-clickable" onclick="onNotificationItemClick(' + i + ')" style="padding:10px 0; border-bottom:1px solid var(--line); font-size:12px">' +
-          '<b style="display:block; margin-bottom:3px;">' + escapeHtml(n.title) + '</b>' +
-          '<div style="line-height:1.5;">' + autoLinkUrls(n.message) + '</div>' +
-          '<div class="muted" style="font-size:11px; margin-top:4px; display:flex; justify-content:space-between;">' +
+        var isUnread = !n.is_read;
+        h += '<div class="notif-item-clickable' + (isUnread ? ' notif-unread' : '') + '" onclick="onNotificationItemClick(' + i + ')">' +
+          '<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:3px;">' +
+            '<b style="font-size:13px; color:var(--text);">' + escapeHtml(n.title) + '</b>' +
+            (isUnread ? '<span class="notif-unread-dot" title="Unread"></span>' : '') +
+          '</div>' +
+          '<div style="line-height:1.5; font-size:12.5px; color:var(--muted);">' + autoLinkUrls(n.message) + '</div>' +
+          '<div class="muted" style="font-size:11px; margin-top:6px; display:flex; justify-content:space-between; align-items:center;">' +
             '<span>' + formatDate(n.created_at) + '</span>' +
-            '<span style="color:var(--red); font-weight:700;">Open &rarr;</span>' +
+            '<span style="color:var(--red); font-weight:700;">View &rarr;</span>' +
           '</div>' +
           '</div>';
       }
@@ -282,25 +325,67 @@ async function refreshNotifBell(user) {
   }
 }
 
+async function markAllDashNotificationsRead() {
+  for (var i = 0; i < dashNotifItems.length; i++) {
+    dashNotifItems[i].is_read = true;
+    if (dashNotifItems[i].id && String(dashNotifItems[i].id).indexOf("sys-api-") === 0 && typeof dbMarkNotificationRead === "function") {
+      await dbMarkNotificationRead(dashNotifItems[i].id, dashCurrentUser);
+    }
+  }
+  if (typeof dbMarkAllNotificationsRead === "function") {
+    await dbMarkAllNotificationsRead(dashCurrentUser);
+  }
+  renderNotifBellState();
+}
+
 function onNotificationItemClick(index) {
   var item = dashNotifItems[index];
   var m = document.getElementById("notif-modal");
   if (m) m.classList.add("hidden");
   if (!item) return;
 
+  item.is_read = true;
+  if (item.id != null && typeof dbMarkNotificationRead === "function") {
+    dbMarkNotificationRead(item.id, dashCurrentUser);
+  }
+  renderNotifBellState();
+
   var targetTab = item.target_tab || "";
   var targetId = item.target_id || "";
   var titleLow = String(item.title || "").toLowerCase();
   var msgLow = String(item.message || "").toLowerCase();
+  var combinedLow = titleLow + " " + msgLow;
+  var role = (dashCurrentUser && dashCurrentUser.role) ? String(dashCurrentUser.role).toLowerCase() : "";
+
+  if (!targetId && dashSearchApps && dashSearchApps.length) {
+    for (var i = 0; i < dashSearchApps.length; i++) {
+      var ref = String(dashSearchApps[i].reference_no || dashSearchApps[i].ref_no || "").toLowerCase();
+      if (ref && combinedLow.indexOf(ref) !== -1) {
+        targetId = dashSearchApps[i].id;
+        break;
+      }
+    }
+  }
 
   if (!targetTab) {
-    if (titleLow.indexOf("password reset") !== -1) targetTab = "tab-accounts";
-    else if (titleLow.indexOf("api") !== -1 || titleLow.indexOf("screening unavailable") !== -1) targetTab = "tab-apis";
-    else if (titleLow.indexOf("application") !== -1 || titleLow.indexOf("correction") !== -1) {
-      if (typeof dashOnSelectApp === "function" && targetId) {
-        dashOnSelectApp(targetId);
-        return;
-      }
+    if (titleLow.indexOf("password reset") !== -1) {
+      targetTab = "tab-accounts";
+      if (!targetId) targetId = "reset";
+    } else if (titleLow.indexOf("api") !== -1) {
+      targetTab = role === "admin" ? "tab-apis" : "tab-overview";
+    } else if (titleLow.indexOf("screening") !== -1) {
+      if (role === "admin") targetTab = "tab-ai";
+      else if (role === "manager") targetTab = "tab-app-all";
+      else if (role === "agent") targetTab = "tab-queue";
+      else targetTab = "tab-overview";
+    } else if (titleLow.indexOf("maintenance") !== -1 || titleLow.indexOf("website") !== -1) {
+      if (role === "admin") targetTab = "tab-maintenance";
+      else if (role === "manager") targetTab = "tab-cms-banners";
+      else targetTab = "tab-overview";
+    } else if (targetId || titleLow.indexOf("application") !== -1 || titleLow.indexOf("correction") !== -1 || titleLow.indexOf("update") !== -1) {
+      if (role === "agent") targetTab = "tab-queue";
+      else if (role === "manager") targetTab = "tab-app-all";
+      else if (role === "customer") targetTab = "tab-apps";
     }
   }
 
@@ -309,26 +394,13 @@ function onNotificationItemClick(index) {
     return;
   }
   if (targetTab) {
-    var navBtn = document.querySelector('[data-tab="' + targetTab + '"]');
+    var navBtn = document.querySelector('[data-tab="' + targetTab + '"], [data-nav-target="' + String(targetTab).replace(/^tab-/, "") + '"]');
     if (navBtn) {
       navBtn.click();
-      return;
     }
   }
   if (targetId && typeof dashOnSelectApp === "function") {
     dashOnSelectApp(targetId);
-    return;
-  }
-  if (msgLow && dashSearchApps && dashSearchApps.length) {
-    for (var i = 0; i < dashSearchApps.length; i++) {
-      var ref = String(dashSearchApps[i].ref_no || "").toLowerCase();
-      if (ref && (msgLow.indexOf(ref) !== -1 || titleLow.indexOf(ref) !== -1)) {
-        if (typeof dashOnSelectApp === "function") {
-          dashOnSelectApp(dashSearchApps[i].id);
-          return;
-        }
-      }
-    }
   }
 }
 
@@ -702,7 +774,7 @@ window.addEventListener("DOMContentLoaded", function () {
   if (splash) {
     setTimeout(function () {
       splash.classList.add("hide");
-    }, 1200);
+    }, 250);
   }
 });
 

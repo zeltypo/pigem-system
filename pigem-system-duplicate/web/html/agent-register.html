@@ -1,25 +1,17 @@
 <!DOCTYPE html>
-<!-- ==========================================================================
-     FILE OVERVIEW: Private Invite-Gated Agent Registration Page (web/html/agent-register.html)
-     PURPOSE: Allows invited field agents to register using an active one-time invite token, validated names, and unique username-only credentials.
-     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
-     ========================================================================== -->
 
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Agent Registration | Combined Facilities Support Services</title>
 
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
 
-  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="simple-bar">
     <div class="container" style="display:flex; align-items:center; gap:12px;">
       <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
@@ -27,7 +19,6 @@
     </div>
   </header>
 
-  <!-- SECTION: Main Page Content Container -->
   <main class="auth-page">
     <div class="card auth-card" style="max-width:480px;">
 
@@ -51,7 +42,6 @@
           <p class="small muted mt" style="margin-top:4px;">Complete your basic agent profile to activate your workspace credentials.</p>
         </div>
 
-        <!-- FORM: Interactive User Input Form -->
         <form class="mt-big" onsubmit="submitAgentInviteRegistration(event)" novalidate>
           <div class="form-grid three">
             <div>
@@ -96,24 +86,18 @@
     </div>
   </main>
 
-  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
 window.SYSTEM = "staff";
   </script>
 
-  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
 
-  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
-  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
     var activeInviteCode = "";
 
-    // Helper `initAgentInvitePage`: Executes workflow logic for `initAgentInvitePage`.
     async function initAgentInvitePage() {
       var params = new URLSearchParams(window.location.search);
       var code = (params.get("invite") || "").trim().toUpperCase();
@@ -144,7 +128,6 @@ window.SYSTEM = "staff";
       if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles();
     }
 
-    // Action Handler `submitAgentInviteRegistration` (params: event): Validates inputs and persists changes to submit agent invite registration.
     async function submitAgentInviteRegistration(event) {
       event.preventDefault();
       if (!activeInviteCode) return;

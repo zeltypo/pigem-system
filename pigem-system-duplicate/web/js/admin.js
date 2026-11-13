@@ -1,14 +1,3 @@
-// ============================================================================
-// FILE: web/js/admin.js
-// PURPOSE: Technical Management Console, Modal Staff CRUD, Logs & Reports
-// ----------------------------------------------------------------------------
-// SHARED SCRIPT IMPORTS (Loaded before this file via HTML <script> tags):
-//   1. web/js/config.js  -> Password rules, name validators & modal popup dialogs
-//   2. web/js/db.js      -> Full account CRUD, Password Reset Requests, settings & logs
-//   3. web/js/api.js     -> Live API health status metrics for Overview and Health Reports
-//   4. web/js/dash-ui.js -> Pie/bar charts (`renderPieChart`), Overview-only controls & nav
-// ============================================================================
-
 var currentAdmin = null;
 var adminApps = [];
 var adminUsers = [];
@@ -32,7 +21,6 @@ window.openDashTabById = function (tabId, targetId) {
 
 window.PORTAL_ALLOWED_ROLES = ["admin"];
 
-// Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   currentAdmin = await requireLogin(["admin"]);
   if (!currentAdmin) return;
@@ -49,7 +37,6 @@ window.addEventListener("DOMContentLoaded", async function () {
   initDashUI(currentAdmin, adminApps, function () { showTab("reports"); });
 });
 
-// Data Accessor `refreshAdminData`: Retrieves or refreshes data to refresh admin data.
 async function refreshAdminData() {
   adminApps = await dbListAllApplications();
   adminUsers = await dbListUsers();
@@ -119,7 +106,6 @@ async function refreshAdminData() {
   renderAdminReport();
 }
 
-// UI State Controller `showTab` (params: tab): Updates modal, tab, or panel state to show tab.
 function showTab(tab) {
   activeAdminTab = tab;
   var tabs = ["overview", "maintenance", "ai", "apis", "accounts", "logs", "calendar", "reports"];
@@ -134,7 +120,6 @@ function showTab(tab) {
   }
 }
 
-// UI Renderer `renderMaintState`: Builds and updates DOM elements for maint state.
 function renderMaintState() {
   var on = isMaintenanceOn();
   var lbl = document.getElementById("maint-status-label");
@@ -146,7 +131,6 @@ function renderMaintState() {
   }
 }
 
-// UI State Controller `toggleMaintMode`: Updates modal, tab, or panel state to toggle maint mode.
 function toggleMaintMode() {
   var next = !isMaintenanceOn();
   openConfirmPopup(
@@ -170,7 +154,6 @@ function toggleMaintMode() {
   );
 }
 
-// UI Renderer `renderAiState`: Builds and updates DOM elements for ai state.
 async function renderAiState() {
   var on = isAiEnabled();
   var health = await apiCheckHealth();
@@ -221,7 +204,6 @@ async function renderAiState() {
   box.innerHTML = html;
 }
 
-// UI State Controller `toggleAiMode`: Updates modal, tab, or panel state to toggle ai mode.
 function toggleAiMode() {
   var next = !isAiEnabled();
   openConfirmPopup(
@@ -246,7 +228,6 @@ function toggleAiMode() {
   );
 }
 
-// Validator/Check `checkApiHealth`: Evaluates rule (check api health) and returns result.
 async function checkApiHealth() {
   var box = document.getElementById("api-health-list");
   var data = await apiCheckHealth();
@@ -354,14 +335,12 @@ async function checkApiHealth() {
   box.innerHTML = html;
 }
 
-// Data Accessor `getPasswordResetRequests`: Retrieves or refreshes data to get password reset requests.
 function getPasswordResetRequests() {
   return (adminNotifs || []).filter(function (n) {
-    return String(n.title || "").indexOf("Password Reset Request:") === 0;
+    return !n.is_read && String(n.title || "").indexOf("Password Reset Request:") === 0;
   });
 }
 
-// UI State Controller `setAccountSubTab` (params: sub): Updates modal, tab, or panel state to set account sub tab.
 function setAccountSubTab(sub) {
   activeAccountSubTab = sub;
   var subs = ["all", "agent", "manager", "customer", "requests"];
@@ -379,7 +358,6 @@ function setAccountSubTab(sub) {
   renderAdminUsers();
 }
 
-// UI Renderer `renderAdminUsers`: Builds and updates DOM elements for admin users.
 function renderAdminUsers() {
   var cntAll = adminUsers.length;
   var cntAg = adminUsers.filter(function (u) { return u.role === "agent"; }).length;
@@ -489,7 +467,6 @@ function renderAdminUsers() {
   body.innerHTML = html;
 }
 
-// UI State Controller `openAddStaffModal` (params: defaultRole): Updates modal, tab, or panel state to open add staff modal.
 function openAddStaffModal(defaultRole) {
   var roleVal = defaultRole === "manager" ? "manager" : "agent";
   var title = roleVal === "manager" ? "Add Internal Manager Account" : "Add Internal Agent Account";
@@ -520,7 +497,6 @@ function openAddStaffModal(defaultRole) {
   );
 }
 
-// Action Handler `submitAddStaffModal` (params: event): Validates inputs and persists changes to submit add staff modal.
 async function submitAddStaffModal(event) {
   event.preventDefault();
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
@@ -569,7 +545,6 @@ async function submitAddStaffModal(event) {
   }
 }
 
-// UI State Controller `openEditStaffModal` (params: userId): Updates modal, tab, or panel state to open edit staff modal.
 function openEditStaffModal(userId) {
   var user = adminUsers.find(function (u) { return u.id === userId; });
   if (!user) return;
@@ -598,7 +573,6 @@ function openEditStaffModal(userId) {
   );
 }
 
-// Action Handler `submitEditStaffModal` (params: event, userId): Validates inputs and persists changes to submit edit staff modal.
 async function submitEditStaffModal(event, userId) {
   event.preventDefault();
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
@@ -643,7 +617,6 @@ async function submitEditStaffModal(event, userId) {
   }
 }
 
-// Helper `adminDeleteUser` (params: userId, label): Executes workflow logic for `adminDeleteUser`.
 function adminDeleteUser(userId, label) {
   openConfirmPopup(
     "Delete Account?",
@@ -662,7 +635,6 @@ function adminDeleteUser(userId, label) {
   );
 }
 
-// UI State Controller `openAdminInviteModal`: Updates modal, tab, or panel state to open admin invite modal.
 function openAdminInviteModal() {
   openPopup(
     '<div class="row between" style="margin-bottom:8px;">' +
@@ -681,7 +653,6 @@ function openAdminInviteModal() {
   );
 }
 
-// Helper `adminGenerateAgentInvite`: Executes workflow logic for `adminGenerateAgentInvite`.
 async function adminGenerateAgentInvite() {
   var noteEl = document.getElementById("adm-invite-note");
   var note = noteEl ? noteEl.value.trim() : "";
@@ -699,7 +670,6 @@ async function adminGenerateAgentInvite() {
   }
 }
 
-// Helper `adminCopyInviteUrl`: Executes workflow logic for `adminCopyInviteUrl`.
 function adminCopyInviteUrl() {
   var inp = document.getElementById("adm-invite-url");
   if (!inp || !inp.value) return;
@@ -712,7 +682,6 @@ function adminCopyInviteUrl() {
   showAlert("Copied", "Private Agent Registration Link copied to clipboard.");
 }
 
-// Helper `adminOpenResetPasswordModal` (params: userId, displayLabel): Executes workflow logic for `adminOpenResetPasswordModal`.
 function adminOpenResetPasswordModal(userId, displayLabel) {
   window._adminResetTargetId = userId;
   window._adminResetTargetLabel = displayLabel;
@@ -730,7 +699,6 @@ function adminOpenResetPasswordModal(userId, displayLabel) {
   );
 }
 
-// Helper `adminConfirmResetPassword`: Executes workflow logic for `adminConfirmResetPassword`.
 async function adminConfirmResetPassword() {
   if (typeof clearFieldError === "function") clearFieldError("adm-reset-pw");
   var pwEl = document.getElementById("adm-reset-pw");
@@ -741,16 +709,39 @@ async function adminConfirmResetPassword() {
   }
   try {
     await dbAdminResetUserPassword(window._adminResetTargetId, newPw);
+    var targetLabelLow = String(window._adminResetTargetLabel || "").toLowerCase();
+    for (var nIdx = 0; nIdx < (adminNotifs || []).length; nIdx++) {
+      var n = adminNotifs[nIdx];
+      if (String(n.title || "").indexOf("Password Reset Request:") === 0) {
+        if (
+          (n.target_id && String(n.target_id) === String(window._adminResetTargetId)) ||
+          (targetLabelLow && String(n.title || "").toLowerCase().indexOf(targetLabelLow) !== -1)
+        ) {
+          n.is_read = true;
+          if (typeof dbMarkNotificationRead === "function") {
+            await dbMarkNotificationRead(n.id, currentAdmin);
+          }
+        }
+      }
+    }
+    var targetUserObj = adminUsers.find(function (u) { return u.id === window._adminResetTargetId; });
+    await dbAddNotification({
+      user_id: window._adminResetTargetId,
+      role: targetUserObj ? targetUserObj.role : null,
+      title: "Password Reset Completed",
+      message: "Your internal account password has been updated by the System Administrator.",
+      target_tab: "tab-overview"
+    });
     await dbAddLog(getStaffIdentifier(currentAdmin), "Reset password for " + window._adminResetTargetLabel);
     closePopup();
     await refreshAdminData();
+    if (typeof refreshNotifBell === "function") await refreshNotifBell(currentAdmin);
     showAlert("Password Updated", "Updated sign-in password for " + escapeHtml(window._adminResetTargetLabel) + ".", "good");
   } catch (err) {
     setFieldError("adm-reset-pw", err.message || "Could not update password.");
   }
 }
 
-// Helper `adminChangeRole` (params: userId, newRole): Executes workflow logic for `adminChangeRole`.
 async function adminChangeRole(userId, newRole) {
   if (newRole === "admin") {
     showAlert("Single Admin Rule", "Only one System Administrator account is permitted in the system.", "warn");
@@ -762,7 +753,6 @@ async function adminChangeRole(userId, newRole) {
   await refreshAdminData();
 }
 
-// Helper `adminToggleActive` (params: userId, activeState): Executes workflow logic for `adminToggleActive`.
 async function adminToggleActive(userId, activeState) {
   if (!activeState && currentAdmin && userId === currentAdmin.id) {
     showAlert("Action Blocked", "You cannot disable your own active System Administrator account.", "warn");
@@ -777,7 +767,6 @@ async function adminToggleActive(userId, activeState) {
   }
 }
 
-// UI State Controller `setLogSubTab` (params: sub): Updates modal, tab, or panel state to set log sub tab.
 function setLogSubTab(sub) {
   activeLogSubTab = sub;
   var subs = ["activity", "login", "ai"];
@@ -790,7 +779,6 @@ function setLogSubTab(sub) {
   renderAdminLogs();
 }
 
-// Helper `classifyLogCategory` (params: text): Executes workflow logic for `classifyLogCategory`.
 function classifyLogCategory(text) {
   var s = String(text || "").toLowerCase();
   if (s.indexOf("login") !== -1 || s.indexOf("logout") !== -1 || s.indexOf("password") !== -1 || s.indexOf("activat") !== -1) return "auth";
@@ -798,7 +786,6 @@ function classifyLogCategory(text) {
   return "system";
 }
 
-// UI Renderer `renderAdminLogs`: Builds and updates DOM elements for admin logs.
 async function renderAdminLogs() {
   var logs = await dbListLogs();
   var hist = await dbListLoginHistory();
@@ -865,7 +852,6 @@ async function renderAdminLogs() {
   }
 }
 
-// Helper `populateReportStatusFilter` (params: subTab): Executes workflow logic for `populateReportStatusFilter`.
 function populateReportStatusFilter(subTab) {
   var sel = document.getElementById("rep-filter-status");
   if (!sel) return;
@@ -893,7 +879,6 @@ function populateReportStatusFilter(subTab) {
   }
 }
 
-// UI State Controller `setReportSubTab` (params: sub): Updates modal, tab, or panel state to set report sub tab.
 function setReportSubTab(sub) {
   activeReportSubTab = sub;
   var subs = ["api", "accounts", "applications"];
@@ -905,7 +890,6 @@ function setReportSubTab(sub) {
   renderAdminReport();
 }
 
-// Helper `onReportTimeframeChange`: Executes workflow logic for `onReportTimeframeChange`.
 function onReportTimeframeChange() {
   var tf = document.getElementById("rep-timeframe").value;
   var dWrap = document.getElementById("rep-date-wrap");
@@ -915,7 +899,6 @@ function onReportTimeframeChange() {
   renderAdminReport();
 }
 
-// Helper `matchesReportTimeframe` (params: isoDateStr): Executes workflow logic for `matchesReportTimeframe`.
 function matchesReportTimeframe(isoDateStr) {
   var tf = document.getElementById("rep-timeframe") ? document.getElementById("rep-timeframe").value : "all";
   var pickedDate = document.getElementById("rep-date") ? document.getElementById("rep-date").value : "";
@@ -923,7 +906,6 @@ function matchesReportTimeframe(isoDateStr) {
   return matchesReportTimeframeValue(isoDateStr, tf, pickedDate, pickedMonth);
 }
 
-// Data Accessor `getActiveReportData`: Retrieves or refreshes data to get active report data.
 function getActiveReportData() {
   var filterVal = document.getElementById("rep-filter-status") ? document.getElementById("rep-filter-status").value : "all";
   var tf = document.getElementById("rep-timeframe") ? document.getElementById("rep-timeframe").value : "all";
@@ -1053,7 +1035,6 @@ function getActiveReportData() {
   };
 }
 
-// UI Renderer `renderAdminReport`: Builds and updates DOM elements for admin report.
 function renderAdminReport() {
   renderDashReportView({
     data: getActiveReportData(),
@@ -1068,7 +1049,6 @@ function renderAdminReport() {
   });
 }
 
-// `resetAdminReportFilters`: Clears Daily/Monthly report timeframe and date filters via the Reset button below the report table.
 function resetAdminReportFilters() {
   var tfEl = document.getElementById("rep-timeframe");
   var dEl = document.getElementById("rep-date");
@@ -1081,19 +1061,16 @@ function resetAdminReportFilters() {
   onReportTimeframeChange();
 }
 
-// Helper `exportActiveReportCsv`: Executes workflow logic for `exportActiveReportCsv`.
 function exportActiveReportCsv() {
   var data = getActiveReportData();
   exportReportToCsv(data.columns, data.rows, "PIGEM-" + activeReportSubTab + "-report.csv");
 }
 
-// Helper `downloadFormattedAdminReport`: Executes workflow logic for `downloadFormattedAdminReport`.
 function downloadFormattedAdminReport() {
   var data = getActiveReportData();
   downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-" + activeReportSubTab + "-summary-report.html");
 }
 
-// Helper `resetDemoDatabase`: Executes workflow logic for `resetDemoDatabase`.
 function resetDemoDatabase() {
   localStorage.removeItem("pigem_apps");
   localStorage.removeItem("pigem_users");
@@ -1105,7 +1082,6 @@ function resetDemoDatabase() {
   });
 }
 
-// Helper `adminSendTestEmail`: Executes workflow logic for `adminSendTestEmail`.
 async function adminSendTestEmail() {
   var btn = document.getElementById("btn-test-email");
   var to = document.getElementById("test-email-to").value.trim();

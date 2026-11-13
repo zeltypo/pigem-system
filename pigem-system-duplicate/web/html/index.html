@@ -1,28 +1,19 @@
 <!DOCTYPE html>
-<!-- ==========================================================================
-     FILE OVERVIEW: Public Home & Fiber Plans Landing Page (web/html/index.html)
-     PURPOSE: Displays PIGEM Combined Facilities Support Services plans, announcements, and reCAPTCHA-gated Apply buttons.
-     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
-     ========================================================================== -->
 
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
   <title>Combined Facilities Support Services</title>
 
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css">
 
-  <!-- IMPORT: Google reCAPTCHA v2 client widget script for anti-bot protection -->
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body class="public-page">
 
-  <!-- SECTION: Top Navigation Header & Brand Bar -->
   <header class="site-header">
     <div class="container">
       <div class="logo">
@@ -30,7 +21,6 @@
         <span style="cursor:default; user-select:none;">Combined Facilities Support Services</span>
       </div>
 
-      <!-- SECTION: Primary Navigation Links -->
       <nav class="menu">
         <a href="index.html" class="active hide-phone">Home</a>
         <a href="about.html" class="hide-phone">About Us</a>
@@ -47,7 +37,6 @@
 
   <div class="side-menu-back" onclick="toggleMenu()"></div>
 
-  <!-- SECTION: Left Dashboard Sidebar Navigation -->
   <aside class="side-menu">
     <div class="row between" style="padding-bottom:12px; border-bottom:1px solid var(--line); align-items:center;">
       <div style="display:flex; align-items:center; gap:10px;">
@@ -61,7 +50,6 @@
     <a href="login.html" class="btn btn-red account-btn">Customer Login</a>
   </aside>
 
-  <!-- SECTION: Main Page Content Container -->
   <main>
 
     <div id="site-announcement-bar" style="display:none; background:#101828; color:#ffffff; padding:10px 16px; font-size:13.5px; text-align:center;"></div>
@@ -115,7 +103,6 @@
     </section>
   </main>
 
-  <!-- SECTION: Corporate Footer & Links -->
   <footer class="site-footer">
     <div class="container">
       <div class="cols">
@@ -143,16 +130,12 @@
     </div>
   </footer>
 
-  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
 
-  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
 
-  <!-- IMPORT: Public landing page controller rendering fiber plans, announcements, and Apply links -->
   <script src="../js/home.js"></script>
 </body>
 </html>

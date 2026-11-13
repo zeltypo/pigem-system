@@ -1,9 +1,4 @@
 <!DOCTYPE html>
-<!-- ==========================================================================
-     FILE OVERVIEW: Operations Manager Dashboard, Agent Provisioning, CMS & Reports (web/html/manager.html)
-     PURPOSE: Provides collapsed-by-default navigation, Manager Overview analytics, Agent CRUD modals, fiber plans, hero banner slide count (1-4), broadcasts, and Reports.
-     HOSTING: Static cloud frontend served via Vercel with Supabase & /api/*
-     ========================================================================== -->
 
 <html lang="en">
 <head>
@@ -11,10 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Application Monitoring Management - PIGEM Manager Dashboard</title>
 
-  <!-- IMPORT: Browser tab favicon loaded from Supabase Storage website-assets -->
   <link rel="icon" type="image/png" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" />
 
-  <!-- IMPORT: Unified PIGEM corporate design system stylesheet (web/style.css) -->
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
@@ -25,15 +18,44 @@
     <span class="muted" style="font-size:13px">Application Monitoring Management (Manager)</span>
   </div>
 
+  <header class="topbar dash-header no-print">
+    <div class="topbar-inner">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button type="button" class="menu-toggle dash-mob-toggle" onclick="toggleDashSidebar()" aria-label="Toggle Menu">
+          <span class="bar"></span>
+          <span class="bar"></span>
+          <span class="bar"></span>
+        </button>
+        <a href="index.html" class="brand">
+          <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" />
+          <div>
+            <b>PIGEM Combined Facilities Support Services</b>
+            <span>Manager Operations Console</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="top-search">
+        <input type="search" placeholder="Search reference no., applicant, or section..." oninput="onTopSearchInput(this)" />
+        <div id="top-search-results" class="search-drop hidden"></div>
+      </div>
+
+      <div class="top-actions">
+        <span id="top-user-name" class="topbar-user-pill"></span>
+        <button id="notif-btn" type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()" title="Notifications">
+          <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+        </button>
+        <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">MG</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="dash-side-backdrop" onclick="closeDashSidebar()"></div>
+
   <div class="dash-wrap">
 
-    <!-- SECTION: Left Dashboard Sidebar Navigation -->
     <aside class="dash-side">
-      <div class="brand brand-stacked">
-        <img src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
-        <span class="brand-org">COMBINED FACILITIES SUPPORT SERVICES</span>
-        <span class="brand-sys">APPLICATION MANAGEMENT SYSTEM</span>
-      </div>
+      <div class="dash-side-label">Manager Navigation</div>
 
       <button id="nav-overview" data-nav-label="Manager Overview" data-nav-target="overview" class="active" onclick="showTab('overview')">
         <span><img data-img="icons/overview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/overview.png" alt="Overview" class="icon-img" />Manager Overview</span>
@@ -131,12 +153,6 @@
           <div>
             <h2>Manager Overview</h2>
             <p>Real-time application volume, pipeline distribution, recent agent activities, and plan analytics.</p>
-          </div>
-          <div class="top-actions overview-hero-actions">
-            <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
-              <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
-            </button>
-            <button id="avatar-btn" type="button" class="avatar-btn overview-only-avatar" onclick="toggleProfileDrawer()" title="Account and Theme">MG</button>
           </div>
         </div>
 
@@ -596,27 +612,20 @@
     </div>
   </div>
 
-  <!-- INLINE SCRIPT: Portal configuration and interactive handlers -->
   <script>
 window.SYSTEM = "staff";
   </script>
 
-  <!-- IMPORT: Supabase JavaScript SDK v2 for PostgreSQL queries and Cloud Storage -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <!-- IMPORT: Global config, input validators (18+, letters-only name, mobile), Enter-key flow, and popups -->
   <script src="../js/config.js"></script>
 
-  <!-- IMPORT: Cloud database & storage layer (username-only staff auth, QR session storage, CRUD & audit logs) -->
   <script src="../js/db.js"></script>
 
-  <!-- IMPORT: Serverless Python FastAPI client (/api/*) for captcha verification, ID screening & Gmail SMTP emails -->
   <script src="../js/api.js"></script>
 
-  <!-- IMPORT: Shared dashboard shell controller (sidebar nav, theme toggle, Overview-only controls, pie/bar charts) -->
   <script src="../js/dash-ui.js"></script>
 
-  <!-- IMPORT: Manager operations controller for KPIs, Agent CRUD modals, CMS updates, and promos -->
   <script src="../js/manager.js"></script>
 </body>
 </html>
