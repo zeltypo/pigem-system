@@ -412,9 +412,19 @@ function onNotificationItemClick(index) {
   }
 }
 
-function toggleNotifModal() {
+async function toggleNotifModal() {
   var m = document.getElementById("notif-modal");
-  if (m) m.classList.toggle("hidden");
+  if (!m) return;
+  var wasHidden = m.classList.contains("hidden");
+  m.classList.toggle("hidden");
+  if (wasHidden) {
+    var countEl = document.getElementById("notif-count");
+    if (countEl) {
+      countEl.textContent = "0";
+      countEl.classList.add("hidden");
+    }
+    await markAllDashNotificationsRead();
+  }
 }
 
 function getInitials(name) {
