@@ -39,11 +39,11 @@
       "destination": "/web/html/$1"
     },
     {
-      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register)\\.html",
+      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register|test)\\.html",
       "destination": "/web/html/$1.html"
     },
     {
-      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register)",
+      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register|test)",
       "destination": "/web/html/$1.html"
     }
   ]

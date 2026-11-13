@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System & AI Testing Checklist | Combined Facilities Support Services</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --line: #e2e8f0;
+      --red: #c8102e;
+      --red-dark: #9e0b22;
+      --red-soft: #fef2f2;
+      --good: #15803d;
+      --good-soft: #f0fdf4;
+      --good-border: #bbf7d0;
+      --navy: #101828;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .topbar {
+      background: var(--navy);
+      color: #fff;
+      padding: 16px 20px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+    }
+    .topbar-inner {
+      max-width: 1080px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand-title {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+    .brand-sub {
+      font-size: 11px;
+      font-weight: 700;
+      color: #fca5a5;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+    .progress-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(255,255,255,0.08);
+      padding: 8px 14px;
+      border-radius: 10px;
+      min-width: 260px;
+    }
+    .progress-bar-outer {
+      flex: 1;
+      height: 10px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 999px;
+      overflow: hidden;
+      min-width: 110px;
+    }
+    .progress-bar-inner {
+      height: 100%;
+      width: 0%;
+      background: #22c55e;
+      transition: width 0.25s ease;
+    }
+    .progress-text {
+      font-size: 12.5px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .container {
+      max-width: 1080px;
+      margin: 24px auto 60px;
+      padding: 0 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 18px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+    .card h2 {
+      margin: 0 0 6px;
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .sec-badge {
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #334155;
+    }
+    .sec-desc {
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .links-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .portal-link {
+      display: flex;
+      flex-direction: column;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--text);
+      background: #f8fafc;
+      font-size: 13px;
+      font-weight: 700;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .portal-link:hover {
+      border-color: var(--red);
+      background: var(--red-soft);
+    }
+    .portal-link span {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .input-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      flex: 1;
+    }
+    .input-group input, .input-group select {
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      background: #fff;
+      color: var(--text);
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .btn {
+      padding: 8px 13px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn:hover { background: #f1f5f9; }
+    .btn-red {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff;
+    }
+    .btn-red:hover { background: var(--red-dark); }
+    .test-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .test-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #fff;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .test-item:hover {
+      border-color: #cbd5e1;
+      background: #f8fafc;
+    }
+    .test-item.done {
+      background: var(--good-soft);
+      border-color: var(--good-border);
+    }
+    .test-item input[type="checkbox"] {
+      width: 19px;
+      height: 19px;
+      margin-top: 2px;
+      accent-color: var(--good);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .test-content {
+      flex: 1;
+      font-size: 13.5px;
+    }
+    .test-id {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 1px 7px;
+      border-radius: 5px;
+      background: #e2e8f0;
+      color: #1e293b;
+      margin-right: 6px;
+    }
+    .test-item.done .test-id {
+      background: #bbf7d0;
+      color: #14532d;
+    }
+    .ai-tag {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 1px 7px;
+      border-radius: 5px;
+      background: #fef3c7;
+      color: #92400e;
+      margin-right: 6px;
+      border: 1px solid #fde68a;
+    }
+    .test-title {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .test-item.done .test-title {
+      color: #14532d;
+      text-decoration: line-through;
+    }
+    .test-desc {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12.8px;
+    }
+    .note-box {
+      width: 100%;
+      margin-top: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 64px;
+    }
+    @media print {
+      .topbar { position: static; background: #fff; color: #000; box-shadow: none; border-bottom: 2px solid #000; }
+      .btn-row, .filter-select { display: none !important; }
+      .card { break-inside: avoid; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <div class="brand-title">Combined Facilities Support Services</div>
+        <div class="brand-sub">MASTER SYSTEM &amp; AI SCREENING TEST CHECKLIST</div>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-bar-outer">
+          <div id="prog-bar" class="progress-bar-inner"></div>
+        </div>
+        <div id="prog-text" class="progress-text">0 / 54 (0%)</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <section class="card">
+      <h2>
+        <span>Quick Portal Links &amp; Tester Controls</span>
+        <span class="sec-badge" id="save-indicator">Auto-saved in browser</span>
+      </h2>
+      <p class="sec-desc">Click any portal below to open it in a new tab, then check off each item as you verify it. Your checkboxes are saved automatically.</p>
+
+      <div class="links-grid">
+        <a class="portal-link" href="index.html" target="_blank">Public Home Page<span>/index.html</span></a>
+        <a class="portal-link" href="about.html" target="_blank">Public About Us<span>/about.html</span></a>
+        <a class="portal-link" href="apply.html" target="_blank">Application Form<span>/apply.html</span></a>
+        <a class="portal-link" href="login.html" target="_blank">Customer Login / Activate<span>/login.html</span></a>
+        <a class="portal-link" href="customer.html" target="_blank">Customer Portal<span>/customer.html</span></a>
+        <a class="portal-link" href="staff-login.html" target="_blank">Staff Login (Agent &amp; Manager)<span>/staff-login.html</span></a>
+        <a class="portal-link" href="agent.html" target="_blank">Agent Portal<span>/agent.html</span></a>
+        <a class="portal-link" href="manager.html" target="_blank">Manager Portal<span>/manager.html</span></a>
+        <a class="portal-link" href="admin-login.html" target="_blank">Admin Setup &amp; Login<span>/admin-login.html</span></a>
+        <a class="portal-link" href="admin.html" target="_blank">Admin Technical Console<span>/admin.html</span></a>
+      </div>
+
+      <div class="controls-row">
+        <div class="input-group">
+          <input type="text" id="tester-name" placeholder="Tester Name (e.g., Aljo / Member Name)" oninput="saveMeta()">
+          <select id="filter-mode" class="filter-select" onchange="renderChecklist()">
+            <option value="all">Show All Test Items (54)</option>
+            <option value="pending">Show Unchecked / Remaining Only</option>
+            <option value="done">Show Completed Only</option>
+            <option value="ai">Show AI &amp; Document Screening Tests Only</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn" onclick="checkAllVisible(true)">Check All</button>
+          <button type="button" class="btn" onclick="resetAll()">Reset Checkboxes</button>
+          <button type="button" class="btn btn-red" onclick="window.print()">Print / Save PDF</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="sections-root"></div>
+
+    <section class="card">
+      <h2><span>Tester Remarks &amp; Observations</span></h2>
+      <p class="sec-desc">Record any observations, reference numbers tested (e.g., REF-...), or feedback below:</p>
+      <textarea id="tester-notes" class="note-box" placeholder="Write your testing notes, Reference Numbers tested, or comments here..." oninput="saveMeta()"></textarea>
+    </section>
+
+  </main>
+
+  <script>
+    var STORAGE_KEY = "pigem_master_tester_checklist_v1";
+
+    var TEST_SECTIONS = [
+      {
+        id: "sec-1",
+        title: "1. Brand-New System State (No User, No Banner) & First-Time Admin Setup",
+        desc: "Verify how the website behaves when starting completely fresh with no accounts and no uploaded banners yet.",
+        items: [
+          { id: "T01", title: "Public Home Page with No Banners (/index.html)", desc: "Open /index.html before any banners are uploaded. Confirm the hero slider shows the clean dark-red gradient fallback banner with headline text and 'Apply Now' button (zero broken image icons)." },
+          { id: "T02", title: "Public About Us Page with No Banners (/about.html)", desc: "Open /about.html before any banners are uploaded. Confirm the About slider, Mission, Vision, Core Values, Vehicles, and Permits sections render cleanly." },
+          { id: "T03", title: "Default Fiber Plans & FAQs Display", desc: "Confirm Plan 1000 (100 Mbps), Plan 1400 (300 Mbps - Most Chosen), and Plan 1900 (500 Mbps) and the FAQ items load properly on /index.html." },
+          { id: "T04", title: "First-Time Admin Setup Card (/admin-login.html)", desc: "Open /admin-login.html when no user exists yet. Confirm the 'First-Time System Administrator Setup' card appears automatically." },
+          { id: "T05", title: "Create Single System Administrator Account", desc: "Register the Admin account (Username, Full Name, Gmail address, strong password) and confirm automatic sign-in to /admin.html." },
+          { id: "T06", title: "Verify Admin Topbar Title & Subtitle", desc: "Confirm /admin.html topbar displays 'Combined Facilities Support Services' with subtitle 'TECHNICAL MANAGEMENT SYSTEM'." },
+          { id: "T07", title: "Single-Admin Lock Verification", desc: "Re-open /admin-login.html and confirm the First-Time Setup form is no longer shown now that the Admin account exists." }
+        ]
+      },
+      {
+        id: "sec-2",
+        title: "2. Staff Account Creation, Multi-Tab Login & Manager Website CMS (Uploading Banners)",
+        desc: "Create the Manager and Agent accounts, test logging in across multiple tabs, and upload the first website banners.",
+        items: [
+          { id: "T08", title: "Admin Creates Manager Account (/admin.html)", desc: "In Admin Portal -> Staff Accounts, create a Manager account and confirm it appears as Active in the table." },
+          { id: "T09", title: "Multi-Tab Staff Login Without Forced Redirect (/staff-login.html)", desc: "Open /staff-login.html in a new tab while Admin is still open in Tab 1. Confirm it shows the non-blocking 'Active Session Detected' banner instead of force-redirecting, and sign in as Manager." },
+          { id: "T10", title: "Verify Manager Topbar Title & Subtitle", desc: "Confirm /manager.html topbar displays 'Combined Facilities Support Services' with subtitle 'MANAGER APPLICATION MANAGEMENT'." },
+          { id: "T11", title: "Upload & Select First Website Banners (Manager CMS)", desc: "In /manager.html -> Website CMS, upload banner images into the Banners folder, select them for the Home Hero Slides and About Us Slides, and click Save Website Content." },
+          { id: "T12", title: "Verify Live Banners on Public Pages", desc: "Refresh /index.html and /about.html and confirm the newly uploaded banners now display and rotate in the carousel." },
+          { id: "T13", title: "Site Announcement Bar Toggle", desc: "Enable the Site Announcement Bar in Manager CMS with a headline and message, save, and confirm it appears at the top of /index.html." },
+          { id: "T14", title: "Edit Fiber Plans & FAQs in CMS", desc: "Edit a Fiber Plan or FAQ item in Manager CMS, save, and verify the live update on /index.html." },
+          { id: "T15", title: "Create Agent Account & Generate Agent Referral Link", desc: "In Manager Portal (or Admin Portal), create an Agent account and generate an Agent Referral Link (/apply.html?agent=CODE)." }
+        ]
+      },
+      {
+        id: "sec-3",
+        title: "3. Customer 6-Step Application Form (/apply.html)",
+        desc: "Test the complete customer fiber application wizard, field validations, OTP verification, map pinning, and Front/Back ID upload.",
+        items: [
+          { id: "T16", title: "Security Verification CAPTCHA Popup", desc: "Click 'Apply for Plan' on /index.html (or open /apply.html). Confirm the Security Verification popup opens with the shield icon and unlocks Step 1 once verified." },
+          { id: "T17", title: "Agent Referral Link Banner (?agent=CODE)", desc: "Open /apply.html?agent=CODE and confirm the 'Agent Referral Active' banner displays at the top of the application form." },
+          { id: "T18", title: "Step 1 — Select Your Fiber Plan", desc: "Choose a fiber plan card on Step 1 and click Next." },
+          { id: "T19", title: "Step 2 — Personal Information & 18+ Age Validation", desc: "Test live validation on First Name, Middle Name ('N/A' allowed), Last Name, and Date of Birth (confirm birth dates under 18 years old are blocked)." },
+          { id: "T20", title: "Step 3 — Gmail OTP Verification & Mobile Number Validation", desc: "Enter an active @gmail.com address, click 'Send Email OTP', enter the 6-digit OTP received in Gmail, and confirm the email badge turns Verified. Enter an 11-digit mobile number (09XXXXXXXXX)." },
+          { id: "T21", title: "Step 4 — Interactive Installation Map Pin & Address", desc: "Pin the installation address on the interactive map, confirm latitude/longitude update, and complete House No., Street, Barangay, City, Province, and Landmark." },
+          { id: "T22", title: "Step 5 — Valid ID Front & Back Upload (Desktop or Mobile QR)", desc: "Select a Philippine Government ID Type, enter the ID Number, and upload two separate clear photos for Front of Valid ID and Back of Valid ID (or test 'Scan QR with Phone')." },
+          { id: "T23", title: "Step 6 — Subscriber Consent & Submit Application", desc: "Check the Subscriber Declaration consent box and click Submit Application. Confirm the 3-step submission screen finishes and shows the Application Reference Number (REF-...)." }
+        ]
+      },
+      {
+        id: "sec-4",
+        title: "4. Customer Account Activation & Customer Portal (/login.html & /customer.html)",
+        desc: "Activate the customer account from the Gmail confirmation email and test the Customer Portal.",
+        items: [
+          { id: "T24", title: "Receive Application Confirmation & Activation Email in Gmail", desc: "Check the customer's Gmail inbox for the confirmation email containing the Reference Number, 6-digit Activation OTP, and one-time activation link." },
+          { id: "T25", title: "Activate Customer Account & Create Username/Password (/login.html)", desc: "Open the activation link (or /login.html), enter the 6-digit Activation OTP, set a custom Username and Password, and sign in to /customer.html." },
+          { id: "T26", title: "Customer Portal Header & Application Status Tracker", desc: "Confirm /customer.html topbar displays 'Combined Facilities Support Services' and shows the customer's Reference Number, Plan, Address, and current status." },
+          { id: "T27", title: "Customer Notification Bell Auto-Clear", desc: "Click the Notification Bell icon in /customer.html. Confirm the unread badge number disappears immediately (0) when opened, and restarts from 1 when a new notification arrives." }
+        ]
+      },
+      {
+        id: "sec-5",
+        title: "5. AI & Document Screening Test Cases (/apply.html & /agent.html)",
+        desc: "Test all AI OCR, image quality, duplicate check, location serviceability, and manual fallback scenarios.",
+        items: [
+          { id: "T28", ai: true, title: "AI Test 1 — Non-ID Photo Pre-Submit Rejection", desc: "On /apply.html Step 5, upload a non-ID photo (e.g., selfie, scenery, or random picture) as the Front ID and try to submit on Step 6. Confirm the AI gate blocks submission and states it is not a valid government ID." },
+          { id: "T29", ai: true, title: "AI Test 2 — Blurry / Dark / Glare Image Quality Check", desc: "Upload a blurry or dark ID photo. Confirm the quality analyzer calculates Sharpness, Brightness, and Glare scores and flags quality warnings." },
+          { id: "T30", ai: true, title: "AI Test 3 — Identical Front & Back Photo Block", desc: "On /apply.html Step 5 (or Customer Correction), select the exact same image file for both Front ID and Back ID. Confirm the system immediately blocks it and requires two different photos." },
+          { id: "T31", ai: true, title: "AI Test 4 — OCR Extraction & Exact Field Match", desc: "Submit an application where typed Name, Birth Date, ID Type, and ID Number match the ID card. In /agent.html Section 3, confirm AI extracts the fields, marks them Matched, and generates auto-cropped ID previews." },
+          { id: "T32", ai: true, title: "AI Test 5 — OCR Field Mismatch Detection (Name / DOB / ID No.)", desc: "Submit an application where the typed Name, Birth Date, or ID Number intentionally differs from the uploaded ID. Confirm /agent.html Section 3 highlights the mismatch and suggests a validator remark." },
+          { id: "T33", ai: true, title: "AI Test 6 — 'Run / Refresh Document Check' (No False Same-Upload Warning)", desc: "In /agent.html, open an initial application (before any customer correction) and click 'Run / Refresh Document Check'. Confirm it refreshes cleanly and NEVER falsely claims 'Unchanged Re-Uploaded Image'." },
+          { id: "T34", ai: true, title: "AI Test 7 — True Unchanged Re-Upload Detection on Resubmission", desc: "When an application is in 'Needs Correction' for Valid ID Photo, have the customer re-upload the exact same Front ID photo that was previously flagged. Confirm /agent.html flags 'Unchanged Re-Uploaded Image'." },
+          { id: "T35", ai: true, title: "AI Test 8 — Location & Serviceability Screening (Inside vs. Outside Area)", desc: "Pin an address inside serviceable areas (Cavite, Metro Manila, Laguna, Batangas, Rizal, Bulacan, Cebu) vs. outside coverage. Confirm AI Location Screening accurately marks serviceable vs. outside-area advisory." },
+          { id: "T36", ai: true, title: "AI Test 9 — Duplicate Customer Application Auto-Rejection", desc: "Submit a second application with the same Customer Email / Name / Installation Address while an active application exists. Confirm it is automatically rejected as a duplicate and notifies Customer and Agent." },
+          { id: "T37", ai: true, title: "AI Test 10 — Admin AI Toggle OFF (Manual Review Fallback)", desc: "In /admin.html, switch AI Document Screening to OFF (Paused). Submit a test application and confirm it saves cleanly with 'Original Copy Ready (Manual Review)'. Turn AI Screening back ON afterward." }
+        ]
+      },
+      {
+        id: "sec-6",
+        title: "6. Agent Portal, Download/Print ID & Customer Correction Loop (/agent.html & /customer.html)",
+        desc: "Test the Agent verification tools, Download ID, Print Copy, Section 4 lock on Needs Correction, and Customer Front+Back re-upload.",
+        items: [
+          { id: "T38", title: "Multi-Tab Agent Sign-In (/staff-login.html -> /agent.html)", desc: "Open /staff-login.html in a separate tab and sign in as Agent while Customer/Manager tabs stay open. Confirm /agent.html topbar shows 'Combined Facilities Support Services' with subtitle 'AGENT APPLICATION MANAGEMENT'." },
+          { id: "T39", title: "Agent Notification Bell Auto-Clear", desc: "Click the Notification Bell in /agent.html. Confirm the badge count disappears immediately (0) when opened and starts at 1 again on the next new notification." },
+          { id: "T40", title: "Claim Application from Queue", desc: "Open an unassigned application in /agent.html and click 'Claim Application' so it is assigned to your Agent account." },
+          { id: "T41", title: "Download ID Button (Downloads Front & Back ID Files)", desc: "In the Agent application modal (Section 2), click 'Download ID'. Confirm both Front and Back ID photos download directly as image files." },
+          { id: "T42", title: "Print Copy Button (Formatted Print Window with Front & Back ID)", desc: "In Section 2, click 'Print Copy'. Confirm a formatted printable sheet opens showing Applicant Info, Address, and both Front & Back Valid ID photos, and opens the Print dialog." },
+          { id: "T43", title: "Section 4 — Select Common Screening / Validator Remark Preset", desc: "In Section 4 (Request Customer Update), select 'Valid ID Photo (Blurry / Glare / Duplicate)' and pick a preset remark. Confirm the Short Validator Note and Polite Customer Instruction auto-fill." },
+          { id: "T44", title: "Send Update Request & Verify Section 4 Locks", desc: "Click 'Send Update Request to Customer'. Re-open the application modal in /agent.html and confirm Section 4 is now locked with 'Customer Update Request Sent (Awaiting Customer Resubmission)'." },
+          { id: "T45", title: "Customer Views Correction Importance Notice (/customer.html)", desc: "In /customer.html, view the 'Action Required: Application Update' box. Confirm it clearly explains why completing the correction is required for installation and has NO 'I choose not to correct' button." },
+          { id: "T46", title: "Customer Re-Uploads Both Front & Back Valid ID Photos", desc: "In /customer.html, confirm two separate upload inputs appear: (1) Front of Valid ID Photo and (2) Back of Valid ID Photo. Upload two new clear photos and click 'Submit Updated Information'." },
+          { id: "T47", title: "Agent Reviews Resubmission & Confirms Section 4 Re-Opens", desc: "In /agent.html, open the resubmitted application (badged 'Customer Resubmitted'). Confirm Section 2 shows Original vs. Corrected comparison and Section 4 has reopened in case another update is needed." },
+          { id: "T48", title: "Agent Moves Application to Encoding & Uploads Proof", desc: "Update the verified application status to 'Encoding', enter the Provider Reference No., and upload an Encoding Proof Screenshot." },
+          { id: "T49", title: "Final Status Update to Approved / Installed", desc: "Update the application status to 'Approved' (or 'Installed'). Confirm the Customer receives the notification and email update." }
+        ]
+      },
+      {
+        id: "sec-7",
+        title: "7. Admin Technical Console, Maintenance Mode & Reports (/admin.html & /manager.html)",
+        desc: "Verify Maintenance Mode, Password Reset workflow, CSV/HTML reports, and System Audit Logs.",
+        items: [
+          { id: "T50", title: "Public Maintenance Mode & Manager Preview", desc: "In /admin.html, enable Public Maintenance Mode with a custom message. Confirm /index.html shows the maintenance screen to visitors while the Manager can still preview the site. Turn Maintenance Mode OFF afterward." },
+          { id: "T51", title: "Staff Forgot Password / Reset Request Flow", desc: "On /staff-login.html, click 'Forgot Password', submit a reset request for an Agent or Manager, and confirm the Admin/Manager can view and process it." },
+          { id: "T52", title: "Export Daily & Monthly CSV Reports", desc: "In /manager.html and /admin.html, test exporting Daily and Monthly CSV reports." },
+          { id: "T53", title: "Printable HTML Summary Report", desc: "In /manager.html or /admin.html, click 'Print / View HTML Report' and confirm the formatted report window opens cleanly." },
+          { id: "T54", title: "System Audit Logs & Login History", desc: "In /admin.html, open System Audit Logs and Login History and confirm all staff logins, applications, AI checks, corrections, and status updates are recorded." }
+        ]
+      }
+    ];
+
+    var state = {
+      checked: {},
+      testerName: "",
+      testerNotes: ""
+    };
+
+    function loadState() {
+      try {
+        var raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            state.checked = parsed.checked || {};
+            state.testerName = parsed.testerName || "";
+            state.testerNotes = parsed.testerNotes || "";
+          }
+        }
+      } catch (e) {}
+      var nameEl = document.getElementById("tester-name");
+      var notesEl = document.getElementById("tester-notes");
+      if (nameEl) nameEl.value = state.testerName;
+      if (notesEl) notesEl.value = state.testerNotes;
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        var ind = document.getElementById("save-indicator");
+        if (ind) {
+          ind.textContent = "Saved just now";
+          setTimeout(function () { ind.textContent = "Auto-saved in browser"; }, 1200);
+        }
+      } catch (e) {}
+      updateProgress();
+    }
+
+    function saveMeta() {
+      var nameEl = document.getElementById("tester-name");
+      var notesEl = document.getElementById("tester-notes");
+      state.testerName = nameEl ? nameEl.value : "";
+      state.testerNotes = notesEl ? notesEl.value : "";
+      saveState();
+    }
+
+    function toggleItem(id) {
+      state.checked[id] = !state.checked[id];
+      saveState();
+      renderChecklist();
+    }
+
+    function updateProgress() {
+      var total = 0;
+      var done = 0;
+      for (var s = 0; s < TEST_SECTIONS.length; s++) {
+        var items = TEST_SECTIONS[s].items;
+        for (var i = 0; i < items.length; i++) {
+          total++;
+          if (state.checked[items[i].id]) done++;
+        }
+      }
+      var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      var bar = document.getElementById("prog-bar");
+      var txt = document.getElementById("prog-text");
+      if (bar) bar.style.width = pct + "%";
+      if (txt) txt.textContent = done + " / " + total + " (" + pct + "%)";
+    }
+
+    function renderChecklist() {
+      var root = document.getElementById("sections-root");
+      var filterEl = document.getElementById("filter-mode");
+      var mode = filterEl ? filterEl.value : "all";
+      var html = "";
+
+      for (var s = 0; s < TEST_SECTIONS.length; s++) {
+        var sec = TEST_SECTIONS[s];
+        var visibleItems = [];
+        var secDone = 0;
+
+        for (var i = 0; i < sec.items.length; i++) {
+          var item = sec.items[i];
+          var isDone = Boolean(state.checked[item.id]);
+          if (isDone) secDone++;
+
+          if (mode === "pending" && isDone) continue;
+          if (mode === "done" && !isDone) continue;
+          if (mode === "ai" && !item.ai) continue;
+          visibleItems.push(item);
+        }
+
+        if (visibleItems.length === 0) continue;
+
+        html += '<section class="card">';
+        html += '<h2><span>' + sec.title + '</span><span class="sec-badge">' + secDone + ' / ' + sec.items.length + ' Done</span></h2>';
+        html += '<p class="sec-desc">' + sec.desc + '</p>';
+        html += '<div class="test-list">';
+
+        for (var j = 0; j < visibleItems.length; j++) {
+          var it = visibleItems[j];
+          var checked = Boolean(state.checked[it.id]);
+          html +=
+            '<label class="test-item' + (checked ? ' done' : '') + '">' +
+              '<input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="toggleItem(\'' + it.id + '\')">' +
+              '<div class="test-content">' +
+                '<span class="test-id">' + it.id + '</span>' +
+                (it.ai ? '<span class="ai-tag">AI SCREENING</span>' : '') +
+                '<span class="test-title">' + it.title + '</span>' +
+                '<span class="test-desc">' + it.desc + '</span>' +
+              '</div>' +
+            '</label>';
+        }
+
+        html += '</div></section>';
+      }
+
+      if (!html) {
+        html = '<section class="card"><h2>No Matching Test Items</h2><p class="sec-desc">Change the filter dropdown above to view all test items.</p></section>';
+      }
+
+      root.innerHTML = html;
+      updateProgress();
+    }
+
+    function checkAllVisible(val) {
+      for (var s = 0; s < TEST_SECTIONS.length; s++) {
+        var items = TEST_SECTIONS[s].items;
+        for (var i = 0; i < items.length; i++) {
+          state.checked[items[i].id] = Boolean(val);
+        }
+      }
+      saveState();
+      renderChecklist();
+    }
+
+    function resetAll() {
+      if (!confirm("Reset all checkboxes to unchecked?")) return;
+      state.checked = {};
+      saveState();
+      renderChecklist();
+    }
+
+    loadState();
+    renderChecklist();
+    if (window.location.protocol === "file:" && window.location.pathname.toLowerCase().indexOf("/web/html/") === -1) {
+      var pLinks = document.querySelectorAll(".portal-link");
+      for (var p = 0; p < pLinks.length; p++) {
+        var h = pLinks[p].getAttribute("href");
+        if (h && h.indexOf("web/html/") !== 0) pLinks[p].setAttribute("href", "web/html/" + h);
+      }
+    }
+  </script>
+</body>
+</html>

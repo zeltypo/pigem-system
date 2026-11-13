@@ -125,6 +125,7 @@ CREATE TABLE public.applications (
   id_cropped_url TEXT,
   id_back_cropped_url TEXT,
   cropped_id_url TEXT,
+  cropped_back_url TEXT,
   remarks TEXT,
   agree_tu BOOLEAN NOT NULL DEFAULT false,
   original_copy JSONB,
@@ -313,6 +314,6 @@ ON CONFLICT (id) DO UPDATE SET
 
 INSERT INTO public.website_content (id, data) VALUES (
   'main',
-  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "hero_slide_count": 3, "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
+  '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "hero_slide_count": 3, "hero_slides": [], "about_slides": [], "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;

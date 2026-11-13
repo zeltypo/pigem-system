@@ -13,7 +13,7 @@ function showGoogleCaptchaPopup() {
   openPopup(
     '<div class="center" style="padding:14px 4px 6px;">' +
       '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">' +
-        '<img data-img="icons/shield.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/shield.png" alt="Security" style="width:26px;height:26px;display:block;margin:0;object-fit:contain;" />' +
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>' +
       '</div>' +
       '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
@@ -126,7 +126,9 @@ function initHomePage() {
     }
   }
 
-  var rawHeroSlides = content.hero_slides || DEFAULT_CONTENT.hero_slides || [];
+  var rawHeroSlides = (Array.isArray(content.hero_slides) && content.hero_slides.length > 0)
+    ? content.hero_slides
+    : (DEFAULT_CONTENT.hero_slides || []);
   var slideCountLimit = Math.max(1, Math.min(4, Number(content.hero_slide_count || DEFAULT_CONTENT.hero_slide_count || 3)));
   startSlider("home-slider", rawHeroSlides.slice(0, slideCountLimit));
 
