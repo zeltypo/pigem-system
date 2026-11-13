@@ -101,8 +101,10 @@ function getMgrScreeningBadge(app) {
   return '<span class="badge badge-gray">Screening Checked</span>';
 }
 
+window.PORTAL_ALLOWED_ROLES = ["manager"];
+
 window.addEventListener("DOMContentLoaded", async function () {
-  currentManager = await requireLogin(["manager", "admin"]);
+  currentManager = await requireLogin(["manager"]);
   if (!currentManager) return;
 
   var topNameEl = document.getElementById("top-user-name");
@@ -359,6 +361,7 @@ function renderManagerApps() {
             '<div class="q-sub" style="margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">' +
               statusBadge(app.status) +
               getMgrScreeningBadge(app) +
+              (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, false) : "") +
               '<span class="badge badge-gray">Agent: ' + escapeHtml(app.assigned_agent || "Unassigned") + '</span>' +
               '<span class="muted">' + escapeHtml(app.plan_name) + ' - ' + escapeHtml(app.city || "") + '</span>' +
             '</div>' +
@@ -397,7 +400,11 @@ function openMgrAppModal(appId) {
 
   var scr = app.screening || {};
   var res = app.ai_result || {};
+  var covInfo = typeof getApplicationCoverageInfo === "function" ? getApplicationCoverageInfo(app) : { inPhilippines: true, serviceable: true, advisory: "" };
   var scrDetail = scr.advisory || ((res.issues && res.issues.length > 0) ? res.issues.join("; ") : "Document clear and details match.");
+  if ((!covInfo.inPhilippines || !covInfo.serviceable) && covInfo.advisory && scrDetail.indexOf(covInfo.advisory) === -1) {
+    scrDetail = scrDetail + " | " + covInfo.advisory;
+  }
   var docLinksHtml = "";
   if (app.cropped_id_url || app.id_front_url) {
     docLinksHtml = '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">';
@@ -417,6 +424,7 @@ function openMgrAppModal(appId) {
         '<div><span>Internal Status</span><b>' + statusBadge(app.status) + '</b></div>' +
         '<div><span>Customer View</span><b>' + customerStatusBadge(app.status) + '</b></div>' +
         '<div><span>Screening</span><b>' + getMgrScreeningBadge(app) + '</b></div>' +
+        '<div><span>Service Coverage</span><b>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : "-") + '</b></div>' +
         '<div><span>Screening Note</span><b style="font-weight:500">' + escapeHtml(scrDetail) + '</b></div>' +
         '<div><span>Plan</span><b>' + escapeHtml(app.plan_name) + '</b></div>' +
         '<div><span>Email and Mobile</span><b>' + escapeHtml(app.email + " / " + app.phone) + '</b></div>' +

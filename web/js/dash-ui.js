@@ -8,6 +8,8 @@ var _dashSessionTimer = null;
 var _dashIdleTimer = null;
 var DASH_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
+var _dashSessionRedirecting = false;
+
 function startDashSecurityWatchers() {
   if (_dashSecurityStarted || !dashCurrentUser) return;
   _dashSecurityStarted = true;
@@ -22,8 +24,9 @@ function startDashSecurityWatchers() {
   }
 
   _dashIdleTimer = setInterval(function () {
-    if (!dashCurrentUser) return;
+    if (!dashCurrentUser || _dashSessionRedirecting) return;
     if (Date.now() - _dashLastActivityAt >= DASH_IDLE_TIMEOUT_MS) {
+      _dashSessionRedirecting = true;
       clearInterval(_dashIdleTimer);
       clearInterval(_dashSessionTimer);
       signOutAndGoLogin("idle", true);
@@ -31,12 +34,21 @@ function startDashSecurityWatchers() {
   }, 15000);
 
   var verifySingleDevice = async function () {
-    if (!dashCurrentUser || typeof dbVerifyActiveSession !== "function") return;
+    if (!dashCurrentUser || _dashSessionRedirecting || typeof dbVerifyActiveSession !== "function") return;
     try {
-      var chk = await dbVerifyActiveSession();
+      var chk = await dbVerifyActiveSession(dashCurrentUser.id, window.PORTAL_ALLOWED_ROLES || null);
       if (chk && chk.valid === false) {
+        _dashSessionRedirecting = true;
         clearInterval(_dashIdleTimer);
         clearInterval(_dashSessionTimer);
+        if (chk.reason === "account_switched" || chk.reason === "wrong_portal") {
+          window.location.replace(chk.redirectUrl || (typeof getLoginPage === "function" ? getLoginPage() : "index.html"));
+          return;
+        }
+        if (chk.reason === "missing") {
+          window.location.replace(typeof getLoginPage === "function" ? getLoginPage() : "index.html");
+          return;
+        }
         if (chk.reason === "other_device" || chk.reason === "disabled") {
           signOutAndGoLogin(chk.reason, false);
         } else {
@@ -50,6 +62,11 @@ function startDashSecurityWatchers() {
   window.addEventListener("focus", verifySingleDevice);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) verifySingleDevice();
+  });
+  window.addEventListener("storage", function (ev) {
+    if (!ev || (typeof SESSION_KEY !== "undefined" && (ev.key === SESSION_KEY || ev.key === SESSION_TOKEN_KEY))) {
+      verifySingleDevice();
+    }
   });
 }
 

@@ -214,7 +214,13 @@ function initMobileQrMode(sid) {
 async function handleMobileQrUpload(side, inputEl) {
   var file = inputEl && inputEl.files && inputEl.files[0];
   if (!file) return;
-  if (String(file.type || "").indexOf("image/") !== 0) {
+  var ftype = String(file.type || "").toLowerCase();
+  var fname = String(file.name || "").toLowerCase();
+  var isImageMime = ftype.indexOf("image/") === 0;
+  var isImageExt = /\.(jpe?g|png|webp|heic|heif|bmp|gif)$/.test(fname);
+  var hasNoExt = !/\.[a-z0-9]{2,5}$/.test(fname);
+  var allowedOpaqueMime = !ftype || ftype === "application/octet-stream";
+  if (!isImageMime && !isImageExt && !(allowedOpaqueMime && hasNoExt)) {
     showAlert("Invalid File", "Please capture or choose a valid image photo.", "warn");
     inputEl.value = "";
     return;
@@ -427,7 +433,7 @@ function openPhoneQrModal() {
   openPopup(
     '<div class="center">' +
       '<h3>Continue ID Upload on Phone</h3>' +
-      '<p class="small muted mt">Scan this QR code with your phone to capture ONLY the Front &amp; Back photos of your Valid ID without restarting your application.</p>' +
+      '<p class="small muted mt">Scan this QR code with your phone to capture or upload ONLY the Front &amp; Back photos of your Valid ID without restarting your application.</p>' +
       '<div class="mt-big" style="background:#fff; padding:16px; border-radius:12px; display:inline-block; border:1px solid var(--line);">' +
         '<img src="' + qrImgUrl + '" alt="Scan with Phone" style="width:180px; height:180px; display:block;" />' +
       '</div>' +
@@ -711,6 +717,22 @@ function validateCurrentPanel() {
     var prov = document.getElementById("province").value.trim();
     var landmark = document.getElementById("landmark").value.trim();
 
+    var latNum = parseFloat(document.getElementById("lat").value);
+    var lngNum = parseFloat(document.getElementById("lng").value);
+    var phBoundsOk = !isNaN(latNum) && !isNaN(lngNum) && isWithinPhilippinesBounds(latNum, lngNum);
+    var phResolvedOk = !_pinLocationState.resolved || _pinLocationState.inPhilippines;
+    if (!phBoundsOk || !phResolvedOk) {
+      refreshCoverageBanner();
+      showAlert(
+        "Philippines Only",
+        "PIGEM Fiber installation is available only in the Philippines. Pinned location (" + (_pinLocationState.displayName || _pinLocationState.country || "Outside Philippines") + ") cannot proceed.",
+        "warn"
+      );
+      var mapBox = document.getElementById("map");
+      if (mapBox) mapBox.scrollIntoView({ behavior: "smooth", block: "center" });
+      return false;
+    }
+
     if (!house) markInvalid("house_no", "House No.", "Enter house, block, or lot number.");
     if (!bldg) markInvalid("building_name", "Building Name", "Enter building name or N/A.");
     if (!street) markInvalid("street", "Street Name", "Enter your street name.");
@@ -723,6 +745,20 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
+      return false;
+    }
+
+    var pinMatch = doesPinMatchAddressFields(_pinLocationState, city, prov);
+    if (!pinMatch.matches) {
+      refreshCoverageBanner();
+      markInvalid("city", "City / Municipality", pinMatch.reason);
+      markInvalid("province", "Province / District", pinMatch.reason);
+      showAlert("Pin & Address Mismatch", pinMatch.reason, "warn");
+      var cityEl = document.getElementById("city");
+      if (cityEl) {
+        cityEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        cityEl.focus();
+      }
       return false;
     }
     return true;
@@ -759,7 +795,146 @@ function validateCurrentPanel() {
   return true;
 }
 
-function nextPanel() {
+var _pinLocationState = {
+  lat: null,
+  lng: null,
+  resolved: false,
+  inPhilippines: true,
+  boundsOk: true,
+  country: "Philippines",
+  countryCode: "ph",
+  barangay: "",
+  city: "",
+  province: "",
+  displayName: "",
+  isServiceableArea: true,
+  reverseData: null
+};
+var _pinSeq = 0;
+var _pinLookupPromise = null;
+var _pinLookupResolve = null;
+var _mapInputsBound = false;
+
+function renderCoverageBannerBox(banner, bg, border, color, title, body) {
+  banner.hidden = false;
+  banner.className = "notice mt";
+  banner.style.background = bg;
+  banner.style.borderColor = border;
+  banner.style.color = color;
+  while (banner.firstChild) banner.removeChild(banner.firstChild);
+  var strong = document.createElement("strong");
+  strong.textContent = title;
+  var div = document.createElement("div");
+  div.className = "small";
+  div.style.marginTop = "4px";
+  div.textContent = body;
+  banner.appendChild(strong);
+  banner.appendChild(div);
+}
+
+function refreshCoverageBanner() {
+  var banner = document.getElementById("map-coverage-banner");
+  if (!banner) return;
+  var latVal = parseFloat((document.getElementById("lat") || {}).value);
+  var lngVal = parseFloat((document.getElementById("lng") || {}).value);
+  var boundsOk = !isNaN(latVal) && !isNaN(lngVal) && isWithinPhilippinesBounds(latVal, lngVal);
+  if (!boundsOk || (_pinLocationState.resolved && !_pinLocationState.inPhilippines)) {
+    var foreignLabel = _pinLocationState.displayName || _pinLocationState.country || "Outside Philippines";
+    renderCoverageBannerBox(
+      banner,
+      "#fef2f2",
+      "#fca5a5",
+      "#991b1b",
+      "Philippines Only — Installation Blocked Here",
+      "Pinned location (" + foreignLabel + ") is outside the Philippines. Move the pin to an address inside the Philippines to continue."
+    );
+    return;
+  }
+  var typedBrgy = ((document.getElementById("barangay") || {}).value || "").trim();
+  var typedCity = ((document.getElementById("city") || {}).value || "").trim();
+  var typedProv = ((document.getElementById("province") || {}).value || "").trim();
+  var pinMatch = doesPinMatchAddressFields(_pinLocationState, typedCity, typedProv);
+  if (!pinMatch.matches) {
+    renderCoverageBannerBox(
+      banner,
+      "#fef2f2",
+      "#fca5a5",
+      "#991b1b",
+      "Pinned Map Area Does Not Match Address Fields",
+      pinMatch.reason
+    );
+    return;
+  }
+  var areaText = [
+    typedBrgy,
+    typedCity,
+    typedProv,
+    _pinLocationState.barangay,
+    _pinLocationState.city,
+    _pinLocationState.province,
+    _pinLocationState.displayName
+  ].filter(Boolean).join(", ");
+  if (!areaText) {
+    banner.hidden = true;
+    return;
+  }
+  if (isServiceArea(areaText)) {
+    renderCoverageBannerBox(
+      banner,
+      "#f0fdf4",
+      "#86efac",
+      "#166534",
+      "Serviceable Area Confirmed",
+      "This address is within PIGEM primary coverage (Metro Manila / NCR, Bulacan, Cavite, Laguna, Rizal, Cebu)."
+    );
+    return;
+  }
+  renderCoverageBannerBox(
+    banner,
+    "#fefce8",
+    "#fde047",
+    "#854d0e",
+    "Outside Standard Coverage Area — Application Can Still Continue",
+    "This Philippine address is outside PIGEM primary serviceable areas (Metro Manila / NCR, Bulacan, Cavite, Laguna, Rizal, Cebu). You can still continue and submit; our screening report will mark this clearly for Agent verification."
+  );
+}
+
+function bindMapFieldListeners() {
+  if (_mapInputsBound) return;
+  _mapInputsBound = true;
+  ["barangay", "city", "province"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("input", refreshCoverageBanner);
+  });
+  var searchEl = document.getElementById("map-search");
+  if (searchEl) {
+    searchEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (typeof searchMapAddress === "function") searchMapAddress();
+      }
+    });
+  }
+}
+
+async function nextPanel() {
+  if (currentPanel === 3) {
+    var latVal = parseFloat(document.getElementById("lat").value);
+    var lngVal = parseFloat(document.getElementById("lng").value);
+    if (!isNaN(latVal) && !isNaN(lngVal)) {
+      if (_pinLookupPromise) {
+        await Promise.race([
+          _pinLookupPromise,
+          new Promise(function (resolve) { setTimeout(resolve, 4500); })
+        ]);
+      } else if (!_pinLocationState.resolved || Math.abs(_pinLocationState.lat - latVal) > 0.0001 || Math.abs(_pinLocationState.lng - lngVal) > 0.0001) {
+        await Promise.race([
+          updatePinAndAddress(latVal, lngVal),
+          new Promise(function (resolve) { setTimeout(resolve, 4500); })
+        ]);
+      }
+    }
+  }
   if (!validateCurrentPanel()) return;
   if (currentPanel < TOTAL_PANELS - 1) {
     showPanel(currentPanel + 1);
@@ -773,6 +948,7 @@ function prevPanel() {
 }
 
 function initMapPin() {
+  bindMapFieldListeners();
   if (!leafletMap) {
     var lat = parseFloat(document.getElementById("lat").value) || CONFIG.MAP_CENTER[0];
     var lng = parseFloat(document.getElementById("lng").value) || CONFIG.MAP_CENTER[1];
@@ -797,14 +973,37 @@ function initMapPin() {
   }
   setTimeout(function () {
     if (leafletMap) leafletMap.invalidateSize();
+    var curLat = parseFloat(document.getElementById("lat").value);
+    var curLng = parseFloat(document.getElementById("lng").value);
+    if (isNaN(curLat) || isNaN(curLng)) {
+      curLat = CONFIG.MAP_CENTER[0];
+      curLng = CONFIG.MAP_CENTER[1];
+    }
+    if (!_pinLocationState.resolved && !_pinLookupPromise) {
+      updatePinAndAddress(curLat, curLng);
+    } else {
+      refreshCoverageBanner();
+    }
   }, 150);
 }
 
 async function updatePinAndAddress(lat, lng) {
+  var mySeq = ++_pinSeq;
+  if (_pinLookupResolve) {
+    try { _pinLookupResolve(); } catch (_err) {}
+  }
+  _pinLookupPromise = new Promise(function (resolve) {
+    _pinLookupResolve = resolve;
+  });
+  _pinLocationState.lat = lat;
+  _pinLocationState.lng = lng;
+  _pinLocationState.resolved = false;
   document.getElementById("lat").value = lat.toFixed(6);
   document.getElementById("lng").value = lng.toFixed(6);
   var statusEl = document.getElementById("map-status");
+  statusEl.style.color = "";
   statusEl.textContent = "Looking up address for pinned location...";
+  refreshCoverageBanner();
 
   var data = null;
   if (CONFIG.LOCATIONIQ_API_KEY) {
@@ -836,25 +1035,72 @@ async function updatePinAndAddress(lat, lng) {
     }
   }
 
+  if (mySeq !== _pinSeq) return;
   if (data && data.address) {
     var addr = data.address || {};
-    var road = addr.road || addr.pedestrian || addr.footway || addr.street || "";
-    var subd = addr.neighbourhood || addr.residential || addr.hamlet || addr.subdivision || "";
-    var brgy = addr.suburb || addr.village || addr.quarter || addr.city_district || "";
-    var city = addr.city || addr.town || addr.municipality || "";
-    var prov = addr.state || addr.province || addr.region || "";
-
-    if (road) document.getElementById("street").value = road;
-    if (subd) document.getElementById("subdivision").value = subd;
-    else if (!document.getElementById("subdivision").value) document.getElementById("subdivision").value = "N/A";
-    if (brgy) document.getElementById("barangay").value = brgy;
-    if (city) document.getElementById("city").value = city;
-    if (prov) document.getElementById("province").value = prov;
-
-    statusEl.textContent = "Pinned location: " + (data.display_name || "Address updated");
+    var locEval = evaluateMapLocation(lat, lng, data);
+    _pinLocationState = {
+      lat: lat,
+      lng: lng,
+      resolved: true,
+      inPhilippines: locEval.inPhilippines,
+      boundsOk: locEval.boundsOk,
+      country: locEval.country,
+      countryCode: locEval.countryCode,
+      barangay: locEval.barangay,
+      city: locEval.city,
+      province: locEval.province,
+      displayName: locEval.displayName,
+      isServiceableArea: locEval.isServiceableArea,
+      reverseData: data
+    };
+    if (!locEval.inPhilippines) {
+      statusEl.style.color = "#b91c1c";
+      statusEl.textContent = "Pinned outside the Philippines: " + (locEval.displayName || locEval.country || "Outside PH") + ". Installation is available in the Philippines only.";
+    } else {
+      var road = addr.road || addr.pedestrian || addr.footway || addr.street || "";
+      var subd = addr.neighbourhood || addr.residential || addr.hamlet || addr.subdivision || "";
+      if (road) document.getElementById("street").value = road;
+      if (subd) document.getElementById("subdivision").value = subd;
+      else if (!document.getElementById("subdivision").value) document.getElementById("subdivision").value = "N/A";
+      if (locEval.barangay) document.getElementById("barangay").value = locEval.barangay;
+      if (locEval.city) document.getElementById("city").value = locEval.city;
+      if (locEval.province) document.getElementById("province").value = locEval.province;
+      statusEl.style.color = "";
+      statusEl.textContent = "Pinned location: " + (locEval.displayName || "Address updated");
+    }
   } else {
-    statusEl.textContent = "Location pinned (" + lat.toFixed(5) + ", " + lng.toFixed(5) + "). You can type or edit your address fields below.";
+    var inBoundsOnly = isWithinPhilippinesBounds(lat, lng);
+    _pinLocationState = {
+      lat: lat,
+      lng: lng,
+      resolved: true,
+      inPhilippines: inBoundsOnly,
+      boundsOk: inBoundsOnly,
+      country: inBoundsOnly ? "Philippines" : "Outside Philippines",
+      countryCode: inBoundsOnly ? "ph" : "",
+      barangay: "",
+      city: "",
+      province: "",
+      displayName: "",
+      isServiceableArea: null,
+      reverseData: null
+    };
+    if (!inBoundsOnly) {
+      statusEl.style.color = "#b91c1c";
+      statusEl.textContent = "Pinned outside the Philippines (" + lat.toFixed(5) + ", " + lng.toFixed(5) + "). Installation is available in the Philippines only.";
+    } else {
+      statusEl.style.color = "";
+      statusEl.textContent = "Location pinned (" + lat.toFixed(5) + ", " + lng.toFixed(5) + "). You can type or edit your address fields below.";
+    }
   }
+  if (_pinLookupResolve) {
+    var doneResolve = _pinLookupResolve;
+    _pinLookupResolve = null;
+    _pinLookupPromise = null;
+    doneResolve();
+  }
+  refreshCoverageBanner();
 }
 
 async function searchMapAddress() {
@@ -1093,6 +1339,48 @@ async function submitRegistration() {
             ? "Screening in progress. Original submission is available below."
             : "Manual document review is active."
         };
+    var subLat = parseFloat((document.getElementById("lat") || {}).value);
+    var subLng = parseFloat((document.getElementById("lng") || {}).value);
+    var subBrgy = ((document.getElementById("barangay") || {}).value || "").trim();
+    var subCity = ((document.getElementById("city") || {}).value || "").trim();
+    var subProv = ((document.getElementById("province") || {}).value || "").trim();
+    var locCheckText = [
+      subBrgy,
+      subCity,
+      subProv,
+      _pinLocationState.barangay,
+      _pinLocationState.city,
+      _pinLocationState.province,
+      _pinLocationState.displayName
+    ].filter(Boolean).join(", ");
+    var inPhLoc = (isNaN(subLat) || isNaN(subLng) ? true : isWithinPhilippinesBounds(subLat, subLng)) &&
+      (!_pinLocationState.resolved || _pinLocationState.inPhilippines);
+    var isSvcLoc = inPhLoc && isServiceArea(locCheckText);
+    var locAdvisory = !inPhLoc
+      ? "Pinned location appears outside the Philippines."
+      : (isSvcLoc
+        ? "Within PIGEM serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu)."
+        : "Outside PIGEM primary serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu) — Flagged for Agent facility verification.");
+    var pinMatchCheck = doesPinMatchAddressFields(_pinLocationState, subCity, subProv);
+    screening.location_screening = {
+      in_philippines: inPhLoc,
+      is_serviceable_area: isSvcLoc,
+      pin_matches_fields: pinMatchCheck.matches,
+      pinned_area: [_pinLocationState.city || subCity, _pinLocationState.province || subProv].filter(Boolean).join(", "),
+      typed_area: [subCity, subProv].filter(Boolean).join(", "),
+      advisory: locAdvisory
+    };
+    screening.coverage_outside_area = !isSvcLoc;
+    if (!isSvcLoc) {
+      if (Array.isArray(screening.notes)) {
+        if (screening.notes.indexOf(locAdvisory) === -1) screening.notes.unshift(locAdvisory);
+      } else {
+        screening.notes = [locAdvisory];
+      }
+      if (!screening.advisory || screening.preliminary) {
+        screening.advisory = locAdvisory;
+      }
+    }
 
     var addrData = {
       house_no: document.getElementById("house_no").value.trim(),

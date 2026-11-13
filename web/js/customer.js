@@ -9,6 +9,8 @@ window.openDashTabById = function (tabId, targetId) {
   }
 };
 
+window.PORTAL_ALLOWED_ROLES = ["customer"];
+
 window.addEventListener("DOMContentLoaded", async function () {
   currentCustomer = await requireLogin(["customer"]);
   if (!currentCustomer) return;

@@ -195,8 +195,10 @@ function detectClientSideDuplicateId(app) {
   return { isDup: false, reason: "" };
 }
 
+window.PORTAL_ALLOWED_ROLES = ["agent"];
+
 window.addEventListener("DOMContentLoaded", async function () {
-  currentAgent = await requireLogin(["agent", "manager", "admin"]);
+  currentAgent = await requireLogin(["agent"]);
   if (!currentAgent) return;
 
   var topUserEl = document.getElementById("top-user-name");
@@ -484,6 +486,7 @@ function renderAgentCards() {
             '</div>' +
             '<div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap">' +
               getScreeningCardBadge(app) +
+              (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, false) : "") +
               (app.cropped_id_url ? '<span class="badge badge-green">Cropped ID Ready</span>' : '') +
               (app.has_correction ? '<span class="badge badge-blue">Customer Resubmitted</span>' : '') +
             '</div>' +
@@ -801,6 +804,7 @@ async function renderDetailModalContent() {
             '<div><span>City and Province</span><b>' + escapeHtml([app.city, app.province].filter(Boolean).join(", ") || "-") + '</b></div>' +
             '<div><span>Nearest Landmark</span><b>' + escapeHtml(app.landmark || "-") + '</b></div>' +
             '<div><span>Pinned Coordinates</span><b>' + escapeHtml((app.latitude != null ? app.latitude : "-") + ", " + (app.longitude != null ? app.longitude : "-")) + '</b></div>' +
+            '<div><span>Service Coverage</span><b>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : "-") + '</b></div>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -830,7 +834,13 @@ async function renderDetailModalContent() {
         '<div class="check-pill"><span>Applicant Name (OCR)</span>' + nameCheckBadge + '</div>' +
         '<div class="check-pill"><span>Birth Date (OCR)</span>' + bdateCheckBadge + '</div>' +
         '<div class="check-pill"><span>ID Number (OCR)</span>' + idNoCheckBadge + '</div>' +
+        '<div class="check-pill"><span>Area Coverage</span>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : '<span class="badge badge-gray">-</span>') + '</div>' +
       '</div>' +
+      (function () {
+        var covInfo = typeof getApplicationCoverageInfo === "function" ? getApplicationCoverageInfo(app) : null;
+        if (!covInfo || (covInfo.inPhilippines && covInfo.serviceable)) return "";
+        return '<div class="small" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:#fefce8; border:1px solid #fde047; color:#854d0e"><b>Location Coverage Notice:</b> ' + escapeHtml(covInfo.advisory || "Outside standard serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu) — verify facility coverage.") + '</div>';
+      })() +
       '<div class="small muted" style="margin-top:8px"><b>Screening Summary:</b> ' + escapeHtml(findingsText) + '</div>' +
 
       '<details style="margin-top:10px; border-top:1px dashed var(--line); padding-top:8px">' +

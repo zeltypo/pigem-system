@@ -87,17 +87,6 @@
 
     <div class="dash-main">
 
-      <div class="dash-top">
-        <div style="flex:1"></div>
-
-        <div class="top-actions">
-          <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
-            <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
-          </button>
-          <button id="avatar-btn" type="button" class="avatar-btn overview-only-avatar" onclick="toggleProfileDrawer()" title="Account and Theme">AG</button>
-        </div>
-      </div>
-
       <div id="agent-screening-banner" class="status-banner warn hidden">
         <div>
           <b>Auto-Screening Currently Unavailable:</b> Automatic document checking is temporarily inactive. Applications continue normally using each customer's <b>Original Uploaded ID Copy</b> for manual review.
@@ -110,6 +99,12 @@
           <div>
             <h2>Agent Overview</h2>
             <p>Real-time verification queue, claimed applications, encoding updates, and personal productivity metrics.</p>
+          </div>
+          <div class="top-actions overview-hero-actions">
+            <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
+              <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+            </button>
+            <button id="avatar-btn" type="button" class="avatar-btn overview-only-avatar" onclick="toggleProfileDrawer()" title="Account and Theme">AG</button>
           </div>
         </div>
 

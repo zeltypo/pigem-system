@@ -149,6 +149,9 @@ function showSessionReasonBanner() {
     sessionStore.removeItem(SESSION_KEY);
     sessionStore.removeItem(SESSION_TOKEN_KEY);
   }
+  if (typeof supabaseClient !== "undefined" && supabaseClient && supabaseClient.auth) {
+    try { supabaseClient.auth.signOut(); } catch (e) {}
+  }
   if (window.history && typeof window.history.replaceState === "function") {
     window.history.replaceState(null, "", window.location.pathname);
   }
@@ -163,6 +166,9 @@ function showSessionReasonBanner() {
   } else if (reason === "disabled") {
     banner.hidden = false;
     banner.innerHTML = "<b>Account Disabled:</b> This account has been deactivated. Contact System Admin at Tel: <b>(046) 458-0908</b>.";
+  } else if (reason === "wrong_portal") {
+    banner.hidden = false;
+    banner.innerHTML = "<b>Portal Restricted:</b> That dashboard belongs to a different account role. Please sign in with the matching account.";
   }
   return true;
 }

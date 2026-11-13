@@ -19,6 +19,8 @@ window.openDashTabById = function (tabId, targetId) {
   }
 };
 
+window.PORTAL_ALLOWED_ROLES = ["admin"];
+
 window.addEventListener("DOMContentLoaded", async function () {
   currentAdmin = await requireLogin(["admin"]);
   if (!currentAdmin) return;

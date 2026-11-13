@@ -43,13 +43,13 @@
       <!-- FORM: Interactive User Input Form -->
       <form class="mt-big" onsubmit="handleLogin(event)" novalidate>
         <div>
-          <label for="email">Staff Username</label>
+          <label for="email">Staff Username <span class="req-mark">*</span></label>
           <input id="email" type="text" autocomplete="username" placeholder="Enter your internal username (e.g. maria_santos)">
         </div>
 
         <div class="mt">
           <div class="row between">
-            <label for="password" style="margin:0">Password</label>
+            <label for="password" style="margin:0">Password <span class="req-mark">*</span></label>
             <a href="#" style="font-size:13px; color:var(--red); font-weight:600;" onclick="openStaffResetRequestModal(); return false;">Haven't access? / Forgot Password?</a>
           </div>
           <input id="password" type="password" class="mt" placeholder="Enter your password">

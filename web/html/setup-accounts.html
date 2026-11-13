@@ -45,7 +45,7 @@
         <form class="mt-big" onsubmit="registerSingleAdmin(event)" novalidate>
           <div class="form-grid three">
             <div>
-              <label for="adm-first-name">First Name</label>
+              <label for="adm-first-name">First Name <span class="req-mark">*</span></label>
               <input id="adm-first-name" type="text" placeholder="Juan">
             </div>
             <div>
@@ -53,21 +53,21 @@
               <input id="adm-middle-name" type="text" placeholder="Optional">
             </div>
             <div>
-              <label for="adm-last-name">Last Name</label>
+              <label for="adm-last-name">Last Name <span class="req-mark">*</span></label>
               <input id="adm-last-name" type="text" placeholder="Dela Cruz">
             </div>
           </div>
           <div class="mt">
-            <label for="adm-username">Administrator Username</label>
+            <label for="adm-username">Administrator Username <span class="req-mark">*</span></label>
             <input id="adm-username" type="text" minlength="3" maxlength="30" placeholder="pigem_admin">
             <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores). Administrator signs in with username only.</div>
           </div>
           <div class="mt">
-            <label for="adm-pw">Password</label>
+            <label for="adm-pw">Password <span class="req-mark">*</span></label>
             <input id="adm-pw" type="password" data-pw-check="1" minlength="8" placeholder="Create strong password">
           </div>
           <div class="mt">
-            <label for="adm-pw2">Confirm Password</label>
+            <label for="adm-pw2">Confirm Password <span class="req-mark">*</span></label>
             <input id="adm-pw2" type="password" minlength="8" placeholder="Repeat password">
           </div>
 

@@ -1513,10 +1513,18 @@ html[data-theme="dark"] .notice.ok {
 .overview-hero {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
   gap: 14px;
   flex-wrap: wrap;
   margin-bottom: 16px;
+}
+.overview-hero > div:first-child {
+  flex: 1;
+  min-width: 220px;
+}
+.overview-hero-actions {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .overview-hero h2 {
   font-size: 22px;
@@ -1528,6 +1536,12 @@ html[data-theme="dark"] .notice.ok {
   font-size: 13px;
   color: var(--muted);
   margin: 4px 0 0;
+}
+
+.req-mark {
+  color: var(--bad, #dc2626);
+  font-weight: 700;
+  margin-left: 3px;
 }
 
 /* Text-only secondary sub-navigation bar without icons */

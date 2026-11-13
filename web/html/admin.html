@@ -60,22 +60,17 @@
 
     <div class="dash-main">
 
-      <div class="dash-top">
-        <div style="flex:1"></div>
-
-        <div class="top-actions">
-          <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
-            <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
-          </button>
-          <button id="avatar-btn" type="button" class="avatar-btn overview-only-avatar" onclick="toggleProfileDrawer()" title="Account and Theme">AD</button>
-        </div>
-      </div>
-
       <section id="tab-overview">
         <div class="overview-hero">
           <div>
             <h2>Admin Overview</h2>
             <p>Real-time system performance, API readiness, account distribution, and application metrics.</p>
+          </div>
+          <div class="top-actions overview-hero-actions">
+            <button id="notif-btn" type="button" class="btn btn-outline btn-sm overview-only-notif" onclick="toggleNotifModal()">
+              <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+            </button>
+            <button id="avatar-btn" type="button" class="avatar-btn overview-only-avatar" onclick="toggleProfileDrawer()" title="Account and Theme">AD</button>
           </div>
         </div>
 

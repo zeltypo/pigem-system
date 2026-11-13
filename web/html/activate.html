@@ -36,24 +36,24 @@
 
       <form id="activate-form" class="mt" autocomplete="off" onsubmit="submitActivation(event)" novalidate>
         <div>
-          <label for="act-email">Gmail Address</label>
+          <label for="act-email">Gmail Address <span class="req-mark">*</span></label>
           <input id="act-email" type="email" value="" placeholder="Enter your registered @gmail.com address">
         </div>
         <div class="mt">
-          <label for="act-username">Create Your Customer Username</label>
+          <label for="act-username">Create Your Customer Username <span class="req-mark">*</span></label>
           <input id="act-username" type="text" value="" minlength="3" maxlength="30" placeholder="Choose your username (e.g. juan_delacruz)">
           <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores).</div>
         </div>
         <div class="mt">
-          <label for="act-code">6-Digit OTP / Activation Code</label>
+          <label for="act-code">6-Digit OTP / Activation Code <span class="req-mark">*</span></label>
           <input id="act-code" type="text" value="" maxlength="6" placeholder="Enter 6-digit code from your email">
         </div>
         <div class="mt">
-          <label for="act-pass">Create Password</label>
+          <label for="act-pass">Create Password <span class="req-mark">*</span></label>
           <input id="act-pass" type="password" value="" data-pw-check="1" minlength="8" placeholder="Create strong password">
         </div>
         <div class="mt">
-          <label for="act-pass2">Confirm Password</label>
+          <label for="act-pass2">Confirm Password <span class="req-mark">*</span></label>
           <input id="act-pass2" type="password" value="" minlength="8" placeholder="Repeat password">
         </div>
         <button type="submit" class="btn btn-red btn-full mt-big">Activate Account</button>

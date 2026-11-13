@@ -43,9 +43,13 @@ var CONFIG = {
 
   SERVICE_AREAS: [
     "metro manila", "ncr", "national capital region", "manila", "quezon city", "makati", "pasig", "taguig",
-    "caloocan", "pasay", "paranaque", "parañaque", "las pinas", "las piñas", "muntinlupa", "marikina",
+    "caloocan", "pasay", "paranaque", "las pinas", "muntinlupa", "marikina",
     "mandaluyong", "san juan", "valenzuela", "malabon", "navotas", "pateros",
-    "bulacan", "cavite", "laguna", "rizal", "cebu"
+    "bulacan", "malolos", "meycauayan", "san jose del monte", "marilao", "santa maria", "bocaue", "baliuag", "plaridel", "pulilan", "guiguinto", "balagtas", "obando", "hagonoy", "calumpit",
+    "cavite", "dasmarinas", "bacoor", "imus", "general trias", "trece martires", "tagaytay", "tanza", "silang", "carmona", "kawit", "noveleta", "rosario", "naic", "anza", "alfonso", "indang", "amadeo", "mendez", "gen. mariano alvarez", "gma",
+    "laguna", "binan", "santa rosa", "cabuyao", "calamba", "san pedro", "los banos", "san pablo", "sta. rosa", "bay", "calauan", "pila", "santa cruz", "pagsanjan",
+    "rizal", "antipolo", "cainta", "taytay", "binangonan", "angono", "san mateo", "rodriguez", "montalban", "teresa", "morong", "baras", "tanay", "cardona", "pililla",
+    "cebu", "cebu city", "mandaue", "lapu-lapu", "lapu lapu", "talisay", "consolacion", "minglanilla", "liloan", "compostela", "toledo", "carcar", "danao", "naga"
   ],
 
   UNIT_TYPES: ["House", "Townhouse", "Apartment", "Condominium", "Dormitory", "Commercial"],
@@ -298,13 +302,149 @@ function formatAddress(app) {
   return clean.join(", ");
 }
 
+// Utility `normalizeGeoText` (params: text): Normalizes or transforms values (normalize geo text).
+function normalizeGeoText(text) {
+  var raw = String(text || "");
+  if (typeof raw.normalize === "function") {
+    raw = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  return raw
+    .toLowerCase()
+    .replace(/\b(city of|municipality of|province of|district of|brgy\.?|barangay)\b/g, " ")
+    .replace(/\bcity\b/g, " ")
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Validator/Check `isWithinPhilippinesBounds` (params: lat, lng): Evaluates rule (is within philippines bounds) and returns result.
+function isWithinPhilippinesBounds(lat, lng) {
+  var la = Number(lat);
+  var lo = Number(lng);
+  if (!isFinite(la) || !isFinite(lo)) return false;
+  return la >= 4.2 && la <= 21.6 && lo >= 116.0 && lo <= 127.2;
+}
+
 // Validator/Check `isServiceArea` (params: addressText): Evaluates rule (is service area) and returns result.
 function isServiceArea(addressText) {
-  var text = String(addressText || "").toLowerCase();
+  var text = normalizeGeoText(addressText);
+  if (!text) return false;
   for (var i = 0; i < CONFIG.SERVICE_AREAS.length; i++) {
-    if (text.indexOf(CONFIG.SERVICE_AREAS[i]) !== -1) return true;
+    var area = normalizeGeoText(CONFIG.SERVICE_AREAS[i]);
+    if (area && text.indexOf(area) !== -1) return true;
   }
   return false;
+}
+
+// Helper `evaluateMapLocation` (params: lat, lng, reverseData): Executes workflow logic for `evaluateMapLocation`.
+function evaluateMapLocation(lat, lng, reverseData) {
+  var boundsOk = isWithinPhilippinesBounds(lat, lng);
+  var addr = (reverseData && reverseData.address) ? reverseData.address : {};
+  var countryCode = String(addr.country_code || "").toLowerCase().trim();
+  var countryName = String(addr.country || "").trim();
+  var displayName = String((reverseData && reverseData.display_name) || "").trim();
+  var hasCountryInfo = Boolean(countryCode || countryName);
+  var countryIsPh = countryCode === "ph" ||
+    normalizeGeoText(countryName).indexOf("philippines") !== -1 ||
+    normalizeGeoText(countryName).indexOf("pilipinas") !== -1;
+  var inPhilippines = boundsOk && (!hasCountryInfo || countryIsPh);
+  var brgy = String(addr.suburb || addr.village || addr.quarter || addr.neighbourhood || addr.city_district || "").trim();
+  var city = String(addr.city || addr.town || addr.municipality || "").trim();
+  var prov = String(addr.province || addr.state_district || addr.county || addr.state || addr.region || "").trim();
+  if (!prov && normalizeGeoText(displayName).indexOf("metro manila") !== -1) prov = "Metro Manila";
+  var combined = [brgy, city, prov, addr.state, addr.region, displayName].filter(Boolean).join(", ");
+  var serviceable = inPhilippines && isServiceArea(combined);
+  return {
+    inPhilippines: inPhilippines,
+    boundsOk: boundsOk,
+    country: countryName || (boundsOk ? "Philippines" : "Outside Philippines"),
+    countryCode: countryCode || (boundsOk ? "ph" : ""),
+    barangay: brgy,
+    city: city,
+    province: prov,
+    displayName: displayName,
+    isServiceableArea: serviceable
+  };
+}
+
+// Helper `doesPinMatchAddressFields` (params: pinState, typedCity, typedProv): Executes workflow logic for `doesPinMatchAddressFields`.
+function doesPinMatchAddressFields(pinState, typedCity, typedProv) {
+  if (!pinState || !pinState.resolved) return { matches: true, reason: "" };
+  var hayParts = [
+    pinState.city,
+    pinState.province,
+    pinState.displayName,
+    pinState.barangay
+  ].filter(Boolean).join(" ");
+  var hayNorm = normalizeGeoText(hayParts);
+  if (!hayNorm) return { matches: true, reason: "" };
+
+  var cNorm = normalizeGeoText(typedCity);
+  var pNorm = normalizeGeoText(typedProv);
+  var isNcrField = function (v) {
+    return v === "ncr" || v === "metro manila" || v === "national capital region";
+  };
+  var isNcrHay = hayNorm.indexOf("metro manila") !== -1 || hayNorm.indexOf("national capital region") !== -1 || hayNorm.indexOf("ncr") !== -1 || hayNorm.indexOf("manila") !== -1;
+
+  var cityOk = !cNorm || hayNorm.indexOf(cNorm) !== -1 || (isNcrField(cNorm) && isNcrHay);
+  var provOk = !pNorm || hayNorm.indexOf(pNorm) !== -1 || (isNcrField(pNorm) && isNcrHay) ||
+    (pNorm === "calabarzon" && /(cavite|laguna|batangas|rizal|quezon)/.test(hayNorm));
+
+  if (!cityOk && !provOk) {
+    var pinPlace = [pinState.city, pinState.province].filter(Boolean).join(", ") || pinState.displayName || "pinned area";
+    return {
+      matches: false,
+      reason: "Your typed City/Province (" + [typedCity, typedProv].filter(Boolean).join(", ") + ") does not match your map pin (" + pinPlace + "). Click 'Search Map' or drag the pin to match your typed address."
+    };
+  }
+  if (pinState.city && cNorm && !cityOk) {
+    var pinCityLabel = [pinState.city, pinState.province].filter(Boolean).join(", ");
+    return {
+      matches: false,
+      reason: "Typed City/Municipality (" + typedCity + ") differs from map pin (" + pinCityLabel + "). Click 'Search Map' or move the pin to your exact address."
+    };
+  }
+  return { matches: true, reason: "" };
+}
+
+// Data Accessor `getApplicationCoverageInfo` (params: app): Retrieves or refreshes data to get application coverage info.
+function getApplicationCoverageInfo(app) {
+  if (!app) return { inPhilippines: true, serviceable: true, label: "Serviceable Area" };
+  var scr = app.screening || {};
+  var loc = scr.location_screening || null;
+  if (loc && typeof loc.is_serviceable_area === "boolean") {
+    return {
+      inPhilippines: loc.in_philippines !== false,
+      serviceable: loc.is_serviceable_area,
+      label: loc.is_serviceable_area ? "Serviceable Area" : "Outside Serviceable Area",
+      advisory: loc.advisory || ""
+    };
+  }
+  var lat = app.latitude != null ? app.latitude : app.lat;
+  var lng = app.longitude != null ? app.longitude : app.lng;
+  var boundsOk = (lat == null || lng == null || lat === "" || lng === "") ? true : isWithinPhilippinesBounds(lat, lng);
+  var combined = [app.barangay, app.city, app.province, app.address_line].filter(Boolean).join(", ");
+  var svc = boundsOk && isServiceArea(combined);
+  return {
+    inPhilippines: boundsOk,
+    serviceable: svc,
+    label: svc ? "Serviceable Area" : "Outside Serviceable Area",
+    advisory: svc
+      ? "Within PIGEM serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu)."
+      : "Outside standard coverage areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu) - verify facility coverage."
+  };
+}
+
+// Data Accessor `getCoverageBadgeHtml` (params: app, alwaysShow): Retrieves or refreshes data to get coverage badge html.
+function getCoverageBadgeHtml(app, alwaysShow) {
+  var cov = getApplicationCoverageInfo(app);
+  if (!cov.inPhilippines) {
+    return '<span class="badge badge-red">Outside Philippines</span>';
+  }
+  if (!cov.serviceable) {
+    return '<span class="badge badge-yellow">Outside Coverage Area</span>';
+  }
+  return alwaysShow ? '<span class="badge badge-green">Serviceable Area</span>' : "";
 }
 
 // Data Accessor `getDefaultStatusInstruction` (params: status, note): Retrieves or refreshes data to get default status instruction.

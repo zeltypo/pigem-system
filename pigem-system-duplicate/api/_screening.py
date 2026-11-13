@@ -640,6 +640,80 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
         notes_list.append("Back of Valid ID has not been uploaded yet.")
 
+    existing_scr = app_row.get("screening") if isinstance(app_row.get("screening"), dict) else {}
+
+    loc_scr = existing_scr.get("location_screening") if isinstance(existing_scr.get("location_screening"), dict) else None
+
+    if not loc_scr:
+
+        loc_text = " ".join(
+
+            str(x or "").strip()
+
+            for x in [app_row.get("barangay"), app_row.get("city"), app_row.get("province"), app_row.get("address_line")]
+
+            if str(x or "").strip()
+
+        ).lower().replace("\u00f1", "n")
+
+        service_keywords = (
+
+            "metro manila", "ncr", "manila", "quezon city", "makati", "bgc", "taguig",
+
+            "pasig", "mandaluyong", "marikina", "pasay", "paranaque", "las pinas",
+
+            "muntinlupa", "caloocan", "malabon", "navotas", "valenzuela", "san juan",
+
+            "pateros", "bulacan", "malolos", "meycauayan", "san jose del monte", "marilao",
+
+            "santa maria", "sta. maria", "baliwag", "cavite", "bacoor", "imus", "dasmarinas",
+
+            "general trias", "trece martires", "tagaytay", "tanza", "kawit", "silang", "carmona",
+
+            "laguna", "calamba", "santa rosa", "sta. rosa", "binan", "cabuyao", "san pedro",
+
+            "los banos", "san pablo", "rizal", "antipolo", "cainta", "taytay", "binangonan",
+
+            "san mateo", "rodriguez", "montalban", "cebu", "mandaue", "lapu-lapu", "talisay",
+
+        )
+
+        is_svc = any(k in loc_text for k in service_keywords) if loc_text else True
+
+        loc_scr = {
+
+            "in_philippines": True,
+
+            "is_serviceable_area": is_svc,
+
+            "pinned_area": ", ".join([str(app_row.get("city") or "").strip(), str(app_row.get("province") or "").strip()]).strip(", "),
+
+            "advisory": (
+
+                "Within PIGEM serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu)."
+
+                if is_svc
+
+                else "Outside PIGEM primary serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu) — Flagged for Agent facility verification."
+
+            ),
+
+        }
+
+    if loc_scr.get("is_serviceable_area") is False:
+
+        cov_note = str(
+
+            loc_scr.get("advisory")
+
+            or "Outside PIGEM primary serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu) — Flagged for Agent facility verification."
+
+        ).strip()
+
+        if cov_note and cov_note not in notes_list:
+
+            notes_list.append(cov_note)
+
     summary_text = (
 
         duplicate_check["issues"][0]
@@ -659,6 +733,10 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
         "quality_passed": quality_ok,
 
         "fields_matched": fields_ok,
+
+        "coverage_outside_area": loc_scr.get("is_serviceable_area") is False,
+
+        "location_screening": loc_scr,
 
         "summary": summary_text,
 

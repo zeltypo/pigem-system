@@ -20,6 +20,8 @@ window.openDashTabById = function (tabId, targetId) {
   }
 };
 
+window.PORTAL_ALLOWED_ROLES = ["customer"];
+
 // Event Listener: Initializes handlers or syncs state when `DOMContentLoaded` fires
 window.addEventListener("DOMContentLoaded", async function () {
   currentCustomer = await requireLogin(["customer"]);

@@ -117,37 +117,55 @@ async function dbBindSingleDeviceSession(userObj) {
   return tok;
 }
 
-// Database/Storage helper `dbVerifyActiveSession`: Performs Supabase cloud operation to verify active session.
-async function dbVerifyActiveSession() {
+// Database/Storage helper `dbVerifyActiveSession` (params: expectedUserId, allowedRoles): Performs Supabase cloud operation to verify active session.
+async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
   var currentId = sessionStore.getItem(SESSION_KEY);
   var localTok = sessionStore.getItem(SESSION_TOKEN_KEY);
   if (!currentId) return { valid: false, reason: "missing" };
   var allowedForSystem = SYSTEM_ROLES[SYSTEM] || null;
+  if (typeof allowedRoles === "string") allowedRoles = [allowedRoles];
+
+  var userRow = null;
   if (IS_DEMO_MODE) {
     var list = getDemoUsers();
     for (var i = 0; i < list.length; i++) {
       if (list[i].id === currentId) {
-        if (allowedForSystem && allowedForSystem.indexOf(list[i].role) === -1) {
-          return { valid: false, reason: "wrong_portal" };
-        }
-        if (list[i].active === false) return { valid: false, reason: "disabled" };
-        if (list[i].session_token && list[i].session_token !== localTok) {
-          return { valid: false, reason: "other_device" };
-        }
-        return { valid: true };
+        userRow = list[i];
+        break;
       }
     }
+    if (!userRow) return { valid: false, reason: "missing" };
+  } else {
+    if (!supabaseClient) return { valid: true };
+    var res = await supabaseClient.from("users").select("id,active,session_token,role").eq("id", currentId).maybeSingle();
+    if (res.error) return { valid: true };
+    if (!res.data) return { valid: false, reason: "missing" };
+    userRow = res.data;
+  }
+
+  var role = String(userRow.role || "").trim().toLowerCase();
+  if (allowedForSystem && allowedForSystem.indexOf(role) === -1) {
+    return { valid: false, reason: "wrong_system" };
+  }
+  if (userRow.active === false) return { valid: false, reason: "disabled" };
+  if (expectedUserId && currentId !== expectedUserId) {
+    var switchTarget = (typeof getHomeForRole === "function" && (!allowedForSystem || allowedForSystem.indexOf(role) !== -1))
+      ? getHomeForRole(role)
+      : getLoginPage();
+    return { valid: false, reason: "account_switched", role: role, redirectUrl: switchTarget };
+  }
+  if (allowedRoles && allowedRoles.length > 0 && allowedRoles.indexOf(role) === -1) {
+    return {
+      valid: false,
+      reason: "wrong_portal",
+      role: role,
+      redirectUrl: typeof getHomeForRole === "function" ? getHomeForRole(role) : getLoginPage()
+    };
+  }
+  if (userRow.session_token && !localTok) {
     return { valid: false, reason: "missing" };
   }
-  if (!supabaseClient) return { valid: true };
-  var res = await supabaseClient.from("users").select("id,active,session_token,role").eq("id", currentId).maybeSingle();
-  if (res.error) return { valid: true };
-  if (!res.data) return { valid: false, reason: "missing" };
-  if (allowedForSystem && allowedForSystem.indexOf(res.data.role) === -1) {
-    return { valid: false, reason: "wrong_portal" };
-  }
-  if (res.data.active === false) return { valid: false, reason: "disabled" };
-  if (res.data.session_token && res.data.session_token !== localTok) {
+  if (userRow.session_token && localTok && userRow.session_token !== localTok) {
     return { valid: false, reason: "other_device" };
   }
   return { valid: true };
@@ -280,28 +298,34 @@ async function dbGetCurrentUser() {
   if (currentId) {
     if (!IS_DEMO_MODE && supabaseClient) {
       var dbUser = await supabaseClient.from("users").select("*").eq("id", currentId).maybeSingle();
-      if (
-        dbUser.data &&
-        dbUser.data.active !== false &&
-        (!allowedForSystem || allowedForSystem.indexOf(dbUser.data.role) !== -1)
-      ) {
-        return dbUser.data;
+      if (dbUser.data) {
+        var normRole = String(dbUser.data.role || "").trim().toLowerCase();
+        dbUser.data.role = normRole;
+        if (
+          dbUser.data.active !== false &&
+          (!allowedForSystem || allowedForSystem.indexOf(normRole) !== -1)
+        ) {
+          return dbUser.data;
+        }
       }
       return null;
     }
     var localUsers = getDemoUsers();
     for (var i = 0; i < localUsers.length; i++) {
+      var localRole = String(localUsers[i].role || "").trim().toLowerCase();
       if (
         localUsers[i].id === currentId &&
         localUsers[i].active !== false &&
-        (!allowedForSystem || allowedForSystem.indexOf(localUsers[i].role) !== -1)
+        (!allowedForSystem || allowedForSystem.indexOf(localRole) !== -1)
       ) {
+        localUsers[i].role = localRole;
         return localUsers[i];
       }
     }
+    return null;
   }
 
-  if (IS_DEMO_MODE || !supabaseClient) return null;
+  if (IS_DEMO_MODE || !supabaseClient || SYSTEM !== "customer") return null;
 
   var sessionRes = await supabaseClient.auth.getSession();
   var session = sessionRes.data.session;
@@ -310,7 +334,6 @@ async function dbGetCurrentUser() {
   var authUser = session.user;
   var res = await supabaseClient.from("users").select("*").eq("email", authUser.email).maybeSingle();
   if (!res.data) {
-    if (SYSTEM !== "customer") return null;
     var displayName = (authUser.user_metadata && authUser.user_metadata.full_name) || authUser.email;
     var generatedUsername = await dbGenerateUniqueUsername(displayName, authUser.email);
     var row = {
@@ -325,8 +348,10 @@ async function dbGetCurrentUser() {
     await supabaseClient.from("users").upsert(row, { onConflict: "email" });
     return row;
   }
+  var authRole = String(res.data.role || "").trim().toLowerCase();
+  res.data.role = authRole;
   if (res.data.active === false) return null;
-  if (SYSTEM_ROLES[SYSTEM] && SYSTEM_ROLES[SYSTEM].indexOf(res.data.role) === -1) return null;
+  if (SYSTEM_ROLES[SYSTEM] && SYSTEM_ROLES[SYSTEM].indexOf(authRole) === -1) return null;
   return res.data;
 }
 
@@ -540,9 +565,14 @@ async function dbGetToken() {
 // Validator/Check `checkPageAccess` (params: allowedRoles): Evaluates rule (check page access) and returns result.
 async function checkPageAccess(allowedRoles) {
   if (typeof allowedRoles === "string") allowedRoles = [allowedRoles];
+  window.PORTAL_ALLOWED_ROLES = allowedRoles;
   if (sessionStore.getItem(SESSION_KEY) && typeof dbVerifyActiveSession === "function") {
-    var chk = await dbVerifyActiveSession();
+    var chk = await dbVerifyActiveSession(null, allowedRoles);
     if (chk && chk.valid === false) {
+      if (chk.reason === "wrong_portal" && chk.redirectUrl) {
+        window.location.replace(chk.redirectUrl);
+        return null;
+      }
       await signOutAndGoLogin(chk.reason === "other_device" || chk.reason === "disabled" ? chk.reason : "", false);
       return null;
     }
@@ -552,12 +582,13 @@ async function checkPageAccess(allowedRoles) {
     window.location.replace(getLoginPage());
     return null;
   }
-  if (allowedRoles.indexOf(user.role) === -1) {
-    if (SYSTEM_ROLES[SYSTEM] && SYSTEM_ROLES[SYSTEM].indexOf(user.role) !== -1 && typeof getHomeForRole === "function") {
-      window.location.replace(getHomeForRole(user.role));
+  var userRole = String(user.role || "").trim().toLowerCase();
+  if (allowedRoles.indexOf(userRole) === -1) {
+    if (SYSTEM_ROLES[SYSTEM] && SYSTEM_ROLES[SYSTEM].indexOf(userRole) !== -1 && typeof getHomeForRole === "function") {
+      window.location.replace(getHomeForRole(userRole));
       return null;
     }
-    window.location.replace(getLoginPage());
+    await signOutAndGoLogin("wrong_portal", false);
     return null;
   }
   return user;
