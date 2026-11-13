@@ -156,19 +156,22 @@ function showSessionReasonBanner() {
 
 async function redirectIfAlreadySignedIn() {
   if (typeof dbGetCurrentUser !== "function") return;
-  if (typeof sessionStore !== "undefined" && typeof SESSION_KEY !== "undefined" && !sessionStore.getItem(SESSION_KEY)) return;
   try {
-    if (typeof dbVerifyActiveSession === "function") {
-      var chk = await dbVerifyActiveSession();
-      if (!chk || chk.valid === false) {
-        if (typeof dbSignOut === "function") await dbSignOut(false);
-        return;
-      }
-    }
     var activeUser = await dbGetCurrentUser();
     var sysRoles = (typeof SYSTEM_ROLES !== "undefined" && SYSTEM_ROLES[window.SYSTEM || "customer"]) || [];
     if (activeUser && activeUser.active !== false && sysRoles.indexOf(activeUser.role) !== -1) {
-      window.location.replace(getHomeForRole(activeUser.role));
+      var banner = document.getElementById("login-attempt-banner");
+      var homeUrl = typeof getHomeForRole === "function" ? getHomeForRole(activeUser.role) : "index.html";
+      var roleLabel = String(activeUser.role || "user").charAt(0).toUpperCase() + String(activeUser.role || "user").slice(1);
+      var ident = activeUser.username ? ("@" + activeUser.username) : (activeUser.full_name || activeUser.email || roleLabel);
+      if (banner && banner.hidden) {
+        banner.className = "notice ok mt";
+        banner.hidden = false;
+        banner.innerHTML =
+          "<b>Active Session Detected:</b> Currently signed in as <b>" + escapeHtml(ident) + "</b> (" + escapeHtml(roleLabel) + "). " +
+          '<a href="' + escapeHtml(homeUrl) + '" style="color:var(--red); font-weight:700; text-decoration:underline; margin-left:4px;">Return to ' + escapeHtml(roleLabel) + ' Portal &rarr;</a>' +
+          '<div class="small muted" style="margin-top:4px;">Or sign in below with a different account in this tab.</div>';
+      }
     }
   } catch (e) {}
 }

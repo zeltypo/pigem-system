@@ -338,23 +338,21 @@ def _check_duplicate_images(
 
     prev_screening = app_row.get("screening")
 
-    if isinstance(prev_screening, dict):
+    if isinstance(prev_screening, dict) and bool(app_row.get("has_correction")):
 
-        prev_front_hash = str(prev_screening.get("front_sha256") or "")
+        flagged_front_hash = str(prev_screening.get("flagged_front_sha256") or "")
 
-        prev_back_hash = str(prev_screening.get("back_sha256") or "")
+        flagged_back_hash = str(prev_screening.get("flagged_back_sha256") or "")
 
-        prev_failed = not bool(prev_screening.get("overall_match", True))
+        if flagged_front_hash and front_sha256 == flagged_front_hash:
 
-        if prev_failed and prev_front_hash and front_sha256 == prev_front_hash:
-
-            if not back_sha256 or (prev_back_hash and back_sha256 == prev_back_hash):
+            if not back_sha256 or not flagged_back_hash or back_sha256 == flagged_back_hash:
 
                 same_as_previous_upload = True
 
                 issues.append(
 
-                    "Unchanged Re-Uploaded Image: The ID photo is identical to the previously flagged upload. Please capture a new, clearer photo."
+                    "Unchanged Re-Uploaded Image: The re-uploaded ID photo is identical to the previously flagged image. Please capture a new, clearer photo."
 
                 )
 

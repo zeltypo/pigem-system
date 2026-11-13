@@ -63,11 +63,6 @@ function startDashSecurityWatchers() {
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) verifySingleDevice();
   });
-  window.addEventListener("storage", function (ev) {
-    if (!ev || (typeof SESSION_KEY !== "undefined" && (ev.key === SESSION_KEY || ev.key === SESSION_TOKEN_KEY))) {
-      verifySingleDevice();
-    }
-  });
 }
 
 var _dashNotifTimer = null;
@@ -91,6 +86,19 @@ function initDashUI(user, apps, onSelectAppCallback) {
         email: user.email || ("@" + (user.username || "")),
         role: user.role
       }));
+      if (user.id && typeof SESSION_KEY !== "undefined") {
+        var curTok = sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY) || user.session_token || "";
+        sessionStorage.setItem(SESSION_KEY, user.id);
+        if (curTok) sessionStorage.setItem(SESSION_TOKEN_KEY, curTok);
+        if (user.role) {
+          sessionStorage.setItem(SESSION_KEY + "_role", String(user.role).toLowerCase());
+          if (typeof getRoleSessionKey === "function") {
+            var rKey = getRoleSessionKey(user.role);
+            localStorage.setItem(rKey, user.id);
+            if (curTok) localStorage.setItem(rKey + "_tok", curTok);
+          }
+        }
+      }
     } catch (e) {}
   }
 

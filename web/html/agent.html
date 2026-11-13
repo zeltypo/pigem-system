@@ -29,8 +29,8 @@
         <a href="index.html" class="brand">
           <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" />
           <div>
-            <b>PIGEM Combined Facilities Support Services</b>
-            <span>Agent Verification Workspace</span>
+            <b>Combined Facilities Support Services</b>
+            <span>AGENT APPLICATION MANAGEMENT</span>
           </div>
         </a>
       </div>
@@ -249,13 +249,13 @@
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
               <button type="button" class="btn btn-outline btn-sm" onclick="window.print()">
-                <img data-img="icons/printer.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/printer.png" alt="Print" class="icon-img" />Print Report
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px;"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print Report
               </button>
               <button type="button" class="btn btn-dark btn-sm" onclick="downloadFormattedAgentReport()">
-                <img data-img="icons/downloads.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/downloads.png" alt="Download" class="icon-img" />Download Report
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download Report
               </button>
               <button type="button" class="btn btn-red btn-sm" onclick="exportAgentReportCsv()">
-                <img data-img="icons/downloads.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/downloads.png" alt="CSV" class="icon-img" />Download CSV
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download CSV
               </button>
             </div>
           </div>
@@ -292,8 +292,8 @@
           <h2 id="det-title" style="font-size:20px; margin-top:4px">Reference</h2>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap">
-          <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantId()"><img data-img="icons/downloads.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/downloads.png" alt="Download" class="icon-img" />Download ID</button>
-          <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()"><img data-img="icons/printer.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/printer.png" alt="Print" class="icon-img" />Print Copy</button>
+          <button type="button" id="btn-download-id" class="btn btn-outline btn-sm" onclick="downloadApplicantId()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download ID</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px;"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print Copy</button>
           <button type="button" class="btn btn-outline btn-sm" onclick="closeDetailModal()">Close</button>
         </div>
       </div>

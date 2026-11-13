@@ -183,26 +183,54 @@ function cleanScreeningText(str) {
 }
 
 function detectClientSideDuplicateId(app) {
-  if (!app) return { isDup: false, reason: "" };
+  if (!app) return { isDup: false, reason: "", type: "" };
   var scr = app.screening || {};
-  if (scr.duplicate_check && scr.duplicate_check.has_duplicate) {
-    var msg = (scr.duplicate_check.issues && scr.duplicate_check.issues[0]) || "Duplicate ID image detected.";
-    return { isDup: true, reason: msg };
-  }
   var front = String(app.id_image_url || app.id_front_path || "").trim();
   var back = String(app.id_back_image_url || app.id_back_path || "").trim();
   if (front && back && front === back) {
-    return { isDup: true, reason: "Front ID and Back ID photos are identical." };
+    return {
+      isDup: true,
+      type: "front_back",
+      reason: "Front ID and Back ID photos are identical. Separate photos of the Front and Back sides are required."
+    };
+  }
+  if (scr.duplicate_check && scr.duplicate_check.has_duplicate) {
+    if (scr.duplicate_check.front_equals_back) {
+      return {
+        isDup: true,
+        type: "front_back",
+        reason: "Uploaded Front ID and Back ID photos are the exact same image file."
+      };
+    }
+    if (scr.duplicate_check.matched_other_refs && scr.duplicate_check.matched_other_refs.length > 0) {
+      return {
+        isDup: true,
+        type: "cross_app",
+        reason: "This exact ID photo was already submitted in application " + scr.duplicate_check.matched_other_refs.slice(0, 3).join(", ") + "."
+      };
+    }
+    var origFront = app.original_submission ? String(app.original_submission.id_image_url || "").trim() : "";
+    if (scr.duplicate_check.same_as_previous_upload && app.has_correction && origFront && front === origFront) {
+      return {
+        isDup: true,
+        type: "reupload_same",
+        reason: "Re-uploaded ID photo is identical to the previously flagged image."
+      };
+    }
   }
   for (var i = 0; i < allApps.length; i++) {
     var other = allApps[i];
     if (!other || other.id === app.id) continue;
     var oFront = String(other.id_image_url || other.id_front_path || "").trim();
     if (front && front.length > 40 && oFront === front && front.indexOf("logo.png") === -1) {
-      return { isDup: true, reason: "Same ID photo was already submitted in application " + (other.reference_no || other.ref_no) + "." };
+      return {
+        isDup: true,
+        type: "cross_app",
+        reason: "Same ID photo was already submitted in application " + (other.reference_no || other.ref_no) + "."
+      };
     }
   }
-  return { isDup: false, reason: "" };
+  return { isDup: false, reason: "", type: "" };
 }
 
 window.PORTAL_ALLOWED_ROLES = ["agent"];
@@ -415,6 +443,14 @@ function getScreeningCardBadge(app) {
   return '<span class="badge badge-gray">Screening Checked</span>';
 }
 
+function stripFalseReuploadMsg(str, dup) {
+  var s = String(str || "");
+  if (!dup || !dup.isDup || dup.type !== "reupload_same") {
+    s = s.replace(/Unchanged Re-Uploaded Image:[^.;]*[.;]?\s*/gi, "").trim();
+  }
+  return cleanScreeningText(s);
+}
+
 function getScreeningQuickSummary(app) {
   var dup = detectClientSideDuplicateId(app);
   if (dup.isDup) {
@@ -427,11 +463,13 @@ function getScreeningQuickSummary(app) {
   if (scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running") {
     return '<span>' + escapeHtml(scr.advisory || "Screening in progress...") + '</span>';
   }
-  if (scr.summary) {
-    return '<span>' + escapeHtml(cleanScreeningText(scr.summary)) + '</span>';
+  var cleanSum = stripFalseReuploadMsg(scr.summary || "", dup);
+  if (cleanSum) {
+    return '<span>' + escapeHtml(cleanSum) + '</span>';
   }
   var res = app.ai_result || {};
-  var note = (res.issues && res.issues.length > 0) ? cleanScreeningText(res.issues.join("; ")) : "Document clear and details match.";
+  var rawIssues = (res.issues || []).map(function (x) { return stripFalseReuploadMsg(x, dup); }).filter(Boolean);
+  var note = rawIssues.length > 0 ? rawIssues.join("; ") : "Document clear and details match.";
   return '<span class="muted">' + escapeHtml(note) + '</span>';
 }
 
@@ -723,11 +761,17 @@ async function renderDetailModalContent() {
     ? '<span class="badge badge-gray">Verify Manually</span>'
     : (res.id_number_match === false ? '<span class="badge badge-red">Mismatch</span>' : '<span class="badge badge-green">Matched</span>');
 
+  var cleanIssuesList = ((res.issues && res.issues.length) ? res.issues : [])
+    .map(function (x) { return stripFalseReuploadMsg(x, dupCheck); })
+    .filter(Boolean);
+  var cleanScrSummary = stripFalseReuploadMsg(scr.summary || "", dupCheck);
+  var cleanSuggestedRemark = stripFalseReuploadMsg(scr.Suggested_remark || "", dupCheck);
+
   var findingsText = dupCheck.isDup
     ? dupCheck.reason
     : (isManualFallback
       ? "Please inspect the customer's original uploaded ID photos and match them with Section 1."
-      : (scr.summary || ((res.issues && res.issues.length) ? cleanScreeningText(res.issues.join("; ")) : "Readability, duplicate check, and printed OCR fields passed.")));
+      : (cleanScrSummary || (cleanIssuesList.length ? cleanIssuesList.join("; ") : "Readability, duplicate check, and printed OCR fields passed.")));
 
   var copySwitcher = "";
   if (app.original_submission) {
@@ -762,19 +806,34 @@ async function renderDetailModalContent() {
   var selectedReqStatus = (currentSt === "Approved" || currentSt === "Rejected" || currentSt === "Encoding" || currentSt === "Under Agent Review")
     ? currentSt
     : "Encoding";
-  var hasPrelimConcern = Boolean((dupCheck.isDup || scr.overall_match === false || scr.review_recommended) && currentSt !== "Approved" && currentSt !== "Rejected");
+  var hasRealQualityOrFieldConcern = Boolean(
+    dupCheck.isDup ||
+    res.name_match === false ||
+    res.birth_date_match === false ||
+    res.id_number_match === false ||
+    Number(res.blur_score) < 55 ||
+    cleanIssuesList.length > 0
+  );
+  var hasPrelimConcern = Boolean(hasRealQualityOrFieldConcern && currentSt !== "Approved" && currentSt !== "Rejected");
   var isCorrectionOpen = (currentSt === "Needs Correction" || hasPrelimConcern) ? " open" : "";
   var activeCorrFields = dupCheck.isDup
     ? "id_photo"
     : ((app.correction_fields && app.correction_fields.length)
       ? app.correction_fields.join(",")
-      : ((scr.suggested_fields && scr.suggested_fields.length) ? scr.suggested_fields[0] : ""));
-  var prefillRawNote = app.validator_raw_remark || (dupCheck.isDup ? dupCheck.reason : (hasPrelimConcern ? (scr.summary || "") : ""));
+      : ((scr.suggested_fields && scr.suggested_fields.length) ? scr.suggested_fields[0] : (Number(res.blur_score) < 55 ? "id_photo" : "")));
+  var prefillRawNote = (currentSt === "Needs Correction" && app.validator_raw_remark)
+    ? stripFalseReuploadMsg(app.validator_raw_remark, dupCheck)
+    : (dupCheck.isDup ? dupCheck.reason : (hasPrelimConcern ? (cleanScrSummary || cleanIssuesList[0] || "") : ""));
+  var dupPoliteDefault = dupCheck.type === "front_back"
+    ? "We noticed that the same photo was uploaded for both the Front and Back of your Valid ID. Please sign in to your Customer Account and upload clear, separate photos of the Front and Back sides of your Valid ID so your application can proceed."
+    : (dupCheck.type === "reupload_same"
+      ? "The re-uploaded Valid ID photo is identical to the previous unclear image. Please capture a new, clearer photo of the Front and Back of your Valid ID and upload it in your Customer Account."
+      : "The uploaded Valid ID photo matches an image already used in another record. Please sign in to your Customer Account and upload clear photos of the Front and Back of your own Valid ID.");
   var prefillPoliteMsg = currentSt === "Needs Correction"
     ? (app.agent_remarks || "")
     : (dupCheck.isDup
-      ? "We noticed that the same photo was uploaded for your Valid ID. Please sign in to your Customer Account and upload clear, separate photos of the Front and Back of your Valid ID."
-      : (hasPrelimConcern ? (scr.Suggested_remark || "") : ""));
+      ? dupPoliteDefault
+      : (hasPrelimConcern ? (cleanSuggestedRemark || "") : ""));
   var displayEmail = (activeCopyMode === "latest" && app.corrected_copy && app.corrected_copy.contact_email)
     ? app.corrected_copy.contact_email
     : (viewData.email || app.email);
@@ -899,56 +958,70 @@ async function renderDetailModalContent() {
       '</div>' +
     '</div>' +
 
-    '<details' + isCorrectionOpen + ' class="section-card" style="background:var(--soft)">' +
-      '<summary style="cursor:pointer; font-weight:700; font-size:14.5px; color:var(--text); display:flex; align-items:center; gap:8px">' +
-        '<span class="step-badge" style="background:#d97706">4</span>' +
-        '<span>Request Customer Update (Needs Correction)</span>' +
-      '</summary>' +
-      '<div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line)">' +
-        '<p class="muted" style="font-size:12.5px; margin-bottom:12px">Use this section when the customer needs to correct a detail or upload a clearer / non-duplicate ID photo.</p>' +
-
-        '<div class="grid-2" style="margin-bottom:10px">' +
-          '<div class="field" style="margin-bottom:0">' +
-            '<label>Field for Customer to Update</label>' +
-            '<select id="det-correction-field">' +
-              '<option value="auto">Auto-Detect Field</option>' +
-              '<option value="id_photo" ' + (activeCorrFields === "id_photo" ? "selected" : "") + '>Valid ID Photo (Blurry / Glare / Duplicate)</option>' +
-              '<option value="name" ' + (activeCorrFields === "name" ? "selected" : "") + '>Applicant Name</option>' +
-              '<option value="birth_date" ' + (activeCorrFields === "birth_date" ? "selected" : "") + '>Birth Date</option>' +
-              '<option value="id_number" ' + (activeCorrFields === "id_number" ? "selected" : "") + '>Primary ID Number</option>' +
-              '<option value="email" ' + (activeCorrFields === "email" ? "selected" : "") + '>Email Address</option>' +
-              '<option value="phone" ' + (activeCorrFields === "phone" ? "selected" : "") + '>Mobile Number</option>' +
-              '<option value="email_or_phone" ' + (activeCorrFields === "email,phone" ? "selected" : "") + '>Both Email and Mobile</option>' +
-              '<option value="address" ' + (activeCorrFields === "address" ? "selected" : "") + '>Installation Address</option>' +
-            '</select>' +
+    (currentSt === "Needs Correction"
+      ? '<div class="section-card" style="background:#fffaf5; border-color:#fed7aa">' +
+          '<div class="section-head" style="margin-bottom:8px">' +
+            '<div class="section-head-title"><span class="step-badge" style="background:#d97706">4</span>Customer Update Request Sent (Awaiting Customer Resubmission)</div>' +
+            '<span class="badge badge-yellow">Waiting for Customer</span>' +
           '</div>' +
-          '<div class="field" style="margin-bottom:0">' +
-            '<label>Common Screening / Validator Remark Preset</label>' +
-            '<select id="det-preset-select" onchange="onValidatorPresetChange(this.value)">' +
-              renderValidatorPresetOptions() +
-            '</select>' +
+          '<div class="small" style="color:#7c2d12; line-height:1.55">' +
+            '<div><b>Requested Field(s):</b> ' + escapeHtml(FIELD_SUMMARY_LABELS[activeCorrFields] || activeCorrFields || "Application / Valid ID Update") + '</div>' +
+            (prefillRawNote ? '<div style="margin-top:4px"><b>Review / Validator Note:</b> ' + escapeHtml(prefillRawNote) + '</div>' : '') +
+            '<div style="margin-top:4px"><b>Instruction Sent to Customer:</b> ' + escapeHtml(app.agent_remarks || prefillPoliteMsg || "Please submit the requested correction in your Customer Account.") + '</div>' +
+            '<div class="tiny muted" style="margin-top:8px">This update request form is hidden while awaiting the customer\'s response and will automatically reopen once the customer resubmits their updated application or requirements.</div>' +
           '</div>' +
-        '</div>' +
+        '</div>'
+      : '<details' + isCorrectionOpen + ' class="section-card" style="background:var(--soft)">' +
+          '<summary style="cursor:pointer; font-weight:700; font-size:14.5px; color:var(--text); display:flex; align-items:center; gap:8px">' +
+            '<span class="step-badge" style="background:#d97706">4</span>' +
+            '<span>Request Customer Update (Needs Correction)</span>' +
+            (app.has_correction ? '<span class="badge badge-blue" style="margin-left:auto">Customer Resubmitted - Reopened for Review</span>' : '') +
+          '</summary>' +
+          '<div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line)">' +
+            '<p class="muted" style="font-size:12.5px; margin-bottom:12px">Use this section when the customer needs to correct a detail or upload clearer Front and Back Valid ID photos.</p>' +
 
-        '<div class="field" style="margin-bottom:10px">' +
-          '<label>Short Review / Validator Note</label>' +
-          '<input id="det-validator-raw" type="text" value="' + escapeHtml(prefillRawNote) + '" placeholder="e.g. Blurry ID photo, duplicate Front/Back image, or name mismatch..." />' +
-        '</div>' +
+            '<div class="grid-2" style="margin-bottom:10px">' +
+              '<div class="field" style="margin-bottom:0">' +
+                '<label>Field for Customer to Update</label>' +
+                '<select id="det-correction-field">' +
+                  '<option value="auto">Auto-Detect Field</option>' +
+                  '<option value="id_photo" ' + (activeCorrFields === "id_photo" ? "selected" : "") + '>Valid ID Photos - Front &amp; Back (Blurry / Glare / Duplicate)</option>' +
+                  '<option value="name" ' + (activeCorrFields === "name" ? "selected" : "") + '>Applicant Name</option>' +
+                  '<option value="birth_date" ' + (activeCorrFields === "birth_date" ? "selected" : "") + '>Birth Date</option>' +
+                  '<option value="id_number" ' + (activeCorrFields === "id_number" ? "selected" : "") + '>Primary ID Number</option>' +
+                  '<option value="email" ' + (activeCorrFields === "email" ? "selected" : "") + '>Email Address</option>' +
+                  '<option value="phone" ' + (activeCorrFields === "phone" ? "selected" : "") + '>Mobile Number</option>' +
+                  '<option value="email_or_phone" ' + (activeCorrFields === "email,phone" ? "selected" : "") + '>Both Email and Mobile</option>' +
+                  '<option value="address" ' + (activeCorrFields === "address" ? "selected" : "") + '>Installation Address</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="field" style="margin-bottom:0">' +
+                '<label>Common Screening / Validator Remark Preset</label>' +
+                '<select id="det-preset-select" onchange="onValidatorPresetChange(this.value)">' +
+                  renderValidatorPresetOptions() +
+                '</select>' +
+              '</div>' +
+            '</div>' +
 
-        '<div class="field" style="margin-bottom:12px">' +
-          '<div class="row between" style="margin-bottom:4px">' +
-            '<label style="margin:0">Polite Instruction Shown to Customer</label>' +
-            '<button type="button" id="btn-polite-gen" class="btn btn-outline btn-sm" style="padding:3px 10px; font-size:12px" onclick="convertValidatorToPoliteRemark()">Compose Polite Message</button>' +
+            '<div class="field" style="margin-bottom:10px">' +
+              '<label>Short Review / Validator Note</label>' +
+              '<input id="det-validator-raw" type="text" value="' + escapeHtml(prefillRawNote) + '" placeholder="e.g. Blurry ID photo, duplicate Front/Back image, or name mismatch..." />' +
+            '</div>' +
+
+            '<div class="field" style="margin-bottom:12px">' +
+              '<div class="row between" style="margin-bottom:4px">' +
+                '<label style="margin:0">Polite Instruction Shown to Customer</label>' +
+                '<button type="button" id="btn-polite-gen" class="btn btn-outline btn-sm" style="padding:3px 10px; font-size:12px" onclick="convertValidatorToPoliteRemark()">Compose Polite Message</button>' +
+              '</div>' +
+              '<span id="polite-running-spinner" class="badge badge-blue" style="display:none; margin-bottom:6px">Composing message...</span>' +
+              '<textarea id="det-correction-message" rows="2" placeholder="Select a preset above, click Compose Polite Message, or type your instruction for the customer...">' + escapeHtml(prefillPoliteMsg) + '</textarea>' +
+            '</div>' +
+
+            '<div class="row" style="justify-content:flex-end">' +
+              '<button type="button" class="btn btn-outline" style="border-color:#d97706; color:#b45309; font-weight:700" onclick="saveAgentDecision(\'Needs Correction\')">Send Update Request to Customer</button>' +
+            '</div>' +
           '</div>' +
-          '<span id="polite-running-spinner" class="badge badge-blue" style="display:none; margin-bottom:6px">Composing message...</span>' +
-          '<textarea id="det-correction-message" rows="2" placeholder="Select a preset above, click Compose Polite Message, or type your instruction for the customer...">' + escapeHtml(prefillPoliteMsg) + '</textarea>' +
-        '</div>' +
-
-        '<div class="row" style="justify-content:flex-end">' +
-          '<button type="button" class="btn btn-outline" style="border-color:#d97706; color:#b45309; font-weight:700" onclick="saveAgentDecision(\'Needs Correction\')">Send Update Request to Customer</button>' +
-        '</div>' +
-      '</div>' +
-    '</details>';
+        '</details>');
 }
 
 function saveSelectedStatus() {
@@ -1060,8 +1133,14 @@ async function saveAgentDecision(newStatus) {
   var updatedScreening = Object.assign({}, app.screening || {}, {
     correction_fields: newStatus === "Needs Correction" ? targetFields : [],
     auto_correction_sent: false,
-    validator_raw_remark: rawValidator
+    validator_raw_remark: rawValidator,
+    flagged_front_sha256: newStatus === "Needs Correction" ? ((app.screening && app.screening.front_sha256) || "") : "",
+    flagged_back_sha256: newStatus === "Needs Correction" ? ((app.screening && app.screening.back_sha256) || "") : ""
   });
+
+  if (newStatus === "Needs Correction" && remarks && remarks.toLowerCase().indexOf("important") === -1 && remarks.toLowerCase().indexOf("proceed") === -1) {
+    remarks = remarks.replace(/\s*$/, "") + " Completing this update promptly is important so your internet service application can proceed to provider encoding and installation scheduling without delay.";
+  }
 
   var staffId = getStaffIdentifier(currentAgent);
   await dbUpdateApplication(app.id, {
@@ -1071,6 +1150,7 @@ async function saveAgentDecision(newStatus) {
     correction_note: remarks,
     customer_instruction: remarks,
     screening: updatedScreening,
+    has_correction: newStatus === "Needs Correction" ? false : app.has_correction,
     encoded: isEncoded,
     provider_ref: providerRef,
     encoding_proof_url: proofUrl
@@ -1118,24 +1198,180 @@ async function saveAgentDecision(newStatus) {
   showAlert("Status Updated", "Application " + app.reference_no + " is now marked as " + newStatus + "." + emailNoticeNote);
 }
 
-function downloadApplicantId() {
+async function triggerImageFileDownload(url, filename) {
+  if (!url) return false;
+  try {
+    var resp = await fetch(url, { mode: "cors", credentials: "omit" });
+    if (resp.ok) {
+      var blob = await resp.blob();
+      var blobUrl = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(blobUrl); }, 4000);
+      return true;
+    }
+  } catch (e) {}
+
+  try {
+    var dataUrl = await new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = function () {
+        try {
+          var c = document.createElement("canvas");
+          c.width = img.naturalWidth || img.width || 800;
+          c.height = img.naturalHeight || img.height || 500;
+          var ctx = c.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          resolve(c.toDataURL("image/jpeg", 0.92));
+        } catch (err) { reject(err); }
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+    var a2 = document.createElement("a");
+    a2.href = dataUrl;
+    a2.download = filename;
+    document.body.appendChild(a2);
+    a2.click();
+    document.body.removeChild(a2);
+    return true;
+  } catch (e2) {
+    window.open(url, "_blank");
+    return false;
+  }
+}
+
+async function downloadApplicantId() {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
-  var url = (activeIdImgMode === "cropped" && app.cropped_id_url)
-    ? app.cropped_id_url
-    : (app.id_image_url || app.id_front_path || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png");
-  var suffix = (activeIdImgMode === "cropped" && app.cropped_id_url) ? "-ID-Cropped.jpg" : "-ID.png";
-  var a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.download = (app.reference_no || "applicant") + suffix;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  var btn = document.getElementById("btn-download-id");
+  var origHtml = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Downloading...";
+  }
+  try {
+    var refBase = (app.reference_no || app.ref_no || "applicant").replace(/[^a-zA-Z0-9_-]/g, "_");
+    var frontUrl = (activeIdImgMode === "cropped" && (app.cropped_id_url || app.id_cropped_url))
+      ? (app.cropped_id_url || app.id_cropped_url)
+      : (app.id_image_url || app.id_front_path || "");
+    var backUrl = (activeIdImgMode === "cropped" && (app.cropped_back_url || app.id_back_cropped_url))
+      ? (app.cropped_back_url || app.id_back_cropped_url)
+      : (app.id_back_image_url || app.id_back_path || "");
+    var frontSuffix = (activeIdImgMode === "cropped" && (app.cropped_id_url || app.id_cropped_url)) ? "-Front-ID-Cropped.jpg" : "-Front-ID.jpg";
+    var backSuffix = (activeIdImgMode === "cropped" && (app.cropped_back_url || app.id_back_cropped_url)) ? "-Back-ID-Cropped.jpg" : "-Back-ID.jpg";
+
+    if (frontUrl) {
+      await triggerImageFileDownload(frontUrl, refBase + frontSuffix);
+    }
+    if (backUrl && backUrl !== frontUrl) {
+      await new Promise(function (r) { setTimeout(r, 350); });
+      await triggerImageFileDownload(backUrl, refBase + backSuffix);
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
 }
 
 function printApplicantCopy() {
-  window.print();
+  var app = findAppById(activeDetailAppId);
+  if (!app) {
+    window.print();
+    return;
+  }
+  var viewData = (activeCopyMode === "original" && app.original_submission) ? app.original_submission : app;
+  var displayEmail = (activeCopyMode === "latest" && app.corrected_copy && app.corrected_copy.contact_email)
+    ? app.corrected_copy.contact_email
+    : (viewData.email || app.email || "-");
+  var frontUrl = (activeIdImgMode === "cropped" && (app.cropped_id_url || app.id_cropped_url))
+    ? (app.cropped_id_url || app.id_cropped_url)
+    : (viewData.id_image_url || app.id_image_url || app.id_front_path || "");
+  var backUrl = viewData.id_back_image_url || viewData.id_back_path || app.id_back_image_url || app.id_back_path || "";
+  var fullAddr = [
+    app.house_no ? app.house_no : "",
+    app.building_name && app.building_name !== "N/A" ? app.building_name : "",
+    viewData.street || app.street || "",
+    app.subdivision || "",
+    app.barangay ? "Brgy. " + app.barangay : "",
+    app.city || "",
+    app.province || ""
+  ].filter(Boolean).join(", ");
+
+  var printWin = window.open("", "_blank", "width=920,height=780");
+  if (!printWin) {
+    window.print();
+    return;
+  }
+  var docHtml =
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+    "<title>Application Verification Copy - " + escapeHtml(app.reference_no || "") + "</title>" +
+    "<style>" +
+      "body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;margin:24px;font-size:13px;line-height:1.45;}" +
+      ".hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #c8102e;padding-bottom:12px;margin-bottom:16px;}" +
+      ".hdr h1{font-size:18px;margin:0;color:#c8102e;}" +
+      ".hdr p{margin:3px 0 0;color:#475467;font-size:12px;}" +
+      ".sec{border:1px solid #d0d5dd;border-radius:8px;padding:12px 14px;margin-bottom:14px;page-break-inside:avoid;}" +
+      ".sec h2{font-size:13.5px;margin:0 0 10px;text-transform:uppercase;color:#1e293b;border-bottom:1px solid #e4e7ec;padding-bottom:6px;}" +
+      ".grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;}" +
+      ".row-kv{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed #e2e8f0;padding:4px 0;}" +
+      ".row-kv span{color:#64748b;}" +
+      ".row-kv b{text-align:right;color:#0f172a;}" +
+      ".id-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;margin-top:8px;}" +
+      ".id-box{border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#f8fafc;}" +
+      ".id-box b{display:block;font-size:11.5px;margin-bottom:6px;color:#334155;}" +
+      ".id-box img{max-width:100%;max-height:220px;object-fit:contain;border-radius:4px;}" +
+      "@media print{body{margin:10mm;}.no-print{display:none!important;}}" +
+    "</style></head><body>" +
+      "<div class='hdr'>" +
+        "<div><h1>PIGEM COMBINED FACILITIES SUPPORT SERVICES</h1><p>Internet Service Application &amp; Valid ID Verification Copy</p></div>" +
+        "<div style='text-align:right;'><b>Ref No: " + escapeHtml(app.reference_no || "-") + "</b><p>Status: " + escapeHtml(app.status || "-") + " | Printed: " + escapeHtml(new Date().toLocaleString()) + "</p></div>" +
+      "</div>" +
+      "<div class='sec'>" +
+        "<h2>1. Applicant Profile &amp; Service Plan</h2>" +
+        "<div class='grid2'>" +
+          "<div class='row-kv'><span>Full Name</span><b>" + escapeHtml(viewData.full_name || app.full_name || "-") + "</b></div>" +
+          "<div class='row-kv'><span>Selected Plan</span><b>" + escapeHtml(app.plan_name || "-") + "</b></div>" +
+          "<div class='row-kv'><span>Birth Date</span><b>" + escapeHtml(viewData.birth_date || app.birth_date || "-") + "</b></div>" +
+          "<div class='row-kv'><span>Submitted Date</span><b>" + escapeHtml(formatDate(app.created_at)) + "</b></div>" +
+          "<div class='row-kv'><span>Email Address</span><b>" + escapeHtml(displayEmail) + "</b></div>" +
+          "<div class='row-kv'><span>Mobile Number</span><b>" + escapeHtml(viewData.phone || app.phone || "-") + "</b></div>" +
+          "<div class='row-kv'><span>Valid ID Type</span><b>" + escapeHtml(viewData.id_type || app.id_type || "-") + "</b></div>" +
+          "<div class='row-kv'><span>Primary ID Number</span><b>" + escapeHtml(viewData.id_number || app.id_number || "-") + "</b></div>" +
+        "</div>" +
+      "</div>" +
+      "<div class='sec'>" +
+        "<h2>2. Installation Address &amp; Coordinates</h2>" +
+        "<div class='grid2'>" +
+          "<div class='row-kv'><span>Complete Address</span><b>" + escapeHtml(fullAddr || "-") + "</b></div>" +
+          "<div class='row-kv'><span>Nearest Landmark</span><b>" + escapeHtml(app.landmark || "-") + "</b></div>" +
+          "<div class='row-kv'><span>Pinned Coordinates</span><b>" + escapeHtml((app.latitude != null ? app.latitude : "-") + ", " + (app.longitude != null ? app.longitude : "-")) + "</b></div>" +
+          "<div class='row-kv'><span>Assigned Agent</span><b>" + escapeHtml(app.assigned_agent || "Unassigned") + "</b></div>" +
+        "</div>" +
+      "</div>" +
+      "<div class='sec'>" +
+        "<h2>3. Uploaded Valid ID Copies (Front &amp; Back)</h2>" +
+        "<div class='id-grid'>" +
+          "<div class='id-box'><b>FRONT OF VALID ID</b>" + (frontUrl ? "<img src='" + escapeHtml(frontUrl) + "' alt='Front ID' />" : "<span>No Front ID</span>") + "</div>" +
+          "<div class='id-box'><b>BACK OF VALID ID</b>" + (backUrl ? "<img src='" + escapeHtml(backUrl) + "' alt='Back ID' />" : "<span>No Back ID uploaded</span>") + "</div>" +
+        "</div>" +
+        (app.agent_remarks ? "<div style='margin-top:10px;font-size:12px;color:#334155;'><b>Verification Remarks:</b> " + escapeHtml(app.agent_remarks) + "</div>" : "") +
+      "</div>" +
+      "<script>" +
+        "window.onload = function() { setTimeout(function(){ window.focus(); window.print(); }, 400); };" +
+      "<\/script>" +
+    "</body></html>";
+
+  printWin.document.open();
+  printWin.document.write(docHtml);
+  printWin.document.close();
 }
 
 async function createNewAgentLink() {

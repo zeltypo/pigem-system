@@ -75,9 +75,51 @@ function buildNextPasswordHistory(userRow) {
   return hist.slice(0, 10);
 }
 
+function getRoleSessionKey(role) {
+  var r = String(role || "").trim().toLowerCase();
+  return r ? ("pigem_session_role_" + r) : SESSION_KEY;
+}
+
+function getActiveSessionPair(allowedRoles) {
+  var roles = Array.isArray(allowedRoles) ? allowedRoles : (allowedRoles ? [allowedRoles] : (window.PORTAL_ALLOWED_ROLES || null));
+  var tabId = sessionStorage.getItem(SESSION_KEY);
+  var tabTok = sessionStorage.getItem(SESSION_TOKEN_KEY);
+  var tabRole = sessionStorage.getItem(SESSION_KEY + "_role");
+
+  if (tabId && (!roles || !roles.length || !tabRole || roles.indexOf(tabRole) !== -1)) {
+    return { id: tabId, tok: tabTok || "" };
+  }
+
+  if (roles && roles.length === 1) {
+    var rKey = getRoleSessionKey(roles[0]);
+    var rId = localStorage.getItem(rKey);
+    var rTok = localStorage.getItem(rKey + "_tok");
+    if (rId) {
+      sessionStorage.setItem(SESSION_KEY, rId);
+      sessionStorage.setItem(SESSION_TOKEN_KEY, rTok || "");
+      sessionStorage.setItem(SESSION_KEY + "_role", String(roles[0]).toLowerCase());
+      return { id: rId, tok: rTok || "" };
+    }
+  }
+
+  var fallbackId = localStorage.getItem(SESSION_KEY);
+  var fallbackTok = localStorage.getItem(SESSION_TOKEN_KEY);
+  return { id: fallbackId || "", tok: fallbackTok || "" };
+}
+
 async function dbBindSingleDeviceSession(userObj) {
   if (!userObj || !userObj.id) return "";
   var tok = generateSessionToken();
+  var uRole = String(userObj.role || "").trim().toLowerCase();
+  sessionStorage.setItem(SESSION_KEY, userObj.id);
+  sessionStorage.setItem(SESSION_TOKEN_KEY, tok);
+  if (uRole) sessionStorage.setItem(SESSION_KEY + "_role", uRole);
+
+  if (uRole) {
+    var rKey = getRoleSessionKey(uRole);
+    localStorage.setItem(rKey, userObj.id);
+    localStorage.setItem(rKey + "_tok", tok);
+  }
   sessionStore.setItem(SESSION_KEY, userObj.id);
   sessionStore.setItem(SESSION_TOKEN_KEY, tok);
   userObj.session_token = tok;
@@ -103,11 +145,12 @@ async function dbBindSingleDeviceSession(userObj) {
 }
 
 async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
-  var currentId = sessionStore.getItem(SESSION_KEY);
-  var localTok = sessionStore.getItem(SESSION_TOKEN_KEY);
+  if (typeof allowedRoles === "string") allowedRoles = [allowedRoles];
+  var pair = getActiveSessionPair(allowedRoles);
+  var currentId = expectedUserId || pair.id;
+  var localTok = pair.tok;
   if (!currentId) return { valid: false, reason: "missing" };
   var allowedForSystem = SYSTEM_ROLES[SYSTEM] || null;
-  if (typeof allowedRoles === "string") allowedRoles = [allowedRoles];
 
   var userRow = null;
   if (IS_DEMO_MODE) {
@@ -132,12 +175,6 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
     return { valid: false, reason: "wrong_system" };
   }
   if (userRow.active === false) return { valid: false, reason: "disabled" };
-  if (expectedUserId && currentId !== expectedUserId) {
-    var switchTarget = (typeof getHomeForRole === "function" && (!allowedForSystem || allowedForSystem.indexOf(role) !== -1))
-      ? getHomeForRole(role)
-      : getLoginPage();
-    return { valid: false, reason: "account_switched", role: role, redirectUrl: switchTarget };
-  }
   if (allowedRoles && allowedRoles.length > 0 && allowedRoles.indexOf(role) === -1) {
     return {
       valid: false,
@@ -147,7 +184,9 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
     };
   }
   if (userRow.session_token && !localTok) {
-    return { valid: false, reason: "missing" };
+    var rKeyTok = localStorage.getItem(getRoleSessionKey(role) + "_tok");
+    if (rKeyTok) localTok = rKeyTok;
+    else return { valid: false, reason: "missing" };
   }
   if (userRow.session_token && localTok && userRow.session_token !== localTok) {
     return { valid: false, reason: "other_device" };
@@ -268,7 +307,8 @@ function getLoginPage() {
 }
 
 async function dbGetCurrentUser() {
-  var currentId = sessionStore.getItem(SESSION_KEY);
+  var pair = getActiveSessionPair(window.PORTAL_ALLOWED_ROLES || null);
+  var currentId = pair.id;
   var allowedForSystem = SYSTEM_ROLES[SYSTEM] || null;
   if (currentId) {
     if (!IS_DEMO_MODE && supabaseClient) {
@@ -501,7 +541,8 @@ async function dbSignIn(identifier, password) {
 
 async function dbSignOut(clearServerToken) {
   var user = await dbGetCurrentUser();
-  var localTok = sessionStore.getItem(SESSION_TOKEN_KEY);
+  var pair = getActiveSessionPair(window.PORTAL_ALLOWED_ROLES || null);
+  var localTok = pair.tok || sessionStore.getItem(SESSION_TOKEN_KEY);
   if (user) {
     await dbAddLoginHistory(user, "logout");
     if (clearServerToken !== false && !IS_DEMO_MODE && supabaseClient && localTok) {
@@ -510,13 +551,26 @@ async function dbSignOut(clearServerToken) {
           .eq("id", user.id).eq("session_token", localTok);
       } catch (e) {}
     }
+    if (user.role) {
+      var rKey = getRoleSessionKey(user.role);
+      if (!localStorage.getItem(rKey) || localStorage.getItem(rKey) === user.id) {
+        localStorage.removeItem(rKey);
+        localStorage.removeItem(rKey + "_tok");
+      }
+    }
+    if (sessionStore.getItem(SESSION_KEY) === user.id) {
+      sessionStore.removeItem(SESSION_KEY);
+      sessionStore.removeItem(SESSION_TOKEN_KEY);
+    }
+  } else {
+    sessionStore.removeItem(SESSION_KEY);
+    sessionStore.removeItem(SESSION_TOKEN_KEY);
   }
-  sessionStore.removeItem(SESSION_KEY);
-  sessionStore.removeItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_KEY);
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  sessionStorage.removeItem(SESSION_KEY + "_role");
   sessionStorage.removeItem("pigem_user_cache");
-  if (!IS_DEMO_MODE && supabaseClient) {
+  if (!IS_DEMO_MODE && supabaseClient && SYSTEM === "customer") {
     try { await supabaseClient.auth.signOut(); } catch (e) {}
   }
 }
@@ -536,8 +590,9 @@ async function dbGetToken() {
 async function checkPageAccess(allowedRoles) {
   if (typeof allowedRoles === "string") allowedRoles = [allowedRoles];
   window.PORTAL_ALLOWED_ROLES = allowedRoles;
-  if (sessionStore.getItem(SESSION_KEY) && typeof dbVerifyActiveSession === "function") {
-    var chk = await dbVerifyActiveSession(null, allowedRoles);
+  var pair = getActiveSessionPair(allowedRoles);
+  if (pair.id && typeof dbVerifyActiveSession === "function") {
+    var chk = await dbVerifyActiveSession(pair.id, allowedRoles);
     if (chk && chk.valid === false) {
       if (chk.reason === "wrong_portal" && chk.redirectUrl) {
         window.location.replace(chk.redirectUrl);

@@ -142,7 +142,11 @@ function getImageUrl(filePath) {
 }
 
 function imageFallback(img, filePath) {
+  if (!img) return;
   img.onerror = null;
+  if (img.classList && img.classList.contains("icon-img")) {
+    img.style.display = "none";
+  }
 }
 
 function showSystemMaintenanceNotice(customMsg) {

@@ -45,8 +45,8 @@ function promptCustomerCorrectionReminder(apps) {
         '<div class="notice" style="background:#fff7ed;border:1.5px solid #fb923c;color:#7c2d12;padding:14px 16px;border-radius:12px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
             '<div>' +
-              '<b>Action Needed: ' + pendingFixes.length + ' Application(s) Require Correction</b>' +
-              '<div class="small" style="margin-top:4px;line-height:1.5;">Please review and submit the requested updates below. Follow-up email reminders are sent at <b>24 hours</b> (initial) and <b>72 hours</b> (final notice) if left unaddressed, or you may select <i>&ldquo;I choose not to correct&rdquo;</i>.</div>' +
+              '<b>Important Action Needed: ' + pendingFixes.length + ' Application(s) Require Correction</b>' +
+              '<div class="small" style="margin-top:4px;line-height:1.5;">Completing the requested update is required so your internet service application can move forward to provider encoding and installation scheduling. Automated email reminders are sent at <b>24 hours</b> (initial) and <b>72 hours</b> (final notice) if left unaddressed.</div>' +
             '</div>' +
             '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + linksHtml + '</div>' +
           '</div>' +
@@ -59,15 +59,15 @@ function promptCustomerCorrectionReminder(apps) {
     var listItems = pendingFixes.map(function (a) {
       return '<div style="padding:8px 10px;border:1px solid #fed7aa;background:#fffaf5;border-radius:8px;margin-bottom:8px;">' +
         '<b>' + escapeHtml(a.reference_no || a.ref_no) + '</b> (' + escapeHtml(a.plan_name || "") + ')<br>' +
-        '<span class="small" style="color:#7c2d12;">' + escapeHtml(a.agent_remarks || "Please update the flagged details or Valid ID photo.") + '</span>' +
+        '<span class="small" style="color:#7c2d12;">' + escapeHtml(a.agent_remarks || "Please update the flagged details or upload clearer Front and Back Valid ID photos.") + '</span>' +
       '</div>';
     }).join("");
     openPopup(
       '<div style="padding:4px 2px;">' +
-        '<h3 style="color:#b42318;margin-bottom:6px;">Application Correction Reminder</h3>' +
+        '<h3 style="color:#b42318;margin-bottom:6px;">Important: Application Correction Required</h3>' +
         '<p class="small muted" style="margin-bottom:12px;">You have <b>' + pendingFixes.length + '</b> application(s) in <b>Needs Correction</b> status:</p>' +
         listItems +
-        '<p class="small muted" style="margin:8px 0 14px;line-height:1.5;">Email reminders are sent 24 hours and 72 hours after a correction notice. Please update the requested fields or choose not to proceed.</p>' +
+        '<p class="small" style="margin:8px 0 14px;line-height:1.55;color:#7c2d12;background:#fff7ed;padding:8px 10px;border-radius:8px;border:1px solid #fed7aa;"><b>Why this is important:</b> Submitting the requested correction or clear Valid ID photos (Front &amp; Back) is required by the telecom provider validator before your line installation can be scheduled. Follow-up notices are sent at 24 hours and 72 hours.</p>' +
         '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
           '<button type="button" class="btn btn-red btn-sm" onclick="selectMyApp(\'' + escapeHtml(pendingFixes[0].id) + '\'); closePopup();">Review &amp; Update Now</button>' +
         '</div>' +
@@ -195,11 +195,11 @@ function renderSelectedApp() {
     if (needsFix) {
       guideBox =
         '<div class="msg info show" style="margin-bottom:10px">' +
-          '<b>Status: Processing (Needs Correction)</b> - Your application is currently in processing, and a quick update is needed before we can proceed. Follow-up email reminders are automatically scheduled at <b>24 hours</b> (initial) and <b>72 hours</b> (final notice) if left unaddressed.' +
+          '<b>Status: Processing (Needs Correction)</b> &mdash; Completing the requested update below is <b>essential</b> so our verification team can encode your application with the provider and schedule your fiber installation. Automated reminders are sent at <b>24 hours</b> and <b>72 hours</b> if left unaddressed.' +
         '</div>' +
         '<div class="msg error show" style="margin-bottom:16px">' +
-          '<b>Update Requested:</b><br>' +
-          escapeHtml(app.agent_remarks || "Please update the highlighted information or upload a clearer Valid ID below and click Resubmit.") +
+          '<b>Update Requested by Verification Team:</b><br>' +
+          escapeHtml(app.agent_remarks || "Please update the highlighted information or upload clearer Front and Back Valid ID photos below and click Resubmit Application.") +
           (flaggedBadges ? '<div style="margin-top:8px">' + flaggedBadges + '</div>' : '') +
         '</div>';
     } else {
@@ -247,7 +247,7 @@ function renderSelectedApp() {
     html +=
       '<div style="margin-top:18px; padding-top:16px; border-top:2px solid #c8102e">' +
         '<h3 style="margin-bottom:6px; color:#c8102e">Needs Correction - Submit Updated Details</h3>' +
-        '<p class="muted" style="font-size:13px; margin-bottom:12px">Update the requested field(s) below and click <b>Resubmit Application</b> to continue <b>Processing</b> your application, or choose not to proceed.</p>' +
+        '<p class="muted" style="font-size:13px; margin-bottom:12px">Please update the requested field(s) or upload clear <b>Front and Back</b> photos of your Valid ID below and click <b>Resubmit Application</b> so your application can proceed to approval and installation.</p>' +
         '<div id="fix-msg" class="msg"></div>' +
         '<div class="grid-3">' +
           '<div class="field">' +
@@ -287,13 +287,20 @@ function renderSelectedApp() {
           '<label>Street / Barangay / City ' + (fields.indexOf("address") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
           '<input id="fix-street" type="text" ' + hiAddr + ' value="' + escapeHtml(app.street || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
-        '<div class="field" ' + hiPhoto + '>' +
-          '<label>Upload Clearer Valid ID Photo ' + (fields.indexOf("id_photo") !== -1 ? '<span class="badge badge-red">New Photo Required</span>' : '(Optional)') + '</label>' +
-          '<input id="fix-file" type="file" accept="image/*" onchange="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+        '<div class="grid-2" ' + hiPhoto + '>' +
+          '<div class="field" style="margin-bottom:0">' +
+            '<label>Front of Valid ID Photo ' + (fields.indexOf("id_photo") !== -1 ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
+            '<input id="fix-file" type="file" accept="image/*" onchange="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+            '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Front side showing your name, photo, and ID number.</div>' +
+          '</div>' +
+          '<div class="field" style="margin-bottom:0">' +
+            '<label>Back of Valid ID Photo ' + (fields.indexOf("id_photo") !== -1 ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
+            '<input id="fix-file-back" type="file" accept="image/*" onchange="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+            '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Back side of the same Valid ID card.</div>' +
+          '</div>' +
         '</div>' +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">' +
-          '<button id="btn-fix" type="button" class="btn btn-red" style="flex:1;min-width:200px;" onclick="submitCustomerCorrection(\'' + escapeHtml(app.id) + '\')">Resubmit Application</button>' +
-          '<button type="button" class="btn btn-outline" onclick="confirmDeclineCorrection(\'' + escapeHtml(app.id) + '\')">I choose not to correct</button>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
+          '<button id="btn-fix" type="button" class="btn btn-red" style="flex:1;min-width:220px;" onclick="submitCustomerCorrection(\'' + escapeHtml(app.id) + '\')">Resubmit Application</button>' +
         '</div>' +
       '</div>';
   }
@@ -376,6 +383,8 @@ async function submitCustomerCorrection(appId) {
 
     var fileInput = document.getElementById("fix-file");
     var file = fileInput && fileInput.files && fileInput.files[0];
+    var fileBackInput = document.getElementById("fix-file-back");
+    var fileBack = fileBackInput && fileBackInput.files && fileBackInput.files[0];
 
     var hasErr = false;
     var fnCheck = typeof validatePersonName === "function" ? validatePersonName(fname, "First Name", false, false) : { valid: Boolean(fname) };
@@ -389,11 +398,11 @@ async function submitCustomerCorrection(appId) {
     if (!/^09\d{9}$/.test(phone)) { setFieldError("fix-phone", "Mobile number must be 11 digits starting with 09."); hasErr = true; }
 
     var fields = app.correction_fields || [];
-    if (fields.indexOf("name") !== -1 && fullName === oldName && !file) {
+    if (fields.indexOf("name") !== -1 && fullName === oldName && !file && !fileBack) {
       setFieldError("fix-fname", "Update your Name to match your Valid ID or upload a new photo.");
       hasErr = true;
     }
-    if (fields.indexOf("birth_date") !== -1 && bdate === oldBdate && !file) {
+    if (fields.indexOf("birth_date") !== -1 && bdate === oldBdate && !file && !fileBack) {
       setFieldError("fix-bdate", "Update your Birth Date to match your Valid ID.");
       hasErr = true;
     }
@@ -409,8 +418,12 @@ async function submitCustomerCorrection(appId) {
       setFieldError("fix-phone", "Please enter an updated Mobile Number.");
       hasErr = true;
     }
-    if (fields.indexOf("id_photo") !== -1 && !file) {
-      setFieldError("fix-file", "Please upload a clearer photo of your Valid ID before resubmitting.");
+    if (fields.indexOf("id_photo") !== -1 && !file && !fileBack) {
+      setFieldError("fix-file", "Please upload a clearer Front and/or Back photo of your Valid ID before resubmitting.");
+      hasErr = true;
+    }
+    if (file && fileBack && file.name === fileBack.name && file.size === fileBack.size) {
+      setFieldError("fix-file-back", "Front ID and Back ID cannot be the exact same photo file. Please select the Front side and Back side separately.");
       hasErr = true;
     }
     if (hasErr) return;
@@ -422,9 +435,10 @@ async function submitCustomerCorrection(appId) {
     if (phone !== oldPhone) changedList.push("Mobile Number (" + phone + ")");
     if (idNo !== oldIdNo) changedList.push("ID Number (" + idNo + ")");
     if (street !== oldStreet) changedList.push("Address");
-    if (file) changedList.push("New Valid ID Photo");
+    if (file) changedList.push("New Front Valid ID Photo");
+    if (fileBack) changedList.push("New Back Valid ID Photo");
     if (changedList.length === 0) {
-      showMsg("fix-msg", "error", "No changes detected. Please update the requested detail or upload a clearer ID photo.");
+      showMsg("fix-msg", "error", "No changes detected. Please update the requested detail or upload clearer Front / Back Valid ID photos.");
       return;
     }
 
@@ -442,12 +456,19 @@ async function submitCustomerCorrection(appId) {
       id_type: app.id_type,
       id_number: app.id_number,
       street: app.street,
-      id_image_url: app.id_image_url
+      id_image_url: app.id_image_url,
+      id_back_image_url: app.id_back_image_url || app.id_back_path || ""
     };
 
     var idUrl = app.id_image_url || app.id_front_path;
+    var idBackUrl = app.id_back_image_url || app.id_back_path || "";
+    var ownerId = app.customer_id || (currentCustomer && currentCustomer.id);
+    var refTag = app.reference_no || app.ref_no || "app";
     if (file) {
-      idUrl = await dbUploadIdPhoto(file, (app.reference_no || app.ref_no || "app") + "-corrected", app.customer_id || (currentCustomer && currentCustomer.id));
+      idUrl = await dbUploadIdPhoto(file, refTag + "-front-corrected", ownerId);
+    }
+    if (fileBack) {
+      idBackUrl = await dbUploadIdPhoto(fileBack, refTag + "-back-corrected", ownerId);
     }
 
     var correctedSnapshot = {
@@ -461,6 +482,7 @@ async function submitCustomerCorrection(appId) {
       id_number: idNo,
       street: street,
       id_image_url: idUrl,
+      id_back_image_url: idBackUrl,
       changed_fields: changedList,
       submitted_at: new Date().toISOString()
     };
@@ -487,6 +509,8 @@ async function submitCustomerCorrection(appId) {
       street: street,
       id_front_path: idUrl,
       id_image_url: idUrl,
+      id_back_path: idBackUrl,
+      id_back_image_url: idBackUrl,
       screening: updatedScreening,
       original_copy: orig,
       original_submission: orig,
@@ -498,12 +522,12 @@ async function submitCustomerCorrection(appId) {
       agent_remarks: "Customer submitted update: " + changedList.join(", ")
     });
 
-    if (file && typeof dbCreateDocumentRecord === "function") {
+    if ((file || fileBack) && typeof dbCreateDocumentRecord === "function") {
       await dbCreateDocumentRecord(app.id, {
         id_type: app.id_type || "",
         id_number: idNo || app.id_number || "",
         front_image_url: idUrl,
-        back_image_url: app.id_back_image_url || app.id_back_path || "",
+        back_image_url: idBackUrl,
         doc_type: "valid_id",
         file_path: idUrl,
         version: "corrected"
