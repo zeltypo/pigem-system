@@ -706,13 +706,15 @@
     }
 
     async function fetchCloudRow(rowId) {
-      var url = SUPABASE_URL + "/rest/v1/website_content?id=eq." + encodeURIComponent(rowId) + "&select=data,updated_at&t=" + Date.now();
+      var url = SUPABASE_URL + "/rest/v1/website_content?id=eq." + encodeURIComponent(rowId) + "&select=data,updated_at";
       var res = await fetch(url, {
         method: "GET",
         cache: "no-store",
         headers: {
           "apikey": SUPABASE_ANON_KEY,
-          "Authorization": "Bearer " + SUPABASE_ANON_KEY
+          "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
         }
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -742,10 +744,12 @@
 
     async function pushToCloudNow() {
       try {
-        var remote = await fetchCloudRow(CLOUD_ROW_ID);
-        if (remote && typeof remote === "object") {
-          mergeRemoteIntoLocal(remote, false);
-        }
+        try {
+          var remote = await fetchCloudRow(CLOUD_ROW_ID);
+          if (remote && typeof remote === "object") {
+            mergeRemoteIntoLocal(remote, false);
+          }
+        } catch (readErr) {}
         var payload = {
           checked: checkedState,
           comments: itemComments,
