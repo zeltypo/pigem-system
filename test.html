@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
       --red: #c8102e;
@@ -589,6 +590,10 @@
     var _cloudSaveTimer = null;
     var _isSavingToCloud = false;
     var _pendingFlushAgain = false;
+    var _tableAvailable = null;
+    var _realtimeChannel = null;
+    var _realtimeReady = false;
+    var _deviceId = "dev_" + Math.random().toString(36).slice(2, 10);
 
     function normalizeRev(val) {
       var n = Math.floor(Number(val) || 0);
@@ -603,6 +608,51 @@
       if (!badge || !text) return;
       badge.className = "sync-pill" + (mode === "saving" ? " saving" : (mode === "offline" ? " offline" : ""));
       text.textContent = label;
+    }
+
+    function initRealtimeBroadcast() {
+      try {
+        if (!window.supabase || typeof window.supabase.createClient !== "function") return;
+        var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: false, autoRefreshToken: false }
+        });
+        _realtimeChannel = sb.channel("pigem_qa_tester_live_v3", {
+          config: { broadcast: { self: false, ack: false } }
+        });
+        _realtimeChannel
+          .on("broadcast", { event: "tester_state" }, function (msg) {
+            var payload = msg && msg.payload ? msg.payload : null;
+            if (!payload || payload.sender === _deviceId) return;
+            mergeRemoteIntoLocal(payload, true);
+            saveLocalOnly();
+            setSyncBadge("synced", "Live Synced (Instant)");
+          })
+          .subscribe(function (status) {
+            if (status === "SUBSCRIBED") {
+              _realtimeReady = true;
+            }
+          });
+      } catch (e) {}
+    }
+
+    function broadcastLiveState() {
+      if (!_realtimeChannel || !_realtimeReady) return;
+      try {
+        _realtimeChannel.send({
+          type: "broadcast",
+          event: "tester_state",
+          payload: {
+            sender: _deviceId,
+            checked: state.checked,
+            comments: state.comments,
+            checkedRev: state.checkedRev,
+            commentRev: state.commentRev,
+            testerName: state.testerName,
+            testerNotes: state.testerNotes,
+            metaRev: state.metaRev
+          }
+        });
+      } catch (e) {}
     }
 
     function loadLocalState() {
@@ -650,31 +700,12 @@
 
     function scheduleCloudSave(delayMs) {
       saveLocalOnly();
-      setSyncBadge("saving", "Syncing to Cloud...");
+      broadcastLiveState();
+      setSyncBadge("saving", "Syncing...");
       if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
       _cloudSaveTimer = setTimeout(function () {
         flushCloudSave();
-      }, typeof delayMs === "number" ? delayMs : 200);
-    }
-
-    async function fetchFromIsolatedTable() {
-      var url = SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE + "?id=eq." + encodeURIComponent(ISOLATED_ROW_ID) + "&select=state,updated_at&t=" + Date.now();
-      var res = await fetch(url, {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Authorization": "Bearer " + SUPABASE_ANON_KEY,
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache"
-        }
-      });
-      if (!res.ok) return null;
-      var rows = await res.json();
-      if (Array.isArray(rows) && rows.length > 0 && rows[0].state && typeof rows[0].state === "object" && Object.keys(rows[0].state).length > 0) {
-        return rows[0].state;
-      }
-      return null;
+      }, typeof delayMs === "number" ? delayMs : 80);
     }
 
     async function fetchFromIsolatedStorage() {
@@ -694,62 +725,68 @@
       return (data && typeof data === "object") ? data : null;
     }
 
-    async function fetchCloudState() {
-      try {
-        var apiRes = await fetch("/api/tester-sync?t=" + Date.now(), {
-          method: "GET",
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
-        });
-        if (apiRes.ok) {
-          var apiJson = await apiRes.json();
-          if (apiJson && apiJson.ok && apiJson.state && typeof apiJson.state === "object" && Object.keys(apiJson.state).length > 0) {
-            return apiJson.state;
-          }
+    async function fetchFromIsolatedTable() {
+      if (_tableAvailable === false) return null;
+      var url = SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE + "?id=eq." + encodeURIComponent(ISOLATED_ROW_ID) + "&select=state,updated_at&t=" + Date.now();
+      var res = await fetch(url, {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
         }
-      } catch (e) {}
+      });
+      if (res.status === 404) {
+        _tableAvailable = false;
+        return null;
+      }
+      if (!res.ok) return null;
+      _tableAvailable = true;
+      var rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].state && typeof rows[0].state === "object" && Object.keys(rows[0].state).length > 0) {
+        return rows[0].state;
+      }
+      return null;
+    }
 
+    async function fetchCloudState() {
       try {
         var storageState = await fetchFromIsolatedStorage();
         if (storageState && Object.keys(storageState).length > 0) {
           return storageState;
         }
-      } catch (e2) {}
+      } catch (e) {}
 
       try {
         var tableState = await fetchFromIsolatedTable();
         if (tableState && Object.keys(tableState).length > 0) {
           return tableState;
         }
-      } catch (e3) {}
+      } catch (e2) {}
 
       return null;
     }
 
     async function pushCloudState(payload) {
-      var savedOk = false;
       var bodyStr = JSON.stringify(payload);
+      var stUrl = SUPABASE_URL + "/storage/v1/object/documents/" + ISOLATED_STORAGE_PATH;
+      var stRes = await fetch(stUrl, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+          "Content-Type": "application/json",
+          "x-upsert": "true",
+          "Cache-Control": "no-cache, no-store, must-revalidate"
+        },
+        body: bodyStr
+      });
 
-      try {
-        var stUrl = SUPABASE_URL + "/storage/v1/object/documents/" + ISOLATED_STORAGE_PATH;
-        var stRes = await fetch(stUrl, {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "apikey": SUPABASE_ANON_KEY,
-            "Authorization": "Bearer " + SUPABASE_ANON_KEY,
-            "Content-Type": "application/json",
-            "x-upsert": "true",
-            "Cache-Control": "no-cache, no-store, must-revalidate"
-          },
-          body: bodyStr
-        });
-        if (stRes.ok) savedOk = true;
-      } catch (e) {}
-
-      try {
-        var tbUrl = SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE;
-        var tbRes = await fetch(tbUrl, {
+      if (_tableAvailable !== false) {
+        fetch(SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE, {
           method: "POST",
           cache: "no-store",
           headers: {
@@ -763,21 +800,13 @@
             state: payload,
             updated_at: new Date().toISOString()
           })
-        });
-        if (tbRes.ok) savedOk = true;
-      } catch (e2) {}
+        }).then(function (r) {
+          if (r.status === 404) _tableAvailable = false;
+          else if (r.ok) _tableAvailable = true;
+        }).catch(function () {});
+      }
 
-      try {
-        var apiRes = await fetch("/api/tester-sync", {
-          method: "POST",
-          cache: "no-store",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ state: payload })
-        });
-        if (apiRes.ok) savedOk = true;
-      } catch (e3) {}
-
-      if (!savedOk) throw new Error("Cloud sync write failed");
+      if (!stRes.ok) throw new Error("Cloud sync write failed");
     }
 
     function mergeRemoteIntoLocal(remote, updateUiInPlace) {
@@ -879,7 +908,6 @@
         return;
       }
       _isSavingToCloud = true;
-      setSyncBadge("saving", "Syncing to Cloud...");
 
       var snapChecked = {};
       var snapComment = {};
@@ -888,9 +916,14 @@
       var snapMeta = _dirtyMeta;
 
       try {
+        broadcastLiveState();
+
         var remote = null;
         try {
-          remote = await fetchCloudState();
+          remote = await Promise.race([
+            fetchFromIsolatedStorage(),
+            new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 450); })
+          ]);
         } catch (readErr) {}
 
         if (remote && typeof remote === "object") {
@@ -910,6 +943,7 @@
           if (snapMeta) {
             state.metaRev = Math.max(normalizeRev(state.metaRev), normalizeRev(remote.metaRev) + 1);
           }
+          broadcastLiveState();
         }
 
         var payload = {
@@ -941,7 +975,7 @@
         _isSavingToCloud = false;
         if (_pendingFlushAgain || Object.keys(_dirtyChecked).length > 0 || Object.keys(_dirtyComment).length > 0 || _dirtyMeta) {
           _pendingFlushAgain = false;
-          scheduleCloudSave(250);
+          scheduleCloudSave(100);
         }
       }
     }
@@ -968,7 +1002,7 @@
       state.testerNotes = notesEl ? notesEl.value : "";
       state.metaRev = normalizeRev(state.metaRev) + 1;
       _dirtyMeta = true;
-      scheduleCloudSave(350);
+      scheduleCloudSave(150);
     }
 
     function saveItemComment(itemId, val) {
@@ -984,7 +1018,7 @@
       if (inputEl) {
         inputEl.classList.toggle("has-text", Boolean(raw.trim()));
       }
-      scheduleCloudSave(350);
+      scheduleCloudSave(150);
     }
 
     function toggleItem(itemId) {
@@ -996,7 +1030,7 @@
       if (rowEl) rowEl.classList.toggle("checked", Boolean(state.checked[itemId]));
       if (cbEl) cbEl.checked = Boolean(state.checked[itemId]);
       updateProgressAndBadgesInPlace();
-      scheduleCloudSave(120);
+      scheduleCloudSave(40);
     }
 
     function escapeHtml(str) {
@@ -1113,6 +1147,7 @@
         }
       }
       renderChecklist();
+      broadcastLiveState();
       flushCloudSave();
     }
 
@@ -1165,6 +1200,7 @@
             state.metaRev = normalizeRev(state.metaRev) + 1;
             _dirtyMeta = true;
             renderChecklist();
+            broadcastLiveState();
             flushCloudSave();
           }
         } catch (err) {
@@ -1177,10 +1213,11 @@
 
     loadLocalState();
     renderChecklist();
+    initRealtimeBroadcast();
     pullFromCloudNow(true);
     setInterval(function () {
       pullFromCloudNow(true);
-    }, 1500);
+    }, 800);
     window.addEventListener("focus", function () {
       pullFromCloudNow(true);
     });
