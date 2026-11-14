@@ -491,9 +491,9 @@ function renderProfileDrawer(user) {
     '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
       '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Appearance / Theme</div>' +
       '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px">' +
-        '<button type="button" data-theme-btn="light" class="btn btn-sm ' + (savedTheme === "light" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'light\')"><img data-img="icons/sun.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/sun.png" alt="Light (not available)" class="icon-img" />Light</button>' +
-        '<button type="button" data-theme-btn="dark" class="btn btn-sm ' + (savedTheme === "dark" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'dark\')"><img data-img="icons/moon.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/moon.png" alt="Dark (not available)" class="icon-img" />Dark</button>' +
-        '<button type="button" data-theme-btn="device" class="btn btn-sm ' + (savedTheme === "device" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'device\')"><img data-img="icons/monitor.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/monitor.png" alt="Device (not available)" class="icon-img" />Device</button>' +
+        '<button type="button" data-theme-btn="light" class="btn btn-sm ' + (savedTheme === "light" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'light\')"><img data-img="icons/sun.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/sun.png" alt="Light" class="icon-img" />Light</button>' +
+        '<button type="button" data-theme-btn="dark" class="btn btn-sm ' + (savedTheme === "dark" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'dark\')"><img data-img="icons/moon.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/moon.png" alt="Dark" class="icon-img" />Dark</button>' +
+        '<button type="button" data-theme-btn="device" class="btn btn-sm ' + (savedTheme === "device" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'device\')"><img data-img="icons/monitor.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/monitor.png" alt="Device" class="icon-img" />Device</button>' +
       '</div>' +
     '</div>' +
 
@@ -554,6 +554,9 @@ async function saveProfileChanges() {
       ? await dbUpdateMyProfile(dashCurrentUser.id, changes)
       : null;
     dashCurrentUser = Object.assign({}, dashCurrentUser, changes, updated || {});
+    try {
+      sessionStorage.setItem("pigem_user_cache", JSON.stringify({ user: dashCurrentUser, ts: Date.now() }));
+    } catch (e) {}
     pendingAvatarDataUrl = "";
     renderAvatarBtn(dashCurrentUser);
     renderProfileDrawer(dashCurrentUser);
@@ -1032,3 +1035,32 @@ function printActiveDashboardReport() {
     window.print();
   }
 }
+
+window.addEventListener("keydown", function (e) {
+  if (e.key !== "Escape") return;
+  var popBg = document.getElementById("popup-bg");
+  if (popBg && popBg.classList.contains("show") && typeof closePopup === "function") {
+    closePopup();
+    return;
+  }
+  var agModal = document.getElementById("ag-modal");
+  if (agModal && agModal.classList.contains("show") && typeof closeDetailModal === "function") {
+    closeDetailModal();
+    return;
+  }
+  var mgrModal = document.getElementById("mgr-modal");
+  if (mgrModal && mgrModal.classList.contains("show") && typeof closeMgrModal === "function") {
+    closeMgrModal();
+    return;
+  }
+  var notifPanel = document.getElementById("notif-panel");
+  if (notifPanel && notifPanel.classList.contains("show") && typeof toggleNotifPanel === "function") {
+    toggleNotifPanel();
+    return;
+  }
+  var profDrawer = document.getElementById("prof-drawer");
+  if (profDrawer && profDrawer.classList.contains("show") && typeof toggleProfileDrawer === "function") {
+    toggleProfileDrawer();
+  }
+});
+

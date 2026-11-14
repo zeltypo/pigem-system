@@ -368,7 +368,7 @@ function showApplySecurityCaptchaModal() {
         '<div id="g-apply-recaptcha-box" class="g-recaptcha" data-sitekey="' + CONFIG.RECAPTCHA_SITE_KEY + '" data-callback="onApplyCaptchaVerified"></div>' +
       '</div>' +
       '<div id="apply-captcha-fallback-box" style="margin-top:8px; display:none;">' +
-        '<div id="apply-popup-captcha-card" class="captcha-container" onclick="triggerApplyPopupCaptcha()">' +
+        '<div id="apply-popup-captcha-card" class="captcha-container" role="button" tabindex="0" aria-label="Verify I am not a robot" onclick="triggerApplyPopupCaptcha()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();triggerApplyPopupCaptcha();}">' +
           '<div style="display:flex;align-items:center;gap:12px;">' +
             '<div id="apply-popup-captcha-check" class="captcha-box-inner"></div>' +
             '<span id="apply-popup-captcha-text" style="font-weight:600;font-size:14px;color:var(--text);">I\'m not a robot</span>' +
@@ -462,6 +462,10 @@ function renderPlanChoices() {
 function pickPlan(planId) {
   selectedPlanId = String(planId);
   renderPlanChoices();
+  if (typeof checkPublicMaintenance === "function") checkPublicMaintenance();
+  if (typeof dbSyncLiveSettingsAndContent === "function") {
+    dbSyncLiveSettingsAndContent(false).catch(function () {});
+  }
 }
 
 var applyCaptchaVerified = false;
@@ -754,6 +758,14 @@ function handleIdFileSelect(side, inputEl) {
 }
 
 function showPanel(index) {
+  if (typeof checkPublicMaintenance === "function") checkPublicMaintenance();
+  var mNow = (typeof getMaintenanceBlockInfo === "function") ? getMaintenanceBlockInfo() : null;
+  if (mNow && mNow.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+    if (typeof renderMaintenanceScreenHtml === "function") {
+      renderMaintenanceScreenHtml(mNow.title || "Website Under Maintenance", mNow.message);
+    }
+    return;
+  }
   currentPanel = index;
   saveApplyDraftState();
   for (var i = 0; i < TOTAL_PANELS; i++) {
@@ -1076,7 +1088,7 @@ function bindMapFieldListeners() {
 async function enforceLiveMaintenanceOnStep() {
   try {
     if (typeof dbSyncLiveSettingsAndContent === "function") {
-      await dbSyncLiveSettingsAndContent();
+      await dbSyncLiveSettingsAndContent(false);
     }
     var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : window._latestWebsiteContent;
     if (liveContent) window._latestWebsiteContent = liveContent;
@@ -1345,7 +1357,7 @@ function useCurrentLocation() {
   function onGeoSuccess(pos) {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location';
+      btn.innerHTML = '<img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location" class="icon-img"> Use My Location';
     }
     var lat = pos.coords.latitude;
     var lng = pos.coords.longitude;
@@ -1363,7 +1375,7 @@ function useCurrentLocation() {
       function () {
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = '<img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location';
+          btn.innerHTML = '<img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location" class="icon-img"> Use My Location';
         }
         var msg = "Location permission denied or unavailable. Please search your street/barangay in the box above.";
         if (statusEl) statusEl.textContent = msg;
@@ -1603,6 +1615,9 @@ async function submitRegistration() {
         }))
       : { isDuplicate: false };
 
+    var croppedFrontUrl = (preScreenRes && preScreenRes.cropped_front_url) || (screening && screening.cropped_front_url) || "";
+    var croppedBackUrl = (preScreenRes && preScreenRes.cropped_back_url) || (screening && screening.cropped_back_url) || "";
+
     var baseAppPayload = Object.assign({}, addrData, {
       customer_id: accountInfo.user.id,
       agent_id: referralAgentId,
@@ -1626,6 +1641,10 @@ async function submitRegistration() {
       id_back_image_url: backPath,
       id_front_path: frontPath,
       id_back_path: backPath,
+      id_cropped_url: croppedFrontUrl,
+      id_back_cropped_url: croppedBackUrl,
+      cropped_id_url: croppedFrontUrl,
+      cropped_back_url: croppedBackUrl,
       remarks: document.getElementById("remarks").value.trim(),
       agree_tu: document.getElementById("agree_tu").checked,
       screening: screening
@@ -1692,9 +1711,9 @@ async function submitRegistration() {
       if (typeof dbNotifyScreeningUnavailable === "function") {
         await dbNotifyScreeningUnavailable(saved.ref_no, fullName, "Original uploaded ID copies are ready for manual verification.");
       }
-    } else if (!(preScreenRes && preScreenRes.status !== "offline") && typeof apiStartBackgroundScreening === "function") {
+    } else if (typeof apiStartBackgroundScreening === "function") {
       apiStartBackgroundScreening(saved.id).then(async function (bgRes) {
-        if (!bgRes || (!bgRes.queued && !bgRes.screened)) {
+        if ((!bgRes || (!bgRes.queued && !bgRes.screened)) && !(preScreenRes && preScreenRes.status !== "offline")) {
           var fallbackScreening = Object.assign({}, screening, {
             state: "unavailable",
             phase: "Original Copy Ready (Manual Review)",

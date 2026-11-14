@@ -406,7 +406,7 @@ class FieldComparisonEngine(BaseTextMatcher):
 
             upper_ln = ln.upper()
 
-            if any(k in upper_ln for k in ("BIRTH", "DOB", "KAPANGANAKAN", "BORN")):
+            if any(k in upper_ln for k in ("BIRTH", "DOB", "KAPANGANAKAN", "BORN", "BDAY", "KAARAWAN")):
 
                 dob_context_lines.append(ln)
 
@@ -416,11 +416,11 @@ class FieldComparisonEngine(BaseTextMatcher):
 
         candidate_dates = self._extract_dates(" ".join(dob_context_lines))
 
-        if not candidate_dates:
+        if not candidate_dates and not getattr(self, "_skip_unlabeled_dob_scan", False):
 
             non_issue_lines = [
                 ln for ln in lines
-                if not any(k in ln.upper() for k in ("ISSUED", "ISSUE", "EXPIR", "VALID UNTIL", "VALIDITY"))
+                if not any(k in ln.upper() for k in ("ISSUED", "ISSUE", "EXPIR", "VALID UNTIL", "VALIDITY", "FOUNDED", "ESTABLISHED", "SY ", "A.Y", "SEMESTER", "ENROLL", "SCHOOL YEAR"))
             ]
 
             candidate_dates = self._extract_dates(" ".join(non_issue_lines))
@@ -691,11 +691,16 @@ class FieldComparisonEngine(BaseTextMatcher):
 
         if (entered.get("birth_date") or "").strip():
 
-            results.append(
-
-                self._compare_birth_date(entered.get("birth_date") or "", ext_dob, lines)
-
+            id_type_lower = str(entered.get("id_type") or "").lower()
+            self._skip_unlabeled_dob_scan = any(
+                kw in id_type_lower for kw in ("student", "company", "credit card", "barangay")
             )
+            try:
+                results.append(
+                    self._compare_birth_date(entered.get("birth_date") or "", ext_dob, lines)
+                )
+            finally:
+                self._skip_unlabeled_dob_scan = False
 
         if (entered.get("id_number") or "").strip():
 

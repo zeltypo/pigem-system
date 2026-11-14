@@ -3,11 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Round 2 Bug-Fix &amp; AI Screening Verification Checklist | Combined Facilities Support Services</title>
+  <title>Master System &amp; AI Screening Test Checklist | Combined Facilities Support Services</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
       --red: #c8102e;
@@ -17,15 +16,23 @@
       --card: #ffffff;
       --text: #0f172a;
       --muted: #475569;
-      --line: #e2e8f0;
+      --line: #cbd5e1;
       --green: #15803d;
       --green-soft: #f0fdf4;
       --blue: #1d4ed8;
       --blue-soft: #eff6ff;
-      --amber: #b45309;
+      --amber: #92400e;
       --amber-soft: #fffbeb;
     }
     * { box-sizing: border-box; }
+    button:focus-visible,
+    a:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--red);
+      outline-offset: 2px;
+    }
     body {
       margin: 0;
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -59,7 +66,7 @@
     }
     .brand-sub {
       font-size: 11.5px;
-      color: #94a3b8;
+      color: #cbd5e1;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.06em;
@@ -214,9 +221,6 @@
     .sec-badge.done {
       background: var(--green-soft);
       color: var(--green);
-    }
-    .test-list {
-      divide-y: 1px solid var(--line);
     }
     .test-item {
       display: flex;
@@ -383,13 +387,13 @@
     <div class="topbar-inner">
       <div>
         <div class="brand-title">Combined Facilities Support Services</div>
-        <div class="brand-sub">ROUND 2: BUG-FIX &amp; AI SCREENING VERIFICATION CHECKLIST (LIVE CLOUD SYNCED)</div>
+        <div class="brand-sub">MASTER SYSTEM &amp; AI SCREENING TEST CHECKLIST (CLOUD SYNCED)</div>
       </div>
       <div class="progress-wrap">
         <div class="progress-bar-bg">
           <div id="prog-fill" class="progress-bar-fill"></div>
         </div>
-        <div id="prog-text" class="progress-text">0 / 24 (0%)</div>
+        <div id="prog-text" class="progress-text">0 / 54 (0%)</div>
       </div>
     </div>
   </header>
@@ -399,47 +403,47 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
         <div>
           <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-            <h1 style="font-size:19px; margin:0 0 4px;">Round 2 Focused Tester Checklist (Fixes + AI &amp; Document Screening)</h1>
+            <h1 style="font-size:19px; margin:0 0 4px;">Quick Portal Links &amp; Live Cloud Sync</h1>
             <span id="cloud-sync-badge" class="sync-pill"><span class="sync-dot"></span><span id="cloud-sync-text">Cloud Synced (Phone &amp; Laptop)</span></span>
           </div>
           <p style="font-size:13px; color:var(--muted); margin:0;">
-            All <b>35 passed items from Round 1</b> have been removed. Only the <b>8 fixed items from Marion &amp; Luke's feedback</b> and the <b>16 AI &amp; Document Screening test cases</b> remain below. Any checkbox or comment you change on your phone updates live on your laptop within 2 seconds!
+            When you check a box or write a comment on your <b>phone</b>, it automatically syncs to the isolated QA cloud store so you can see the exact same checkboxes and comments on your <b>laptop</b> (and vice versa) in real time without touching internal/external system tables.
           </p>
         </div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <input id="tester-name" type="text" class="tester-input" placeholder="Tester Name(s) (e.g. Marion, Luke)" oninput="saveTesterMeta()" />
+          <input id="tester-name" type="text" class="tester-input" aria-label="Tester Name" placeholder="Tester Name(s) (e.g. Marion, Luke)" oninput="saveTesterMeta()" onblur="flushCloudSave()" />
         </div>
       </div>
 
       <div class="quick-links">
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/index.html" target="_blank"><span>Public Home Page</span><code>/index.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/about.html" target="_blank"><span>Public About Us</span><code>/about.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/apply.html" target="_blank"><span>Application Form</span><code>/apply.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/login.html" target="_blank"><span>Customer Login / Activate</span><code>/login.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/customer.html" target="_blank"><span>Customer Portal</span><code>/customer.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/staff-login.html" target="_blank"><span>Staff Login (Agent &amp; Manager)</span><code>/staff-login.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/agent.html" target="_blank"><span>Agent Portal</span><code>/agent.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/manager.html" target="_blank"><span>Manager Portal</span><code>/manager.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/admin-login.html" target="_blank"><span>Admin Setup &amp; Login</span><code>/admin-login.html</code></a>
-        <a class="quick-link" href="https://pigem-system-web.vercel.app/admin.html" target="_blank"><span>Admin Technical Console</span><code>/admin.html</code></a>
+        <a class="quick-link" href="index.html" target="_blank"><span>Public Home Page</span><code>/index.html</code></a>
+        <a class="quick-link" href="about.html" target="_blank"><span>Public About Us</span><code>/about.html</code></a>
+        <a class="quick-link" href="apply.html" target="_blank"><span>Application Form</span><code>/apply.html</code></a>
+        <a class="quick-link" href="login.html" target="_blank"><span>Customer Login / Activate</span><code>/login.html</code></a>
+        <a class="quick-link" href="customer.html" target="_blank"><span>Customer Portal</span><code>/customer.html</code></a>
+        <a class="quick-link" href="staff-login.html" target="_blank"><span>Staff Login (Agent &amp; Manager)</span><code>/staff-login.html</code></a>
+        <a class="quick-link" href="agent.html" target="_blank"><span>Agent Portal</span><code>/agent.html</code></a>
+        <a class="quick-link" href="manager.html" target="_blank"><span>Manager Portal</span><code>/manager.html</code></a>
+        <a class="quick-link" href="admin-login.html" target="_blank"><span>Admin Setup &amp; Login</span><code>/admin-login.html</code></a>
+        <a class="quick-link" href="admin.html" target="_blank"><span>Admin Technical Console</span><code>/admin.html</code></a>
       </div>
 
       <div class="toolbar no-print">
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <select id="filter-mode" class="filter-select" onchange="renderChecklist()">
-            <option value="all">Show All Remaining &amp; AI Tests (24)</option>
-            <option value="unchecked">Show Unchecked Only</option>
+          <select id="filter-mode" class="filter-select" aria-label="Filter test checklist items" onchange="renderChecklist()">
+            <option value="all">Show All Test Items (54)</option>
+            <option value="unchecked">Show Unchecked / Remaining Only</option>
             <option value="checked">Show Completed Only</option>
             <option value="commented">Show Items With Comments Only</option>
-            <option value="fixes">Show Fixed Tester Bug Items Only (8)</option>
-            <option value="ai">Show AI &amp; Document Screening Tests Only (16)</option>
+            <option value="fixes">Show Fixed Bug Items Only</option>
+            <option value="ai">Show AI &amp; Document Screening Tests Only</option>
           </select>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button type="button" class="btn" onclick="pullFromCloudNow(false)">Sync Now</button>
           <button type="button" class="btn" onclick="exportProgressJson()">Backup File</button>
           <button type="button" class="btn" onclick="document.getElementById('import-file').click()">Restore Backup</button>
-          <input id="import-file" type="file" accept=".json" style="display:none" onchange="importProgressJson(this)" />
+          <input id="import-file" type="file" accept=".json" aria-label="Restore JSON backup file" style="display:none" onchange="importProgressJson(this)" />
           <button type="button" class="btn" onclick="resetAllChecks()">Reset Checkboxes</button>
           <button type="button" class="btn btn-red" onclick="window.print()">Print / Save PDF</button>
         </div>
@@ -449,264 +453,212 @@
     <div id="checklist-root"></div>
 
     <div class="notes-card">
-      <h3 style="margin:0 0 4px; font-size:15px;">Overall Round 2 Tester Notes &amp; Final Sign-Off</h3>
-      <p style="margin:0; font-size:12.5px; color:var(--muted);">Record any final remarks after re-testing the fixed items and AI screening cases. Syncs automatically between your phone and laptop.</p>
-      <textarea id="tester-notes" class="notes-area" placeholder="Write overall observations or final sign-off notes here..." oninput="saveTesterMeta()"></textarea>
+      <h3 style="margin:0 0 4px; font-size:15px;">Overall Tester Summary &amp; General Notes</h3>
+      <p style="margin:0; font-size:12.5px; color:var(--muted);">Record overall summary notes, Reference Numbers tested (e.g., REF-...), or general feedback below. Syncs automatically between your phone and laptop.</p>
+      <textarea id="tester-notes" class="notes-area" aria-label="Overall Tester Summary and General Notes" placeholder="Write your overall testing summary, Reference Numbers tested, or general feedback here..." oninput="saveTesterMeta()" onblur="flushCloudSave()"></textarea>
     </div>
   </main>
 
   <script>
-    var STORAGE_KEY = "pigem_test_checklist_r2";
-    var META_KEY = "pigem_test_meta_r2";
-    var CLOUD_ROW_ID = "tester_checklist_v2";
+    var STORAGE_KEY = "pigem_isolated_tester_sync_v3";
     var SUPABASE_URL = "https://wuunqfxyejxwrawtjdrf.supabase.co";
     var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g";
+    var ISOLATED_TABLE = "qa_tester_sync";
+    var ISOLATED_ROW_ID = "master_v3";
+    var ISOLATED_STORAGE_PATH = "qa_tester_isolated/state.json";
 
     var TEST_SECTIONS = [
       {
-        id: "sec-fixes",
-        title: "1. Fixed Items from Round 1 Tester Feedback (Re-Verification)",
-        subtitle: "Re-test the exact items where Marion & Luke reported bugs or UX improvements.",
+        id: "sec-1",
+        title: "1. Brand-New System State (No User, No Banner) & First-Time Admin Setup",
+        subtitle: "Verify how the website behaves when starting completely fresh with no accounts and no uploaded banners yet.",
         items: [
-          {
-            id: "T05",
-            fix: true,
-            title: "Strict Case-Sensitive Username Save & Login (Profile Drawer, Registration & Login)",
-            desc: "In Admin/Staff/Customer Profile Drawer (or Registration), set your username with a capital letter (e.g., 'Luke' or 'Lucas') and click Save. Confirm it stays 'Luke' (does NOT turn into lowercase 'luke'). Then sign out and try logging in with 'luke' — confirm it is blocked, and only exact-case 'Luke' logs in.",
-            prevNote: "Tester Feedback: 'naglagay ako ng username na \"Luke\" once na sinave kona yung username na gagamitin ko nagiging \"luke\" nalang siya' — FIXED in dash-ui.js, db.js, login.js, admin.js, and manager.js."
-          },
-          {
-            id: "T13_T50",
-            fix: true,
-            title: "Live Maintenance Mode & Maintenance Announcement Transition on 'Next' Without Refresh (Formerly T13 & T50)",
-            desc: "Open /apply.html and pick a plan on Step 1. Then in another tab/device, enable Maintenance Mode (or Maintenance Announcement). Without refreshing /apply.html, click 'Next' on Step 1 (or any step). Confirm it immediately transitions to the 'Website Under Maintenance' screen instead of continuing to the next step.",
-            prevNote: "Tester Feedback: 'pumili nako ng plan sa public website, nung ienable kona yung maintenance mode, at pag pinindot ko ang next hindi nalabas yung under maintenance need pa irefresh ang mismong website. Dapat kapag ninext na hindi na tutuloy sa next fill up, rerekta na sa under maintenance screen.' — FIXED in apply.js, home.js, and config.js."
-          },
-          {
-            id: "T18",
-            fix: true,
-            title: "Application Form Keeps Active Step & Filled Inputs on Page Refresh (/apply.html)",
-            desc: "On /apply.html, select a fiber plan and fill out Step 2 (Personal Info) or Step 3 (Contact Info), then refresh/reload the browser page. Confirm the page stays on your current step and retains all your typed information instead of resetting to Step 1.",
-            prevNote: "Tester Feedback: 'Pag nirestart nabalik dito sa select fiber plan suggest ko sana na dun parin mananatili sa tab na yon Kung saan nag refresh yung user at hindi mawawala Yung na fillupan na nya' — FIXED in apply.js."
-          },
-          {
-            id: "T22",
-            fix: true,
-            title: "Clear Popup Reason When Application Step Cannot Proceed or Submit (/apply.html)",
-            desc: "On /apply.html, try clicking Next or Submit Application with missing or invalid required fields (e.g., unverified email OTP, missing ID photo, or unchecked consent). Confirm a clear popup alert appears listing the exact reason(s) why it cannot proceed.",
-            prevNote: "Tester Feedback: 'Suggest ko dun sa after mag submit ng user dapat may naka indicate kung anong reason bakit di makapag submit' — FIXED in apply.js."
-          },
-          {
-            id: "T26",
-            fix: true,
-            title: "Customer Portal 'View ->' Button Opens Full Application Summary Popup (/customer.html)",
-            desc: "In /customer.html, click the 'View ->' button on an application card. Confirm it opens a full Application Summary popup modal showing Reference No., Plan, Status, Address, Front & Back ID previews, and Verification Notes.",
-            prevNote: "Tester Feedback: 'Dun sa may view na button parang dead button siya kasi nandoon na mismo SA screen yung iviview' — FIXED in customer.js."
-          },
-          {
-            id: "T40",
-            fix: true,
-            title: "Agent Portal 'Summary' Button Persistent Toggle (/agent.html)",
-            desc: "In /agent.html Application Queue, click 'Summary' on an application card. Wait 10+ seconds (across background auto-refresh) and confirm the Summary box stays open and the button says 'Hide Summary' until you click it again to close.",
-            prevNote: "Tester Feedback: 'Dun sa summary pag clinick kusang nawawala suggest ko sana na pag clinick yung summary hindi nawawala kusa pati Kung gusto alisin yung summary click nalang ulit yung summary' — FIXED in agent.js."
-          },
-          {
-            id: "T52",
-            fix: true,
-            title: "Agent, Manager & Admin CSV Report File Download (/agent.html, /manager.html, /admin.html)",
-            desc: "In /agent.html, /manager.html, and /admin.html -> Reports tab, click 'Download CSV'. Confirm the .csv file downloads properly to your device (both on phone and laptop) and shows a download confirmation popup.",
-            prevNote: "Tester Feedback: 'Navview pero hindi madownload ang csv reports(agents and manager)' — FIXED in dash-ui.js."
-          },
-          {
-            id: "T53",
-            fix: true,
-            title: "Agent, Manager & Admin 'Print Report' Button Preview & Print Dialog",
-            desc: "In /agent.html, /manager.html, or /admin.html -> Reports tab, click 'Print Report'. Confirm it opens a formatted Printable Report Preview window/modal with 'Print / Save as PDF' and triggers the print dialog.",
-            prevNote: "Tester Feedback: 'Dun sa button na print report button parang dead button sya kasi pag clinick wala nangyayari' — FIXED in dash-ui.js, agent.html, manager.html, and admin.html."
-          }
+          { id: "T01", title: "Public Home Page with No Banners (/index.html)", desc: "Open /index.html before any banners are uploaded. Confirm the hero slider shows the clean dark-red gradient fallback banner with headline text and 'Apply Now' button (zero broken image icons)." },
+          { id: "T02", title: "Public About Us Page with No Banners (/about.html)", desc: "Open /about.html before any banners are uploaded. Confirm the About slider, Mission, Vision, Core Values, Vehicles, and Permits sections render cleanly." },
+          { id: "T03", title: "Default Fiber Plans & FAQs Display", desc: "Confirm Plan 1000 (100 Mbps), Plan 1400 (300 Mbps - Most Chosen), and Plan 1900 (500 Mbps) and the FAQ items load properly on /index.html." },
+          { id: "T04", title: "First-Time Admin Setup Card (/admin-login.html)", desc: "Open /admin-login.html when no user exists yet. Confirm the 'First-Time System Administrator Setup' card appears automatically." },
+          { id: "T05", fix: true, title: "Create Single System Administrator Account & Strict Case-Sensitive Username", desc: "Register the Admin account (or edit Username in Profile Drawer, e.g., 'Luke') and confirm exact uppercase/lowercase is preserved ('Luke' stays 'Luke', does NOT turn into 'luke', and login requires exact case).", prevNote: "FIXED: Preserves exact username casing across registration, profile save, session cache, and login." },
+          { id: "T06", title: "Verify Admin Topbar Title & Subtitle", desc: "Confirm /admin.html topbar displays 'Combined Facilities Support Services' with subtitle 'TECHNICAL MANAGEMENT SYSTEM'." },
+          { id: "T07", title: "Single-Admin Lock Verification", desc: "Re-open /admin-login.html and confirm the First-Time Setup form is no longer shown now that the Admin account exists." }
         ]
       },
       {
-        id: "sec-ai",
-        title: "2. AI & Document Screening Test Suite (Complete & Expanded)",
-        subtitle: "Test pre-submit ID screening, live image quality metrics, OCR field matching (including Student ID / missing DOB), duplicate detection, and manual fallback.",
+        id: "sec-2",
+        title: "2. Staff Account Creation, Multi-Tab Login & Manager Website CMS (Uploading Banners)",
+        subtitle: "Create the Manager and Agent accounts, test logging in across multiple tabs, and upload the first website banners.",
         items: [
-          {
-            id: "T28",
-            ai: true,
-            fix: true,
-            title: "AI Test 1 — Non-ID Photo Pre-Submit Rejection (Selfie / Scenery / Random Picture)",
-            desc: "On /apply.html Step 5, upload a non-ID photo (e.g., selfie, scenery, or random object) as the Front ID and click Submit on Step 6. Confirm the AI gate blocks submission, returns you to Step 5, and alerts that the uploaded photo is not a valid government ID.",
-            prevNote: "Fixed: Wired apiVerifyIdPreSubmit in api.js & apply.js + multi-model Gemini Vision fallback in _gemini.py."
-          },
-          {
-            id: "T29",
-            ai: true,
-            fix: true,
-            title: "AI Test 2 — Live Blurry / Dark / Glare Image Quality Metrics on Step 5 & Pre-Submit",
-            desc: "On /apply.html Step 5, select a blurry, dark, or flash-glared image for Front or Back ID. Confirm the quality box immediately displays Sharpness, Brightness, and Glare scores and flags quality warnings before submission.",
-            prevNote: "Fixed: Added live Sharpness, Brightness & Glare analyzer on Step 5 file selection and pre-submit check."
-          },
-          {
-            id: "T30",
-            ai: true,
-            title: "AI Test 3 — Identical Front & Back ID Photo Block",
-            desc: "On /apply.html Step 5 (or Customer Correction form), select the exact same image file for both Front ID and Back ID. Confirm the system immediately blocks it with a 'Duplicate ID Image Detected' popup."
-          },
-          {
-            id: "T31",
-            ai: true,
-            fix: true,
-            title: "AI Test 4 — Clear Valid Government ID Cropping & Exact OCR Field Match",
-            desc: "Submit an application using a clear Valid ID where Full Name, Birth Date, and ID Number printed on the card match the typed form. Open the application in /agent.html -> Open and Verify and confirm 'Cropped Copy' is generated and Applicant Name, Birth Date, and ID Number show green 'Matched' badges.",
-            prevNote: "Fixed: Added multi-model Gemini Vision fallback (gemini-2.0-flash, gemini-2.5-flash-lite, gemini-1.5-flash) so OCR runs reliably without quota failure."
-          },
-          {
-            id: "T31_DOB",
-            ai: true,
-            fix: true,
-            title: "AI Test 5 — Unprinted Field on ID (e.g. Student ID With No Birth Date Printed)",
-            desc: "Submit an application using an ID that has NO birth date printed on it (such as a Student ID). Open the application in /agent.html -> Open and Verify. Confirm Birth Date (OCR) shows a yellow 'Not Printed on ID' badge (and 'Preliminary Finding - Review Needed') instead of falsely showing 'Matched'!",
-            prevNote: "Tester Feedback: 'yung sa AI talaga tulad dun sa OCR Hindi pa sya Nagana Kasi nilagay nya matches yung birthdate sa fill up ko pati dun sa ID student KO pero wala naman nakalagay na birth date dun sa ID ko' — FIXED in _gemini.py, _screening.py, db.js, and agent.js."
-          },
-          {
-            id: "T32",
-            ai: true,
-            fix: true,
-            title: "AI Test 6 — OCR Mismatch Detection (Typed Name, Birth Date, or ID Number Differs from ID)",
-            desc: "Submit an application where the typed Name, Birth Date, or ID Number intentionally differs from what is printed on the uploaded ID photo. In /agent.html -> Open and Verify, confirm the mismatched field displays a red 'Mismatch' badge and pre-fills Section 4 (Request Customer Correction).",
-            prevNote: "Fixed: normalizeAppRecord in db.js now reads comps[i].status properly so mismatches are always flagged red."
-          },
-          {
-            id: "T32_TYPE",
-            ai: true,
-            title: "AI Test 7 — Selected ID Type vs. Uploaded ID Card Type Mismatch",
-            desc: "On /apply.html Step 5, select one ID Type in the dropdown (e.g., 'Philippine Passport') but upload a different ID card (e.g., National ID or Driver's License). Confirm the Agent verification view flags the ID Type discrepancy in the Screening Summary."
-          },
-          {
-            id: "T33",
-            ai: true,
-            title: "AI Test 8 — 'Run / Refresh Document Check' Button in Agent Modal (No False Same-Upload Warning)",
-            desc: "Inside /agent.html -> Open and Verify -> Section 2, click 'Run / Refresh Document Check'. Confirm the 3-stage progress bar (Stage 1: Readability & Crop, Stage 2: Duplicate ID Check, Stage 3: OCR Field Match) runs cleanly and never falsely claims 'Unchanged Re-Uploaded Image'."
-          },
-          {
-            id: "T34",
-            ai: true,
-            title: "AI Test 9 — True Unchanged Re-Upload Detection on Customer Resubmission",
-            desc: "When an application is in 'Needs Correction' for 'Valid ID Photo', if the customer re-uploads the exact same unclear photo, confirm the screening check flags 'Unchanged Re-Uploaded Image'."
-          },
-          {
-            id: "T35",
-            ai: true,
-            title: "AI Test 10 — Serviceable vs. Out-of-Coverage Map Pin Advisory",
-            desc: "Test pinning an address inside serviceable areas (Metro Manila, Cavite, Laguna, Bulacan, Rizal, Cebu) vs. outside (e.g., Baguio or Davao) or outside the Philippines. Confirm outside-PH pins are blocked on Step 4, and non-serviceable PH provinces show a yellow 'Out of Coverage' badge to the Agent."
-          },
-          {
-            id: "T36",
-            ai: true,
-            fix: true,
-            title: "AI Test 11 — Duplicate Customer Application Auto-Rejection (Same Name / Email / Phone / ID Number)",
-            desc: "Submit a second application using the same Full Name + Email, or same Full Name + Mobile Number, or same Primary ID Number (even if selecting a different fiber plan). Confirm the system automatically marks the duplicate submission as 'Rejected' and logs the duplicate reason.",
-            prevNote: "Tester Feedback: 'HINDI PA NAGANA KASE DUPLICATE NA YUNG GINAWA KO ROD OMA PAREHAS ANG NAME PATI EMAIL AT NUMBER' — FIXED in db.js (checks across all active applications regardless of plan)."
-          },
-          {
-            id: "T37",
-            ai: true,
-            title: "AI Test 12 — Admin AI Toggle OFF (Manual Document Review Fallback Mode)",
-            desc: "In /admin.html -> Overview, toggle off 'Automated Document Screening', then open an application in /agent.html. Confirm the yellow 'Manual Document Review Active' banner appears and OCR badges show 'Verify Manually'. Toggle AI Screening back ON afterward."
-          },
-          {
-            id: "AI_CROP",
-            ai: true,
-            title: "AI Test 13 — Cropped Copy vs. Original Photo Toggle in Agent Modal",
-            desc: "Inside /agent.html -> Open and Verify -> Section 2, click between 'Cropped Copy' and 'Original Photo' to compare the auto-cropped ID card against the raw uploaded photo."
-          },
-          {
-            id: "AI_POLITE",
-            ai: true,
-            title: "AI Test 14 — AI Polite Customer Correction Message Generator (Section 4)",
-            desc: "In /agent.html -> Open and Verify -> Section 4, select a preset or type a raw finding (e.g., 'birth date not printed on student ID, upload valid gov ID with DOB') and click 'Generate Polite Message'. Confirm it writes a polite customer instruction and auto-selects the target field."
-          },
-          {
-            id: "AI_RESUB",
-            ai: true,
-            title: "AI Test 15 — Customer Correction Resubmission & Latest vs. Original Copy Switcher",
-            desc: "Send a 'Needs Correction' request from /agent.html, then sign in to /customer.html, see the red-highlighted field(s), upload/update the corrected details, and click 'Resubmit Application'. In /agent.html, confirm the 'Customer Resubmitted' badge appears and toggle between 'Latest Copy' and 'Original Submission'."
-          },
-          {
-            id: "AI_LOGS",
-            ai: true,
-            title: "AI Test 16 — Admin AI Screening Logs Audit Trail (/admin.html)",
-            desc: "In /admin.html -> System Logs -> AI Screening Logs sub-tab, confirm every automated screening run, duplicate detection, and agent verification action is recorded with Reference Number and timestamp."
-          }
+          { id: "T08", title: "Admin Creates Manager Account (/admin.html)", desc: "In Admin Portal -> Staff Accounts, create a Manager account and confirm it appears as Active in the table." },
+          { id: "T09", title: "Multi-Tab Staff Login Without Forced Redirect (/staff-login.html)", desc: "Open /staff-login.html in a new tab while Admin is still open in Tab 1. Confirm it shows the non-blocking 'Active Session Detected' banner instead of force-redirecting, and sign in as Manager." },
+          { id: "T10", title: "Verify Manager Topbar Title & Subtitle", desc: "Confirm /manager.html topbar displays 'Combined Facilities Support Services' with subtitle 'MANAGER APPLICATION MANAGEMENT'." },
+          { id: "T11", title: "Upload & Select First Website Banners (Manager CMS)", desc: "In /manager.html -> Website CMS, upload banner images into the Banners folder, select them for the Home Hero Slides and About Us Slides, and click Save Website Content." },
+          { id: "T12", title: "Verify Live Banners on Public Pages", desc: "Refresh /index.html and /about.html and confirm the newly uploaded banners now display and rotate in the carousel." },
+          { id: "T13", fix: true, title: "Site Announcement Bar & Maintenance Announcement Live Transition", desc: "Enable the Site Announcement Bar (or Maintenance Announcement) in Manager CMS with a headline and message, save, and confirm it appears on /index.html and blocks /apply.html on Next without requiring manual refresh.", prevNote: "FIXED: Awaits cloud persistence and syncs live on public pages and step transitions." },
+          { id: "T14", title: "Edit Fiber Plans & FAQs in CMS", desc: "Edit a Fiber Plan or FAQ item in Manager CMS, save, and verify the live update on /index.html." },
+          { id: "T15", title: "Create Agent Account & Generate Agent Referral Link", desc: "In Manager Portal (or Admin Portal), create an Agent account and generate an Agent Referral Link (/apply.html?agent=CODE)." }
+        ]
+      },
+      {
+        id: "sec-3",
+        title: "3. Customer 6-Step Application Form (/apply.html)",
+        subtitle: "Test the complete customer fiber application wizard, field validations, OTP verification, map pinning, and Front/Back ID upload.",
+        items: [
+          { id: "T16", title: "Security Verification CAPTCHA Popup", desc: "Click 'Apply for Plan' on /index.html (or open /apply.html). Confirm the Security Verification popup opens with the shield icon and unlocks Step 1 once verified." },
+          { id: "T17", title: "Agent Referral Link Banner (?agent=CODE)", desc: "Open /apply.html?agent=CODE and confirm the 'Agent Referral Active' banner displays at the top of the application form." },
+          { id: "T18", fix: true, title: "Step 1 — Select Your Fiber Plan & Keep Active Step on Refresh", desc: "Choose a fiber plan card on Step 1 and click Next. Confirm refreshing /apply.html retains your active step and filled inputs, and clicking Next when Maintenance Mode is enabled immediately shows the Under Maintenance screen.", prevNote: "FIXED: Preserves draft state across reload and enforces live Maintenance Mode on step navigation." },
+          { id: "T19", title: "Step 2 — Personal Information & 18+ Age Validation", desc: "Test live validation on First Name, Middle Name ('N/A' allowed), Last Name, and Date of Birth (confirm birth dates under 18 years old are blocked)." },
+          { id: "T20", title: "Step 3 — Gmail OTP Verification & Mobile Number Validation", desc: "Enter an active @gmail.com address, click 'Send Email OTP', enter the 6-digit OTP received in Gmail, and confirm the email badge turns Verified. Enter an 11-digit mobile number (09XXXXXXXXX)." },
+          { id: "T21", title: "Step 4 — Interactive Installation Map Pin & Address", desc: "Pin the installation address on the interactive map, confirm latitude/longitude update, and complete House No., Street, Barangay, City, Province, and Landmark." },
+          { id: "T22", fix: true, title: "Step 5 — Valid ID Front & Back Upload (Including Student ID / No Printed DOB)", desc: "Select a Philippine Government ID Type (or Student ID), enter the ID Number, and upload two separate clear photos for Front of Valid ID and Back of Valid ID (or test 'Scan QR with Phone'). Confirm clear popup reasons appear if any required field is missing.", prevNote: "FIXED: Student IDs without a printed Birth Date are accepted and marked 'Not Printed on ID' for manual verification." },
+          { id: "T23", title: "Step 6 — Subscriber Consent & Submit Application", desc: "Check the Subscriber Declaration consent box and click Submit Application. Confirm the 3-step submission screen finishes and shows the Application Reference Number (REF-...)." }
+        ]
+      },
+      {
+        id: "sec-4",
+        title: "4. Customer Account Activation & Customer Portal (/login.html & /customer.html)",
+        subtitle: "Activate the customer account from the Gmail confirmation email and test the Customer Portal.",
+        items: [
+          { id: "T24", title: "Receive Application Confirmation & Activation Email in Gmail", desc: "Check the customer's Gmail inbox for the confirmation email containing the Reference Number, 6-digit Activation OTP, and one-time activation link." },
+          { id: "T25", title: "Activate Customer Account & Create Username/Password (/login.html)", desc: "Open the activation link (or /login.html), enter the 6-digit Activation OTP, set a custom Username and Password, and sign in to /customer.html." },
+          { id: "T26", fix: true, title: "Customer Portal Header, 'View ->' Summary Modal & Proceed to Correction Form", desc: "Confirm /customer.html displays the Reference Number, Plan, Address, and current status, and clicking 'View ->' opens the Application Summary modal with a working 'Proceed to Correction Form' button.", prevNote: "FIXED: Fixed 'View ->' popup and 'Proceed to Correction Form' button in customer.js." },
+          { id: "T27", title: "Customer Notification Bell Auto-Clear", desc: "Click the Notification Bell icon in /customer.html. Confirm the unread badge number disappears immediately (0) when opened, and restarts from 1 when a new notification arrives." }
+        ]
+      },
+      {
+        id: "sec-5",
+        title: "5. AI & Document Screening Test Cases (/apply.html & /agent.html)",
+        subtitle: "Test all AI OCR, auto-cropped Front & Back ID previews, Student ID / unprinted DOB handling, image quality, duplicate check, location serviceability, and manual fallback scenarios.",
+        items: [
+          { id: "T28", ai: true, fix: true, title: "AI Test 1 — Non-ID Photo Pre-Submit Rejection", desc: "On /apply.html Step 5, upload a non-ID photo (e.g., selfie, scenery, or random picture) as the Front ID and try to submit on Step 6. Confirm the AI gate blocks submission and states it is not a valid government ID." },
+          { id: "T29", ai: true, fix: true, title: "AI Test 2 — Blurry / Dark / Glare Image Quality Check", desc: "Upload a blurry or dark ID photo. Confirm the quality analyzer calculates Sharpness, Brightness, and Glare scores and flags quality warnings." },
+          { id: "T30", ai: true, title: "AI Test 3 — Identical Front & Back Photo Block", desc: "On /apply.html Step 5 (or Customer Correction), select the exact same image file for both Front ID and Back ID. Confirm the system immediately blocks it and requires two different photos." },
+          { id: "T31", ai: true, fix: true, title: "AI Test 4 — OCR Extraction, Auto-Cropped Front & Back ID & Student ID (No DOB) Handling", desc: "Submit an application and open it in /agent.html -> Open and Verify. Confirm Section 2 shows auto-cropped Front & Back ID previews under 'Cropped Copy', and Section 3 marks matching fields 'Matched' (or marks Birth Date 'Not Printed on ID' when using a Student ID without a printed birth date).", prevNote: "FIXED: OpenCV contour + edge auto-crop with base64 fallback for both Front & Back IDs, plus Student ID unprinted Birth Date detection." },
+          { id: "T32", ai: true, fix: true, title: "AI Test 5 — OCR Field Mismatch Detection (Name / DOB / ID No. / ID Type)", desc: "Submit an application where the typed Name, Birth Date, or ID Number intentionally differs from the uploaded ID. Confirm /agent.html Section 3 highlights the mismatch in red and suggests a validator remark." },
+          { id: "T33", ai: true, title: "AI Test 6 — 'Run / Refresh Document Check' (No False Same-Upload Warning)", desc: "In /agent.html, open an initial application (before any customer correction) and click 'Run / Refresh Document Check'. Confirm it refreshes cleanly and NEVER falsely claims 'Unchanged Re-Uploaded Image'." },
+          { id: "T34", ai: true, title: "AI Test 7 — True Unchanged Re-Upload Detection on Resubmission", desc: "When an application is in 'Needs Correction' for Valid ID Photo, have the customer re-upload the exact same Front ID photo that was previously flagged. Confirm /agent.html flags 'Unchanged Re-Uploaded Image'." },
+          { id: "T35", ai: true, title: "AI Test 8 — Location & Serviceability Screening (Inside vs. Outside Area)", desc: "Pin an address inside serviceable areas (Cavite, Metro Manila, Laguna, Bulacan, Rizal, Cebu) vs. outside coverage. Confirm AI Location Screening accurately marks serviceable vs. outside-area advisory." },
+          { id: "T36", ai: true, fix: true, title: "AI Test 9 — Duplicate Customer Application Auto-Rejection", desc: "Submit a second application with the same Customer Email / Name / Mobile Number / ID Number while an active application exists. Confirm it is automatically rejected as a duplicate and notifies Customer and Agent." },
+          { id: "T37", ai: true, title: "AI Test 10 — Admin AI Toggle OFF (Manual Review Fallback)", desc: "In /admin.html, switch AI Document Screening to OFF (Paused). Submit a test application and confirm it saves cleanly with 'Original Copy Ready (Manual Review)'. Turn AI Screening back ON afterward." }
+        ]
+      },
+      {
+        id: "sec-6",
+        title: "6. Agent Portal, Download/Print ID & Customer Correction Loop (/agent.html & /customer.html)",
+        subtitle: "Test the Agent verification tools, Download ID, Print Copy, Section 4 lock on Needs Correction, and Customer Front+Back re-upload.",
+        items: [
+          { id: "T38", title: "Multi-Tab Agent Sign-In (/staff-login.html -> /agent.html)", desc: "Open /staff-login.html in a separate tab and sign in as Agent while Customer/Manager tabs stay open. Confirm /agent.html topbar shows 'Combined Facilities Support Services' with subtitle 'AGENT APPLICATION MANAGEMENT'." },
+          { id: "T39", title: "Agent Notification Bell Auto-Clear", desc: "Click the Notification Bell in /agent.html. Confirm the badge count disappears immediately (0) when opened and starts at 1 again on the next new notification." },
+          { id: "T40", fix: true, title: "Claim Application & Persistent 'Summary' Toggle in Queue", desc: "Open an unassigned application in /agent.html, click 'Claim Application', and test clicking 'Summary' on a queue card (confirm the Summary stays open across auto-refresh until clicked again)." },
+          { id: "T41", title: "Download ID Button (Downloads Front & Back ID Files)", desc: "In the Agent application modal (Section 2), click 'Download ID'. Confirm both Front and Back ID photos download directly as image files." },
+          { id: "T42", title: "Print Copy Button (Formatted Print Window with Front & Back ID)", desc: "In Section 2, click 'Print Copy'. Confirm a formatted printable sheet opens showing Applicant Info, Address, and both Front & Back Valid ID photos, and opens the Print dialog." },
+          { id: "T43", title: "Section 4 — Select Common Screening / Validator Remark Preset", desc: "In Section 4 (Request Customer Update), select 'Valid ID Photo (Blurry / Glare / Duplicate)' and pick a preset remark. Confirm the Short Validator Note and Polite Customer Instruction auto-fill." },
+          { id: "T44", title: "Send Update Request & Verify Section 4 Locks", desc: "Click 'Send Update Request to Customer'. Re-open the application modal in /agent.html and confirm Section 4 is now locked with 'Customer Update Request Sent (Awaiting Customer Resubmission)'." },
+          { id: "T45", title: "Customer Views Correction Importance Notice (/customer.html)", desc: "In /customer.html, view the 'Action Required: Application Update' box. Confirm it clearly explains why completing the correction is required for installation and has NO 'I choose not to correct' button." },
+          { id: "T46", title: "Customer Re-Uploads Both Front & Back Valid ID Photos", desc: "In /customer.html, confirm two separate upload inputs appear: (1) Front of Valid ID Photo and (2) Back of Valid ID Photo. Upload two new clear photos and click 'Submit Updated Information'." },
+          { id: "T47", title: "Agent Reviews Resubmission & Confirms Section 4 Re-Opens", desc: "In /agent.html, open the resubmitted application (badged 'Customer Resubmitted'). Confirm Section 2 shows Original vs. Corrected comparison and Section 4 has reopened in case another update is needed." },
+          { id: "T48", title: "Agent Moves Application to Encoding & Uploads Proof", desc: "Update the verified application status to 'Encoding', enter the Provider Reference No., and upload an Encoding Proof Screenshot." },
+          { id: "T49", title: "Final Status Update to Approved / Installed", desc: "Update the application status to 'Approved' (or 'Installed'). Confirm the Customer receives the notification and email update." }
+        ]
+      },
+      {
+        id: "sec-7",
+        title: "7. Admin Technical Console, Maintenance Mode & Reports (/admin.html & /manager.html)",
+        subtitle: "Verify Maintenance Mode, Password Reset workflow, CSV/HTML reports, and System Audit Logs.",
+        items: [
+          { id: "T50", fix: true, title: "Public Maintenance Mode & Live Transition Without Refresh", desc: "In /admin.html, enable Public Maintenance Mode with a custom message. Confirm /index.html and /apply.html immediately transition to the maintenance screen (including when clicking Next on /apply.html) while Manager can preview. Turn Maintenance Mode OFF afterward." },
+          { id: "T51", title: "Staff Forgot Password / Reset Request Flow", desc: "On /staff-login.html, click 'Forgot Password', submit a reset request for an Agent or Manager, and confirm the Admin/Manager can view and process it." },
+          { id: "T52", fix: true, title: "Export Daily & Monthly CSV Reports", desc: "In /agent.html, /manager.html, and /admin.html, test exporting Daily and Monthly CSV reports and confirm the .csv file downloads cleanly." },
+          { id: "T53", fix: true, title: "Printable HTML Summary Report", desc: "In /agent.html, /manager.html, or /admin.html, click 'Print Report' and confirm the formatted report preview opens cleanly and triggers printing." },
+          { id: "T54", title: "System Audit Logs, AI Screening Logs & Login History", desc: "In /admin.html, open System Audit Logs, AI Screening Logs, and Login History and confirm all staff logins, applications, AI checks, corrections, and status updates are recorded." }
         ]
       }
     ];
 
-    var checkedState = {};
-    var itemComments = {};
-    var itemTimestamps = {};
-    var metaTimestamp = 0;
-    var cloudSaveTimer = null;
+    var state = {
+      checked: {},
+      comments: {},
+      checkedRev: {},
+      commentRev: {},
+      testerName: "",
+      testerNotes: "",
+      metaRev: 0
+    };
 
-    function setSyncBadge(state, label) {
+    var _dirtyChecked = {};
+    var _dirtyComment = {};
+    var _dirtyMeta = false;
+    var _cloudSaveTimer = null;
+    var _isSavingToCloud = false;
+    var _pendingFlushAgain = false;
+
+    function normalizeRev(val) {
+      var n = Math.floor(Number(val) || 0);
+      if (n <= 0) return 0;
+      if (n > 100000000) return 1;
+      return n;
+    }
+
+    function setSyncBadge(mode, label) {
       var badge = document.getElementById("cloud-sync-badge");
       var text = document.getElementById("cloud-sync-text");
       if (!badge || !text) return;
-      badge.className = "sync-pill" + (state === "saving" ? " saving" : (state === "offline" ? " offline" : ""));
+      badge.className = "sync-pill" + (mode === "saving" ? " saving" : (mode === "offline" ? " offline" : ""));
       text.textContent = label;
     }
 
-    function loadState() {
+    function loadLocalState() {
       try {
         var raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) checkedState = JSON.parse(raw) || {};
-      } catch (e) {
-        checkedState = {};
-      }
-      try {
-        var metaRaw = localStorage.getItem(META_KEY);
-        if (metaRaw) {
-          var meta = JSON.parse(metaRaw) || {};
-          if (meta.name) document.getElementById("tester-name").value = meta.name;
-          if (meta.notes) document.getElementById("tester-notes").value = meta.notes;
-          if (meta.comments && typeof meta.comments === "object") {
-            itemComments = meta.comments;
-          }
-          if (meta.itemTimestamps && typeof meta.itemTimestamps === "object") {
-            itemTimestamps = meta.itemTimestamps;
-          }
-          if (meta.metaTimestamp) {
-            metaTimestamp = Number(meta.metaTimestamp) || 0;
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            state.checked = (parsed.checked && typeof parsed.checked === "object") ? parsed.checked : {};
+            state.comments = (parsed.comments && typeof parsed.comments === "object") ? parsed.comments : {};
+            state.checkedRev = {};
+            state.commentRev = {};
+            if (parsed.checkedRev && typeof parsed.checkedRev === "object") {
+              for (var ck in parsed.checkedRev) state.checkedRev[ck] = normalizeRev(parsed.checkedRev[ck]);
+            }
+            if (parsed.commentRev && typeof parsed.commentRev === "object") {
+              for (var cmk in parsed.commentRev) state.commentRev[cmk] = normalizeRev(parsed.commentRev[cmk]);
+            }
+            state.testerName = String(parsed.testerName || "");
+            state.testerNotes = String(parsed.testerNotes || "");
+            state.metaRev = normalizeRev(parsed.metaRev);
           }
         }
       } catch (e) {}
+      var nameEl = document.getElementById("tester-name");
+      var notesEl = document.getElementById("tester-notes");
+      if (nameEl) nameEl.value = state.testerName;
+      if (notesEl) notesEl.value = state.testerNotes;
     }
 
     function saveLocalOnly() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(checkedState));
-        var meta = {
-          name: document.getElementById("tester-name").value,
-          notes: document.getElementById("tester-notes").value,
-          comments: itemComments,
-          itemTimestamps: itemTimestamps,
-          metaTimestamp: metaTimestamp,
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          checked: state.checked,
+          comments: state.comments,
+          checkedRev: state.checkedRev,
+          commentRev: state.commentRev,
+          testerName: state.testerName,
+          testerNotes: state.testerNotes,
+          metaRev: state.metaRev,
           updatedAt: new Date().toISOString()
-        };
-        localStorage.setItem(META_KEY, JSON.stringify(meta));
+        }));
       } catch (e) {}
     }
 
-    function scheduleCloudSave() {
+    function scheduleCloudSave(delayMs) {
       saveLocalOnly();
       setSyncBadge("saving", "Syncing to Cloud...");
-      if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
-      cloudSaveTimer = setTimeout(pushToCloudNow, 250);
+      if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+      _cloudSaveTimer = setTimeout(function () {
+        flushCloudSave();
+      }, typeof delayMs === "number" ? delayMs : 200);
     }
 
-    async function fetchCloudRow(rowId) {
-      var url = SUPABASE_URL + "/rest/v1/website_content?id=eq." + encodeURIComponent(rowId) + "&select=data,updated_at";
+    async function fetchFromIsolatedTable() {
+      var url = SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE + "?id=eq." + encodeURIComponent(ISOLATED_ROW_ID) + "&select=state,updated_at&t=" + Date.now();
       var res = await fetch(url, {
         method: "GET",
         cache: "no-store",
@@ -717,115 +669,198 @@
           "Pragma": "no-cache"
         }
       });
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (!res.ok) return null;
       var rows = await res.json();
-      return (rows && rows[0] && rows[0].data) ? rows[0].data : null;
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].state && typeof rows[0].state === "object" && Object.keys(rows[0].state).length > 0) {
+        return rows[0].state;
+      }
+      return null;
     }
 
-    async function upsertCloudRow(rowId, payload) {
-      var url = SUPABASE_URL + "/rest/v1/website_content";
+    async function fetchFromIsolatedStorage() {
+      var url = SUPABASE_URL + "/storage/v1/object/authenticated/documents/" + ISOLATED_STORAGE_PATH + "?t=" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
       var res = await fetch(url, {
-        method: "POST",
+        method: "GET",
         cache: "no-store",
         headers: {
           "apikey": SUPABASE_ANON_KEY,
           "Authorization": "Bearer " + SUPABASE_ANON_KEY,
-          "Content-Type": "application/json",
-          "Prefer": "resolution=merge-duplicates"
-        },
-        body: JSON.stringify({
-          id: rowId,
-          data: payload,
-          updated_at: new Date().toISOString()
-        })
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache"
+        }
       });
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (!res.ok) return null;
+      var data = await res.json();
+      return (data && typeof data === "object") ? data : null;
     }
 
-    async function pushToCloudNow() {
+    async function fetchCloudState() {
       try {
-        try {
-          var remote = await fetchCloudRow(CLOUD_ROW_ID);
-          if (remote && typeof remote === "object") {
-            mergeRemoteIntoLocal(remote, false);
+        var apiRes = await fetch("/api/tester-sync?t=" + Date.now(), {
+          method: "GET",
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
+        });
+        if (apiRes.ok) {
+          var apiJson = await apiRes.json();
+          if (apiJson && apiJson.ok && apiJson.state && typeof apiJson.state === "object" && Object.keys(apiJson.state).length > 0) {
+            return apiJson.state;
           }
-        } catch (readErr) {}
-        var payload = {
-          checked: checkedState,
-          comments: itemComments,
-          itemTimestamps: itemTimestamps,
-          metaTimestamp: metaTimestamp,
-          testerName: document.getElementById("tester-name").value,
-          testerNotes: document.getElementById("tester-notes").value,
-          updatedAt: new Date().toISOString()
-        };
-        await upsertCloudRow(CLOUD_ROW_ID, payload);
-        saveLocalOnly();
-        setSyncBadge("synced", "Cloud Synced (Phone & Laptop)");
-      } catch (err) {
-        setSyncBadge("offline", "Sync Retry Pending");
-      }
+        }
+      } catch (e) {}
+
+      try {
+        var storageState = await fetchFromIsolatedStorage();
+        if (storageState && Object.keys(storageState).length > 0) {
+          return storageState;
+        }
+      } catch (e2) {}
+
+      try {
+        var tableState = await fetchFromIsolatedTable();
+        if (tableState && Object.keys(tableState).length > 0) {
+          return tableState;
+        }
+      } catch (e3) {}
+
+      return null;
+    }
+
+    async function pushCloudState(payload) {
+      var savedOk = false;
+      var bodyStr = JSON.stringify(payload);
+
+      try {
+        var stUrl = SUPABASE_URL + "/storage/v1/object/documents/" + ISOLATED_STORAGE_PATH;
+        var stRes = await fetch(stUrl, {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+            "Content-Type": "application/json",
+            "x-upsert": "true",
+            "Cache-Control": "no-cache, no-store, must-revalidate"
+          },
+          body: bodyStr
+        });
+        if (stRes.ok) savedOk = true;
+      } catch (e) {}
+
+      try {
+        var tbUrl = SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE;
+        var tbRes = await fetch(tbUrl, {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates"
+          },
+          body: JSON.stringify({
+            id: ISOLATED_ROW_ID,
+            state: payload,
+            updated_at: new Date().toISOString()
+          })
+        });
+        if (tbRes.ok) savedOk = true;
+      } catch (e2) {}
+
+      try {
+        var apiRes = await fetch("/api/tester-sync", {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state: payload })
+        });
+        if (apiRes.ok) savedOk = true;
+      } catch (e3) {}
+
+      if (!savedOk) throw new Error("Cloud sync write failed");
     }
 
     function mergeRemoteIntoLocal(remote, updateUiInPlace) {
+      if (!remote || typeof remote !== "object") return false;
       var rChecked = (remote.checked && typeof remote.checked === "object") ? remote.checked : {};
       var rComments = (remote.comments && typeof remote.comments === "object") ? remote.comments : {};
-      var rTimes = (remote.itemTimestamps && typeof remote.itemTimestamps === "object") ? remote.itemTimestamps : {};
-      var rMetaTime = Number(remote.metaTimestamp) || 0;
+      var rChkRevMap = (remote.checkedRev && typeof remote.checkedRev === "object") ? remote.checkedRev : {};
+      var rCmtRevMap = (remote.commentRev && typeof remote.commentRev === "object") ? remote.commentRev : {};
+      var rLegacyRevMap = (remote.itemTimestamps && typeof remote.itemTimestamps === "object") ? remote.itemTimestamps : {};
+      var rMetaRev = normalizeRev(remote.metaRev != null ? remote.metaRev : remote.metaTimestamp);
       var changedAny = false;
 
       var allIds = {};
       var k;
       for (k in rChecked) allIds[k] = true;
       for (k in rComments) allIds[k] = true;
-      for (k in rTimes) allIds[k] = true;
-      for (k in checkedState) allIds[k] = true;
-      for (k in itemComments) allIds[k] = true;
+      for (k in rChkRevMap) allIds[k] = true;
+      for (k in rCmtRevMap) allIds[k] = true;
+      for (k in state.checked) allIds[k] = true;
+      for (k in state.comments) allIds[k] = true;
 
       var activeEl = document.activeElement;
       var focusedCommentId = (activeEl && activeEl.id && activeEl.id.indexOf("cmt-") === 0) ? activeEl.id.slice(4) : "";
 
       for (var itemId in allIds) {
-        var rTs = Number(rTimes[itemId]) || 1;
-        var lTs = Number(itemTimestamps[itemId]) || 0;
-        if (rTs >= lTs) {
-          var newChk = Boolean(rChecked[itemId]);
-          var newCmt = String(rComments[itemId] || "");
-          if (Boolean(checkedState[itemId]) !== newChk) {
-            checkedState[itemId] = newChk;
-            changedAny = true;
+        if (!_dirtyChecked[itemId]) {
+          var rChkRev = normalizeRev(rChkRevMap[itemId] != null ? rChkRevMap[itemId] : (rChecked[itemId] !== undefined ? (rLegacyRevMap[itemId] || 1) : 0));
+          var lChkRev = normalizeRev(state.checkedRev[itemId]);
+          if (rChkRev > lChkRev || (rChkRev === lChkRev && rChkRev > 0 && Boolean(state.checked[itemId]) !== Boolean(rChecked[itemId]))) {
+            var newChk = Boolean(rChecked[itemId]);
+            if (Boolean(state.checked[itemId]) !== newChk) {
+              state.checked[itemId] = newChk;
+              changedAny = true;
+            }
+            state.checkedRev[itemId] = rChkRev;
+            if (updateUiInPlace) {
+              var rowEl = document.getElementById("row-" + itemId);
+              var cbEl = document.getElementById("cb-" + itemId);
+              if (rowEl) rowEl.classList.toggle("checked", newChk);
+              if (cbEl && cbEl.checked !== newChk) cbEl.checked = newChk;
+            }
           }
-          if (focusedCommentId !== itemId && String(itemComments[itemId] || "") !== newCmt) {
-            if (newCmt.trim()) itemComments[itemId] = newCmt;
-            else delete itemComments[itemId];
-            changedAny = true;
-          }
-          itemTimestamps[itemId] = rTs;
+        }
 
-          if (updateUiInPlace) {
-            var rowEl = document.getElementById("row-" + itemId);
-            var cbEl = document.getElementById("cb-" + itemId);
-            var cmtEl = document.getElementById("cmt-" + itemId);
-            if (rowEl) rowEl.classList.toggle("checked", newChk);
-            if (cbEl && cbEl.checked !== newChk) cbEl.checked = newChk;
-            if (cmtEl && focusedCommentId !== itemId && cmtEl.value !== newCmt) {
-              cmtEl.value = newCmt;
-              cmtEl.classList.toggle("has-text", Boolean(newCmt.trim()));
+        if (!_dirtyComment[itemId] && focusedCommentId !== itemId) {
+          var rCmtRev = normalizeRev(rCmtRevMap[itemId] != null ? rCmtRevMap[itemId] : (rComments[itemId] !== undefined ? (rLegacyRevMap[itemId] || 1) : 0));
+          var lCmtRev = normalizeRev(state.commentRev[itemId]);
+          if (rCmtRev > lCmtRev || (rCmtRev === lCmtRev && rCmtRev > 0 && String(state.comments[itemId] || "") !== String(rComments[itemId] || ""))) {
+            var newCmt = String(rComments[itemId] || "");
+            if (String(state.comments[itemId] || "") !== newCmt) {
+              if (newCmt.trim()) state.comments[itemId] = newCmt;
+              else delete state.comments[itemId];
+              changedAny = true;
+            }
+            state.commentRev[itemId] = rCmtRev;
+            if (updateUiInPlace) {
+              var cmtEl = document.getElementById("cmt-" + itemId);
+              if (cmtEl && cmtEl.value !== newCmt) {
+                cmtEl.value = newCmt;
+                cmtEl.classList.toggle("has-text", Boolean(newCmt.trim()));
+              }
             }
           }
         }
       }
 
-      if (rMetaTime >= metaTimestamp) {
-        var isTypingName = activeEl && activeEl.id === "tester-name";
-        var isTypingNotes = activeEl && activeEl.id === "tester-notes";
-        if (!isTypingName && typeof remote.testerName === "string") {
-          document.getElementById("tester-name").value = remote.testerName;
+      if (!_dirtyMeta) {
+        var lMetaRev = normalizeRev(state.metaRev);
+        if (rMetaRev > lMetaRev || (lMetaRev === 0 && (remote.testerName || remote.testerNotes))) {
+          var isTypingName = activeEl && activeEl.id === "tester-name";
+          var isTypingNotes = activeEl && activeEl.id === "tester-notes";
+          if (!isTypingName && typeof remote.testerName === "string" && remote.testerName !== state.testerName) {
+            state.testerName = remote.testerName;
+            var nEl = document.getElementById("tester-name");
+            if (nEl) nEl.value = remote.testerName;
+          }
+          if (!isTypingNotes && typeof remote.testerNotes === "string" && remote.testerNotes !== state.testerNotes) {
+            state.testerNotes = remote.testerNotes;
+            var ntEl = document.getElementById("tester-notes");
+            if (ntEl) ntEl.value = remote.testerNotes;
+          }
+          state.metaRev = Math.max(lMetaRev, rMetaRev || 1);
         }
-        if (!isTypingNotes && typeof remote.testerNotes === "string") {
-          document.getElementById("tester-notes").value = remote.testerNotes;
-        }
-        metaTimestamp = rMetaTime;
       }
 
       if (changedAny && updateUiInPlace) {
@@ -834,15 +869,91 @@
       return changedAny;
     }
 
+    async function flushCloudSave() {
+      if (_cloudSaveTimer) {
+        clearTimeout(_cloudSaveTimer);
+        _cloudSaveTimer = null;
+      }
+      if (_isSavingToCloud) {
+        _pendingFlushAgain = true;
+        return;
+      }
+      _isSavingToCloud = true;
+      setSyncBadge("saving", "Syncing to Cloud...");
+
+      var snapChecked = {};
+      var snapComment = {};
+      for (var ck in _dirtyChecked) snapChecked[ck] = state.checked[ck];
+      for (var cmk in _dirtyComment) snapComment[cmk] = state.comments[cmk] || "";
+      var snapMeta = _dirtyMeta;
+
+      try {
+        var remote = null;
+        try {
+          remote = await fetchCloudState();
+        } catch (readErr) {}
+
+        if (remote && typeof remote === "object") {
+          mergeRemoteIntoLocal(remote, true);
+          var rChkRevMap = (remote.checkedRev && typeof remote.checkedRev === "object") ? remote.checkedRev : {};
+          var rCmtRevMap = (remote.commentRev && typeof remote.commentRev === "object") ? remote.commentRev : {};
+          for (var dck in snapChecked) {
+            state.checked[dck] = Boolean(snapChecked[dck]);
+            state.checkedRev[dck] = Math.max(normalizeRev(state.checkedRev[dck]), normalizeRev(rChkRevMap[dck]) + 1);
+          }
+          for (var dcmk in snapComment) {
+            var valStr = String(snapComment[dcmk] || "");
+            if (valStr.trim()) state.comments[dcmk] = valStr;
+            else delete state.comments[dcmk];
+            state.commentRev[dcmk] = Math.max(normalizeRev(state.commentRev[dcmk]), normalizeRev(rCmtRevMap[dcmk]) + 1);
+          }
+          if (snapMeta) {
+            state.metaRev = Math.max(normalizeRev(state.metaRev), normalizeRev(remote.metaRev) + 1);
+          }
+        }
+
+        var payload = {
+          checked: state.checked,
+          comments: state.comments,
+          checkedRev: state.checkedRev,
+          commentRev: state.commentRev,
+          testerName: state.testerName,
+          testerNotes: state.testerNotes,
+          metaRev: state.metaRev,
+          updatedAt: new Date().toISOString()
+        };
+
+        await pushCloudState(payload);
+
+        for (var cDone in snapChecked) {
+          if (state.checked[cDone] === snapChecked[cDone]) delete _dirtyChecked[cDone];
+        }
+        for (var mDone in snapComment) {
+          if ((state.comments[mDone] || "") === snapComment[mDone]) delete _dirtyComment[mDone];
+        }
+        if (snapMeta) _dirtyMeta = false;
+
+        saveLocalOnly();
+        setSyncBadge("synced", "Cloud Synced (Phone & Laptop)");
+      } catch (err) {
+        setSyncBadge("offline", "Sync Retry Pending");
+      } finally {
+        _isSavingToCloud = false;
+        if (_pendingFlushAgain || Object.keys(_dirtyChecked).length > 0 || Object.keys(_dirtyComment).length > 0 || _dirtyMeta) {
+          _pendingFlushAgain = false;
+          scheduleCloudSave(250);
+        }
+      }
+    }
+
     async function pullFromCloudNow(silent) {
+      if (_isSavingToCloud) return;
       if (!silent) setSyncBadge("saving", "Syncing from Cloud...");
       try {
-        var remote = await fetchCloudRow(CLOUD_ROW_ID);
+        var remote = await fetchCloudState();
         if (remote && typeof remote === "object") {
           mergeRemoteIntoLocal(remote, true);
           saveLocalOnly();
-        } else {
-          await pushToCloudNow();
         }
         setSyncBadge("synced", "Cloud Synced (Phone & Laptop)");
       } catch (err) {
@@ -851,34 +962,41 @@
     }
 
     function saveTesterMeta() {
-      metaTimestamp = Date.now();
-      scheduleCloudSave();
+      var nameEl = document.getElementById("tester-name");
+      var notesEl = document.getElementById("tester-notes");
+      state.testerName = nameEl ? nameEl.value : "";
+      state.testerNotes = notesEl ? notesEl.value : "";
+      state.metaRev = normalizeRev(state.metaRev) + 1;
+      _dirtyMeta = true;
+      scheduleCloudSave(350);
     }
 
     function saveItemComment(itemId, val) {
-      var trimmed = String(val || "");
-      if (trimmed.trim()) {
-        itemComments[itemId] = trimmed;
+      var raw = String(val || "");
+      if (raw.trim()) {
+        state.comments[itemId] = raw;
       } else {
-        delete itemComments[itemId];
+        delete state.comments[itemId];
       }
-      itemTimestamps[itemId] = Date.now();
+      state.commentRev[itemId] = normalizeRev(state.commentRev[itemId]) + 1;
+      _dirtyComment[itemId] = true;
       var inputEl = document.getElementById("cmt-" + itemId);
       if (inputEl) {
-        inputEl.classList.toggle("has-text", Boolean(trimmed.trim()));
+        inputEl.classList.toggle("has-text", Boolean(raw.trim()));
       }
-      scheduleCloudSave();
+      scheduleCloudSave(350);
     }
 
     function toggleItem(itemId) {
-      checkedState[itemId] = !checkedState[itemId];
-      itemTimestamps[itemId] = Date.now();
+      state.checked[itemId] = !state.checked[itemId];
+      state.checkedRev[itemId] = normalizeRev(state.checkedRev[itemId]) + 1;
+      _dirtyChecked[itemId] = true;
       var rowEl = document.getElementById("row-" + itemId);
       var cbEl = document.getElementById("cb-" + itemId);
-      if (rowEl) rowEl.classList.toggle("checked", Boolean(checkedState[itemId]));
-      if (cbEl) cbEl.checked = Boolean(checkedState[itemId]);
+      if (rowEl) rowEl.classList.toggle("checked", Boolean(state.checked[itemId]));
+      if (cbEl) cbEl.checked = Boolean(state.checked[itemId]);
       updateProgressAndBadgesInPlace();
-      scheduleCloudSave();
+      scheduleCloudSave(120);
     }
 
     function escapeHtml(str) {
@@ -897,7 +1015,7 @@
         var secDone = 0;
         for (var i = 0; i < sec.items.length; i++) {
           totalCount++;
-          if (checkedState[sec.items[i].id]) {
+          if (state.checked[sec.items[i].id]) {
             totalDone++;
             secDone++;
           }
@@ -928,8 +1046,8 @@
 
         for (var i = 0; i < sec.items.length; i++) {
           var item = sec.items[i];
-          var isDone = Boolean(checkedState[item.id]);
-          var cmtVal = itemComments[item.id] || "";
+          var isDone = Boolean(state.checked[item.id]);
+          var cmtVal = state.comments[item.id] || "";
           totalCount++;
           if (isDone) {
             totalDone++;
@@ -944,18 +1062,18 @@
 
           itemsHtml +=
             '<div id="row-' + item.id + '" class="test-item ' + (isDone ? 'checked' : '') + '">' +
-              '<input id="cb-' + item.id + '" type="checkbox" class="test-cb" ' + (isDone ? 'checked' : '') + ' onchange="toggleItem(\'' + item.id + '\')" />' +
+              '<input id="cb-' + item.id + '" type="checkbox" class="test-cb" aria-label="Mark ' + item.id + ' ' + escapeHtml(item.title) + ' as completed" ' + (isDone ? 'checked' : '') + ' onchange="toggleItem(\'' + item.id + '\')" />' +
               '<div class="test-body">' +
                 '<div class="test-top" onclick="toggleItem(\'' + item.id + '\')">' +
                   '<span class="test-id">' + item.id + '</span>' +
-                  (item.fix ? '<span class="tag-fix">FIXED FROM ROUND 1</span>' : '') +
+                  (item.fix ? '<span class="tag-fix">FIXED &amp; VERIFIED</span>' : '') +
                   (item.ai ? '<span class="tag-ai">AI SCREENING</span>' : '') +
                   '<span class="test-title">' + escapeHtml(item.title) + '</span>' +
                 '</div>' +
                 '<div class="test-desc">' + escapeHtml(item.desc) + '</div>' +
                 (item.prevNote ? '<div class="fix-context">' + escapeHtml(item.prevNote) + '</div>' : '') +
                 '<div class="comment-wrap">' +
-                  '<input id="cmt-' + item.id + '" type="text" class="comment-input ' + (cmtVal.trim() ? 'has-text' : '') + '" placeholder="Add tester comment / observation for ' + item.id + ' (auto-syncs to phone & laptop)..." value="' + escapeHtml(cmtVal) + '" oninput="saveItemComment(\'' + item.id + '\', this.value)" />' +
+                  '<input id="cmt-' + item.id + '" type="text" class="comment-input ' + (cmtVal.trim() ? 'has-text' : '') + '" aria-label="Tester comment for ' + item.id + '" placeholder="Add tester comment / observation for ' + item.id + ' (auto-syncs to phone & laptop)..." value="' + escapeHtml(cmtVal) + '" oninput="saveItemComment(\'' + item.id + '\', this.value)" onblur="flushCloudSave()" />' +
                 '</div>' +
               '</div>' +
             '</div>';
@@ -985,33 +1103,34 @@
     }
 
     function resetAllChecks() {
-      if (!confirm("Reset all checkboxes in Round 2? (Your written comments on each test item will be kept unless you clear them.)")) return;
-      var now = Date.now();
+      if (!confirm("Reset all checkboxes? (Your written comments on each test item will be kept unless you clear them.)")) return;
       for (var s = 0; s < TEST_SECTIONS.length; s++) {
         for (var i = 0; i < TEST_SECTIONS[s].items.length; i++) {
           var id = TEST_SECTIONS[s].items[i].id;
-          checkedState[id] = false;
-          itemTimestamps[id] = now;
+          state.checked[id] = false;
+          state.checkedRev[id] = normalizeRev(state.checkedRev[id]) + 1;
+          _dirtyChecked[id] = true;
         }
       }
-      scheduleCloudSave();
       renderChecklist();
+      flushCloudSave();
     }
 
     function exportProgressJson() {
       var payload = {
-        system: "Combined Facilities Support Services — Round 2 Checklist",
+        system: "Combined Facilities Support Services — Master Test Checklist",
         exportedAt: new Date().toISOString(),
-        testerName: document.getElementById("tester-name").value,
-        testerNotes: document.getElementById("tester-notes").value,
-        checked: checkedState,
-        comments: itemComments,
-        itemTimestamps: itemTimestamps
+        testerName: state.testerName,
+        testerNotes: state.testerNotes,
+        checked: state.checked,
+        comments: state.comments,
+        checkedRev: state.checkedRev,
+        commentRev: state.commentRev
       };
       var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "pigem-tester-round2-checklist-backup.json";
+      a.download = "pigem-tester-checklist-backup.json";
       a.click();
     }
 
@@ -1023,18 +1142,30 @@
         try {
           var data = JSON.parse(e.target.result);
           if (data && typeof data.checked === "object") {
-            checkedState = data.checked;
-            if (data.comments && typeof data.comments === "object") {
-              itemComments = data.comments;
+            for (var k in data.checked) {
+              state.checked[k] = Boolean(data.checked[k]);
+              state.checkedRev[k] = normalizeRev(state.checkedRev[k]) + 1;
+              _dirtyChecked[k] = true;
             }
-            var now = Date.now();
-            for (var k in checkedState) itemTimestamps[k] = now;
-            for (var c in itemComments) itemTimestamps[c] = now;
-            metaTimestamp = now;
-            if (data.testerName) document.getElementById("tester-name").value = data.testerName;
-            if (data.testerNotes) document.getElementById("tester-notes").value = data.testerNotes;
-            scheduleCloudSave();
+            if (data.comments && typeof data.comments === "object") {
+              for (var c in data.comments) {
+                state.comments[c] = String(data.comments[c] || "");
+                state.commentRev[c] = normalizeRev(state.commentRev[c]) + 1;
+                _dirtyComment[c] = true;
+              }
+            }
+            if (typeof data.testerName === "string") {
+              state.testerName = data.testerName;
+              document.getElementById("tester-name").value = data.testerName;
+            }
+            if (typeof data.testerNotes === "string") {
+              state.testerNotes = data.testerNotes;
+              document.getElementById("tester-notes").value = data.testerNotes;
+            }
+            state.metaRev = normalizeRev(state.metaRev) + 1;
+            _dirtyMeta = true;
             renderChecklist();
+            flushCloudSave();
           }
         } catch (err) {
           alert("Could not read JSON backup file.");
@@ -1044,17 +1175,23 @@
       inputEl.value = "";
     }
 
-    loadState();
+    loadLocalState();
     renderChecklist();
     pullFromCloudNow(true);
     setInterval(function () {
       pullFromCloudNow(true);
-    }, 2500);
+    }, 1500);
     window.addEventListener("focus", function () {
       pullFromCloudNow(true);
     });
+    window.addEventListener("online", function () {
+      flushCloudSave();
+    });
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) pullFromCloudNow(true);
+      else if (Object.keys(_dirtyChecked).length > 0 || Object.keys(_dirtyComment).length > 0 || _dirtyMeta) {
+        flushCloudSave();
+      }
     });
   </script>
 </body>

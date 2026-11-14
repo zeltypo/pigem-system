@@ -266,35 +266,37 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-        for low_t, high_t in ((40, 140), (25, 100)):
+        for low_t, high_t in ((40, 140), (25, 100), (15, 75)):
 
             edged = cv2.Canny(blurred, low_t, high_t)
 
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
 
-            edged = cv2.dilate(edged, kernel, iterations=1)
+            edged = cv2.dilate(edged, kernel, iterations=2)
 
             contours, _ = cv2.findContours(edged, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-            contours = sorted(contours, key=cv2.contourArea, reverse=True)[:8]
+            contours = sorted(contours, key=cv2.contourArea, reverse=True)[:12]
 
             for cnt in contours:
 
                 area = cv2.contourArea(cnt)
 
-                if 0.32 * img_area <= area <= 0.95 * img_area:
+                if 0.12 * img_area <= area <= 0.96 * img_area:
 
                     peri = cv2.arcLength(cnt, True)
 
-                    approx = cv2.approxPolyDP(cnt, 0.022 * peri, True)
+                    for eps in (0.02, 0.03, 0.04):
 
-                    if len(approx) == 4 and cv2.isContourConvex(approx):
+                        approx = cv2.approxPolyDP(cnt, eps * peri, True)
 
-                        _, _, bw, bh = cv2.boundingRect(approx)
+                        if len(approx) == 4 and cv2.isContourConvex(approx):
 
-                        if self._is_valid_card_shape(bw, bh):
+                            _, _, bw, bh = cv2.boundingRect(approx)
 
-                            return approx.reshape(4, 2).astype("float32")
+                            if self._is_valid_card_shape(bw, bh):
+
+                                return approx.reshape(4, 2).astype("float32")
 
         return None
 
@@ -308,7 +310,11 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
         _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        for candidate in (thresh, cv2.bitwise_not(thresh)):
+        adapt = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 4)
+
+        adapt_closed = cv2.morphologyEx(adapt, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9)), iterations=2)
+
+        for candidate in (thresh, cv2.bitwise_not(thresh), adapt_closed):
 
             contours, _ = cv2.findContours(candidate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -316,17 +322,43 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
                 continue
 
-            largest = max(contours, key=cv2.contourArea)
+            for cnt in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
 
-            x, y, cw, ch = cv2.boundingRect(largest)
+                x, y, cw, ch = cv2.boundingRect(cnt)
+
+                box_area = float(cw * ch)
+
+                if 0.12 * img_area <= box_area <= 0.96 * img_area and self._is_valid_card_shape(cw, ch):
+
+                    pad_x = int(cw * 0.025)
+
+                    pad_y = int(ch * 0.025)
+
+                    x1 = max(0, x - pad_x)
+
+                    y1 = max(0, y - pad_y)
+
+                    x2 = min(w, x + cw + pad_x)
+
+                    y2 = min(h, y + ch + pad_y)
+
+                    return image[y1:y2, x1:x2]
+
+        edges = cv2.Canny(blurred, 30, 110)
+
+        pts = cv2.findNonZero(edges)
+
+        if pts is not None:
+
+            x, y, cw, ch = cv2.boundingRect(pts)
 
             box_area = float(cw * ch)
 
-            if 0.35 * img_area <= box_area <= 0.92 * img_area and self._is_valid_card_shape(cw, ch):
+            if 0.12 * img_area <= box_area <= 0.96 * img_area and self._is_valid_card_shape(cw, ch):
 
-                pad_x = int(cw * 0.035)
+                pad_x = int(cw * 0.02)
 
-                pad_y = int(ch * 0.035)
+                pad_y = int(ch * 0.02)
 
                 x1 = max(0, x - pad_x)
 
@@ -337,6 +369,14 @@ class DocumentCropEnhancer(BaseImageProcessor):
                 y2 = min(h, y + ch + pad_y)
 
                 return image[y1:y2, x1:x2]
+
+        if w >= 200 and h >= 140:
+
+            trim_x = max(4, int(w * 0.035))
+
+            trim_y = max(4, int(h * 0.035))
+
+            return image[trim_y : h - trim_y, trim_x : w - trim_x]
 
         return None
 

@@ -116,9 +116,9 @@
       <p class="small muted">Pin your exact house or building on the interactive map so our installation team can verify fiber facility coverage.</p>
 
       <div class="row mt" style="margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-        <input id="map-search" type="text" placeholder="Search street, barangay, or city (e.g. Burol Main, Dasmariñas)" style="flex:1; min-width:210px;">
+        <input id="map-search" aria-label="Search street, barangay, or city on map" type="text" placeholder="Search street, barangay, or city (e.g. Burol Main, Dasmariñas)" style="flex:1; min-width:210px;">
         <button type="button" class="btn btn-small" onclick="searchMapAddress()">Search Map</button>
-        <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location (not available)" class="icon-img"> Use My Location</button>
+        <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location" class="icon-img"> Use My Location</button>
       </div>
 
       <div id="map"></div>
@@ -203,7 +203,7 @@
           <h3>Valid Government ID Upload (Front and Back)</h3>
           <p class="small muted">Upload clear, distinct photos of both the <b>Front</b> and <b>Back</b> of your valid government-issued ID.</p>
         </div>
-        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="Phone QR (not available)" class="icon-img"> Continue on Phone (QR Code)</button>
+        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="Phone QR" class="icon-img"> Continue on Phone (QR Code)</button>
       </div>
 
       <div class="notice mt" style="background:var(--bg-soft); border:1px solid var(--line);">
@@ -296,11 +296,11 @@
           <label>Front of Valid ID <span class="req-mark">*</span></label>
           <div class="upload-box" id="id-front-box">
             <div id="id-front-filename" class="small muted">No Front ID photo selected yet</div>
-            <input id="id_front" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('front', this)">
-            <input id="id_front_cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('front', this)">
+            <input id="id_front" aria-label="Upload front of valid ID photo" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('front', this)">
+            <input id="id_front_cam" aria-label="Capture front of valid ID photo with camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('front', this)">
             <div class="upload-btns">
-              <button type="button" class="btn btn-small" onclick="document.getElementById('id_front').click()"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload (not available)" class="icon-img"> Choose from Files</button>
-              <button type="button" id="btn-front-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_front_cam').click()"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Camera (not available)" class="icon-img"> Take Photo (Camera)</button>
+              <button type="button" class="btn btn-small" onclick="document.getElementById('id_front').click()"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
+              <button type="button" id="btn-front-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_front_cam').click()"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
             </div>
             <div id="id-front-preview-box" class="mt" hidden>
               <img id="id-front-preview" class="id-preview" alt="Front ID Preview">
@@ -312,11 +312,11 @@
           <label>Back of Valid ID <span class="req-mark">*</span></label>
           <div class="upload-box" id="id-back-box">
             <div id="id-back-filename" class="small muted">No Back ID photo selected yet</div>
-            <input id="id_back" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('back', this)">
-            <input id="id_back_cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('back', this)">
+            <input id="id_back" aria-label="Upload back of valid ID photo" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('back', this)">
+            <input id="id_back_cam" aria-label="Capture back of valid ID photo with camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('back', this)">
             <div class="upload-btns">
-              <button type="button" class="btn btn-small" onclick="document.getElementById('id_back').click()"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload (not available)" class="icon-img"> Choose from Files</button>
-              <button type="button" id="btn-back-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_back_cam').click()"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Camera (not available)" class="icon-img"> Take Photo (Camera)</button>
+              <button type="button" class="btn btn-small" onclick="document.getElementById('id_back').click()"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
+              <button type="button" id="btn-back-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_back_cam').click()"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
             </div>
             <div id="id-back-preview-box" class="mt" hidden>
               <img id="id-back-preview" class="id-preview" alt="Back ID Preview">
@@ -348,13 +348,13 @@
 
       <div class="mt-big">
         <label class="check" id="agree_sub_wrap">
-          <input id="agree_sub" type="checkbox">
+          <input id="agree_sub" aria-label="Agree to Subscriber Declaration and Terms" type="checkbox">
           <span>
             <b>I accept and agree to the Subscriber Certificate and Terms of Service</b> <span class="req-mark">*</span>
           </span>
         </label>
         <label class="check mt">
-          <input id="agree_tu" type="checkbox">
+          <input id="agree_tu" aria-label="Authorize Credit Bureau and TransUnion check" type="checkbox">
           <span>
             <b>Credit Bureau / TransUnion Consent (Optional):</b>
             I authorize basic credit bureau verification to expedite line provisioning.
@@ -401,8 +401,8 @@
         <div class="upload-box">
           <div style="font-weight:700;margin-bottom:6px;">Front of Valid ID</div>
           <div id="qr-front-status" class="small muted">Waiting for Front photo...</div>
-          <input id="qr_front_cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleMobileQrUpload('front', this)">
-          <input id="qr_front_file" type="file" accept="image/*,.heic,.heif" style="display:none" onchange="handleMobileQrUpload('front', this)">
+          <input id="qr_front_cam" aria-label="Capture front ID photo on mobile camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleMobileQrUpload('front', this)">
+          <input id="qr_front_file" aria-label="Choose front ID photo file on mobile" type="file" accept="image/*,.heic,.heif" style="display:none" onchange="handleMobileQrUpload('front', this)">
           <div class="upload-btns mt">
             <button type="button" class="btn btn-red btn-small" onclick="document.getElementById('qr_front_cam').click()">Take Front Photo</button>
             <button type="button" class="btn btn-outline btn-small" onclick="document.getElementById('qr_front_file').click()">Upload from Gallery / Files</button>
@@ -414,8 +414,8 @@
         <div class="upload-box">
           <div style="font-weight:700;margin-bottom:6px;">Back of Valid ID</div>
           <div id="qr-back-status" class="small muted">Waiting for Back photo...</div>
-          <input id="qr_back_cam" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleMobileQrUpload('back', this)">
-          <input id="qr_back_file" type="file" accept="image/*,.heic,.heif" style="display:none" onchange="handleMobileQrUpload('back', this)">
+          <input id="qr_back_cam" aria-label="Capture back ID photo on mobile camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleMobileQrUpload('back', this)">
+          <input id="qr_back_file" aria-label="Choose back ID photo file on mobile" type="file" accept="image/*,.heic,.heif" style="display:none" onchange="handleMobileQrUpload('back', this)">
           <div class="upload-btns mt">
             <button type="button" class="btn btn-red btn-small" onclick="document.getElementById('qr_back_cam').click()">Take Back Photo</button>
             <button type="button" class="btn btn-outline btn-small" onclick="document.getElementById('qr_back_file').click()">Upload from Gallery / Files</button>

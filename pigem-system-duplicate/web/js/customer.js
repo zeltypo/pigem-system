@@ -186,13 +186,19 @@ function selectMyApp(id) {
           : '') +
         '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
           (app.status === "Needs Correction"
-            ? '<button type="button" class="btn btn-red btn-sm" onclick="closePopup(); var box=document.getElementById('cust-detail-box'); if(box) box.scrollIntoView({behavior:'smooth'});">Proceed to Correction Form</button>'
+            ? '<button type="button" class="btn btn-red btn-sm" onclick="proceedToCustomerCorrectionForm()">Proceed to Correction Form</button>'
             : '') +
           '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
         '</div>' +
       '</div>';
     openPopup(modalHtml, { showCloseX: true, closeOnBackdrop: true });
   }
+}
+
+function proceedToCustomerCorrectionForm() {
+  if (typeof closePopup === "function") closePopup();
+  var box = document.getElementById("cust-detail-box");
+  if (box) box.scrollIntoView({ behavior: "smooth" });
 }
 
 function renderSelectedApp() {

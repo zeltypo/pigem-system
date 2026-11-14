@@ -75,7 +75,7 @@ window.SYSTEM = "customer";
       var params = new URLSearchParams(window.location.search);
       var qEmail = (params.get("email") || "").trim().toLowerCase();
       var qCode = (params.get("code") || "").trim();
-      var qUser = (params.get("username") || "").trim().toLowerCase();
+      var qUser = (params.get("username") || "").trim();
 
       var emailEl = document.getElementById("act-email");
       var userEl = document.getElementById("act-username");
@@ -117,7 +117,7 @@ window.SYSTEM = "customer";
       event.preventDefault();
       if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
       var email = document.getElementById("act-email").value.trim().toLowerCase();
-      var username = document.getElementById("act-username").value.trim().toLowerCase();
+      var username = document.getElementById("act-username").value.trim().replace(/^@/, "");
       var code = document.getElementById("act-code").value.trim();
       var pass = document.getElementById("act-pass").value;
       var pass2 = document.getElementById("act-pass2").value;

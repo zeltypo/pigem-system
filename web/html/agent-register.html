@@ -137,7 +137,7 @@ window.SYSTEM = "staff";
       var middle = document.getElementById("ag-middle-name").value.trim();
       var last = document.getElementById("ag-last-name").value.trim();
       var fullName = [first, middle && middle.toUpperCase() !== "N/A" ? middle : "", last].filter(Boolean).join(" ").trim();
-      var username = document.getElementById("ag-reg-username").value.trim().toLowerCase().replace(/^@/, "");
+      var username = document.getElementById("ag-reg-username").value.trim().replace(/^@/, "");
       var pw = document.getElementById("ag-reg-pw").value;
       var pw2 = document.getElementById("ag-reg-pw2").value;
       var btn = document.getElementById("btn-ag-register");

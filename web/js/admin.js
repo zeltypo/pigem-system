@@ -140,7 +140,7 @@ function toggleMaintMode() {
       : "Mutating <code>public.system_settings.maintenance_mode = false</code> will immediately restore public visitor access to the live website and application form.",
     next ? "Enable Maintenance Mode" : "Disable Maintenance Mode",
     async function () {
-      setMaintenanceOn(next);
+      await setMaintenanceOn(next);
       await dbAddLog(getStaffIdentifier(currentAdmin), "Set Maintenance Mode to " + (next ? "ON" : "OFF"));
       var maintTitle = next ? "Website Maintenance Mode Enabled" : "Website Restored to Live";
       var maintBody = next
@@ -213,7 +213,7 @@ function toggleAiMode() {
       : "Disabling <code>public.system_settings.ai_enabled = false</code> pauses automated screening. Customer submissions will continue without interruption using original uploaded ID copies, and all Agents and Managers will receive a manual-review notification.",
     next ? "Enable AI Screening" : "Disable AI Screening",
     async function () {
-      setAiEnabled(next);
+      await setAiEnabled(next);
       await dbAddLog(getStaffIdentifier(currentAdmin), "Set AI Screening Engine to " + (next ? "ENABLED" : "DISABLED"));
       if (!next) {
         await dbAddNotification(null, "agent", "Auto-Screening Paused", "System Administrator paused automated document screening. Customer applications continue normally using original uploaded ID copies for manual review.");

@@ -317,3 +317,35 @@ INSERT INTO public.website_content (id, data) VALUES (
   '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "hero_slide_count": 3, "hero_slides": [], "about_slides": [], "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
+
+-- ============================================================
+-- 10. STANDALONE QA TESTER CLOUD SYNC TABLE (ISOLATED FROM MAIN SYSTEM)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.qa_tester_sync (
+  id TEXT PRIMARY KEY DEFAULT 'master_v3',
+  state JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.qa_tester_sync
+  ADD COLUMN IF NOT EXISTS state JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+ALTER TABLE public.qa_tester_sync ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public Full Access QA Tester Sync" ON public.qa_tester_sync;
+CREATE POLICY "Public Full Access QA Tester Sync"
+  ON public.qa_tester_sync
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+INSERT INTO public.qa_tester_sync (id, state)
+VALUES ('master_v3', '{}'::jsonb)
+ON CONFLICT (id) DO NOTHING;
+
+-- Ensure cropped Front & Back ID columns exist on applications
+ALTER TABLE public.applications
+  ADD COLUMN IF NOT EXISTS id_cropped_url TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS id_back_cropped_url TEXT DEFAULT '';
+

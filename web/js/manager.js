@@ -292,7 +292,7 @@ function finishCmsAndDisableMaintenance() {
       "Customers will immediately regain access to the public website, application form, and account activation.",
       "Yes, Make Website Live",
       async function () {
-        setMaintenanceOn(false);
+        await setMaintenanceOn(false);
         if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Disabled Maintenance Mode from Website Content (CMS)");
         await dbAddNotification(null, "agent", "Website Restored to Live", "Public Maintenance Mode has been disabled. Customer website and application form are live.");
         updateCmsMaintenanceBarUI();
@@ -306,7 +306,7 @@ function finishCmsAndDisableMaintenance() {
       "Turning ON Maintenance Mode will temporarily pause customer access to the public website and application form until you turn it back off.",
       "Yes, Enable Maintenance Mode",
       async function () {
-        setMaintenanceOn(true);
+        await setMaintenanceOn(true);
         if (currentManager) await dbAddLog(getStaffIdentifier(currentManager), "Enabled Maintenance Mode from Website Content (CMS)");
         await dbAddNotification(null, "agent", "Website Maintenance Mode Enabled", "Public Maintenance Mode is active while website content is being updated.");
         updateCmsMaintenanceBarUI();
@@ -409,10 +409,10 @@ function openMgrAppModal(appId) {
   if (app.cropped_id_url || app.id_front_url) {
     docLinksHtml = '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">';
     if (app.cropped_id_url) {
-      docLinksHtml += '<a href="' + escapeHtml(app.cropped_id_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/preview.png" alt="Cropped ID (not available)" class="icon-img" />View Cropped and Enhanced ID</a>';
+      docLinksHtml += '<a href="' + escapeHtml(app.cropped_id_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/preview.png" alt="Cropped ID" class="icon-img" />View Cropped and Enhanced ID</a>';
     }
     if (app.id_front_url) {
-      docLinksHtml += '<a href="' + escapeHtml(app.id_front_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Original ID (not available)" class="icon-img" />View Original Uploaded ID</a>';
+      docLinksHtml += '<a href="' + escapeHtml(app.id_front_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Original ID" class="icon-img" />View Original Uploaded ID</a>';
     }
     docLinksHtml += '</div>';
   }
@@ -1142,7 +1142,7 @@ async function saveBannersCms() {
   }
 }
 
-function saveAboutCms() {
+async function saveAboutCms() {
   var c = getSiteContent();
   c.about_lead = document.getElementById("cms-about-lead").value.trim();
   c.about_story_1 = document.getElementById("cms-about-s1").value.trim();
@@ -1150,12 +1150,15 @@ function saveAboutCms() {
   c.contact_email = document.getElementById("cms-contact-email").value.trim();
   c.contact_phone = document.getElementById("cms-contact-phone").value.trim();
   c.contact_address = document.getElementById("cms-contact-addr").value.trim();
-  saveSiteContent(c);
+  await saveSiteContent(c);
+  if (typeof dbSaveLiveWebsiteContent === "function") {
+    try { await dbSaveLiveWebsiteContent(getWebsiteContent()); } catch (e) {}
+  }
   dbAddLog(getStaffIdentifier(currentManager), "Updated About PIGEM text in Website Content (CMS)");
   showMsg("cms-about-msg", "ok", "About PIGEM and Contact information saved!");
 }
 
-function savePlansCms() {
+async function savePlansCms() {
   var c = getSiteContent();
   for (var i = 0; i < c.plans.length; i++) {
     c.plans[i].name = document.getElementById("pl-name-" + i).value.trim();
@@ -1168,7 +1171,13 @@ function savePlansCms() {
     }
     c.plans[i].features = cleanFeats;
   }
-  saveSiteContent(c);
+  await saveSiteContent(c);
+  if (typeof dbSaveLivePlans === "function") {
+    try { await dbSaveLivePlans(c.plans); } catch (e) {}
+  }
+  if (typeof dbSaveLiveWebsiteContent === "function") {
+    try { await dbSaveLiveWebsiteContent(getWebsiteContent()); } catch (e) {}
+  }
   dbAddLog(getStaffIdentifier(currentManager), "Updated Red Fiber Plans in Website Content (CMS)");
   showMsg("cms-plans-msg", "ok", "Internet Plans saved!");
 }
@@ -1206,11 +1215,14 @@ function syncFaqInputs() {
   }
 }
 
-function saveFaqsCms() {
+async function saveFaqsCms() {
   syncFaqInputs();
   var c = getSiteContent();
   c.faqs = currentEditingFaqs.filter(function (item) { return item.q !== ""; });
-  saveSiteContent(c);
+  await saveSiteContent(c);
+  if (typeof dbSaveLiveWebsiteContent === "function") {
+    try { await dbSaveLiveWebsiteContent(getWebsiteContent()); } catch (e) {}
+  }
   dbAddLog(getStaffIdentifier(currentManager), "Updated FAQs in Website Content (CMS)");
   showMsg("cms-faqs-msg", "ok", "FAQs saved!");
 }
@@ -1221,10 +1233,13 @@ function togglePromoTarget() {
   if (wrap) wrap.style.display = (t === "test") ? "block" : "none";
 }
 
-function clearSiteAnnouncement() {
+async function clearSiteAnnouncement() {
   var c = getSiteContent();
   c.announcement = { active: false, headline: "", body: "" };
-  saveSiteContent(c);
+  await saveSiteContent(c);
+  if (typeof dbSaveLiveWebsiteContent === "function") {
+    try { await dbSaveLiveWebsiteContent(getWebsiteContent()); } catch (e) {}
+  }
   if (currentManager) dbAddLog(getStaffIdentifier(currentManager), "Cleared public website announcement banner");
   showMsg("promo-msg", "ok", "Public website announcement banner has been cleared.");
 }
@@ -1268,7 +1283,10 @@ async function sendManagerPromoBroadcast() {
     } else if (target === "website_only") {
       var siteData = getSiteContent();
       siteData.announcement = { active: true, headline: headline, body: body };
-      saveSiteContent(siteData);
+      await saveSiteContent(siteData);
+      if (typeof dbSaveLiveWebsiteContent === "function") {
+        await dbSaveLiveWebsiteContent(getWebsiteContent());
+      }
       for (var cu = 0; cu < mgrUsers.length; cu++) {
         var custUser = mgrUsers[cu];
         var custEmail = String(custUser.email || "").trim().toLowerCase();
@@ -1280,7 +1298,10 @@ async function sendManagerPromoBroadcast() {
     } else {
       var siteAll = getSiteContent();
       siteAll.announcement = { active: true, headline: headline, body: body };
-      saveSiteContent(siteAll);
+      await saveSiteContent(siteAll);
+      if (typeof dbSaveLiveWebsiteContent === "function") {
+        await dbSaveLiveWebsiteContent(getWebsiteContent());
+      }
 
       var optedEmails = {};
       var optedNames = {};

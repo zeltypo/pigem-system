@@ -123,7 +123,7 @@ window.SYSTEM = "admin";
       var middle = document.getElementById("adm-middle-name").value.trim();
       var last = document.getElementById("adm-last-name").value.trim();
       var fullName = [first, middle && middle.toUpperCase() !== "N/A" ? middle : "", last].filter(Boolean).join(" ").trim();
-      var username = document.getElementById("adm-username").value.trim().toLowerCase().replace(/^@/, "");
+      var username = document.getElementById("adm-username").value.trim().replace(/^@/, "");
       var pw = document.getElementById("adm-pw").value;
       var pw2 = document.getElementById("adm-pw2").value;
       var btn = document.getElementById("btn-save-admin");

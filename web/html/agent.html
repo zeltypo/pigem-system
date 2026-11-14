@@ -36,7 +36,7 @@
       </div>
 
       <div class="top-search">
-        <input type="search" placeholder="Search reference no., applicant, or section..." oninput="onTopSearchInput(this)" />
+        <input type="search" placeholder="Search reference no., applicant, or section..." aria-label="Search reference no., applicant, or section..." oninput="onTopSearchInput(this)" />
         <div id="top-search-results" class="search-drop hidden"></div>
       </div>
 
@@ -163,7 +163,7 @@
               <p id="apps-subtitle" class="muted" style="font-size:13px">Unclaimed customer applications ready for agent verification.</p>
             </div>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-              <input id="q-filter" type="text" placeholder="Filter by name, ref no., or city..." oninput="renderAgentCards()" style="max-width:240px" />
+              <input id="q-filter" aria-label="Filter applications by name, reference number, or city" type="text" placeholder="Filter by name, ref no., or city..." oninput="renderAgentCards()" style="max-width:240px" />
               <button type="button" class="btn btn-outline btn-sm" onclick="refreshAgentData()">Refresh</button>
             </div>
           </div>
@@ -185,7 +185,7 @@
           <h2 style="font-size:20px; margin-bottom:4px">Generate Customer Application Link</h2>
           <p class="muted" style="font-size:13px; margin-bottom:14px">Create a tracked application link to send to your walk-in or assisted customers.</p>
           <div style="display:flex; gap:10px; flex-wrap:wrap">
-            <input id="link-note" type="text" placeholder="Customer name or note (e.g. Walk-in Cavite)" style="max-width:340px" />
+            <input id="link-note" aria-label="Customer name or referral link note" type="text" placeholder="Customer name or note (e.g. Walk-in Cavite)" style="max-width:340px" />
             <button type="button" class="btn btn-red" onclick="createNewAgentLink()">+ Generate Link</button>
           </div>
         </div>

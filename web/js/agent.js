@@ -596,13 +596,17 @@ async function openAppDetail(appId) {
   activeDetailAppId = appId;
   activeCopyMode = "latest";
   var app = findAppById(appId);
-  activeIdImgMode = (app && app.cropped_id_url) ? "cropped" : "raw";
+  activeIdImgMode = (app && (app.cropped_id_url || app.id_cropped_url)) ? "cropped" : "raw";
   pendingProofDataUrl = "";
   pendingProofFile = null;
   await renderDetailModalContent();
   document.getElementById("app-detail-modal").classList.remove("hidden");
 
-  if (app && app.screening && app.screening.state === "queued" && isAiEnabled() && isScreeningServiceOnline) {
+  var needsAutoScreen = app && (
+    (app.screening && app.screening.state === "queued") ||
+    !(app.cropped_id_url || app.id_cropped_url)
+  );
+  if (needsAutoScreen && isAiEnabled() && isScreeningServiceOnline) {
     retriggerAgentScreening(appId);
   }
 }
@@ -667,6 +671,10 @@ async function retriggerAgentScreening(appId) {
     visualScreeningRunningAppId = null;
     visualScreeningStage = 0;
     await refreshAgentData(true);
+    var updatedApp = findAppById(appId);
+    if (updatedApp && (updatedApp.cropped_id_url || updatedApp.id_cropped_url)) {
+      activeIdImgMode = "cropped";
+    }
     if (activeDetailAppId === appId) {
       await renderDetailModalContent();
     }
@@ -801,12 +809,18 @@ async function renderDetailModalContent() {
   }
 
   var rawFrontUrl = viewData.id_image_url || app.id_image_url || app.id_front_path || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
-  var croppedUrl = (activeCopyMode === "latest" && (app.cropped_id_url || app.id_cropped_url)) ? (app.cropped_id_url || app.id_cropped_url) : "";
+  var croppedUrl = (activeCopyMode === "latest" && (app.cropped_id_url || app.id_cropped_url || (scr && scr.cropped_front_url)))
+    ? (app.cropped_id_url || app.id_cropped_url || scr.cropped_front_url)
+    : "";
   var displayedFrontUrl = (croppedUrl && activeIdImgMode === "cropped") ? croppedUrl : rawFrontUrl;
   var idBackPhotoUrl = viewData.id_back_image_url || viewData.id_back_path || app.id_back_image_url || app.id_back_path || "";
+  var croppedBackUrl = (activeCopyMode === "latest" && (app.cropped_back_url || app.id_back_cropped_url || (scr && scr.cropped_back_url)))
+    ? (app.cropped_back_url || app.id_back_cropped_url || scr.cropped_back_url)
+    : "";
+  var displayedBackUrl = (croppedBackUrl && activeIdImgMode === "cropped") ? croppedBackUrl : idBackPhotoUrl;
 
   var idModeBar = '<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">';
-  if (croppedUrl) {
+  if (croppedUrl || croppedBackUrl) {
     idModeBar +=
       '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "cropped" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'cropped\')">Cropped Copy</button>' +
       '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "raw" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'raw\')">Original Photo</button>';
@@ -907,9 +921,9 @@ async function renderDetailModalContent() {
           '<img src="' + escapeHtml(displayedFrontUrl) + '" alt="Front ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />' +
         '</div>' +
         '<div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
-          '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">BACK ID (ORIGINAL UPLOADED COPY)</div>' +
-          (idBackPhotoUrl
-            ? '<img src="' + escapeHtml(idBackPhotoUrl) + '" alt="Back ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />'
+          '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedBackUrl && activeIdImgMode === "cropped" ? "BACK ID (CROPPED COPY)" : "BACK ID (ORIGINAL UPLOADED COPY)") + '</div>' +
+          (displayedBackUrl
+            ? '<img src="' + escapeHtml(displayedBackUrl) + '" alt="Back ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />'
             : '<span class="muted small" style="display:block; padding:54px 0">No Back ID uploaded</span>') +
         '</div>' +
       '</div>' +

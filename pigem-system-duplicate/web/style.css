@@ -7,13 +7,13 @@
   --soft: #f8fafc;
   --card: #ffffff;
   --text: #0f172a;
-  --muted: #64748b;
-  --line: #e2e8f0;
+  --muted: #475569;
+  --line: #cbd5e1;
   --good: #067647;
   --good-soft: #ecfdf3;
-  --warn: #b54708;
+  --warn: #92400e;
   --warn-soft: #fffaeb;
-  --bad: #b42318;
+  --bad: #991b1b;
   --bad-soft: #fef3f2;
   --shadow: none;
 }
@@ -23,9 +23,9 @@ html[data-theme="dark"] {
   --bg-soft: #151a20;
   --soft: #151a20;
   --card: #1b2129;
-  --text: #e6e8eb;
-  --muted: #98a2b3;
-  --line: #2b323c;
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+  --line: #334155;
   --red-soft: #3a1416;
   --good-soft: #0d2a1d;
   --warn-soft: #2e2210;
@@ -34,6 +34,17 @@ html[data-theme="dark"] {
 }
 
 * { box-sizing: border-box; }
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
 
 body {
   margin: 0;

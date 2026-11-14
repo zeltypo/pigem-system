@@ -40,7 +40,7 @@ def _supabase_key() -> str:
 
         or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
-        or ""
+        or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g"
 
     ).strip()
 
@@ -298,7 +298,13 @@ def _upload_cropped_image(app_ref: str, side: str, jpeg_bytes: bytes) -> Optiona
 
         pass
 
-    return None
+    try:
+
+        return "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
+
+    except Exception:
+
+        return None
 
 def _compute_sha256(image_bytes: Optional[bytes]) -> str:
 
@@ -600,7 +606,10 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
     quality_ok = bool(front_readable and back_readable and bool(back_raw_bytes) and not bool(duplicate_check.get("has_duplicate")) and is_valid_gov_id)
 
-    fields_ok = bool(comparisons) and all(c.get("status") == "match" for c in comparisons)
+    fields_ok = bool(comparisons) and all(
+        c.get("status") == "match" or (c.get("key") == "birth_date" and c.get("status") == "not_found")
+        for c in comparisons
+    )
 
     overall_match = bool(quality_ok and fields_ok)
 

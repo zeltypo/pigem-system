@@ -12,7 +12,7 @@ async function openApplyWithCaptcha(planId) {
     ? getMaintenanceBlockInfo(liveContent)
     : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
   if (mInfo && mInfo.blocked) {
-    if (mInfo.isFullMaintenance && typeof renderMaintenanceScreenHtml === "function" && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+    if (typeof renderMaintenanceScreenHtml === "function" && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
       renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
       return;
     }
@@ -43,7 +43,7 @@ function showGoogleCaptchaPopup() {
         '<div id="g-recaptcha-box" class="g-recaptcha" data-sitekey="' + CONFIG.RECAPTCHA_SITE_KEY + '" data-callback="onGoogleCaptchaPassed"></div>' +
       '</div>' +
       '<div id="captcha-fallback-box" style="margin-top:8px; display:none;">' +
-        '<div id="home-captcha-card" class="captcha-container" onclick="triggerHomeCaptcha()">' +
+        '<div id="home-captcha-card" class="captcha-container" role="button" tabindex="0" aria-label="Verify I am not a robot" onclick="triggerHomeCaptcha()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();triggerHomeCaptcha();}">' +
           '<div style="display:flex;align-items:center;gap:12px;">' +
             '<div id="home-captcha-check" class="captcha-box-inner"></div>' +
             '<span id="home-captcha-text" style="font-weight:600;font-size:14px;color:var(--text);">I\'m not a robot</span>' +
@@ -85,6 +85,20 @@ async function onGoogleCaptchaPassed(token) {
       showAlert("Security Verification", "Could not verify security token. Please check the box again.", "warn");
       return;
     }
+  }
+  try {
+    if (typeof dbSyncLiveSettingsAndContent === "function") {
+      await dbSyncLiveSettingsAndContent();
+    }
+  } catch (e) {}
+  var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : window._latestWebsiteContent;
+  var mInfo = (typeof getMaintenanceBlockInfo === "function") ? getMaintenanceBlockInfo(liveContent) : null;
+  if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+    closePopup();
+    if (typeof renderMaintenanceScreenHtml === "function") {
+      renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
+    }
+    return;
   }
   sessionStorage.setItem("pigem_captcha_verified", "true");
   closePopup();

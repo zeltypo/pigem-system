@@ -60,7 +60,7 @@ var CONFIG = {
     { name: "Company ID (Top 1000 Corporations)", hint: "Company / Employee ID number printed on the card.", pattern: /^[A-Z0-9]{3,20}$/ },
     { name: "Firearms License ID (Digitized/Card Type only)", hint: "LTOPF / Firearms License number as printed.", pattern: /^[A-Z0-9]{4,22}$/ },
     { name: "Alien Certificate of Registration (Permanent Status)", hint: "ACR I-Card number (e.g. F0000123456).", pattern: /^[A-Z0-9]{6,20}$/ },
-    { name: "Student ID (Top 228 Universities and Colleges)", hint: "Student number as printed on your active school ID.", pattern: /^[A-Z0-9]{4,20}$/ },
+    { name: "Student ID (Top 228 Universities and Colleges)", hint: "Student number as printed on your active school ID. (Student IDs without a printed Birth Date are accepted and marked 'Not Printed on ID' for manual verification.)", pattern: /^[A-Z0-9]{4,20}$/ },
     { name: "Police Clearance (Verifiable Online)", hint: "National Police Clearance reference number as printed.", pattern: /^[A-Z0-9]{6,24}$/ },
     { name: "National ID", hint: "PhilSys PCN: 16 digits (1234-5678-9012-3456) or 12-digit PSN.", pattern: /^(\d{12}|\d{16})$/ },
     { name: "Voter's ID", hint: "VIN: letters and digits as printed on your Voter's ID.", pattern: /^[A-Z0-9]{6,28}$/ },
@@ -203,7 +203,7 @@ function writeSaved(key, value) {
 function getActivePlans() { return readSaved("pigem_plans", CONFIG.PLANS); }
 function saveActivePlans(plans) {
   writeSaved("pigem_plans", plans);
-  if (typeof dbSaveLivePlans === "function") dbSaveLivePlans(plans);
+  if (typeof dbSaveLivePlans === "function") return dbSaveLivePlans(plans);
 }
 
 function getWebsiteContent() {
@@ -214,7 +214,7 @@ function getWebsiteContent() {
 }
 function saveWebsiteContent(content) {
   writeSaved("pigem_website_content", content);
-  if (typeof dbSaveLiveWebsiteContent === "function") dbSaveLiveWebsiteContent(content);
+  if (typeof dbSaveLiveWebsiteContent === "function") return dbSaveLiveWebsiteContent(content);
 }
 
 function getSystemSettings() {
@@ -226,7 +226,7 @@ function getSystemSettings() {
 }
 function saveSystemSettings(settings) {
   writeSaved("pigem_system_settings", settings);
-  if (typeof dbSaveLiveSystemSettings === "function") dbSaveLiveSystemSettings(settings);
+  if (typeof dbSaveLiveSystemSettings === "function") return dbSaveLiveSystemSettings(settings);
 }
 
 function formatPeso(amount) {
@@ -949,6 +949,41 @@ window.addEventListener("DOMContentLoaded", async function () {
   loadPageImages();
   checkPublicMaintenance();
   setupPublicHeader();
+
+  var pathLower = (window.location && window.location.pathname ? window.location.pathname : "").toLowerCase();
+  var isCoveredPublic =
+    (document.body && document.body.classList.contains("public-page")) ||
+    pathLower.indexOf("index.html") !== -1 ||
+    pathLower.indexOf("about.html") !== -1 ||
+    pathLower.indexOf("apply.html") !== -1 ||
+    pathLower.indexOf("activate.html") !== -1 ||
+    pathLower.endsWith("/");
+  if (isCoveredPublic) {
+    var syncPublicMaintenance = async function () {
+      if (typeof dbSyncLiveSettingsAndContent === "function") {
+        await dbSyncLiveSettingsAndContent(false);
+      }
+      checkPublicMaintenance();
+    };
+    window.addEventListener("focus", syncPublicMaintenance);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) syncPublicMaintenance();
+    });
+    window.addEventListener("storage", function (ev) {
+      if (!ev || !ev.key || ev.key === "pigem_system_settings" || ev.key === "pigem_website_content") {
+        checkPublicMaintenance();
+      }
+    });
+    setInterval(function () {
+      if (!document.hidden) syncPublicMaintenance();
+    }, 5000);
+  }
+});
+
+window.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && document.getElementById("popup-modal")) {
+    closePopup();
+  }
 });
 
 class BaseFieldValidator {

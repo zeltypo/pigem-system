@@ -36,7 +36,7 @@
       </div>
 
       <div class="top-search">
-        <input type="search" placeholder="Search accounts, applications, or sections..." oninput="onTopSearchInput(this)" />
+        <input type="search" placeholder="Search accounts, applications, or sections..." aria-label="Search accounts, applications, or sections..." oninput="onTopSearchInput(this)" />
         <div id="top-search-results" class="search-drop hidden"></div>
       </div>
 
@@ -182,12 +182,12 @@
           <div class="grid-3" style="margin-bottom:14px">
             <div class="field">
               <label>Customer Gmail Recipient</label>
-              <input id="test-email-to" type="email" value="" placeholder="customer@gmail.com" />
+              <input id="test-email-to" aria-label="Recipient Gmail address for test email" type="email" value="" placeholder="customer@gmail.com" />
               <small class="muted" style="font-size:11px">Delivers exclusively to @gmail.com Customer addresses</small>
             </div>
             <div class="field">
               <label>Email Template</label>
-              <select id="test-email-type">
+              <select id="test-email-type" aria-label="Email template type to test">
                 <option value="otp">6-Digit Security OTP (5-Min Validity)</option>
                 <option value="application_confirmation">Application Confirmation (Ref No and Specs)</option>
                 <option value="correction_notice">Correction Notice (RA 10173 Privacy Safe)</option>
@@ -227,7 +227,7 @@
           </div>
 
           <div id="acc-search-toolbar" class="section-toolbar">
-            <input id="acc-search-input" type="text" class="section-search-input" placeholder="Search accounts by name, @username, or email..." oninput="renderAdminUsers()" />
+            <input id="acc-search-input" aria-label="Search accounts by name, username, or email" type="text" class="section-search-input" placeholder="Search accounts by name, @username, or email..." oninput="renderAdminUsers()" />
           </div>
 
           <div id="acc-table-panel" class="table-wrap">
@@ -280,8 +280,8 @@
           </div>
 
           <div class="section-toolbar">
-            <input id="logs-search-input" type="text" class="section-search-input" placeholder="Filter logs by actor, @username, action, or detail..." oninput="renderAdminLogs()" />
-            <select id="logs-role-filter" style="width:auto; min-width:160px" onchange="renderAdminLogs()">
+            <input id="logs-search-input" aria-label="Filter activity logs by actor, username, action, or detail" type="text" class="section-search-input" placeholder="Filter logs by actor, @username, action, or detail..." oninput="renderAdminLogs()" />
+            <select id="logs-role-filter" aria-label="Filter activity logs by role" style="width:auto; min-width:160px" onchange="renderAdminLogs()">
               <option value="all">All Categories</option>
               <option value="auth">Sign-In &amp; Passwords</option>
               <option value="accounts">Accounts &amp; Roles</option>
