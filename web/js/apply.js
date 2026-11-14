@@ -157,11 +157,18 @@ async function initApplyPage() {
   }
 
   try {
-    if (typeof dbGetWebsiteContent === "function") {
-      var liveContent = await dbGetWebsiteContent();
-      window._latestWebsiteContent = liveContent;
-      var mInfo = typeof getMaintenanceBlockInfo === "function" ? getMaintenanceBlockInfo(liveContent) : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
-      if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+    if (typeof dbSyncLiveSettingsAndContent === "function") {
+      await dbSyncLiveSettingsAndContent();
+    }
+    var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : null;
+    window._latestWebsiteContent = liveContent;
+    var mInfo = (typeof getMaintenanceBlockInfo === "function")
+      ? getMaintenanceBlockInfo(liveContent)
+      : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
+    if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+      if (typeof renderMaintenanceScreenHtml === "function") {
+        renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
+      } else {
         closePopup();
         document.body.innerHTML =
           '<main class="auth-page">' +
@@ -171,8 +178,8 @@ async function initApplyPage() {
               '<div style="margin-top:18px"><a href="index.html" class="btn btn-red">Back to Home Page</a></div>' +
             '</div>' +
           '</main>';
-        return;
       }
+      return;
     }
   } catch (e) {}
 
@@ -1071,7 +1078,7 @@ async function enforceLiveMaintenanceOnStep() {
     if (typeof dbSyncLiveSettingsAndContent === "function") {
       await dbSyncLiveSettingsAndContent();
     }
-    var liveContent = (typeof dbGetWebsiteContent === "function") ? await dbGetWebsiteContent() : window._latestWebsiteContent;
+    var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : window._latestWebsiteContent;
     if (liveContent) window._latestWebsiteContent = liveContent;
     var mInfo = (typeof getMaintenanceBlockInfo === "function")
       ? getMaintenanceBlockInfo(liveContent)

@@ -858,16 +858,17 @@ function getMaintenanceBlockInfo(contentObj) {
       message: settings.maintenance_message || "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly."
     };
   }
-  var c = contentObj || window._latestWebsiteContent || readSaved("pigem_content", null) || {};
+  var c = contentObj || (typeof getWebsiteContent === "function" ? getWebsiteContent() : null) || window._latestWebsiteContent || {};
   var ann = c.announcement || {};
   if (ann && ann.active) {
-    var combined = ((ann.headline || "") + " " + (ann.message || "")).toLowerCase();
+    var annBody = ann.body || ann.message || "";
+    var combined = ((ann.headline || "") + " " + annBody).toLowerCase();
     if (/maint|unavailable|offline|upgrade|down|closed|pause|temporar/i.test(combined)) {
       return {
         blocked: true,
         isFullMaintenance: false,
         title: ann.headline || "Scheduled Maintenance Notice",
-        message: ann.message || "Online plan application is temporarily paused for maintenance. Please try again shortly."
+        message: annBody || "Online plan application is temporarily paused for maintenance. Please try again shortly."
       };
     }
   }

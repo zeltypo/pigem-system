@@ -1,15 +1,16 @@
 var pendingApplyPlanId = null;
 
 async function openApplyWithCaptcha(planId) {
+  pendingApplyPlanId = planId || "1000";
   try {
     if (typeof dbSyncLiveSettingsAndContent === "function") {
       await dbSyncLiveSettingsAndContent();
     }
-    if (typeof dbGetWebsiteContent === "function") {
-      window._latestWebsiteContent = await dbGetWebsiteContent();
-    }
   } catch (e) {}
-  var mInfo = typeof getMaintenanceBlockInfo === "function" ? getMaintenanceBlockInfo(window._latestWebsiteContent) : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
+  var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : window._latestWebsiteContent;
+  var mInfo = (typeof getMaintenanceBlockInfo === "function")
+    ? getMaintenanceBlockInfo(liveContent)
+    : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
   if (mInfo && mInfo.blocked) {
     if (mInfo.isFullMaintenance && typeof renderMaintenanceScreenHtml === "function" && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
       renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
@@ -23,14 +24,11 @@ async function openApplyWithCaptcha(planId) {
     return;
   }
   var targetUrl = "apply.html" + (planId ? "?plan=" + encodeURIComponent(planId) : "");
-  var existing = sessionStorage.getItem("pigem_apply_captcha_verified");
-  if (existing && (Date.now() - Number(existing)) < 30 * 60 * 1000) {
+  if (sessionStorage.getItem("pigem_captcha_verified") === "true") {
     window.location.href = targetUrl;
     return;
   }
-  showApplyCaptchaGatePopup(function () {
-    window.location.href = targetUrl;
-  });
+  showGoogleCaptchaPopup();
 }
 
 function showGoogleCaptchaPopup() {
