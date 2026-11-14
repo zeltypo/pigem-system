@@ -262,7 +262,7 @@ async function dbIsUsernameTaken(username, excludeUserId) {
 }
 
 async function dbGenerateUniqueUsername(fullName, email, preferredUsername) {
-  var seed = String(preferredUsername || "").trim().toLowerCase();
+  var seed = String(preferredUsername || "").trim().replace(/^@/, "");
   if (!seed || (typeof isValidUsername === "function" && !isValidUsername(seed))) {
     seed = (typeof sanitizeUsernameSeed === "function")
       ? sanitizeUsernameSeed(fullName, email)
@@ -728,7 +728,7 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
   if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
     throw new Error("Customer Account activation is for @gmail.com accounts only.");
   }
-  var cleanChosenUser = String(chosenUsername || "").trim().toLowerCase();
+  var cleanChosenUser = String(chosenUsername || "").trim().replace(/^@/, "");
   if (cleanChosenUser && typeof isValidUsername === "function" && !isValidUsername(cleanChosenUser)) {
     throw new Error("Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
   }
@@ -1316,7 +1316,7 @@ async function dbUpdateProfile(userId, changes) {
     safeChanges.session_token = null;
   }
   if (safeChanges.username != null) {
-    var cleanUser = String(safeChanges.username || "").trim().toLowerCase();
+    var cleanUser = String(safeChanges.username || "").trim().replace(/^@/, "");
     if (typeof isValidUsername === "function" && !isValidUsername(cleanUser)) {
       throw new Error("Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
     }
@@ -2430,7 +2430,7 @@ async function dbAdminUpdateStaffAccount(userId, changes) {
   var updates = {};
   if (changes.full_name != null) updates.full_name = String(changes.full_name).trim();
   if (changes.username != null) {
-    var cleanU = String(changes.username).trim().toLowerCase().replace(/^@/, "");
+    var cleanU = String(changes.username).trim().replace(/^@/, "");
     if (typeof isValidUsername === "function" && !isValidUsername(cleanU)) {
       throw new Error("Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
     }

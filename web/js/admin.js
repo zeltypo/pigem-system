@@ -504,7 +504,7 @@ async function submitAddStaffModal(event) {
   var fname = (document.getElementById("modal-acc-fname").value || "").trim();
   var mname = (document.getElementById("modal-acc-mname").value || "").trim();
   var lname = (document.getElementById("modal-acc-lname").value || "").trim();
-  var username = (document.getElementById("modal-acc-username").value || "").trim().toLowerCase().replace(/^@/, "");
+  var username = (document.getElementById("modal-acc-username").value || "").trim().replace(/^@/, "");
   var role = document.getElementById("modal-acc-role").value;
   var pw = (document.getElementById("modal-acc-pw").value || "").trim();
 
@@ -577,7 +577,7 @@ async function submitEditStaffModal(event, userId) {
   event.preventDefault();
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
   var fullName = (document.getElementById("edit-acc-fullname").value || "").trim();
-  var username = (document.getElementById("edit-acc-username").value || "").trim().toLowerCase().replace(/^@/, "");
+  var username = (document.getElementById("edit-acc-username").value || "").trim().replace(/^@/, "");
   var roleEl = document.getElementById("edit-acc-role");
   var newPw = (document.getElementById("edit-acc-pw").value || "").trim();
 

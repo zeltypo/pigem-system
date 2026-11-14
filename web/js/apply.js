@@ -1066,7 +1066,30 @@ function bindMapFieldListeners() {
   }
 }
 
+async function enforceLiveMaintenanceOnStep() {
+  try {
+    if (typeof dbSyncLiveSettingsAndContent === "function") {
+      await dbSyncLiveSettingsAndContent();
+    }
+    var liveContent = (typeof dbGetWebsiteContent === "function") ? await dbGetWebsiteContent() : window._latestWebsiteContent;
+    if (liveContent) window._latestWebsiteContent = liveContent;
+    var mInfo = (typeof getMaintenanceBlockInfo === "function")
+      ? getMaintenanceBlockInfo(liveContent)
+      : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
+    if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+      if (typeof renderMaintenanceScreenHtml === "function") {
+        renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
+      } else if (typeof checkPublicMaintenance === "function") {
+        checkPublicMaintenance();
+      }
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 async function nextPanel() {
+  if (await enforceLiveMaintenanceOnStep()) return;
   if (currentPanel === 3) {
     var latVal = parseFloat(document.getElementById("lat").value);
     var lngVal = parseFloat(document.getElementById("lng").value);
@@ -1090,7 +1113,8 @@ async function nextPanel() {
   }
 }
 
-function prevPanel() {
+async function prevPanel() {
+  if (await enforceLiveMaintenanceOnStep()) return;
   if (currentPanel > 0) {
     showPanel(currentPanel - 1);
   }
@@ -1408,6 +1432,7 @@ function resetApplyWizardToStep1() {
 }
 
 async function submitRegistration() {
+  if (await enforceLiveMaintenanceOnStep()) return;
   if (!validateCurrentPanel()) return;
 
   var first = document.getElementById("first_name").value.trim();

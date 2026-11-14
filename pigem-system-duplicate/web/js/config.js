@@ -874,6 +874,24 @@ function getMaintenanceBlockInfo(contentObj) {
   return { blocked: false, isFullMaintenance: false, title: "", message: "" };
 }
 
+function renderMaintenanceScreenHtml(titleText, msgText) {
+  closePopup();
+  var logoSrc = (typeof getImageUrl === "function" && typeof getActiveThemeLogoFilename === "function")
+    ? getImageUrl(getActiveThemeLogoFilename())
+    : "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
+  document.body.innerHTML =
+    '<main class="auth-page">' +
+      '<div class="card auth-card center" style="max-width:520px">' +
+        '<img src="' + logoSrc + '" alt="Combined Facilities Support Services" style="height:64px; margin:0 auto 14px" />' +
+        '<h2>' + escapeHtml(titleText || "Website Under Maintenance") + '</h2>' +
+        '<p class="muted mt">' +
+          escapeHtml(msgText || "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly.") +
+        '</p>' +
+        '<div style="margin-top:18px"><a href="index.html" class="btn btn-red">Back to Home Page</a></div>' +
+      '</div>' +
+    '</main>';
+}
+
 function checkPublicMaintenance() {
   var path = window.location.pathname.toLowerCase();
   var isCoveredPage =
@@ -886,13 +904,17 @@ function checkPublicMaintenance() {
     path.indexOf("terms.html") !== -1 ||
     path.endsWith("/");
 
-  if (!isCoveredPage) return;
+  if (!isCoveredPage) return false;
 
   var settings = getSystemSettings();
-  if (!settings.maintenance_mode) {
+  var mInfo = getMaintenanceBlockInfo();
+  var isApplyOrActivate = (path.indexOf("apply.html") !== -1 || path.indexOf("activate.html") !== -1);
+  var shouldShowMaintenanceScreen = Boolean(settings.maintenance_mode || (isApplyOrActivate && mInfo.blocked));
+
+  if (!shouldShowMaintenanceScreen) {
     var oldBar = document.getElementById("mgr-preview-bar");
     if (oldBar) oldBar.remove();
-    return;
+    return false;
   }
 
   if (isManagerOrAdminPreview()) {
@@ -906,20 +928,11 @@ function checkPublicMaintenance() {
         "<b>Manager Preview Mode:</b> The Public Website, Application Form, and Account Activation are currently <b>Under Maintenance</b> for customers while you edit content.";
       document.body.insertBefore(bar, document.body.firstChild);
     }
-    return;
+    return false;
   }
 
-  closePopup();
-  document.body.innerHTML =
-    '<main class="auth-page">' +
-      '<div class="card auth-card center" style="max-width:520px">' +
-        '<img src="' + getImageUrl(getActiveThemeLogoFilename()) + '" alt="PIGEM" style="height:64px; margin:0 auto 14px" />' +
-        '<h2>Website Under Maintenance</h2>' +
-        '<p class="muted mt">' +
-          (settings.maintenance_message || "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly.") +
-        '</p>' +
-      '</div>' +
-    '</main>';
+  renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message || settings.maintenance_message);
+  return true;
 }
 
 window.addEventListener("DOMContentLoaded", async function () {

@@ -600,7 +600,7 @@ async function submitManagerAddAgent(event) {
   var fname = (document.getElementById("mgr-modal-ag-fname").value || "").trim();
   var mname = (document.getElementById("mgr-modal-ag-mname").value || "").trim();
   var lname = (document.getElementById("mgr-modal-ag-lname").value || "").trim();
-  var username = (document.getElementById("mgr-modal-ag-username").value || "").trim().toLowerCase().replace(/^@/, "");
+  var username = (document.getElementById("mgr-modal-ag-username").value || "").trim().replace(/^@/, "");
   var pass = (document.getElementById("mgr-modal-ag-pass").value || "").trim();
 
   var cleanMid = (mname && mname.toUpperCase() !== "N/A") ? mname : "";
@@ -663,7 +663,7 @@ async function submitManagerEditAgent(event, userId) {
   event.preventDefault();
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
   var fullName = (document.getElementById("mgr-edit-ag-name").value || "").trim();
-  var username = (document.getElementById("mgr-edit-ag-user").value || "").trim().toLowerCase().replace(/^@/, "");
+  var username = (document.getElementById("mgr-edit-ag-user").value || "").trim().replace(/^@/, "");
   var pw = (document.getElementById("mgr-edit-ag-pw").value || "").trim();
   var nChk = validatePersonName(fullName, "Full Name", false, false);
   var hasErr = false;

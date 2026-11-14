@@ -535,7 +535,7 @@ async function saveProfileChanges() {
   hideMsg("prof-msg");
   var newName = document.getElementById("prof-name").value.trim() || dashCurrentUser.full_name;
   var usernameEl = document.getElementById("prof-username");
-  var newUsername = usernameEl ? usernameEl.value.trim().toLowerCase() : (dashCurrentUser.username || "");
+  var newUsername = usernameEl ? usernameEl.value.trim().replace(/^@/, "") : (dashCurrentUser.username || "");
   var newIntro = document.getElementById("prof-intro").value.trim();
 
   var changes = {

@@ -270,7 +270,8 @@ async function handleLogin(event) {
 
   var emailEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
-  var identifier = (emailEl ? emailEl.value : "").trim().toLowerCase();
+  var rawIdent = (emailEl ? emailEl.value : "").trim();
+  var identifier = (rawIdent.indexOf("@") !== -1 && rawIdent.charAt(0) !== "@") ? rawIdent.toLowerCase() : rawIdent;
   var password = pwEl ? pwEl.value : "";
   var hasError = false;
 

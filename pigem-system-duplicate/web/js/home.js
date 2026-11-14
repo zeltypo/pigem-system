@@ -1,8 +1,20 @@
 var pendingApplyPlanId = null;
 
-function openApplyWithCaptcha(planId) {
+async function openApplyWithCaptcha(planId) {
+  try {
+    if (typeof dbSyncLiveSettingsAndContent === "function") {
+      await dbSyncLiveSettingsAndContent();
+    }
+    if (typeof dbGetWebsiteContent === "function") {
+      window._latestWebsiteContent = await dbGetWebsiteContent();
+    }
+  } catch (e) {}
   var mInfo = typeof getMaintenanceBlockInfo === "function" ? getMaintenanceBlockInfo(window._latestWebsiteContent) : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
   if (mInfo && mInfo.blocked) {
+    if (mInfo.isFullMaintenance && typeof renderMaintenanceScreenHtml === "function" && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+      renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
+      return;
+    }
     showAlert(
       mInfo.title || "Website Under Maintenance",
       mInfo.message || "Online fiber applications are temporarily paused while the system is under maintenance. Please try again later.",
