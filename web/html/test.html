@@ -1,81 +1,86 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>System & AI Testing Checklist | Combined Facilities Support Services</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Round 2 Bug-Fix &amp; AI Screening Verification Checklist | Combined Facilities Support Services</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
+      --red: #c8102e;
+      --red-dark: #9e0b22;
+      --red-soft: #fff1f2;
       --bg: #f8fafc;
       --card: #ffffff;
       --text: #0f172a;
       --muted: #475569;
       --line: #e2e8f0;
-      --red: #c8102e;
-      --red-dark: #9e0b22;
-      --red-soft: #fef2f2;
-      --good: #15803d;
-      --good-soft: #f0fdf4;
-      --good-border: #bbf7d0;
-      --navy: #101828;
+      --green: #15803d;
+      --green-soft: #f0fdf4;
+      --blue: #1d4ed8;
+      --blue-soft: #eff6ff;
+      --amber: #b45309;
+      --amber-soft: #fffbeb;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
+      padding-bottom: 60px;
     }
     .topbar {
-      background: var(--navy);
-      color: #fff;
-      padding: 16px 20px;
       position: sticky;
       top: 0;
-      z-index: 50;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+      z-index: 100;
+      background: #0f172a;
+      color: #fff;
+      padding: 14px 20px;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.16);
     }
     .topbar-inner {
-      max-width: 1080px;
+      max-width: 1120px;
       margin: 0 auto;
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      flex-wrap: wrap;
+      gap: 14px;
     }
     .brand-title {
       font-size: 17px;
       font-weight: 800;
-      letter-spacing: 0.2px;
+      letter-spacing: -0.01em;
     }
     .brand-sub {
-      font-size: 11px;
-      font-weight: 700;
-      color: #fca5a5;
-      letter-spacing: 0.8px;
+      font-size: 11.5px;
+      color: #94a3b8;
+      font-weight: 600;
       text-transform: uppercase;
-      margin-top: 2px;
+      letter-spacing: 0.06em;
     }
     .progress-wrap {
       display: flex;
       align-items: center;
       gap: 12px;
-      background: rgba(255,255,255,0.08);
+      background: rgba(255, 255, 255, 0.08);
       padding: 8px 14px;
-      border-radius: 10px;
-      min-width: 260px;
+      border-radius: 999px;
+      min-width: 250px;
     }
-    .progress-bar-outer {
+    .progress-bar-bg {
       flex: 1;
-      height: 10px;
-      background: rgba(255,255,255,0.2);
+      height: 8px;
+      background: rgba(255, 255, 255, 0.18);
       border-radius: 999px;
       overflow: hidden;
-      min-width: 110px;
     }
-    .progress-bar-inner {
+    .progress-bar-fill {
       height: 100%;
       width: 0%;
       background: #22c55e;
@@ -87,245 +92,288 @@
       white-space: nowrap;
     }
     .container {
-      max-width: 1080px;
-      margin: 24px auto 60px;
+      max-width: 1120px;
+      margin: 22px auto 0;
       padding: 0 16px;
     }
-    .card {
+    .hero-card {
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 18px 20px;
+      border-radius: 14px;
+      padding: 20px;
       margin-bottom: 18px;
       box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
     }
-    .card h2 {
-      margin: 0 0 6px;
-      font-size: 17px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .sec-badge {
-      font-size: 11.5px;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 999px;
-      background: #f1f5f9;
-      color: #334155;
-      white-space: nowrap;
-    }
-    .sec-badge.synced {
-      background: #dcfce7;
-      color: #166534;
-    }
-    .sec-badge.saving {
-      background: #fef9c3;
-      color: #854d0e;
-    }
-    .sec-desc {
-      margin: 0 0 14px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-    .links-grid {
+    .quick-links {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: 8px;
-      margin-top: 10px;
+      margin-top: 12px;
     }
-    .portal-link {
+    .quick-link {
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
       padding: 9px 12px;
+      background: var(--bg);
       border: 1px solid var(--line);
       border-radius: 8px;
-      text-decoration: none;
       color: var(--text);
-      background: #f8fafc;
-      font-size: 13px;
-      font-weight: 700;
-      transition: border-color 0.15s, background 0.15s;
+      text-decoration: none;
+      font-size: 12.5px;
+      font-weight: 600;
+      transition: all 0.15s ease;
     }
-    .portal-link:hover {
+    .quick-link:hover {
       border-color: var(--red);
       background: var(--red-soft);
+      color: var(--red);
     }
-    .portal-link span {
+    .quick-link code {
       font-size: 11px;
-      font-weight: 500;
       color: var(--muted);
-      margin-top: 2px;
     }
-    .controls-row {
+    .toolbar {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
       justify-content: space-between;
-      margin-top: 12px;
-      padding-top: 12px;
+      margin-top: 16px;
+      padding-top: 16px;
       border-top: 1px solid var(--line);
     }
-    .input-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      flex: 1;
-    }
-    .input-group input, .input-group select {
-      padding: 8px 11px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      font-size: 13px;
-      background: #fff;
-      color: var(--text);
-    }
-    .btn-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
     .btn {
-      padding: 8px 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
       border-radius: 8px;
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--text);
       font-size: 12.5px;
       font-weight: 700;
       cursor: pointer;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      font-family: inherit;
     }
     .btn:hover { background: #f1f5f9; }
     .btn-red {
       background: var(--red);
-      border-color: var(--red);
       color: #fff;
+      border-color: var(--red);
     }
     .btn-red:hover { background: var(--red-dark); }
-    .test-list {
+    .filter-select, .tester-input {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      background: #fff;
+      color: var(--text);
+    }
+    .section-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      margin-bottom: 18px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+    .section-head {
+      padding: 15px 20px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--line);
       display: flex;
-      flex-direction: column;
-      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .section-title {
+      font-size: 15.5px;
+      font-weight: 800;
+      margin: 0;
+    }
+    .section-sub {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin: 2px 0 0;
+    }
+    .sec-badge {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      color: #334155;
+      white-space: nowrap;
+    }
+    .sec-badge.done {
+      background: var(--green-soft);
+      color: var(--green);
+    }
+    .test-list {
+      divide-y: 1px solid var(--line);
     }
     .test-item {
       display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fff;
-      transition: background 0.15s, border-color 0.15s;
-    }
-    .test-item:hover {
-      border-color: #cbd5e1;
-    }
-    .test-item.done {
-      background: var(--good-soft);
-      border-color: var(--good-border);
-    }
-    .test-top {
-      display: flex;
       align-items: flex-start;
-      gap: 12px;
-      cursor: pointer;
+      gap: 14px;
+      padding: 15px 20px;
+      border-bottom: 1px solid var(--line);
+      transition: background 0.15s ease;
     }
-    .test-top input[type="checkbox"] {
-      width: 19px;
-      height: 19px;
+    .test-item:last-child { border-bottom: none; }
+    .test-item:hover { background: #fcfcfd; }
+    .test-item.checked {
+      background: var(--green-soft);
+    }
+    .test-item.checked .test-title {
+      text-decoration: line-through;
+      color: var(--green);
+    }
+    .test-cb {
+      width: 20px;
+      height: 20px;
       margin-top: 2px;
-      accent-color: var(--good);
+      accent-color: var(--green);
       cursor: pointer;
       flex-shrink: 0;
     }
-    .test-content {
+    .test-body {
       flex: 1;
-      font-size: 13.5px;
+      min-width: 0;
+    }
+    .test-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      cursor: pointer;
     }
     .test-id {
-      display: inline-block;
       font-size: 11px;
       font-weight: 800;
-      padding: 1px 7px;
+      padding: 2px 7px;
       border-radius: 5px;
-      background: #e2e8f0;
-      color: #1e293b;
-      margin-right: 6px;
+      background: #f1f5f9;
+      color: #334155;
     }
-    .test-item.done .test-id {
-      background: #bbf7d0;
-      color: #14532d;
-    }
-    .ai-tag {
-      display: inline-block;
+    .tag-fix {
       font-size: 10.5px;
       font-weight: 800;
-      padding: 1px 7px;
+      padding: 2px 7px;
       border-radius: 5px;
-      background: #fef3c7;
-      color: #92400e;
-      margin-right: 6px;
+      background: var(--amber-soft);
+      color: var(--amber);
       border: 1px solid #fde68a;
     }
+    .tag-ai {
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      border: 1px solid #bfdbfe;
+    }
     .test-title {
+      font-size: 14px;
       font-weight: 700;
       color: var(--text);
     }
-    .test-item.done .test-title {
-      color: #14532d;
-      text-decoration: line-through;
-    }
     .test-desc {
-      display: block;
-      margin-top: 3px;
-      color: var(--muted);
       font-size: 12.8px;
+      color: var(--muted);
+      margin-top: 4px;
     }
-    .item-comment-wrap {
-      padding-left: 31px;
-    }
-    .item-comment-input {
-      width: 100%;
+    .fix-context {
+      margin-top: 6px;
       padding: 7px 10px;
-      border: 1px solid #cbd5e1;
       border-radius: 7px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      font-size: 12px;
+      color: #92400e;
+    }
+    .comment-wrap {
+      margin-top: 9px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .comment-input {
+      width: 100%;
+      padding: 7px 11px;
       font-size: 12.5px;
       font-family: inherit;
-      background: #f8fafc;
-      color: var(--text);
-      resize: vertical;
-      min-height: 36px;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .item-comment-input:focus {
-      outline: none;
-      border-color: var(--red);
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
       background: #fff;
+      color: var(--text);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
-    .item-comment-input.has-text {
-      background: #fffbeb;
-      border-color: #fde68a;
+    .comment-input:focus {
+      outline: none;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
     }
-    .note-box {
-      width: 100%;
-      margin-top: 8px;
-      padding: 8px 10px;
+    .comment-input.has-text {
+      border-color: #f59e0b;
+      background: #fffdf5;
+      font-weight: 500;
+    }
+    .notes-card {
+      background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 8px;
-      font-size: 13px;
+      border-radius: 14px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    textarea.notes-area {
+      width: 100%;
+      min-height: 110px;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
       font-family: inherit;
+      font-size: 13px;
+      margin-top: 8px;
       resize: vertical;
-      min-height: 68px;
+    }
+    .sync-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 700;
+      background: #dcfce7;
+      color: #166534;
+    }
+    .sync-pill.saving {
+      background: #fef9c3;
+      color: #854d0e;
+    }
+    .sync-pill.offline {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .sync-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
     }
     @media print {
-      .topbar { position: static; background: #fff; color: #000; box-shadow: none; border-bottom: 2px solid #000; }
-      .btn-row, .filter-select { display: none !important; }
-      .card { break-inside: avoid; box-shadow: none; }
-      .item-comment-input { border: 1px solid #94a3b8; background: #fff !important; }
+      .topbar { position: static; background: #fff; color: #000; border-bottom: 2px solid #000; box-shadow: none; }
+      .toolbar, .no-print { display: none !important; }
+      body { background: #fff; padding: 0; }
+      .section-card, .hero-card, .notes-card { break-inside: avoid; box-shadow: none; border-color: #cbd5e1; }
     }
   </style>
 </head>
@@ -335,198 +383,419 @@
     <div class="topbar-inner">
       <div>
         <div class="brand-title">Combined Facilities Support Services</div>
-        <div class="brand-sub">MASTER SYSTEM &amp; AI SCREENING TEST CHECKLIST (CLOUD SYNCED)</div>
+        <div class="brand-sub">ROUND 2: BUG-FIX &amp; AI SCREENING VERIFICATION CHECKLIST (CLOUD SYNCED)</div>
       </div>
       <div class="progress-wrap">
-        <div class="progress-bar-outer">
-          <div id="prog-bar" class="progress-bar-inner"></div>
+        <div class="progress-bar-bg">
+          <div id="prog-fill" class="progress-bar-fill"></div>
         </div>
-        <div id="prog-text" class="progress-text">0 / 54 (0%)</div>
+        <div id="prog-text" class="progress-text">0 / 24 (0%)</div>
       </div>
     </div>
   </header>
 
   <main class="container">
-
-    <section class="card">
-      <h2>
-        <span>Quick Portal Links &amp; Live Cloud Sync</span>
-        <span class="sec-badge synced" id="save-indicator">Cloud Synced (Phone &amp; Laptop)</span>
-      </h2>
-      <p class="sec-desc">When you check a box or write a comment on your <b>phone</b>, it automatically syncs to the cloud so you can see the exact same checkboxes and comments on your <b>laptop</b> (and vice versa) with zero SQL changes needed.</p>
-
-      <div class="links-grid">
-        <a class="portal-link" href="index.html" target="_blank">Public Home Page<span>/index.html</span></a>
-        <a class="portal-link" href="about.html" target="_blank">Public About Us<span>/about.html</span></a>
-        <a class="portal-link" href="apply.html" target="_blank">Application Form<span>/apply.html</span></a>
-        <a class="portal-link" href="login.html" target="_blank">Customer Login / Activate<span>/login.html</span></a>
-        <a class="portal-link" href="customer.html" target="_blank">Customer Portal<span>/customer.html</span></a>
-        <a class="portal-link" href="staff-login.html" target="_blank">Staff Login (Agent &amp; Manager)<span>/staff-login.html</span></a>
-        <a class="portal-link" href="agent.html" target="_blank">Agent Portal<span>/agent.html</span></a>
-        <a class="portal-link" href="manager.html" target="_blank">Manager Portal<span>/manager.html</span></a>
-        <a class="portal-link" href="admin-login.html" target="_blank">Admin Setup &amp; Login<span>/admin-login.html</span></a>
-        <a class="portal-link" href="admin.html" target="_blank">Admin Technical Console<span>/admin.html</span></a>
+    <div class="hero-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <h1 style="font-size:19px; margin:0 0 4px;">Round 2 Focused Tester Checklist (Fixes + AI &amp; Document Screening)</h1>
+            <span id="cloud-sync-badge" class="sync-pill"><span class="sync-dot"></span><span id="cloud-sync-text">Cloud Synced (Phone &amp; Laptop)</span></span>
+          </div>
+          <p style="font-size:13px; color:var(--muted); margin:0;">
+            All <b>35 previously passed items</b> from Round 1 have been removed so you only need to test the <b>fixed items from Marion &amp; Luke's feedback</b> plus the <b>complete AI &amp; Document Screening suite</b>. Changes sync automatically between Phone and Laptop.
+          </p>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input id="tester-name" type="text" class="tester-input" placeholder="Tester Name(s) (e.g. Marion, Luke)" oninput="saveTesterMeta()" />
+        </div>
       </div>
 
-      <div class="controls-row">
-        <div class="input-group">
-          <input type="text" id="tester-name" placeholder="Tester Name (e.g., Aljo / Member Name)" oninput="saveMeta()" onblur="flushCloudSave()">
+      <div class="quick-links">
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/index.html" target="_blank"><span>Public Home Page</span><code>/index.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/about.html" target="_blank"><span>Public About Us</span><code>/about.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/apply.html" target="_blank"><span>Application Form</span><code>/apply.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/login.html" target="_blank"><span>Customer Login / Activate</span><code>/login.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/customer.html" target="_blank"><span>Customer Portal</span><code>/customer.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/staff-login.html" target="_blank"><span>Staff Login (Agent &amp; Manager)</span><code>/staff-login.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/agent.html" target="_blank"><span>Agent Portal</span><code>/agent.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/manager.html" target="_blank"><span>Manager Portal</span><code>/manager.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/admin-login.html" target="_blank"><span>Admin Setup &amp; Login</span><code>/admin-login.html</code></a>
+        <a class="quick-link" href="https://pigem-system-web.vercel.app/admin.html" target="_blank"><span>Admin Technical Console</span><code>/admin.html</code></a>
+      </div>
+
+      <div class="toolbar no-print">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
           <select id="filter-mode" class="filter-select" onchange="renderChecklist()">
-            <option value="all">Show All Test Items (54)</option>
-            <option value="pending">Show Unchecked / Remaining Only</option>
-            <option value="done">Show Completed Only</option>
+            <option value="all">Show All Remaining &amp; AI Tests (24)</option>
+            <option value="unchecked">Show Unchecked Only</option>
+            <option value="checked">Show Completed Only</option>
             <option value="commented">Show Items With Comments Only</option>
+            <option value="fixes">Show Fixed Tester Bug Items Only</option>
             <option value="ai">Show AI &amp; Document Screening Tests Only</option>
           </select>
         </div>
-        <div class="btn-row">
-          <button type="button" class="btn" onclick="pullFromCloud(true)">Sync Now</button>
-          <button type="button" class="btn" onclick="exportBackupJson()">Backup File</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn" onclick="pullFromCloudNow()">Sync Now</button>
+          <button type="button" class="btn" onclick="exportProgressJson()">Backup File</button>
           <button type="button" class="btn" onclick="document.getElementById('import-file').click()">Restore Backup</button>
-          <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBackupJson(this)">
-          <button type="button" class="btn" onclick="resetAll()">Reset Checkboxes</button>
+          <input id="import-file" type="file" accept=".json" style="display:none" onchange="importProgressJson(this)" />
+          <button type="button" class="btn" onclick="resetAllChecks()">Reset Checkboxes</button>
           <button type="button" class="btn btn-red" onclick="window.print()">Print / Save PDF</button>
         </div>
       </div>
-    </section>
+    </div>
 
-    <div id="sections-root"></div>
+    <div id="checklist-root"></div>
 
-    <section class="card">
-      <h2><span>Overall Tester Summary &amp; General Notes</span></h2>
-      <p class="sec-desc">Record overall summary notes, Reference Numbers tested (e.g., REF-...), or general feedback below:</p>
-      <textarea id="tester-notes" class="note-box" placeholder="Write your overall testing summary, Reference Numbers tested, or general feedback here..." oninput="saveMeta()" onblur="flushCloudSave()"></textarea>
-    </section>
-
+    <div class="notes-card">
+      <h3 style="margin:0 0 4px; font-size:15px;">Overall Round 2 Tester Notes &amp; Final Sign-Off</h3>
+      <p style="margin:0; font-size:12.5px; color:var(--muted);">Record any final remarks after re-testing the fixed items and AI screening cases. Syncs automatically between your phone and laptop.</p>
+      <textarea id="tester-notes" class="notes-area" placeholder="Write overall observations or final sign-off notes here..." oninput="saveTesterMeta()"></textarea>
+    </div>
   </main>
 
   <script>
+    var STORAGE_KEY = "pigem_test_checklist_v2";
+    var META_KEY = "pigem_test_meta_v2";
+    var CLOUD_ROW_ID = "tester_checklist_v2";
     var SUPABASE_URL = "https://wuunqfxyejxwrawtjdrf.supabase.co";
-    var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g";
-    var CLOUD_ROW_ID = "tester_checklist";
+    var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MDE2NzgsImV4cCI6MjA4OTQ3NzY3OH0.93-331-s2211110-g82311026-x93728219";
 
-    var STORAGE_KEY = "pigem_master_tester_checklist_v1";
-    var BACKUP_STORAGE_KEY = "pigem_master_tester_checklist_permanent_backup";
+    var sbClient = null;
+    try {
+      if (window.supabase && window.supabase.createClient) {
+        sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      }
+    } catch (e) {}
 
     var TEST_SECTIONS = [
       {
-        id: "sec-1",
-        title: "1. Brand-New System State (No User, No Banner) & First-Time Admin Setup",
-        desc: "Verify how the website behaves when starting completely fresh with no accounts and no uploaded banners yet.",
+        id: "sec-fixes",
+        title: "1. Fixed Items from Round 1 Tester Feedback (Re-Verification)",
+        subtitle: "Re-test the exact items where Marion & Luke reported bugs or UX improvements in Round 1.",
         items: [
-          { id: "T01", title: "Public Home Page with No Banners (/index.html)", desc: "Open /index.html before any banners are uploaded. Confirm the hero slider shows the clean dark-red gradient fallback banner with headline text and 'Apply Now' button (zero broken image icons)." },
-          { id: "T02", title: "Public About Us Page with No Banners (/about.html)", desc: "Open /about.html before any banners are uploaded. Confirm the About slider, Mission, Vision, Core Values, Vehicles, and Permits sections render cleanly." },
-          { id: "T03", title: "Default Fiber Plans & FAQs Display", desc: "Confirm Plan 1000 (100 Mbps), Plan 1400 (300 Mbps - Most Chosen), and Plan 1900 (500 Mbps) and the FAQ items load properly on /index.html." },
-          { id: "T04", title: "First-Time Admin Setup Card (/admin-login.html)", desc: "Open /admin-login.html when no user exists yet. Confirm the 'First-Time System Administrator Setup' card appears automatically." },
-          { id: "T05", title: "Create Single System Administrator Account", desc: "Register the Admin account (Username, Full Name, Gmail address, strong password) and confirm automatic sign-in to /admin.html." },
-          { id: "T06", title: "Verify Admin Topbar Title & Subtitle", desc: "Confirm /admin.html topbar displays 'Combined Facilities Support Services' with subtitle 'TECHNICAL MANAGEMENT SYSTEM'." },
-          { id: "T07", title: "Single-Admin Lock Verification", desc: "Re-open /admin-login.html and confirm the First-Time Setup form is no longer shown now that the Admin account exists." }
+          {
+            id: "F01",
+            fix: true,
+            title: "Strict Case-Sensitive Username Login (Formerly T05)",
+            desc: "Register or test an account with a capitalized letter in the username (e.g., 'Lucas'), then try logging in on /admin-login.html, /staff-login.html, or /login.html using lowercase ('lucas'). Confirm login is blocked with a case-sensitive username error, and only the exact case ('Lucas') succeeds.",
+            prevNote: "Round 1 Feedback: 'Hindi dapat mag llogin kapag yung username na nilagay sa register is capital letter like Lucas tapos ang nilagay molang sa login is lucas dapat hindi makakapag login' — FIXED in db.js."
+          },
+          {
+            id: "F02",
+            fix: true,
+            title: "Maintenance Announcement & Maintenance Mode Block Plan Selection (Formerly T13 & T50)",
+            desc: "Enable a Maintenance Announcement in Manager CMS (or enable Maintenance Mode in Manager/Admin). On /index.html, click 'Apply Now' or 'Apply for Plan'. Confirm it stays on the Home Page and shows the Maintenance popup alert instead of going to /apply.html. Also open /apply.html directly in a customer tab and confirm the Maintenance screen blocks the form.",
+            prevNote: "Round 1 Feedback: 'Dito naman dapat hindi na rerekta sa pag pili ng plan kapag naka maintenance na announcement siya, dapat nasa home page lang at pag pinindot parin yung plan lalabas yung message na maintenance' & 'Nagdidiretso paden kahit naka maintenance na yung website' — FIXED in config.js, home.js, and apply.js."
+          },
+          {
+            id: "F03",
+            fix: true,
+            title: "Application Form Keeps Active Step & Filled Inputs on Page Refresh (Formerly T18)",
+            desc: "On /apply.html, select a fiber plan and fill out Step 2 (Personal Info) or Step 3 (Contact Info), then refresh/reload the browser page. Confirm the page stays on your current step and retains all your typed information instead of resetting to Step 1.",
+            prevNote: "Round 1 Feedback: 'Pag nirestart nabalik dito sa select fiber plan suggest ko sana na dun parin mananatili sa tab na yon Kung saan nag refresh yung user at hindi mawawala Yung na fillupan na nya' — FIXED in apply.js."
+          },
+          {
+            id: "F04",
+            fix: true,
+            title: "Clear Popup Reason When Application Step Cannot Proceed or Submit (Formerly T22)",
+            desc: "On /apply.html, try clicking Next or Submit Application with missing or invalid required fields (e.g., unverified email OTP, missing ID photo, or unchecked consent). Confirm a clear popup alert appears listing the exact reason(s) why it cannot proceed.",
+            prevNote: "Round 1 Feedback: 'Suggest ko dun sa after mag submit ng user dapat may naka indicate kung anong reason bakit di makapag submit' — FIXED in apply.js."
+          },
+          {
+            id: "F05",
+            fix: true,
+            title: "Customer Portal 'View ->' Button Opens Full Application Summary Popup (Formerly T26)",
+            desc: "In /customer.html, click the 'View ->' button on an application card. Confirm it opens a full Application Summary popup modal showing Reference No., Plan, Status, Address, Front & Back ID previews, and Verification Notes.",
+            prevNote: "Round 1 Feedback: 'Dun sa may view na button parang dead button siya kasi nandoon na mismo SA screen yung iviview' — FIXED in customer.js."
+          },
+          {
+            id: "F06",
+            fix: true,
+            title: "Agent Portal 'Summary' Button Persistent Toggle (Formerly T40)",
+            desc: "In /agent.html Application Queue, click 'Summary' on an application card. Wait 10+ seconds (across background auto-refresh) and confirm the Summary box stays open and the button says 'Hide Summary' until you click it again to close.",
+            prevNote: "Round 1 Feedback: 'Dun sa summary pag clinick kusang nawawala suggest ko sana na pag clinick yung summary hindi nawawala kusa pati Kung gusto alisin yung summary click nalang ulit yung summary' — FIXED in agent.js."
+          },
+          {
+            id: "F07",
+            fix: true,
+            title: "Agent, Manager & Admin CSV Report File Download (Formerly T52)",
+            desc: "In /agent.html, /manager.html, and /admin.html -> Reports tab, click 'Download CSV'. Confirm the .csv file downloads properly to your device (both on phone and laptop) and shows a download confirmation popup.",
+            prevNote: "Round 1 Feedback: 'Navview pero hindi madownload ang csv reports(agents and manager)' — FIXED in dash-ui.js."
+          },
+          {
+            id: "F08",
+            fix: true,
+            title: "Agent, Manager & Admin 'Print Report' Button Preview & Print Dialog (Formerly T53)",
+            desc: "In /agent.html, /manager.html, or /admin.html -> Reports tab, click 'Print Report'. Confirm it opens a formatted Printable Report Preview window/modal with 'Print / Save as PDF' and triggers the print dialog.",
+            prevNote: "Round 1 Feedback: 'Dun sa button na print report button parang dead button sya kasi pag clinick wala nangyayari' — FIXED in dash-ui.js, agent.html, manager.html, and admin.html."
+          }
         ]
       },
       {
-        id: "sec-2",
-        title: "2. Staff Account Creation, Multi-Tab Login & Manager Website CMS (Uploading Banners)",
-        desc: "Create the Manager and Agent accounts, test logging in across multiple tabs, and upload the first website banners.",
+        id: "sec-ai",
+        title: "2. AI & Document Screening Test Suite (Complete & Expanded)",
+        subtitle: "Test pre-submit ID screening, live image quality metrics, OCR field matching (including Student ID / missing DOB), duplicate detection, and manual fallback.",
         items: [
-          { id: "T08", title: "Admin Creates Manager Account (/admin.html)", desc: "In Admin Portal -> Staff Accounts, create a Manager account and confirm it appears as Active in the table." },
-          { id: "T09", title: "Multi-Tab Staff Login Without Forced Redirect (/staff-login.html)", desc: "Open /staff-login.html in a new tab while Admin is still open in Tab 1. Confirm it shows the non-blocking 'Active Session Detected' banner instead of force-redirecting, and sign in as Manager." },
-          { id: "T10", title: "Verify Manager Topbar Title & Subtitle", desc: "Confirm /manager.html topbar displays 'Combined Facilities Support Services' with subtitle 'MANAGER APPLICATION MANAGEMENT'." },
-          { id: "T11", title: "Upload & Select First Website Banners (Manager CMS)", desc: "In /manager.html -> Website CMS, upload banner images into the Banners folder, select them for the Home Hero Slides and About Us Slides, and click Save Website Content." },
-          { id: "T12", title: "Verify Live Banners on Public Pages", desc: "Refresh /index.html and /about.html and confirm the newly uploaded banners now display and rotate in the carousel." },
-          { id: "T13", title: "Site Announcement Bar Toggle", desc: "Enable the Site Announcement Bar in Manager CMS with a headline and message, save, and confirm it appears at the top of /index.html." },
-          { id: "T14", title: "Edit Fiber Plans & FAQs in CMS", desc: "Edit a Fiber Plan or FAQ item in Manager CMS, save, and verify the live update on /index.html." },
-          { id: "T15", title: "Create Agent Account & Generate Agent Referral Link", desc: "In Manager Portal (or Admin Portal), create an Agent account and generate an Agent Referral Link (/apply.html?agent=CODE)." }
-        ]
-      },
-      {
-        id: "sec-3",
-        title: "3. Customer 6-Step Application Form (/apply.html)",
-        desc: "Test the complete customer fiber application wizard, field validations, OTP verification, map pinning, and Front/Back ID upload.",
-        items: [
-          { id: "T16", title: "Security Verification CAPTCHA Popup", desc: "Click 'Apply for Plan' on /index.html (or open /apply.html). Confirm the Security Verification popup opens with the shield icon and unlocks Step 1 once verified." },
-          { id: "T17", title: "Agent Referral Link Banner (?agent=CODE)", desc: "Open /apply.html?agent=CODE and confirm the 'Agent Referral Active' banner displays at the top of the application form." },
-          { id: "T18", title: "Step 1 — Select Your Fiber Plan", desc: "Choose a fiber plan card on Step 1 and click Next." },
-          { id: "T19", title: "Step 2 — Personal Information & 18+ Age Validation", desc: "Test live validation on First Name, Middle Name ('N/A' allowed), Last Name, and Date of Birth (confirm birth dates under 18 years old are blocked)." },
-          { id: "T20", title: "Step 3 — Gmail OTP Verification & Mobile Number Validation", desc: "Enter an active @gmail.com address, click 'Send Email OTP', enter the 6-digit OTP received in Gmail, and confirm the email badge turns Verified. Enter an 11-digit mobile number (09XXXXXXXXX)." },
-          { id: "T21", title: "Step 4 — Interactive Installation Map Pin & Address", desc: "Pin the installation address on the interactive map, confirm latitude/longitude update, and complete House No., Street, Barangay, City, Province, and Landmark." },
-          { id: "T22", title: "Step 5 — Valid ID Front & Back Upload (Desktop or Mobile QR)", desc: "Select a Philippine Government ID Type, enter the ID Number, and upload two separate clear photos for Front of Valid ID and Back of Valid ID (or test 'Scan QR with Phone')." },
-          { id: "T23", title: "Step 6 — Subscriber Consent & Submit Application", desc: "Check the Subscriber Declaration consent box and click Submit Application. Confirm the 3-step submission screen finishes and shows the Application Reference Number (REF-...)." }
-        ]
-      },
-      {
-        id: "sec-4",
-        title: "4. Customer Account Activation & Customer Portal (/login.html & /customer.html)",
-        desc: "Activate the customer account from the Gmail confirmation email and test the Customer Portal.",
-        items: [
-          { id: "T24", title: "Receive Application Confirmation & Activation Email in Gmail", desc: "Check the customer's Gmail inbox for the confirmation email containing the Reference Number, 6-digit Activation OTP, and one-time activation link." },
-          { id: "T25", title: "Activate Customer Account & Create Username/Password (/login.html)", desc: "Open the activation link (or /login.html), enter the 6-digit Activation OTP, set a custom Username and Password, and sign in to /customer.html." },
-          { id: "T26", title: "Customer Portal Header & Application Status Tracker", desc: "Confirm /customer.html topbar displays 'Combined Facilities Support Services' and shows the customer's Reference Number, Plan, Address, and current status." },
-          { id: "T27", title: "Customer Notification Bell Auto-Clear", desc: "Click the Notification Bell icon in /customer.html. Confirm the unread badge number disappears immediately (0) when opened, and restarts from 1 when a new notification arrives." }
-        ]
-      },
-      {
-        id: "sec-5",
-        title: "5. AI & Document Screening Test Cases (/apply.html & /agent.html)",
-        desc: "Test all AI OCR, image quality, duplicate check, location serviceability, and manual fallback scenarios.",
-        items: [
-          { id: "T28", ai: true, title: "AI Test 1 — Non-ID Photo Pre-Submit Rejection", desc: "On /apply.html Step 5, upload a non-ID photo (e.g., selfie, scenery, or random picture) as the Front ID and try to submit on Step 6. Confirm the AI gate blocks submission and states it is not a valid government ID." },
-          { id: "T29", ai: true, title: "AI Test 2 — Blurry / Dark / Glare Image Quality Check", desc: "Upload a blurry or dark ID photo. Confirm the quality analyzer calculates Sharpness, Brightness, and Glare scores and flags quality warnings." },
-          { id: "T30", ai: true, title: "AI Test 3 — Identical Front & Back Photo Block", desc: "On /apply.html Step 5 (or Customer Correction), select the exact same image file for both Front ID and Back ID. Confirm the system immediately blocks it and requires two different photos." },
-          { id: "T31", ai: true, title: "AI Test 4 — OCR Extraction & Exact Field Match", desc: "Submit an application where typed Name, Birth Date, ID Type, and ID Number match the ID card. In /agent.html Section 3, confirm AI extracts the fields, marks them Matched, and generates auto-cropped ID previews." },
-          { id: "T32", ai: true, title: "AI Test 5 — OCR Field Mismatch Detection (Name / DOB / ID No.)", desc: "Submit an application where the typed Name, Birth Date, or ID Number intentionally differs from the uploaded ID. Confirm /agent.html Section 3 highlights the mismatch and suggests a validator remark." },
-          { id: "T33", ai: true, title: "AI Test 6 — 'Run / Refresh Document Check' (No False Same-Upload Warning)", desc: "In /agent.html, open an initial application (before any customer correction) and click 'Run / Refresh Document Check'. Confirm it refreshes cleanly and NEVER falsely claims 'Unchanged Re-Uploaded Image'." },
-          { id: "T34", ai: true, title: "AI Test 7 — True Unchanged Re-Upload Detection on Resubmission", desc: "When an application is in 'Needs Correction' for Valid ID Photo, have the customer re-upload the exact same Front ID photo that was previously flagged. Confirm /agent.html flags 'Unchanged Re-Uploaded Image'." },
-          { id: "T35", ai: true, title: "AI Test 8 — Location & Serviceability Screening (Inside vs. Outside Area)", desc: "Pin an address inside serviceable areas (Cavite, Metro Manila, Laguna, Batangas, Rizal, Bulacan, Cebu) vs. outside coverage. Confirm AI Location Screening accurately marks serviceable vs. outside-area advisory." },
-          { id: "T36", ai: true, title: "AI Test 9 — Duplicate Customer Application Auto-Rejection", desc: "Submit a second application with the same Customer Email / Name / Installation Address while an active application exists. Confirm it is automatically rejected as a duplicate and notifies Customer and Agent." },
-          { id: "T37", ai: true, title: "AI Test 10 — Admin AI Toggle OFF (Manual Review Fallback)", desc: "In /admin.html, switch AI Document Screening to OFF (Paused). Submit a test application and confirm it saves cleanly with 'Original Copy Ready (Manual Review)'. Turn AI Screening back ON afterward." }
-        ]
-      },
-      {
-        id: "sec-6",
-        title: "6. Agent Portal, Download/Print ID & Customer Correction Loop (/agent.html & /customer.html)",
-        desc: "Test the Agent verification tools, Download ID, Print Copy, Section 4 lock on Needs Correction, and Customer Front+Back re-upload.",
-        items: [
-          { id: "T38", title: "Multi-Tab Agent Sign-In (/staff-login.html -> /agent.html)", desc: "Open /staff-login.html in a separate tab and sign in as Agent while Customer/Manager tabs stay open. Confirm /agent.html topbar shows 'Combined Facilities Support Services' with subtitle 'AGENT APPLICATION MANAGEMENT'." },
-          { id: "T39", title: "Agent Notification Bell Auto-Clear", desc: "Click the Notification Bell in /agent.html. Confirm the badge count disappears immediately (0) when opened and starts at 1 again on the next new notification." },
-          { id: "T40", title: "Claim Application from Queue", desc: "Open an unassigned application in /agent.html and click 'Claim Application' so it is assigned to your Agent account." },
-          { id: "T41", title: "Download ID Button (Downloads Front & Back ID Files)", desc: "In the Agent application modal (Section 2), click 'Download ID'. Confirm both Front and Back ID photos download directly as image files." },
-          { id: "T42", title: "Print Copy Button (Formatted Print Window with Front & Back ID)", desc: "In Section 2, click 'Print Copy'. Confirm a formatted printable sheet opens showing Applicant Info, Address, and both Front & Back Valid ID photos, and opens the Print dialog." },
-          { id: "T43", title: "Section 4 — Select Common Screening / Validator Remark Preset", desc: "In Section 4 (Request Customer Update), select 'Valid ID Photo (Blurry / Glare / Duplicate)' and pick a preset remark. Confirm the Short Validator Note and Polite Customer Instruction auto-fill." },
-          { id: "T44", title: "Send Update Request & Verify Section 4 Locks", desc: "Click 'Send Update Request to Customer'. Re-open the application modal in /agent.html and confirm Section 4 is now locked with 'Customer Update Request Sent (Awaiting Customer Resubmission)'." },
-          { id: "T45", title: "Customer Views Correction Importance Notice (/customer.html)", desc: "In /customer.html, view the 'Action Required: Application Update' box. Confirm it clearly explains why completing the correction is required for installation and has NO 'I choose not to correct' button." },
-          { id: "T46", title: "Customer Re-Uploads Both Front & Back Valid ID Photos", desc: "In /customer.html, confirm two separate upload inputs appear: (1) Front of Valid ID Photo and (2) Back of Valid ID Photo. Upload two new clear photos and click 'Submit Updated Information'." },
-          { id: "T47", title: "Agent Reviews Resubmission & Confirms Section 4 Re-Opens", desc: "In /agent.html, open the resubmitted application (badged 'Customer Resubmitted'). Confirm Section 2 shows Original vs. Corrected comparison and Section 4 has reopened in case another update is needed." },
-          { id: "T48", title: "Agent Moves Application to Encoding & Uploads Proof", desc: "Update the verified application status to 'Encoding', enter the Provider Reference No., and upload an Encoding Proof Screenshot." },
-          { id: "T49", title: "Final Status Update to Approved / Installed", desc: "Update the application status to 'Approved' (or 'Installed'). Confirm the Customer receives the notification and email update." }
-        ]
-      },
-      {
-        id: "sec-7",
-        title: "7. Admin Technical Console, Maintenance Mode & Reports (/admin.html & /manager.html)",
-        desc: "Verify Maintenance Mode, Password Reset workflow, CSV/HTML reports, and System Audit Logs.",
-        items: [
-          { id: "T50", title: "Public Maintenance Mode & Manager Preview", desc: "In /admin.html, enable Public Maintenance Mode with a custom message. Confirm /index.html shows the maintenance screen to visitors while the Manager can still preview the site. Turn Maintenance Mode OFF afterward." },
-          { id: "T51", title: "Staff Forgot Password / Reset Request Flow", desc: "On /staff-login.html, click 'Forgot Password', submit a reset request for an Agent or Manager, and confirm the Admin/Manager can view and process it." },
-          { id: "T52", title: "Export Daily & Monthly CSV Reports", desc: "In /manager.html and /admin.html, test exporting Daily and Monthly CSV reports." },
-          { id: "T53", title: "Printable HTML Summary Report", desc: "In /manager.html or /admin.html, click 'Print / View HTML Report' and confirm the formatted report window opens cleanly." },
-          { id: "T54", title: "System Audit Logs & Login History", desc: "In /admin.html, open System Audit Logs and Login History and confirm all staff logins, applications, AI checks, corrections, and status updates are recorded." }
+          {
+            id: "AI01",
+            ai: true,
+            fix: true,
+            title: "AI Test 1 — Non-ID Photo Pre-Submit Rejection (Selfie / Scenery / Random Picture)",
+            desc: "On /apply.html Step 5, upload a non-ID photo (e.g., selfie, scenery, or random object) as the Front ID and click Submit on Step 6. Confirm the AI gate blocks submission, returns you to Step 5, and alerts that the uploaded photo is not a valid government ID.",
+            prevNote: "Fixed: Wired apiVerifyIdPreSubmit in api.js & apply.js + multi-model Gemini Vision fallback in _gemini.py."
+          },
+          {
+            id: "AI02",
+            ai: true,
+            fix: true,
+            title: "AI Test 2 — Live Blurry / Dark / Glare Image Quality Metrics on Step 5 & Pre-Submit",
+            desc: "On /apply.html Step 5, select a blurry, dark, or flash-glared image for Front or Back ID. Confirm the quality box immediately displays Sharpness, Brightness, and Glare scores and flags quality warnings before submission.",
+            prevNote: "Fixed: Added live Sharpness, Brightness & Glare analyzer on Step 5 file selection and pre-submit check."
+          },
+          {
+            id: "AI03",
+            ai: true,
+            title: "AI Test 3 — Identical Front & Back ID Photo Block",
+            desc: "On /apply.html Step 5 (or Customer Correction form), select the exact same image file for both Front ID and Back ID. Confirm the system immediately blocks it with a 'Duplicate ID Image Detected' popup."
+          },
+          {
+            id: "AI04",
+            ai: true,
+            fix: true,
+            title: "AI Test 4 — Clear Valid Government ID Cropping & Exact OCR Field Match",
+            desc: "Submit an application using a clear Valid ID where Full Name, Birth Date, and ID Number printed on the card match the typed form. Open the application in /agent.html -> Open and Verify and confirm 'Cropped Copy' is generated and Applicant Name, Birth Date, and ID Number show green 'Matched' badges.",
+            prevNote: "Fixed: Added multi-model Gemini Vision fallback (gemini-2.0-flash, gemini-2.5-flash-lite, gemini-1.5-flash) so OCR runs reliably without quota failure."
+          },
+          {
+            id: "AI05",
+            ai: true,
+            fix: true,
+            title: "AI Test 5 — Unprinted Field on ID (e.g. Student ID With No Birth Date Printed)",
+            desc: "Submit an application using an ID that has NO birth date printed on it (such as a Student ID). Open the application in /agent.html -> Open and Verify. Confirm Birth Date (OCR) shows a yellow 'Not Printed on ID' badge (and 'Preliminary Finding - Review Needed') instead of falsely showing 'Matched'!",
+            prevNote: "Round 1 Feedback: 'yung sa AI talaga tulad dun sa OCR Hindi pa sya Nagana Kasi nilagay nya matches yung birthdate sa fill up ko pati dun sa ID student KO pero wala naman nakalagay na birth date dun sa ID ko' — FIXED in _gemini.py, _screening.py, db.js, and agent.js."
+          },
+          {
+            id: "AI06",
+            ai: true,
+            fix: true,
+            title: "AI Test 6 — OCR Mismatch Detection (Typed Name, Birth Date, or ID Number Differs from ID)",
+            desc: "Submit an application where the typed Name, Birth Date, or ID Number intentionally differs from what is printed on the uploaded ID photo. In /agent.html -> Open and Verify, confirm the mismatched field displays a red 'Mismatch' badge and pre-fills Section 4 (Request Customer Correction).",
+            prevNote: "Fixed: normalizeAppRecord in db.js now reads comps[i].status properly so mismatches are always flagged red."
+          },
+          {
+            id: "AI07",
+            ai: true,
+            title: "AI Test 7 — Selected ID Type vs. Uploaded ID Card Type Mismatch",
+            desc: "On /apply.html Step 5, select one ID Type in the dropdown (e.g., 'Philippine Passport') but upload a different ID card (e.g., National ID or Driver's License). Confirm the Agent verification view flags the ID Type discrepancy in the Screening Summary."
+          },
+          {
+            id: "AI08",
+            ai: true,
+            title: "AI Test 8 — Serviceable vs. Out-of-Coverage Map Pin Advisory",
+            desc: "Test pinning an address inside serviceable areas (Metro Manila, Cavite, Laguna, Bulacan, Rizal, Cebu) vs. outside (e.g., Baguio or Davao) or outside the Philippines. Confirm outside-PH pins are blocked on Step 4, and non-serviceable PH provinces show a yellow 'Out of Coverage' badge to the Agent."
+          },
+          {
+            id: "AI09",
+            ai: true,
+            title: "AI Test 9 — Re-Run / Refresh Document Check Button in Agent Modal",
+            desc: "Inside /agent.html -> Open and Verify -> Section 2, click 'Run / Refresh Document Check'. Confirm the 3-stage progress bar (Stage 1: Readability & Crop, Stage 2: Duplicate ID Check, Stage 3: OCR Field Match) runs and updates the results."
+          },
+          {
+            id: "AI10",
+            ai: true,
+            title: "AI Test 10 — Cropped Copy vs. Original Photo Toggle in Agent Modal",
+            desc: "Inside /agent.html -> Open and Verify -> Section 2, click between 'Cropped Copy' and 'Original Photo' to compare the auto-cropped ID card against the raw uploaded photo."
+          },
+          {
+            id: "AI11",
+            ai: true,
+            fix: true,
+            title: "AI Test 11 — Duplicate Customer Application Auto-Rejection (Same Name / Email / Phone / ID Number)",
+            desc: "Submit a second application using the same Full Name + Email, or same Full Name + Mobile Number, or same Primary ID Number (even if selecting a different fiber plan). Confirm the system automatically marks the duplicate submission as 'Rejected' and logs the duplicate reason.",
+            prevNote: "Round 1 Feedback: 'HINDI PA NAGANA KASE DUPLICATE NA YUNG GINAWA KO ROD OMA PAREHAS ANG NAME PATI EMAIL AT NUMBER' — FIXED in db.js (checks across all active applications regardless of plan)."
+          },
+          {
+            id: "AI12",
+            ai: true,
+            title: "AI Test 12 — Re-Uploading Unchanged Flagged ID Photo Detection on Customer Resubmission",
+            desc: "When an application is in 'Needs Correction' for 'Valid ID Photo', if the customer re-uploads the exact same unclear photo, confirm the screening check flags 'Unchanged Re-Uploaded Image'."
+          },
+          {
+            id: "AI13",
+            ai: true,
+            title: "AI Test 13 — AI Polite Customer Correction Message Generator (Section 4)",
+            desc: "In /agent.html -> Open and Verify -> Section 4, select a preset or type a raw finding (e.g., 'birth date not printed on student ID, upload valid gov ID with DOB') and click 'Generate Polite Message'. Confirm it writes a polite customer instruction and auto-selects the target field."
+          },
+          {
+            id: "AI14",
+            ai: true,
+            title: "AI Test 14 — Customer Correction Resubmission & Latest vs. Original Copy Switcher",
+            desc: "Send a 'Needs Correction' request from /agent.html, then sign in to /customer.html, see the red-highlighted field(s), upload/update the corrected details, and click 'Resubmit Application'. In /agent.html, confirm the 'Customer Resubmitted' badge appears and toggle between 'Latest Copy' and 'Original Submission'."
+          },
+          {
+            id: "AI15",
+            ai: true,
+            title: "AI Test 15 — Manual Document Review Fallback Mode (When AI Screening Toggle is Paused)",
+            desc: "In /admin.html -> Overview, toggle off 'Automated Document Screening', then open an application in /agent.html. Confirm the yellow 'Manual Document Review Active' banner appears and OCR badges show 'Verify Manually'. Toggle AI Screening back ON afterward."
+          },
+          {
+            id: "AI16",
+            ai: true,
+            title: "AI Test 16 — Admin AI Screening Logs Audit Trail (/admin.html)",
+            desc: "In /admin.html -> System Logs -> AI Screening Logs sub-tab, confirm every automated screening run, duplicate detection, and agent verification action is recorded with Reference Number and timestamp."
+          }
         ]
       }
     ];
 
-    var state = {
-      checked: {},
-      comments: {},
-      itemUpdatedAt: {},
-      testerName: "",
-      testerNotes: "",
-      metaUpdatedAt: 0
-    };
+    var checkedState = {};
+    var itemComments = {};
+    var cloudSaveTimer = null;
+    var isApplyingRemote = false;
 
-    var _cloudSaveTimer = null;
-    var _isSavingToCloud = false;
-    var _dirtyItems = {};
-    var _dirtyMeta = false;
+    function setSyncBadge(state, label) {
+      var badge = document.getElementById("cloud-sync-badge");
+      var text = document.getElementById("cloud-sync-text");
+      if (!badge || !text) return;
+      badge.className = "sync-pill" + (state === "saving" ? " saving" : (state === "offline" ? " offline" : ""));
+      text.textContent = label;
+    }
+
+    function loadState() {
+      try {
+        var raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) checkedState = JSON.parse(raw) || {};
+      } catch (e) {
+        checkedState = {};
+      }
+      try {
+        var metaRaw = localStorage.getItem(META_KEY);
+        if (metaRaw) {
+          var meta = JSON.parse(metaRaw) || {};
+          if (meta.name) document.getElementById("tester-name").value = meta.name;
+          if (meta.notes) document.getElementById("tester-notes").value = meta.notes;
+          if (meta.comments && typeof meta.comments === "object") {
+            itemComments = meta.comments;
+          }
+        }
+      } catch (e) {}
+    }
+
+    function saveLocalOnly() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(checkedState));
+        var meta = {
+          name: document.getElementById("tester-name").value,
+          notes: document.getElementById("tester-notes").value,
+          comments: itemComments,
+          updatedAt: new Date().toISOString()
+        };
+        localStorage.setItem(META_KEY, JSON.stringify(meta));
+      } catch (e) {}
+    }
+
+    function scheduleCloudSave() {
+      saveLocalOnly();
+      if (isApplyingRemote || !sbClient) return;
+      setSyncBadge("saving", "Saving to Cloud...");
+      if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = setTimeout(pushToCloudNow, 450);
+    }
+
+    async function pushToCloudNow() {
+      if (!sbClient) {
+        setSyncBadge("offline", "Local Only (Offline)");
+        return;
+      }
+      try {
+        var payload = {
+          checked: checkedState,
+          comments: itemComments,
+          testerName: document.getElementById("tester-name").value,
+          testerNotes: document.getElementById("tester-notes").value,
+          updatedAt: new Date().toISOString()
+        };
+        var res = await sbClient
+          .from("website_content")
+          .upsert({
+            id: CLOUD_ROW_ID,
+            data: payload,
+            updated_at: new Date().toISOString()
+          });
+        if (res.error) throw res.error;
+        setSyncBadge("synced", "Cloud Synced (Phone & Laptop)");
+      } catch (err) {
+        setSyncBadge("offline", "Sync Retry Pending");
+      }
+    }
+
+    async function pullFromCloudNow(silent) {
+      if (!sbClient) return;
+      if (!silent) setSyncBadge("saving", "Syncing from Cloud...");
+      try {
+        var res = await sbClient
+          .from("website_content")
+          .select("data, updated_at")
+          .eq("id", CLOUD_ROW_ID)
+          .maybeSingle();
+        if (res.error) throw res.error;
+        if (res.data && res.data.data && typeof res.data.data === "object") {
+          var remote = res.data.data;
+          var activeEl = document.activeElement;
+          var isTypingComment = activeEl && (activeEl.classList.contains("comment-input") || activeEl.id === "tester-notes" || activeEl.id === "tester-name");
+          isApplyingRemote = true;
+          checkedState = (remote.checked && typeof remote.checked === "object") ? remote.checked : {};
+          itemComments = (remote.comments && typeof remote.comments === "object") ? remote.comments : {};
+          if (!isTypingComment) {
+            if (typeof remote.testerName === "string") document.getElementById("tester-name").value = remote.testerName;
+            if (typeof remote.testerNotes === "string") document.getElementById("tester-notes").value = remote.testerNotes;
+          }
+          saveLocalOnly();
+          if (!isTypingComment) {
+            renderChecklist();
+          } else {
+            updateTopProgressOnly();
+          }
+          isApplyingRemote = false;
+        } else {
+          await pushToCloudNow();
+        }
+        setSyncBadge("synced", "Cloud Synced (Phone & Laptop)");
+      } catch (err) {
+        isApplyingRemote = false;
+        setSyncBadge("offline", "Offline — Saved Locally");
+      }
+    }
+
+    function saveState() {
+      scheduleCloudSave();
+    }
+
+    function saveTesterMeta() {
+      scheduleCloudSave();
+    }
+
+    function saveItemComment(itemId, val) {
+      var trimmed = String(val || "");
+      if (trimmed.trim()) {
+        itemComments[itemId] = trimmed;
+      } else {
+        delete itemComments[itemId];
+      }
+      var inputEl = document.getElementById("cmt-" + itemId);
+      if (inputEl) {
+        inputEl.classList.toggle("has-text", Boolean(trimmed.trim()));
+      }
+      scheduleCloudSave();
+    }
+
+    function toggleItem(itemId) {
+      checkedState[itemId] = !checkedState[itemId];
+      scheduleCloudSave();
+      renderChecklist();
+    }
 
     function escapeHtml(str) {
       return String(str || "")
@@ -536,476 +805,146 @@
         .replace(/"/g, "&quot;");
     }
 
-    function setIndicator(text, mode) {
-      var ind = document.getElementById("save-indicator");
-      if (!ind) return;
-      ind.textContent = text;
-      ind.className = "sec-badge " + (mode || "synced");
-    }
-
-    function loadLocalState() {
-      try {
-        var raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(BACKUP_STORAGE_KEY);
-        if (raw) {
-          var parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === "object") {
-            state.checked = parsed.checked || {};
-            state.comments = parsed.comments || {};
-            state.itemUpdatedAt = parsed.itemUpdatedAt || {};
-            state.testerName = parsed.testerName || "";
-            state.testerNotes = parsed.testerNotes || "";
-            state.metaUpdatedAt = parsed.metaUpdatedAt || 0;
-          }
-        }
-      } catch (e) {}
-      var nameEl = document.getElementById("tester-name");
-      var notesEl = document.getElementById("tester-notes");
-      if (nameEl) nameEl.value = state.testerName;
-      if (notesEl) notesEl.value = state.testerNotes;
-    }
-
-    function saveLocalOnly() {
-      try {
-        var serialized = JSON.stringify(state);
-        localStorage.setItem(STORAGE_KEY, serialized);
-        localStorage.setItem(BACKUP_STORAGE_KEY, serialized);
-      } catch (e) {}
-      updateProgress();
-    }
-
-    function scheduleCloudSave() {
-      saveLocalOnly();
-      setIndicator("Saving to cloud...", "saving");
-      if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
-      _cloudSaveTimer = setTimeout(function () {
-        flushCloudSave();
-      }, 450);
-    }
-
-    async function fetchCloudState() {
-      var url = SUPABASE_URL + "/rest/v1/website_content?id=eq." + encodeURIComponent(CLOUD_ROW_ID) + "&select=data,updated_at";
-      var res = await fetch(url, {
-        method: "GET",
-        headers: {
-          "apikey": SUPABASE_KEY,
-          "Authorization": "Bearer " + SUPABASE_KEY,
-          "Content-Type": "application/json"
-        },
-        cache: "no-store"
-      });
-      if (!res.ok) return null;
-      var rows = await res.json();
-      if (Array.isArray(rows) && rows.length > 0 && rows[0].data) {
-        return rows[0].data;
-      }
-      return null;
-    }
-
-    function mergeRemoteIntoLocal(remote) {
-      if (!remote || typeof remote !== "object") return false;
-      var changed = false;
-      var rChecked = remote.checked || {};
-      var rComments = remote.comments || {};
-      var rTimes = remote.itemUpdatedAt || {};
-
-      var allIds = {};
-      var k;
-      for (k in rChecked) allIds[k] = true;
-      for (k in rComments) allIds[k] = true;
-      for (k in state.checked) allIds[k] = true;
-      for (k in state.comments) allIds[k] = true;
-
-      for (var id in allIds) {
-        if (_dirtyItems[id]) continue;
-        var localTs = Number(state.itemUpdatedAt[id] || 0);
-        var remoteTs = Number(rTimes[id] || 0);
-
-        if (remoteTs > localTs || (localTs === 0 && (rChecked[id] !== undefined || rComments[id] !== undefined))) {
-          var newChk = Boolean(rChecked[id]);
-          var newCmt = String(rComments[id] !== undefined ? rComments[id] : (state.comments[id] || ""));
-          if (Boolean(state.checked[id]) !== newChk || String(state.comments[id] || "") !== newCmt) {
-            state.checked[id] = newChk;
-            state.comments[id] = newCmt;
-            state.itemUpdatedAt[id] = remoteTs || Date.now();
-            changed = true;
-          }
-        }
-      }
-
-      if (!_dirtyMeta) {
-        var rMetaTs = Number(remote.metaUpdatedAt || 0);
-        var lMetaTs = Number(state.metaUpdatedAt || 0);
-        if (rMetaTs > lMetaTs || (!state.testerName && remote.testerName) || (!state.testerNotes && remote.testerNotes)) {
-          if (remote.testerName !== undefined && remote.testerName !== state.testerName) {
-            state.testerName = remote.testerName;
-            changed = true;
-          }
-          if (remote.testerNotes !== undefined && remote.testerNotes !== state.testerNotes) {
-            state.testerNotes = remote.testerNotes;
-            changed = true;
-          }
-          state.metaUpdatedAt = Math.max(lMetaTs, rMetaTs);
-        }
-      }
-
-      return changed;
-    }
-
-    async function flushCloudSave() {
-      if (_cloudSaveTimer) {
-        clearTimeout(_cloudSaveTimer);
-        _cloudSaveTimer = null;
-      }
-      if (_isSavingToCloud) return;
-      _isSavingToCloud = true;
-      setIndicator("Syncing...", "saving");
-
-      try {
-        var remote = await fetchCloudState();
-        if (remote) {
-          var rChecked = remote.checked || {};
-          var rComments = remote.comments || {};
-          var rTimes = remote.itemUpdatedAt || {};
-
-          for (var id in rTimes) {
-            if (_dirtyItems[id]) continue;
-            var lTs = Number(state.itemUpdatedAt[id] || 0);
-            var rTs = Number(rTimes[id] || 0);
-            if (rTs > lTs) {
-              state.checked[id] = Boolean(rChecked[id]);
-              state.comments[id] = String(rComments[id] || "");
-              state.itemUpdatedAt[id] = rTs;
-            }
-          }
-        }
-
-        var payload = {
-          id: CLOUD_ROW_ID,
-          data: {
-            checked: state.checked,
-            comments: state.comments,
-            itemUpdatedAt: state.itemUpdatedAt,
-            testerName: state.testerName,
-            testerNotes: state.testerNotes,
-            metaUpdatedAt: state.metaUpdatedAt || Date.now()
-          },
-          updated_at: new Date().toISOString()
-        };
-
-        var url = SUPABASE_URL + "/rest/v1/website_content?on_conflict=id";
-        var res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "apikey": SUPABASE_KEY,
-            "Authorization": "Bearer " + SUPABASE_KEY,
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates,return=minimal"
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (res.ok) {
-          _dirtyItems = {};
-          _dirtyMeta = false;
-          saveLocalOnly();
-          setIndicator("Cloud Synced (Phone & Laptop)", "synced");
-        } else {
-          setIndicator("Saved on device (Cloud retry pending)", "saving");
-        }
-      } catch (e) {
-        setIndicator("Saved on device (Offline mode)", "saving");
-      } finally {
-        _isSavingToCloud = false;
-      }
-    }
-
-    async function pullFromCloud(manualClick) {
-      if (_isSavingToCloud) return;
-      if (manualClick) setIndicator("Syncing from cloud...", "saving");
-      try {
-        var remote = await fetchCloudState();
-        if (!remote) {
-          var hasLocalData = Object.keys(state.checked).length > 0 || Object.keys(state.comments).length > 0 || state.testerName || state.testerNotes;
-          if (hasLocalData) {
-            await flushCloudSave();
-          } else if (manualClick) {
-            setIndicator("Cloud Synced (Phone & Laptop)", "synced");
-          }
-          return;
-        }
-
-        var changed = mergeRemoteIntoLocal(remote);
-        if (changed) {
-          saveLocalOnly();
-          syncDomWithStateWithoutLosingFocus();
-        }
-        if (manualClick || !_cloudSaveTimer) {
-          setIndicator("Cloud Synced (Phone & Laptop)", "synced");
-        }
-      } catch (e) {
-        if (manualClick) setIndicator("Offline — using local save", "saving");
-      }
-    }
-
-    function syncDomWithStateWithoutLosingFocus() {
-      var activeEl = document.activeElement;
-      var nameEl = document.getElementById("tester-name");
-      var notesEl = document.getElementById("tester-notes");
-      if (nameEl && activeEl !== nameEl) nameEl.value = state.testerName || "";
-      if (notesEl && activeEl !== notesEl) notesEl.value = state.testerNotes || "";
-
+    function updateTopProgressOnly() {
+      var totalCount = 0;
+      var totalDone = 0;
       for (var s = 0; s < TEST_SECTIONS.length; s++) {
         var items = TEST_SECTIONS[s].items;
         for (var i = 0; i < items.length; i++) {
-          var id = items[i].id;
-          var isDone = Boolean(state.checked[id]);
-          var cmt = String(state.comments[id] || "");
-
-          var row = document.getElementById("row-" + id);
-          if (row) {
-            if (isDone) row.classList.add("done");
-            else row.classList.remove("done");
-          }
-          var cb = document.getElementById("cb-" + id);
-          if (cb && cb.checked !== isDone) {
-            cb.checked = isDone;
-          }
-          var ta = document.getElementById("cmt-" + id);
-          if (ta && activeEl !== ta) {
-            if (ta.value !== cmt) ta.value = cmt;
-            if (cmt.trim().length > 0) ta.classList.add("has-text");
-            else ta.classList.remove("has-text");
-          }
+          totalCount++;
+          if (checkedState[items[i].id]) totalDone++;
         }
       }
-      updateSectionBadges();
-      updateProgress();
-    }
-
-    function saveMeta() {
-      var nameEl = document.getElementById("tester-name");
-      var notesEl = document.getElementById("tester-notes");
-      state.testerName = nameEl ? nameEl.value : "";
-      state.testerNotes = notesEl ? notesEl.value : "";
-      state.metaUpdatedAt = Date.now();
-      _dirtyMeta = true;
-      scheduleCloudSave();
-    }
-
-    function saveItemComment(id, el) {
-      var val = el ? el.value : "";
-      state.comments[id] = val;
-      state.itemUpdatedAt[id] = Date.now();
-      _dirtyItems[id] = true;
-      if (el) {
-        if (val.trim().length > 0) {
-          el.classList.add("has-text");
-        } else {
-          el.classList.remove("has-text");
-        }
-      }
-      scheduleCloudSave();
-    }
-
-    function toggleItem(id, cbEl) {
-      var isChecked = cbEl ? Boolean(cbEl.checked) : !state.checked[id];
-      state.checked[id] = isChecked;
-      state.itemUpdatedAt[id] = Date.now();
-      _dirtyItems[id] = true;
-      saveLocalOnly();
-      flushCloudSave();
-
-      var filterEl = document.getElementById("filter-mode");
-      var mode = filterEl ? filterEl.value : "all";
-      if (mode === "pending" || mode === "done") {
-        renderChecklist();
-        return;
-      }
-
-      var row = document.getElementById("row-" + id);
-      if (row) {
-        if (isChecked) row.classList.add("done");
-        else row.classList.remove("done");
-      }
-      updateSectionBadges();
-    }
-
-    function updateSectionBadges() {
-      for (var s = 0; s < TEST_SECTIONS.length; s++) {
-        var sec = TEST_SECTIONS[s];
-        var secDone = 0;
-        for (var i = 0; i < sec.items.length; i++) {
-          if (state.checked[sec.items[i].id]) secDone++;
-        }
-        var badge = document.getElementById("badge-" + sec.id);
-        if (badge) {
-          badge.textContent = secDone + " / " + sec.items.length + " Done";
-        }
-      }
-    }
-
-    function updateProgress() {
-      var total = 0;
-      var done = 0;
-      for (var s = 0; s < TEST_SECTIONS.length; s++) {
-        var items = TEST_SECTIONS[s].items;
-        for (var i = 0; i < items.length; i++) {
-          total++;
-          if (state.checked[items[i].id]) done++;
-        }
-      }
-      var pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      var bar = document.getElementById("prog-bar");
-      var txt = document.getElementById("prog-text");
-      if (bar) bar.style.width = pct + "%";
-      if (txt) txt.textContent = done + " / " + total + " (" + pct + "%)";
+      var pct = totalCount > 0 ? Math.round((totalDone / totalCount) * 100) : 0;
+      document.getElementById("prog-fill").style.width = pct + "%";
+      document.getElementById("prog-text").textContent = totalDone + " / " + totalCount + " (" + pct + "%)";
     }
 
     function renderChecklist() {
-      var root = document.getElementById("sections-root");
-      var filterEl = document.getElementById("filter-mode");
-      var mode = filterEl ? filterEl.value : "all";
+      var root = document.getElementById("checklist-root");
+      var filter = document.getElementById("filter-mode").value;
+      var totalCount = 0;
+      var totalDone = 0;
       var html = "";
 
       for (var s = 0; s < TEST_SECTIONS.length; s++) {
         var sec = TEST_SECTIONS[s];
-        var visibleItems = [];
+        var secTotal = sec.items.length;
         var secDone = 0;
+        var itemsHtml = "";
 
         for (var i = 0; i < sec.items.length; i++) {
           var item = sec.items[i];
-          var isDone = Boolean(state.checked[item.id]);
-          var cmt = String(state.comments[item.id] || "").trim();
-          if (isDone) secDone++;
+          var isDone = Boolean(checkedState[item.id]);
+          var cmtVal = itemComments[item.id] || "";
+          totalCount++;
+          if (isDone) {
+            totalDone++;
+            secDone++;
+          }
 
-          if (mode === "pending" && isDone) continue;
-          if (mode === "done" && !isDone) continue;
-          if (mode === "commented" && !cmt) continue;
-          if (mode === "ai" && !item.ai) continue;
-          visibleItems.push(item);
-        }
+          if (filter === "unchecked" && isDone) continue;
+          if (filter === "checked" && !isDone) continue;
+          if (filter === "commented" && !cmtVal.trim()) continue;
+          if (filter === "fixes" && !item.fix) continue;
+          if (filter === "ai" && !item.ai) continue;
 
-        if (visibleItems.length === 0) continue;
-
-        html += '<section class="card">';
-        html += '<h2><span>' + sec.title + '</span><span class="sec-badge" id="badge-' + sec.id + '">' + secDone + ' / ' + sec.items.length + ' Done</span></h2>';
-        html += '<p class="sec-desc">' + sec.desc + '</p>';
-        html += '<div class="test-list">';
-
-        for (var j = 0; j < visibleItems.length; j++) {
-          var it = visibleItems[j];
-          var checked = Boolean(state.checked[it.id]);
-          var commentVal = String(state.comments[it.id] || "");
-          var hasTextClass = commentVal.trim().length > 0 ? " has-text" : "";
-
-          html +=
-            '<div id="row-' + it.id + '" class="test-item' + (checked ? ' done' : '') + '">' +
-              '<label class="test-top">' +
-                '<input type="checkbox" id="cb-' + it.id + '" ' + (checked ? 'checked' : '') + ' onchange="toggleItem(\'' + it.id + '\', this)">' +
-                '<div class="test-content">' +
-                  '<span class="test-id">' + it.id + '</span>' +
-                  (it.ai ? '<span class="ai-tag">AI SCREENING</span>' : '') +
-                  '<span class="test-title">' + it.title + '</span>' +
-                  '<span class="test-desc">' + it.desc + '</span>' +
+          itemsHtml +=
+            '<div class="test-item ' + (isDone ? 'checked' : '') + '">' +
+              '<input type="checkbox" class="test-cb" ' + (isDone ? 'checked' : '') + ' onchange="toggleItem(\'' + item.id + '\')" />' +
+              '<div class="test-body">' +
+                '<div class="test-top" onclick="toggleItem(\'' + item.id + '\')">' +
+                  '<span class="test-id">' + item.id + '</span>' +
+                  (item.fix ? '<span class="tag-fix">FIXED FROM ROUND 1</span>' : '') +
+                  (item.ai ? '<span class="tag-ai">AI SCREENING</span>' : '') +
+                  '<span class="test-title">' + escapeHtml(item.title) + '</span>' +
                 '</div>' +
-              '</label>' +
-              '<div class="item-comment-wrap">' +
-                '<textarea id="cmt-' + it.id + '" class="item-comment-input' + hasTextClass + '" rows="1" placeholder="Write tester experience, result, or comment for ' + it.id + '..." oninput="saveItemComment(\'' + it.id + '\', this)" onblur="flushCloudSave()">' + escapeHtml(commentVal) + '</textarea>' +
+                '<div class="test-desc">' + escapeHtml(item.desc) + '</div>' +
+                (item.prevNote ? '<div class="fix-context">' + escapeHtml(item.prevNote) + '</div>' : '') +
+                '<div class="comment-wrap">' +
+                  '<input id="cmt-' + item.id + '" type="text" class="comment-input ' + (cmtVal.trim() ? 'has-text' : '') + '" placeholder="Add tester comment / observation for ' + item.id + ' (auto-syncs to phone & laptop)..." value="' + escapeHtml(cmtVal) + '" oninput="saveItemComment(\'' + item.id + '\', this.value)" />' +
+                '</div>' +
               '</div>' +
             '</div>';
         }
 
-        html += '</div></section>';
+        if (!itemsHtml) continue;
+
+        var allSecDone = (secDone === secTotal);
+        html +=
+          '<section class="section-card">' +
+            '<div class="section-head">' +
+              '<div>' +
+                '<h2 class="section-title">' + escapeHtml(sec.title) + '</h2>' +
+                '<p class="section-sub">' + escapeHtml(sec.subtitle) + '</p>' +
+              '</div>' +
+              '<span class="sec-badge ' + (allSecDone ? 'done' : '') + '">' + secDone + ' / ' + secTotal + ' Done</span>' +
+            '</div>' +
+            '<div class="test-list">' + itemsHtml + '</div>' +
+          '</section>';
       }
 
-      if (!html) {
-        html = '<section class="card"><h2>No Matching Test Items</h2><p class="sec-desc">Change the filter dropdown above to view all test items.</p></section>';
-      }
+      root.innerHTML = html || '<div class="hero-card" style="text-align:center; color:var(--muted);">No test items match the current filter.</div>';
 
-      root.innerHTML = html;
-      updateProgress();
+      var pct = totalCount > 0 ? Math.round((totalDone / totalCount) * 100) : 0;
+      document.getElementById("prog-fill").style.width = pct + "%";
+      document.getElementById("prog-text").textContent = totalDone + " / " + totalCount + " (" + pct + "%)";
     }
 
-    function exportBackupJson() {
-      var dataStr = JSON.stringify(state, null, 2);
-      var blob = new Blob([dataStr], { type: "application/json" });
-      var url = URL.createObjectURL(blob);
+    function resetAllChecks() {
+      if (!confirm("Reset all checkboxes in Round 2? (Your written comments on each test item will be kept unless you clear them.)")) return;
+      checkedState = {};
+      scheduleCloudSave();
+      renderChecklist();
+    }
+
+    function exportProgressJson() {
+      var payload = {
+        system: "Combined Facilities Support Services — Round 2 Checklist",
+        exportedAt: new Date().toISOString(),
+        testerName: document.getElementById("tester-name").value,
+        testerNotes: document.getElementById("tester-notes").value,
+        checked: checkedState,
+        comments: itemComments
+      };
+      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       var a = document.createElement("a");
-      var safeName = (state.testerName || "tester").replace(/[^a-zA-Z0-9_-]/g, "_");
-      a.href = url;
-      a.download = "pigem_test_progress_" + safeName + ".json";
-      document.body.appendChild(a);
+      a.href = URL.createObjectURL(blob);
+      a.download = "pigem-tester-round2-checklist-backup.json";
       a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
     }
 
-    function importBackupJson(inputEl) {
+    function importProgressJson(inputEl) {
       var file = inputEl && inputEl.files && inputEl.files[0];
       if (!file) return;
       var reader = new FileReader();
       reader.onload = function (e) {
         try {
-          var parsed = JSON.parse(e.target.result);
-          if (parsed && typeof parsed === "object") {
-            var now = Date.now();
-            for (var k in (parsed.checked || {})) {
-              state.checked[k] = Boolean(parsed.checked[k]);
-              state.itemUpdatedAt[k] = now;
-              _dirtyItems[k] = true;
+          var data = JSON.parse(e.target.result);
+          if (data && typeof data.checked === "object") {
+            checkedState = data.checked;
+            if (data.comments && typeof data.comments === "object") {
+              itemComments = data.comments;
             }
-            for (var c in (parsed.comments || {})) {
-              state.comments[c] = String(parsed.comments[c] || "");
-              state.itemUpdatedAt[c] = now;
-              _dirtyItems[c] = true;
-            }
-            if (parsed.testerName) { state.testerName = parsed.testerName; state.metaUpdatedAt = now; _dirtyMeta = true; }
-            if (parsed.testerNotes) { state.testerNotes = parsed.testerNotes; state.metaUpdatedAt = now; _dirtyMeta = true; }
-            saveLocalOnly();
+            if (data.testerName) document.getElementById("tester-name").value = data.testerName;
+            if (data.testerNotes) document.getElementById("tester-notes").value = data.testerNotes;
+            scheduleCloudSave();
             renderChecklist();
-            flushCloudSave();
           }
         } catch (err) {
-          alert("Could not read backup file.");
+          alert("Could not read JSON backup file.");
         }
-        inputEl.value = "";
       };
       reader.readAsText(file);
+      inputEl.value = "";
     }
 
-    function resetAll() {
-      if (!confirm("Reset all checkboxes across devices? (Your typed comments will be kept unless you clear them manually)")) return;
-      var now = Date.now();
-      for (var s = 0; s < TEST_SECTIONS.length; s++) {
-        var items = TEST_SECTIONS[s].items;
-        for (var i = 0; i < items.length; i++) {
-          var id = items[i].id;
-          state.checked[id] = false;
-          state.itemUpdatedAt[id] = now;
-          _dirtyItems[id] = true;
-        }
-      }
-      saveLocalOnly();
-      renderChecklist();
-      flushCloudSave();
-    }
-
-    loadLocalState();
+    loadState();
     renderChecklist();
-    pullFromCloud(false);
-    setInterval(function () { pullFromCloud(false); }, 4000);
-    window.addEventListener("focus", function () { pullFromCloud(false); });
-    document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) pullFromCloud(false);
-    });
-
-    if (window.location.protocol === "file:" && window.location.pathname.toLowerCase().indexOf("/web/html/") === -1) {
-      var pLinks = document.querySelectorAll(".portal-link");
-      for (var p = 0; p < pLinks.length; p++) {
-        var h = pLinks[p].getAttribute("href");
-        if (h && h.indexOf("web/html/") !== 0) pLinks[p].setAttribute("href", "web/html/" + h);
-      }
-    }
+    pullFromCloudNow(true);
+    setInterval(function () {
+      pullFromCloudNow(true);
+    }, 6000);
   </script>
 </body>
 </html>

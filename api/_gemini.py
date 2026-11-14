@@ -464,19 +464,13 @@ class FieldComparisonEngine(BaseTextMatcher):
             }
 
         return {
-
             "field": "Birth Date",
-
             "key": "birth_date",
-
             "entered": clean_entered,
-
-            "found_on_id": "Not clearly visible",
-
-            "status": "partial",
-
-            "note": "Birth date could not be clearly read from the ID photo.",
-
+            "found_on_id": "Not printed on ID",
+            "status": "not_found",
+            "result": "not_found",
+            "note": "No birth date is printed or visible on the uploaded ID card (e.g., Student ID or non-DOB card).",
         }
 
     def _codes_match_strictly(self, entered_code: str, candidate_code: str) -> tuple:
@@ -624,7 +618,15 @@ class FieldComparisonEngine(BaseTextMatcher):
         }
 
     def compare(self, entered: dict, ocr_payload: dict) -> list:
-
+        if ocr_payload.get("available") is False:
+            unv = []
+            if (entered.get("full_name") or "").strip():
+                unv.append({"field": "Full Name", "key": "name", "entered": str(entered.get("full_name") or "").strip(), "found_on_id": "Unverified (Manual Check)", "status": "unverified", "result": "unverified", "note": "OCR service was unavailable; please verify applicant name visually on the ID."})
+            if (entered.get("birth_date") or "").strip():
+                unv.append({"field": "Birth Date", "key": "birth_date", "entered": str(entered.get("birth_date") or "").strip(), "found_on_id": "Unverified (Manual Check)", "status": "unverified", "result": "unverified", "note": "OCR service was unavailable; please verify birth date visually on the ID."})
+            if (entered.get("id_number") or "").strip():
+                unv.append({"field": "ID Number", "key": "id_number", "entered": str(entered.get("id_number") or "").strip(), "found_on_id": "Unverified (Manual Check)", "status": "unverified", "result": "unverified", "note": "OCR service was unavailable; please verify ID number visually on the ID."})
+            return unv
         lines = list(ocr_payload.get("lines") or [])
 
         ext_name = str(ocr_payload.get("extracted_name") or "").strip()
@@ -1024,7 +1026,15 @@ class GeminiScreeningService(BaseLanguageClient):
 
         models_to_try = [model_override.strip() or primary_model]
 
-        for fallback_model in ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest"):
+        for fallback_model in (
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+            "gemini-flash-latest",
+        ):
 
             if fallback_model not in models_to_try:
 
@@ -1094,51 +1104,36 @@ class GeminiScreeningService(BaseLanguageClient):
         }
 
         for model_name in models_to_try:
-
             if "/" in model_name:
-
                 model_name = model_name.split("/", 1)[-1]
-
             url = f"{self._API_BASE}/{model_name}:generateContent"
-
-            model_payload = dict(payload)
-
-            model_cfg = dict(gen_cfg)
-
-            if "2.5-flash" in model_name:
-
-                model_cfg["thinkingConfig"] = {"thinkingBudget": 0}
-
-            model_payload["generationConfig"] = model_cfg
-
-            try:
-
-                reply = httpx.post(url, headers=headers, json=model_payload, timeout=18)
-
-                if reply.status_code == 200:
-
-                    data = reply.json()
-
-                    candidates = data.get("candidates") or []
-
-                    if candidates:
-
-                        content = candidates[0].get("content") or {}
-
-                        out_parts = content.get("parts") or []
-
-                        texts = [str(p.get("text") or "") for p in out_parts if p.get("text")]
-
-                        joined = "\n".join(texts).strip()
-
-                        if joined:
-
-                            return joined
-
-            except Exception:
-
-                continue
-
+            for attempt_idx in range(2):
+                model_payload = dict(payload)
+                model_cfg = dict(gen_cfg)
+                if attempt_idx == 0 and "2.5-flash" in model_name:
+                    model_cfg["thinkingConfig"] = {"thinkingBudget": 0}
+                if attempt_idx == 1:
+                    model_cfg.pop("responseSchema", None)
+                    model_cfg.pop("thinkingConfig", None)
+                model_payload["generationConfig"] = model_cfg
+                try:
+                    reply = httpx.post(url, headers=headers, json=model_payload, timeout=18)
+                    if reply.status_code == 200:
+                        data = reply.json()
+                        candidates = data.get("candidates") or []
+                        if candidates:
+                            content = candidates[0].get("content") or {}
+                            out_parts = content.get("parts") or []
+                            texts = [str(p.get("text") or "") for p in out_parts if p.get("text")]
+                            joined = "\n".join(texts).strip()
+                            if joined:
+                                return joined
+                        break
+                    if reply.status_code == 400 and attempt_idx == 0:
+                        continue
+                    break
+                except Exception:
+                    break
         return ""
 
     def _build_id_type_guide(self, id_type: str) -> str:
@@ -1470,8 +1465,10 @@ class GeminiScreeningService(BaseLanguageClient):
             return {
                 "available": True,
                 "is_valid_government_id": bool(parsed.get("is_valid_government_id", True)),
+                "is_Philippine_id": bool(parsed.get("is_valid_government_id", True)),
                 "id_type_matches_declared": bool(parsed.get("id_type_matches_declared", True)),
                 "detected_document_type": str(parsed.get("detected_document_type") or "").strip(),
+                "detected_id_type": str(parsed.get("detected_document_type") or "").strip(),
                 "confidence": str(parsed.get("confidence") or "medium").strip().lower(),
                 "unreadable_fields": unreadable,
                 "ungrounded_fields": ungrounded,
@@ -1566,7 +1563,7 @@ class GeminiScreeningService(BaseLanguageClient):
 
                 guidance.append(f"Inspect the ID and confirm whether the customer should update their {field_name.lower()}.")
 
-            elif status == "partial":
+            elif status in ("partial", "not_found", "unverified"):
 
                 findings.append(note or f"{field_name} could only be partially verified from the ID photo.")
 
@@ -1590,7 +1587,7 @@ class GeminiScreeningService(BaseLanguageClient):
 
         has_any_concern = bool(quality.get("issues")) or any(
 
-            c.get("status") in ("mismatch", "partial") for c in comparisons
+            c.get("status") in ("mismatch", "partial", "not_found", "unverified") for c in comparisons
 
         )
 

@@ -4,6 +4,7 @@ var agentLinks = [];
 var activeBranch = "overview";
 var activeAgentReportTab = "apps";
 var activeDetailAppId = null;
+var expandedSummaryCards = {};
 
 window.openDashTabById = function (tabId, targetId) {
   var cleanTab = String(tabId || "").replace(/^tab-/, "");
@@ -540,12 +541,12 @@ function renderAgentCards() {
             '</div>' +
           '</div>' +
           '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">' +
-            '<button type="button" class="btn btn-outline btn-sm" onclick="toggleCardMore(\'more-' + escapeHtml(app.id) + '\')">Summary</button>' +
+            '<button type="button" id="btn-more-' + escapeHtml(app.id) + '" class="btn ' + (expandedSummaryCards['more-' + app.id] ? 'btn-red' : 'btn-outline') + ' btn-sm" onclick="toggleCardMore(\'more-' + escapeHtml(app.id) + '\')">' + (expandedSummaryCards['more-' + app.id] ? 'Hide Summary' : 'Summary') + '</button>' +
             '<button type="button" class="btn btn-outline btn-sm" style="font-weight:700" onclick="openAppDetail(\'' + escapeHtml(app.id) + '\')">Open and Verify</button>' +
             claimBtn +
           '</div>' +
         '</div>' +
-        '<div id="more-' + escapeHtml(app.id) + '" class="q-more hidden">' +
+        '<div id="more-' + escapeHtml(app.id) + '" class="q-more' + (expandedSummaryCards['more-' + app.id] ? '' : ' hidden') + '">' +
           '<div><b>Screening Note:</b> ' + getScreeningQuickSummary(app) + '</div>' +
           '<div style="margin-top:4px" class="small muted"><b>Contact:</b> ' + escapeHtml(app.email || "-") + ' | ' + escapeHtml(app.phone || "-") + '</div>' +
         '</div>' +
@@ -556,7 +557,16 @@ function renderAgentCards() {
 
 function toggleCardMore(elId) {
   var el = document.getElementById(elId);
-  if (el) el.classList.toggle("hidden");
+  if (!el) return;
+  var willShow = el.classList.contains("hidden");
+  expandedSummaryCards[elId] = willShow;
+  el.classList.toggle("hidden", !willShow);
+  var btn = document.getElementById("btn-" + elId);
+  if (btn) {
+    btn.classList.toggle("btn-red", willShow);
+    btn.classList.toggle("btn-outline", !willShow);
+    btn.textContent = willShow ? "Hide Summary" : "Summary";
+  }
 }
 
 async function claimApplication(appId) {
@@ -645,8 +655,9 @@ async function retriggerAgentScreening(appId) {
         state: "completed",
         overall_match: !dup.isDup,
         quality_passed: !dup.isDup,
-        fields_matched: true,
-        summary: dup.isDup ? dup.reason : "Document readability, duplicate check, and printed ID fields verified.",
+        fields_matched: false,
+        fallback_original_only: !dup.isDup,
+        summary: dup.isDup ? dup.reason : "Automated OCR unavailable — please visually verify the printed ID fields below.",
         notes: issues,
         screened_at: new Date().toISOString()
       });
@@ -751,15 +762,21 @@ async function renderDetailModalContent() {
   var dupBadge = dupCheck.isDup
     ? '<span class="badge badge-red">Duplicate Flagged</span>'
     : '<span class="badge badge-green">Distinct Photos</span>';
-  var nameCheckBadge = isManualFallback
-    ? '<span class="badge badge-gray">Verify Manually</span>'
-    : (res.name_match === false ? '<span class="badge badge-red">Mismatch</span>' : '<span class="badge badge-green">Matched</span>');
-  var bdateCheckBadge = isManualFallback
-    ? '<span class="badge badge-gray">Verify Manually</span>'
-    : (res.birth_date_match === false ? '<span class="badge badge-red">Mismatch</span>' : '<span class="badge badge-green">Matched</span>');
-  var idNoCheckBadge = isManualFallback
-    ? '<span class="badge badge-gray">Verify Manually</span>'
-    : (res.id_number_match === false ? '<span class="badge badge-red">Mismatch</span>' : '<span class="badge badge-green">Matched</span>');
+  function renderOcrFieldStatusBadge(matchState, foundText) {
+    if (isManualFallback || matchState === null || typeof matchState === "undefined") {
+      return '<span class="badge badge-gray">Verify Manually</span>';
+    }
+    if (matchState === "not_found") {
+      return '<span class="badge badge-yellow" title="' + escapeHtml(foundText || "Not printed on uploaded ID") + '">Not Printed on ID</span>';
+    }
+    if (matchState === false) {
+      return '<span class="badge badge-red" title="Read on ID: ' + escapeHtml(foundText || "Does not match form") + '">Mismatch</span>';
+    }
+    return '<span class="badge badge-green" title="Read on ID: ' + escapeHtml(foundText || "Matched") + '">Matched</span>';
+  }
+  var nameCheckBadge = renderOcrFieldStatusBadge(res.name_match, res.name_found_on_id);
+  var bdateCheckBadge = renderOcrFieldStatusBadge(res.birth_date_match, res.birth_date_found_on_id);
+  var idNoCheckBadge = renderOcrFieldStatusBadge(res.id_number_match, res.id_number_found_on_id);
 
   var cleanIssuesList = ((res.issues && res.issues.length) ? res.issues : [])
     .map(function (x) { return stripFalseReuploadMsg(x, dupCheck); })
@@ -808,9 +825,9 @@ async function renderDetailModalContent() {
     : "Encoding";
   var hasRealQualityOrFieldConcern = Boolean(
     dupCheck.isDup ||
-    res.name_match === false ||
-    res.birth_date_match === false ||
-    res.id_number_match === false ||
+    res.name_match === false || res.name_match === "not_found" ||
+    res.birth_date_match === false || res.birth_date_match === "not_found" ||
+    res.id_number_match === false || res.id_number_match === "not_found" ||
     Number(res.blur_score) < 55 ||
     cleanIssuesList.length > 0
   );

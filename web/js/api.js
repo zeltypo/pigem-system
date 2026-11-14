@@ -150,10 +150,126 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
     data.blur_score = (q.metrics && q.metrics.blur_score) || q.blur_score || "OK";
     var aiFindings = (notes.findings && notes.findings.length) ? notes.findings : (notes.notes || []);
     data.issues = aiFindings.length ? aiFindings : (q.issues || []);
+    if (data.ocr) {
+      if (typeof data.ocr.is_Philippine_id === "undefined" && typeof data.ocr.is_valid_government_id !== "undefined") {
+        data.ocr.is_Philippine_id = data.ocr.is_valid_government_id;
+      }
+      if (!data.ocr.detected_id_type && data.ocr.detected_document_type) {
+        data.ocr.detected_id_type = data.ocr.detected_document_type;
+      }
+    }
     return data;
   } catch (error) {
     return offlineResult;
   }
+}
+
+async function analyzeClientIdQuality(fileObj) {
+  return new Promise(function (resolve) {
+    if (!fileObj || typeof Image === "undefined" || typeof document === "undefined") {
+      resolve({ passed: true, issues: [], metrics: {} });
+      return;
+    }
+    var url = URL.createObjectURL(fileObj);
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var w = img.naturalWidth || img.width || 0;
+        var h = img.naturalHeight || img.height || 0;
+        var scale = Math.min(1, 480 / Math.max(w, h, 1));
+        var cw = Math.max(16, Math.round(w * scale));
+        var ch = Math.max(16, Math.round(h * scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = cw;
+        canvas.height = ch;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, cw, ch);
+        var px = ctx.getImageData(0, 0, cw, ch).data;
+        var gray = new Float32Array(cw * ch);
+        var sumBright = 0;
+        var brightPixels = 0;
+        for (var i = 0, p = 0; i < px.length; i += 4, p++) {
+          var g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+          gray[p] = g;
+          sumBright += g;
+          if (g > 246) brightPixels++;
+        }
+        var meanBright = sumBright / (cw * ch);
+        var glareRatio = brightPixels / (cw * ch);
+        var lapSum = 0;
+        var lapSqSum = 0;
+        var count = 0;
+        for (var y = 1; y < ch - 1; y++) {
+          for (var x = 1; x < cw - 1; x++) {
+            var idx = y * cw + x;
+            var lap = -4 * gray[idx] + gray[idx - 1] + gray[idx + 1] + gray[idx - cw] + gray[idx + cw];
+            lapSum += lap;
+            lapSqSum += lap * lap;
+            count++;
+          }
+        }
+        var lapMean = count > 0 ? lapSum / count : 0;
+        var lapVar = count > 0 ? (lapSqSum / count) - (lapMean * lapMean) : 100;
+        var issues = [];
+        if (w < 260 || h < 160) {
+          issues.push("Image resolution is too small (" + w + "x" + h + "). Please upload a clearer photo.");
+        }
+        if (lapVar < 32) {
+          issues.push("ID photo appears blurry or out of focus (Sharpness score: " + Math.round(lapVar) + ").");
+        }
+        if (meanBright < 42) {
+          issues.push("ID photo is too dark (Brightness: " + Math.round(meanBright) + "). Please take a photo in a well-lit area.");
+        } else if (meanBright > 238) {
+          issues.push("ID photo is overexposed / washed out.");
+        }
+        if (glareRatio > 0.22) {
+          issues.push("Heavy flash glare detected (" + Math.round(glareRatio * 100) + "% glare). Please turn off camera flash.");
+        }
+        URL.revokeObjectURL(url);
+        resolve({
+          passed: issues.length === 0,
+          issues: issues,
+          metrics: {
+            blur_score: Math.round(lapVar),
+            brightness: Math.round(meanBright),
+            glare_ratio: Number(glareRatio.toFixed(3))
+          }
+        });
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        resolve({ passed: true, issues: [], metrics: {} });
+      }
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      resolve({ passed: true, issues: [], metrics: {} });
+    };
+    img.src = url;
+  });
+}
+
+async function apiVerifyIdPreSubmit(frontFile, backFile, idType, applicantDetails) {
+  var clientQual = await analyzeClientIdQuality(frontFile);
+  var details = Object.assign({}, applicantDetails || {}, { id_type: idType || "" });
+  var res = await apiRunScreening(frontFile, details, backFile);
+  if (!res || res.status === "offline") {
+    return {
+      quality: clientQual,
+      ocr: { available: false },
+      comparisons: []
+    };
+  }
+  if (res.quality && clientQual && clientQual.issues && clientQual.issues.length) {
+    var existingIssues = res.quality.issues || [];
+    for (var i = 0; i < clientQual.issues.length; i++) {
+      if (existingIssues.indexOf(clientQual.issues[i]) === -1) {
+        existingIssues.push(clientQual.issues[i]);
+      }
+    }
+    res.quality.issues = existingIssues;
+    if (existingIssues.length > 0) res.quality.passed = false;
+  }
+  return res;
 }
 
 async function apiSendEmail(toEmail, subjectText, messageText, options) {

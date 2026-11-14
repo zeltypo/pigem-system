@@ -1,22 +1,3 @@
-"""
-================================================================================
-FILE: api/_mailer.py
-PURPOSE:
-  Customer Email Notification Module using Google Gmail SMTP.
-KEY RESPONSIBILITIES:
-  1. Strict `@gmail.com` Recipient Guard:
-     Only sends external emails to Customer `@gmail.com` addresses. Internal
-     username-only staff accounts (Admin, Manager, Agent) use clickable in-app
-     website notifications and never receive external emails.
-  2. Authenticated Sender Alignment & Anti-Spam Layout:
-     Aligns the `From` address with `SMTP_USER` (never spoofing external
-     addresses), attaches RFC Date and Message-ID headers, renders a clean HTML
-     card with a 4-letter Reference Tag, enforces RA 10173 data minimization,
-     includes 24h/72h correction follow-up guidance, and directs new applicants
-     to their one-time `/activate` link to choose their username & password.
-================================================================================
-"""
-
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 import html
@@ -27,11 +8,9 @@ import smtplib
 from typing import Any, Dict, Optional
 
 def _get_smtp_host() -> str:
-    """Returns the SMTP server hostname (defaults to `smtp.gmail.com`)."""
     return (os.getenv("SMTP_HOST") or "smtp.gmail.com").strip()
 
 def _get_smtp_port() -> int:
-    """Returns the SMTP server port (defaults to `465` for implicit SSL)."""
     raw = (os.getenv("SMTP_PORT") or "465").strip()
     try:
         return int(raw)
@@ -39,7 +18,6 @@ def _get_smtp_port() -> int:
         return 465
 
 def _get_smtp_user() -> str:
-    """Returns the authenticated Gmail SMTP account from Vercel environment variables."""
     return (
         os.getenv("SMTP_USER")
         or os.getenv("GMAIL_USER")
@@ -48,7 +26,6 @@ def _get_smtp_user() -> str:
     ).strip()
 
 def _get_smtp_password() -> str:
-    """Returns the Gmail App Password (stripped of whitespace) from Vercel environment variables."""
     raw = (
         os.getenv("SMTP_PASSWORD")
         or os.getenv("GMAIL_APP_PASSWORD")
@@ -58,14 +35,12 @@ def _get_smtp_password() -> str:
     return "".join(raw.split())
 
 def _get_sender_name() -> str:
-    """Returns the corporate display name (`PIGEM Combined Facilities Support Services`)."""
     return (
         os.getenv("SMTP_FROM_NAME")
         or "PIGEM Combined Facilities Support Services"
     ).strip()
 
 def _get_sender_email(smtp_user: str = "") -> str:
-    """Returns a `From` address aligned with `SMTP_USER` to prevent Gmail bounce and spam quarantine."""
     explicit = (os.getenv("SMTP_FROM_EMAIL") or "").strip()
     if explicit and smtp_user:
         exp_domain = explicit.split("@")[-1].lower()
@@ -78,20 +53,17 @@ def _get_sender_email(smtp_user: str = "") -> str:
     return ""
 
 def _get_app_base_url() -> str:
-    """Returns the live Vercel deployment base URL for activation and portal links."""
     prod_domain = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or "").strip()
     if prod_domain:
         return f"https://{prod_domain}"
     return (os.getenv("APP_BASE_URL") or "https://pigem-system-web.vercel.app").strip().rstrip("/")
 
 def _get_supabase_logo_url() -> str:
-    """Builds the public Supabase Storage URL for the corporate email header logo."""
     base = (os.getenv("SUPABASE_URL") or "https://wuunqfxyejxwrawtjdrf.supabase.co").strip().rstrip("/")
     return f"{base}/storage/v1/object/public/website-assets/black-logo-white-mode.png"
 
 def _generate_ref_tag(existing_tag: str = "") -> str:
 
-    """Builds or validates a 4-letter uppercase Reference Tag (e.g., `VSCF`)."""
     cleaned = "".join(ch for ch in str(existing_tag or "").upper() if ch.isalpha())
 
     if len(cleaned) >= 4:
@@ -102,12 +74,10 @@ def _generate_ref_tag(existing_tag: str = "") -> str:
 
 def is_configured() -> bool:
 
-    """Returns True when both `SMTP_USER` and `SMTP_PASSWORD` are configured."""
     return bool(_get_smtp_user() and _get_smtp_password())
 
 def is_Allowed_customer_gmail(email_addr: str) -> bool:
 
-    """Verifies that a recipient ends with `@gmail.com`; internal username-only staff are skipped."""
     cleaned = str(email_addr or "").strip().lower()
 
     return "@" in cleaned and cleaned.endswith("@gmail.com")
@@ -119,12 +89,10 @@ _CONFIDENTIALITY_NOTICE = (
 )
 
 class BaseEmailTemplateRenderer:
-    """Base renderer wrapping HTML emails in a clean, mobile-friendly PIGEM corporate layout with CTA buttons."""
     def __init__(self, sender_name: str):
         self.sender_name = sender_name
 
     def _escape(self, value: Any) -> str:
-        """HTML-escapes dynamic template values to prevent injection."""
         return html.escape(str(value or ""))
 
     def wrap_layout(
@@ -136,7 +104,6 @@ class BaseEmailTemplateRenderer:
         cta_url: str = "",
         ref_tag: str = "",
     ) -> str:
-        """Wraps body HTML with the PIGEM logo, reference tag, support contact footer, and RA 10173 disclaimer."""
         safe_title = self._escape(title)
         safe_sub = self._escape(subtitle)
         logo_url = _get_supabase_logo_url()
@@ -199,7 +166,6 @@ class BaseEmailTemplateRenderer:
 
 class CustomerEmailRenderer(BaseEmailTemplateRenderer):
 
-    """Generates HTML emails for OTP, Activation, Needs Correction (24h/72h notice), Status Updates, and Promos."""
     def render(
 
         self,
@@ -214,7 +180,6 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
 
     ) -> str:
 
-        """Builds the subject/HTML email body for a Customer lifecycle template type."""
         data = payload or {}
 
         ttype = (template_type or "general").strip().lower()
@@ -505,7 +470,6 @@ def send(
 
 ) -> Dict[str, Any]:
 
-    """Validates `@gmail.com` Customer recipient and delivers multipart plain/HTML email via Gmail SMTP."""
     recipient = str(to or "").strip().lower()
 
     if not recipient or "@" not in recipient:

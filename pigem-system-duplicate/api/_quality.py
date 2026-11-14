@@ -1,5 +1,3 @@
-"""OpenCV Document Quality Scanner, Perspective Cropper, and Lighting/Glare Inspector."""
-
 try:
 
     import cv2
@@ -14,7 +12,6 @@ except ImportError:
 
 class BaseImageProcessor:
 
-    """Shared OpenCV decoding and 4-point perspective warp utilities preserving original uploads."""
     def __init__(
 
         self,
@@ -123,7 +120,6 @@ class BaseImageProcessor:
 
 class FastQualityScanner(BaseImageProcessor):
 
-    """Stage 1 rapid readability assessment (blur, brightness, glare, contrast)."""
     def process(self, image_bytes: bytes) -> dict:
 
         if cv2 is None:
@@ -248,7 +244,6 @@ class FastQualityScanner(BaseImageProcessor):
 
 class DocumentCropEnhancer(BaseImageProcessor):
 
-    """Stage 2 safe perspective crop, CLAHE polish, glare/blur metrics, and working-copy export."""
     def _is_valid_card_shape(self, w: int, h: int) -> bool:
 
         if min(w, h) < 220:
@@ -595,15 +590,12 @@ _crop_enhancer = DocumentCropEnhancer()
 
 def is_available() -> bool:
 
-    """Returns True when headless OpenCV is loaded in the cloud runtime."""
     return cv2 is not None
 
 def quick_check(image_bytes: bytes) -> dict:
 
-    """Stage 1 rapid readability assessment."""
     return _fast_scanner.process(image_bytes)
 
 def enhance_and_crop(image_bytes: bytes):
 
-    """Stage 2 safe perspective crop and working-copy export."""
     return _crop_enhancer.process(image_bytes)

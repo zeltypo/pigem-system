@@ -842,14 +842,36 @@ async function setupPublicHeader() {
 }
 
 function isManagerOrAdminPreview() {
-  if (window.location.search.indexOf("preview_cms=1") !== -1) {
-    sessionStorage.setItem("pigem_cms_preview", "1");
+  if (window.location && window.location.search && window.location.search.indexOf("preview_cms=1") !== -1) {
     return true;
   }
-  if (sessionStorage.getItem("pigem_cms_preview") === "1") return true;
-  if (localStorage.getItem("pigem_session_staff") || sessionStorage.getItem("pigem_session_staff")) return true;
-  if (localStorage.getItem("pigem_session_admin") || sessionStorage.getItem("pigem_session_admin")) return true;
   return false;
+}
+
+function getMaintenanceBlockInfo(contentObj) {
+  var settings = getSystemSettings();
+  if (settings && settings.maintenance_mode) {
+    return {
+      blocked: true,
+      isFullMaintenance: true,
+      title: "Website Under Maintenance",
+      message: settings.maintenance_message || "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly."
+    };
+  }
+  var c = contentObj || window._latestWebsiteContent || readSaved("pigem_content", null) || {};
+  var ann = c.announcement || {};
+  if (ann && ann.active) {
+    var combined = ((ann.headline || "") + " " + (ann.message || "")).toLowerCase();
+    if (/maint|unavailable|offline|upgrade|down|closed|pause|temporar/i.test(combined)) {
+      return {
+        blocked: true,
+        isFullMaintenance: false,
+        title: ann.headline || "Scheduled Maintenance Notice",
+        message: ann.message || "Online plan application is temporarily paused for maintenance. Please try again shortly."
+      };
+    }
+  }
+  return { blocked: false, isFullMaintenance: false, title: "", message: "" };
 }
 
 function checkPublicMaintenance() {

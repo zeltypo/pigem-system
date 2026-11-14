@@ -1,5 +1,3 @@
-"""PIGEM Cloud Requirements Screening & Notification FastAPI Service."""
-
 from pathlib import Path
 
 import sys
@@ -78,7 +76,6 @@ class PoliteRemarkRequest(BaseModel):
 
 def health():
 
-    """Returns service readiness flags for OpenCV quality checks, Gemini OCR, reCAPTCHA, and SMTP."""
     gemini_ok = _gemini.is_available()
 
     opencv_ok = bool(_quality.is_available())
@@ -127,7 +124,6 @@ def verify_captcha(data: CaptchaVerifyRequest, request: Request):
 
 def screen_document_async(data: AsyncScreenRequest, user=Depends(_auth.require_login)):
 
-    """Triggers asynchronous backend screening on a stored Supabase application record."""
     return _screening.run_application_screening(data.application_id)
 
 @app.post("/api/screen")
@@ -158,7 +154,6 @@ async def screen_document(
 
 ):
 
-    """Runs synchronous pre-submit ID quality and blind OCR screening on uploaded Front/Back images."""
     front_bytes = await id_front.read()
 
     back_bytes = await id_back.read() if id_back is not None else None

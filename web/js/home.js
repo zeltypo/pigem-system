@@ -1,12 +1,24 @@
 var pendingApplyPlanId = null;
 
 function openApplyWithCaptcha(planId) {
-  pendingApplyPlanId = planId || "";
-  if (sessionStorage.getItem("pigem_captcha_verified") === "true") {
-    window.location.href = "apply.html" + (pendingApplyPlanId ? "?plan=" + encodeURIComponent(pendingApplyPlanId) : "");
+  var mInfo = typeof getMaintenanceBlockInfo === "function" ? getMaintenanceBlockInfo(window._latestWebsiteContent) : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
+  if (mInfo && mInfo.blocked) {
+    showAlert(
+      mInfo.title || "Website Under Maintenance",
+      mInfo.message || "Online fiber applications are temporarily paused while the system is under maintenance. Please try again later.",
+      "warn"
+    );
     return;
   }
-  showGoogleCaptchaPopup();
+  var targetUrl = "apply.html" + (planId ? "?plan=" + encodeURIComponent(planId) : "");
+  var existing = sessionStorage.getItem("pigem_apply_captcha_verified");
+  if (existing && (Date.now() - Number(existing)) < 30 * 60 * 1000) {
+    window.location.href = targetUrl;
+    return;
+  }
+  showApplyCaptchaGatePopup(function () {
+    window.location.href = targetUrl;
+  });
 }
 
 function showGoogleCaptchaPopup() {

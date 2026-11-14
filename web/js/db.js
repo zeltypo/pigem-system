@@ -231,7 +231,7 @@ function findDemoUserByEmail(email) {
 }
 
 function findDemoUserByUsername(username) {
-  var target = String(username || "").trim().toLowerCase();
+  var target = String(username || "").trim();
   if (!target) return null;
   var users = getDemoUsers();
   for (var i = 0; i < users.length; i++) {
@@ -241,7 +241,7 @@ function findDemoUserByUsername(username) {
 }
 
 async function dbIsUsernameTaken(username, excludeUserId) {
-  var clean = String(username || "").trim().toLowerCase();
+  var clean = String(username || "").trim();
   if (!clean) return false;
 
   if (!IS_DEMO_MODE && supabaseClient) {
@@ -371,7 +371,8 @@ async function dbGetCurrentUser() {
 }
 
 async function dbSignIn(identifier, password) {
-  var cleanInput = String(identifier || "").trim().toLowerCase();
+  var rawInput = String(identifier || "").trim();
+  var cleanInput = rawInput.toLowerCase();
   if (!cleanInput) {
     throw new Error((SYSTEM === "staff" || SYSTEM === "admin") ? "Please enter your username." : "Please enter your username or email address.");
   }
@@ -395,8 +396,9 @@ async function dbSignIn(identifier, password) {
       staffUser = findDemoUserByUsername(cleanStaffUser);
     }
 
-    if (!staffUser) {
-      throw new Error("Invalid username or password.");
+    var rawStaffUser = rawInput.replace(/^@/, "");
+    if (!staffUser || String(staffUser.username || "") !== rawStaffUser) {
+      throw new Error("Invalid username or password (username is case-sensitive).");
     }
     if (staffUser.active === false) {
       throw new Error("This account is disabled. Please contact the System Administrator.");
@@ -466,8 +468,9 @@ async function dbSignIn(identifier, password) {
     if (preloadedDbRow && preloadedDbRow.role && preloadedDbRow.role !== "customer") {
       throw new Error("This username belongs to an internal staff account. Please use the Staff or Admin Login page.");
     }
-    if (!cleanEmail) {
-      throw new Error("Invalid username or password.");
+    var rawCustUser = rawInput.replace(/^@/, "");
+    if (!cleanEmail || (preloadedDbRow && String(preloadedDbRow.username || "") !== rawCustUser)) {
+      throw new Error("Invalid username or password (username is case-sensitive).");
     }
     if (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail)) {
       throw new Error("This username belongs to an internal staff account. Please use the Staff or Admin Login page.");
@@ -889,39 +892,66 @@ async function dbGetApplication(appId) {
 }
 
 async function dbFindDuplicateCustomerApplication(email, appData) {
-  var cleanEmail = String(email || "").trim().toLowerCase();
-  if (!cleanEmail) return { isDuplicate: false };
-  var existingApps = await dbListApplicationsForCustomer(cleanEmail);
+  var cleanEmail = String(email || (appData && appData.email) || "").trim().toLowerCase();
+  var payload = appData || (typeof email === "object" ? email : {}) || {};
+  if (!cleanEmail && payload.email) cleanEmail = String(payload.email || "").trim().toLowerCase();
+
+  var existingApps = await dbListAllApplications();
   if (!existingApps || existingApps.length === 0) return { isDuplicate: false };
 
   var normStr = function (v) {
     return String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
   };
-  var newAddrKey = normStr((appData.house_no || "") + (appData.street || "") + (appData.barangay || "") + (appData.city || ""));
-  var newLat = Number(appData.lat);
-  var newLng = Number(appData.lng);
+  var normPhone = function (v) {
+    return String(v || "").replace(/\D/g, "");
+  };
+
+  var newNameKey = normStr(payload.full_name);
+  var newPhoneKey = normPhone(payload.phone);
+  var newIdNumKey = normStr(payload.id_number);
+  var newAddrKey = normStr((payload.house_no || "") + (payload.street || "") + (payload.barangay || "") + (payload.city || ""));
+  var newLat = Number(payload.lat != null ? payload.lat : payload.latitude);
+  var newLng = Number(payload.lng != null ? payload.lng : payload.longitude);
   var hasNewCoords = !isNaN(newLat) && !isNaN(newLng) && newLat !== 0 && newLng !== 0;
 
   for (var i = 0; i < existingApps.length; i++) {
     var a = existingApps[i];
-    if (String(a.status || "") === "Rejected") continue;
+    if (!a || String(a.status || "") === "Rejected") continue;
+    var oldEmail = String(a.email || "").trim().toLowerCase();
+    var oldNameKey = normStr(a.full_name);
+    var oldPhoneKey = normPhone(a.phone);
+    var oldIdNumKey = normStr(a.id_number);
     var oldAddrKey = normStr((a.house_no || "") + (a.street || "") + (a.barangay || "") + (a.city || ""));
-    var oldLat = Number(a.lat);
-    var oldLng = Number(a.lng);
-    var sameCoords = hasNewCoords && !isNaN(oldLat) && !isNaN(oldLng) &&
-      Math.abs(newLat - oldLat) < 0.00045 && Math.abs(newLng - oldLng) < 0.00045;
-    var sameAddress = Boolean(newAddrKey && oldAddrKey && newAddrKey === oldAddrKey);
-    var samePersonPlan = normStr(a.full_name) === normStr(appData.full_name) &&
-      String(a.plan || a.plan_id || "") === String(appData.plan || appData.plan_id || "");
+    var oldLat = Number(a.lat != null ? a.lat : a.latitude);
+    var oldLng = Number(a.lng != null ? a.lng : a.longitude);
 
-    if (sameCoords || sameAddress || samePersonPlan) {
+    var sameEmail = Boolean(cleanEmail && oldEmail && cleanEmail === oldEmail);
+    var sameName = Boolean(newNameKey && oldNameKey && newNameKey === oldNameKey);
+    var samePhone = Boolean(newPhoneKey && oldPhoneKey && newPhoneKey.length >= 10 && newPhoneKey === oldPhoneKey);
+    var sameIdNumber = Boolean(newIdNumKey && oldIdNumKey && newIdNumKey.length >= 5 && newIdNumKey === oldIdNumKey);
+    var sameCoords = hasNewCoords && !isNaN(oldLat) && !isNaN(oldLng) &&
+      Math.abs(newLat - oldLat) < 0.00045 && Math.abs(newLng - oldLng) < 0.00045 && (sameEmail || sameName);
+    var sameAddress = Boolean(newAddrKey && oldAddrKey && newAddrKey.length > 8 && newAddrKey === oldAddrKey && (sameEmail || sameName));
+    var samePersonEmail = Boolean(sameName && sameEmail);
+    var samePersonPhone = Boolean(sameName && samePhone);
+    var sameEmailPhone = Boolean(sameEmail && samePhone);
+    var samePersonPlan = Boolean(sameEmail && String(a.plan || a.plan_id || "") === String(payload.plan || payload.plan_id || ""));
+
+    if (samePersonEmail || samePersonPhone || sameEmailPhone || sameIdNumber || sameCoords || sameAddress || samePersonPlan) {
+      var refLabel = a.reference_no || a.ref_no || "EXISTING";
       var locText = (typeof formatAddress === "function" ? formatAddress(a) : "") || a.address_line || "the same installation location";
-      var reasonDetail = sameCoords || sameAddress
-        ? "Duplicate Application at Same Location: This customer account already has an active application (" + a.ref_no + ", Status: " + a.status + ") registered at " + locText + "."
-        : "Duplicate Application Under Same Account: This customer account already has an active application (" + a.ref_no + ", Status: " + a.status + ") for the same subscriber and plan.";
+      var reasonDetail = sameIdNumber
+        ? "Duplicate Primary ID Number: An active application (" + refLabel + ", Status: " + a.status + ") is already registered under ID Number " + (payload.id_number || a.id_number) + "."
+        : (samePersonEmail || samePersonPhone || sameEmailPhone)
+          ? "Duplicate Applicant Record: An active application (" + refLabel + ", Status: " + a.status + ") already exists for " + (a.full_name || payload.full_name) + " with the same email or mobile number."
+          : (sameCoords || sameAddress)
+            ? "Duplicate Application at Same Location: This customer account already has an active application (" + refLabel + ", Status: " + a.status + ") registered at " + locText + "."
+            : "Duplicate Application Under Same Account: This customer account already has an active application (" + refLabel + ", Status: " + a.status + ").";
       return {
         isDuplicate: true,
         existingApp: a,
+        existingRef: refLabel,
+        existingStatus: a.status || "Pending Review",
         reason: reasonDetail
       };
     }
@@ -1487,15 +1517,46 @@ function normalizeAppRecord(a) {
     a.cropped_back_url = a.cropped_back_url || a.id_back_cropped_url || a.screening.cropped_back_url || "";
     var q = a.screening.quality || {};
     var ai = a.screening.ai || {};
-    var comps = Array.isArray(a.screening.comparisons) ? a.screening.comparisons : [];
-    var nMatch = true, bMatch = true, idMatch = true;
+    var comps = Array.isArray(a.screening.comparisons) ? a.screening.comparisons : (Array.isArray(a.screening.ocr_comparisons) ? a.screening.ocr_comparisons : []);
+    var ocrAvail = Boolean(a.screening.ocr && a.screening.ocr.available !== false && comps.length > 0);
+    var nMatch = ocrAvail ? true : null;
+    var bMatch = ocrAvail ? true : null;
+    var idMatch = ocrAvail ? true : null;
+    var nFound = "", bFound = "", idFound = "";
     for (var ci = 0; ci < comps.length; ci++) {
-      var ck = String(comps[ci].key || comps[ci].field || "").toLowerCase();
-      if (comps[ci].result === "mismatch") {
-        if (ck.indexOf("name") !== -1) nMatch = false;
-        else if (ck.indexOf("birth") !== -1) bMatch = false;
-        else if (ck.indexOf("id") !== -1) idMatch = false;
+      var cItem = comps[ci] || {};
+      var ck = String(cItem.key || cItem.field || "").toLowerCase();
+      var st = String(cItem.status || cItem.result || "").toLowerCase();
+      var foundTxt = String(cItem.found_on_id || "");
+      var isNotPrinted = (st === "not_found" || foundTxt.toLowerCase().indexOf("not printed") !== -1 || foundTxt.toLowerCase().indexOf("not clearly visible") !== -1);
+      var isUnv = (st === "unverified");
+      var resolvedVal = (st === "match") ? true : (isNotPrinted ? "not_found" : (isUnv ? null : false));
+      if (ck.indexOf("name") !== -1) {
+        nMatch = resolvedVal;
+        nFound = foundTxt;
+      } else if (ck.indexOf("birth") !== -1) {
+        bMatch = resolvedVal;
+        bFound = foundTxt;
+      } else if (ck === "id_number" || ck === "id number" || (ck.indexOf("id") !== -1 && ck.indexOf("type") === -1)) {
+        idMatch = resolvedVal;
+        idFound = foundTxt;
       }
+    }
+    if (!a.ai_result || a.screening.state) {
+      var findingsList = a.screening.findings || (ai.findings && ai.findings.length ? ai.findings : (q.issues || []));
+      var anyFieldIssue = (nMatch !== true || bMatch !== true || idMatch !== true);
+      a.ai_result = Object.assign({}, a.ai_result || {}, {
+        overall_status: (anyFieldIssue || (q.issues && q.issues.length > 0) || findingsList.length > 0) ? "Needs Review" : "Verified",
+        blur_score: q.blur_score != null ? q.blur_score : ((a.ai_result && a.ai_result.blur_score) || "OK"),
+        name_match: comps.length > 0 ? nMatch : ((a.ai_result && a.ai_result.name_match != null && ocrAvail) ? a.ai_result.name_match : nMatch),
+        birth_date_match: comps.length > 0 ? bMatch : ((a.ai_result && a.ai_result.birth_date_match != null && ocrAvail) ? a.ai_result.birth_date_match : bMatch),
+        id_number_match: comps.length > 0 ? idMatch : ((a.ai_result && a.ai_result.id_number_match != null && ocrAvail) ? a.ai_result.id_number_match : idMatch),
+        name_found_on_id: nFound,
+        birth_date_found_on_id: bFound,
+        id_number_found_on_id: idFound,
+        cropped_id_url: a.cropped_id_url,
+        issues: findingsList
+      });
     }
     if (!a.ai_result || a.screening.state) {
       var findingsList = a.screening.findings || (ai.findings && ai.findings.length ? ai.findings : (q.issues || []));
@@ -2218,7 +2279,7 @@ async function dbHasAdminAccount() {
 async function dbCreateUserAccount(fullName, email, password, role, username) {
   var targetRole = role || "agent";
   var cleanEmail = email ? String(email).trim().toLowerCase() : null;
-  var cleanUsername = String(username || "").trim().toLowerCase().replace(/^@/, "");
+  var cleanUsername = String(username || "").trim().replace(/^@/, "");
 
   if (targetRole === "customer") {
     if (!cleanEmail || (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail))) {
@@ -2484,7 +2545,7 @@ async function dbChangeStaffPasswordDirect(userId, currentPassword, newPassword)
 }
 
 async function dbRequestStaffPasswordReset(username, note) {
-  var clean = String(username || "").trim().toLowerCase().replace(/^@/, "");
+  var clean = String(username || "").trim().replace(/^@/, "");
   if (!clean) throw new Error("Please enter your staff username.");
   var found = null;
   if (!IS_DEMO_MODE && supabaseClient) {

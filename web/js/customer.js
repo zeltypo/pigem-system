@@ -149,6 +149,50 @@ function selectMyApp(id) {
   selectedAppId = id;
   renderAppList();
   renderSelectedApp();
+  var app = findMyApp(id);
+  if (app && typeof openPopup === "function") {
+    var displayEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email || "-";
+    var addrStr = [app.house_no, app.street, app.subdivision, app.barangay, app.city, app.province].filter(Boolean).join(", ");
+    var frontImg = app.cropped_id_url || app.id_image_url || app.id_front_path || "";
+    var backImg = app.cropped_back_url || app.id_back_image_url || app.id_back_path || "";
+    var modalHtml =
+      '<div style="text-align:left;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:12px;">' +
+          '<div>' +
+            '<div class="muted" style="font-size:11px;text-transform:uppercase;font-weight:700;">Application Summary</div>' +
+            '<h3 style="font-size:18px;margin:2px 0 0;">' + escapeHtml(app.reference_no || "-") + '</h3>' +
+          '</div>' +
+          '<div>' + customerStatusBadge(app.status) + '</div>' +
+        '</div>' +
+        '<div class="kv" style="margin-bottom:12px;">' +
+          '<div><span>Selected Plan</span><b>' + escapeHtml(app.plan_name || "-") + '</b></div>' +
+          '<div><span>Applicant Name</span><b>' + escapeHtml(app.full_name || "-") + '</b></div>' +
+          '<div><span>Birth Date</span><b>' + escapeHtml(app.birth_date || "-") + '</b></div>' +
+          '<div><span>Email Address</span><b>' + escapeHtml(displayEmail) + '</b></div>' +
+          '<div><span>Mobile Number</span><b>' + escapeHtml(app.phone || "-") + '</b></div>' +
+          '<div><span>Primary Valid ID</span><b>' + escapeHtml((app.id_type || "-") + " — " + (app.id_number || "-")) + '</b></div>' +
+          '<div><span>Installation Address</span><b>' + escapeHtml(addrStr || "-") + '</b></div>' +
+          '<div><span>Nearest Landmark</span><b>' + escapeHtml(app.landmark || "-") + '</b></div>' +
+          '<div><span>Submitted Date</span><b>' + formatDate(app.created_at) + '</b></div>' +
+        '</div>' +
+        (app.agent_remarks
+          ? '<div class="msg info show" style="margin-bottom:12px;"><b>Verification Team Note:</b><br>' + escapeHtml(app.agent_remarks) + '</div>'
+          : '') +
+        ((frontImg || backImg)
+          ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">' +
+              (frontImg ? '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center;"><div style="font-size:11px;font-weight:700;margin-bottom:4px;">Front of Valid ID</div><img src="' + escapeHtml(frontImg) + '" alt="Front ID" style="max-height:120px;margin:0 auto;border-radius:6px;object-fit:contain;" /></div>' : '') +
+              (backImg ? '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center;"><div style="font-size:11px;font-weight:700;margin-bottom:4px;">Back of Valid ID</div><img src="' + escapeHtml(backImg) + '" alt="Back ID" style="max-height:120px;margin:0 auto;border-radius:6px;object-fit:contain;" /></div>' : '') +
+            '</div>'
+          : '') +
+        '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
+          (app.status === "Needs Correction"
+            ? '<button type="button" class="btn btn-red btn-sm" onclick="closePopup(); var box=document.getElementById('cust-detail-box'); if(box) box.scrollIntoView({behavior:'smooth'});">Proceed to Correction Form</button>'
+            : '') +
+          '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
+        '</div>' +
+      '</div>';
+    openPopup(modalHtml, { showCloseX: true, closeOnBackdrop: true });
+  }
 }
 
 function renderSelectedApp() {

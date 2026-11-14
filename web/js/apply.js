@@ -69,7 +69,84 @@ var _qrPollTimer = null;
 var _qrActiveSid = "";
 var _qrLoadedUrls = { front: "", back: "" };
 
-function initApplyPage() {
+
+var APPLY_DRAFT_KEY = "pigem_apply_wizard_draft";
+var APPLY_DRAFT_FIELDS = [
+  "first_name", "middle_name", "last_name", "birth_date", "email", "phone", "phone_alt",
+  "house_no", "house_suffix", "unit_no", "floor_no", "building_name", "street", "subdivision",
+  "barangay", "city", "province", "landmark", "remarks", "id_type", "id_number"
+];
+
+function saveApplyDraftState() {
+  try {
+    var vals = {};
+    for (var i = 0; i < APPLY_DRAFT_FIELDS.length; i++) {
+      var fid = APPLY_DRAFT_FIELDS[i];
+      var el = document.getElementById(fid);
+      if (el) vals[fid] = el.value;
+    }
+    var agree1 = document.getElementById("agree_sub");
+    var agree2 = document.getElementById("agree_tu");
+    var draft = {
+      currentPanel: currentPanel,
+      selectedPlanId: selectedPlanId,
+      isContactOtpVerified: isContactOtpVerified,
+      verifiedEmailAddress: verifiedEmailAddress,
+      pinLocationState: _pinLocationState,
+      agree_sub: agree1 ? agree1.checked : false,
+      agree_tu: agree2 ? agree2.checked : false,
+      values: vals
+    };
+    sessionStorage.setItem(APPLY_DRAFT_KEY, JSON.stringify(draft));
+  } catch (e) {}
+}
+
+function restoreApplyDraftState(hasExplicitUrlPlan) {
+  try {
+    var raw = sessionStorage.getItem(APPLY_DRAFT_KEY);
+    if (!raw) return;
+    var draft = JSON.parse(raw);
+    if (!draft || typeof draft !== "object") return;
+    if (!hasExplicitUrlPlan && draft.selectedPlanId) {
+      selectedPlanId = draft.selectedPlanId;
+    }
+    var vals = draft.values || {};
+    for (var i = 0; i < APPLY_DRAFT_FIELDS.length; i++) {
+      var fid = APPLY_DRAFT_FIELDS[i];
+      var el = document.getElementById(fid);
+      if (el && typeof vals[fid] === "string" && vals[fid] !== "") {
+        el.value = vals[fid];
+      }
+    }
+    if (draft.isContactOtpVerified && draft.verifiedEmailAddress) {
+      var curEm = (document.getElementById("email") ? document.getElementById("email").value : "").trim().toLowerCase();
+      if (!curEm || curEm === String(draft.verifiedEmailAddress).toLowerCase()) {
+        isContactOtpVerified = true;
+        verifiedEmailAddress = draft.verifiedEmailAddress;
+        var st = document.getElementById("email-otp-inline-status");
+        if (st) {
+          st.style.display = "block";
+          st.innerHTML = '<span class="badge status-approved">Verified</span> <span style="color:var(--good);font-weight:600;">Email verified (' + escapeHtml(verifiedEmailAddress) + ').</span>';
+        }
+      }
+    }
+    if (draft.pinLocationState && draft.pinLocationState.lat) {
+      _pinLocationState = draft.pinLocationState;
+    }
+    var agree1 = document.getElementById("agree_sub");
+    var agree2 = document.getElementById("agree_tu");
+    if (agree1 && typeof draft.agree_sub === "boolean") agree1.checked = draft.agree_sub;
+    if (agree2 && typeof draft.agree_tu === "boolean") agree2.checked = draft.agree_tu;
+    renderPlanChoices();
+    if (typeof updateIdFormatHint === "function") updateIdFormatHint();
+    var targetPanel = Number(draft.currentPanel || 0);
+    if (targetPanel >= 0 && targetPanel < TOTAL_PANELS) {
+      showPanel(targetPanel);
+    }
+  } catch (e) {}
+}
+
+async function initApplyPage() {
   var params = new URLSearchParams(window.location.search);
   var qrUpload = params.get("qr_upload");
   var qrSid = params.get("sid");
@@ -78,6 +155,26 @@ function initApplyPage() {
     initMobileQrMode(qrSid);
     return;
   }
+
+  try {
+    if (typeof dbGetWebsiteContent === "function") {
+      var liveContent = await dbGetWebsiteContent();
+      window._latestWebsiteContent = liveContent;
+      var mInfo = typeof getMaintenanceBlockInfo === "function" ? getMaintenanceBlockInfo(liveContent) : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
+      if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+        closePopup();
+        document.body.innerHTML =
+          '<main class="auth-page">' +
+            '<div class="card auth-card center" style="max-width:520px">' +
+              '<h2>' + escapeHtml(mInfo.title || "Website Under Maintenance") + '</h2>' +
+              '<p class="muted mt">' + escapeHtml(mInfo.message || "Online fiber applications are temporarily paused for scheduled maintenance.") + '</p>' +
+              '<div style="margin-top:18px"><a href="index.html" class="btn btn-red">Back to Home Page</a></div>' +
+            '</div>' +
+          '</main>';
+        return;
+      }
+    }
+  } catch (e) {}
 
   var urlPlan = params.get("plan");
   var urlAgent = params.get("agent") || params.get("ref");
@@ -95,6 +192,14 @@ function initApplyPage() {
   renderPlanChoices();
   setupDeviceUploadUI();
   attachApplyLiveValidation();
+  restoreApplyDraftState(Boolean(urlPlan));
+
+  document.addEventListener("input", function (ev) {
+    if (ev && ev.target && ev.target.id) saveApplyDraftState();
+  });
+  document.addEventListener("change", function (ev) {
+    if (ev && ev.target && ev.target.id) saveApplyDraftState();
+  });
   window.addEventListener("resize", setupDeviceUploadUI);
 
   if (sessionStorage.getItem("pigem_captcha_verified") !== "true") {
@@ -616,10 +721,34 @@ function handleIdFileSelect(side, inputEl) {
       boxB.hidden = false;
     }
   }
+  window._allowLowQualityIdOnce = false;
+  if (typeof analyzeClientIdQuality === "function") {
+    analyzeClientIdQuality(file).then(function (qRes) {
+      if (!qRes || !qRes.metrics) return;
+      var m = qRes.metrics;
+      var wEl = document.getElementById("id-screen-warn");
+      if (!wEl) return;
+      var metricsSummary = "Sharpness: <b>" + (m.blur_score != null ? m.blur_score : "OK") + "</b> &bull; Brightness: <b>" + (m.brightness != null ? m.brightness : "OK") + "</b> &bull; Glare: <b>" + (m.glare_ratio != null ? Math.round(m.glare_ratio * 100) + "%" : "0%") + "</b>";
+      if (qRes.issues && qRes.issues.length > 0) {
+        wEl.style.background = "#fef2f2";
+        wEl.style.borderColor = "#fecaca";
+        wEl.style.color = "#991b1b";
+        wEl.innerHTML = "<b>ID Image Quality Warning (" + (side === "front" ? "Front ID" : "Back ID") + "):</b> " + escapeHtml(qRes.issues.join(" ")) + "<div style='margin-top:4px;font-size:12px;'>" + metricsSummary + "</div>";
+        wEl.hidden = false;
+      } else {
+        wEl.style.background = "#f0fdf4";
+        wEl.style.borderColor = "#bbf7d0";
+        wEl.style.color = "#166534";
+        wEl.innerHTML = "<b>ID Image Quality Check Passed (" + (side === "front" ? "Front ID" : "Back ID") + "):</b> Photo is clear and readable.<div style='margin-top:4px;font-size:12px;'>" + metricsSummary + "</div>";
+        wEl.hidden = false;
+      }
+    });
+  }
 }
 
 function showPanel(index) {
   currentPanel = index;
+  saveApplyDraftState();
   for (var i = 0; i < TOTAL_PANELS; i++) {
     var el = document.getElementById("panel-" + i);
     if (el) el.hidden = (i !== index);
@@ -641,18 +770,31 @@ function showPanel(index) {
 function validateCurrentPanel() {
   var panelEl = document.getElementById("panel-" + currentPanel);
   if (typeof clearAllFieldErrors === "function" && panelEl) clearAllFieldErrors(panelEl);
-  var firstInvalidEl = null;
+    var firstInvalidEl = null;
+  var invalidReasons = [];
 
   function markInvalid(fieldId, name, msg, elToFocus) {
     flashErrorBubble(fieldId, name, msg);
+    invalidReasons.push("&bull; <b>" + escapeHtml(name) + ":</b> " + escapeHtml(msg));
     if (!firstInvalidEl) {
       firstInvalidEl = elToFocus || document.getElementById(fieldId);
+    }
+  }
+
+  function showInvalidSummaryPopup() {
+    if (invalidReasons.length > 0 && typeof showAlert === "function") {
+      showAlert(
+        "Cannot Proceed — Please Check Required Fields",
+        "<div style='text-align:left;line-height:1.6;'>Please complete or correct the following before proceeding:<br><br>" + invalidReasons.join("<br>") + "</div>",
+        "warn"
+      );
     }
   }
 
   if (currentPanel === 0) {
     if (!selectedPlanId) {
       markInvalid("plan-choice-box", "Plan Selection", "Please pick an internet plan.");
+      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -677,6 +819,7 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
+      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -702,6 +845,7 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
+      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -730,6 +874,7 @@ function validateCurrentPanel() {
       );
       var mapBox = document.getElementById("map");
       if (mapBox) mapBox.scrollIntoView({ behavior: "smooth", block: "center" });
+      showInvalidSummaryPopup();
       return false;
     }
 
@@ -745,6 +890,7 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
+      showInvalidSummaryPopup();
       return false;
     }
 
@@ -759,6 +905,7 @@ function validateCurrentPanel() {
         cityEl.scrollIntoView({ behavior: "smooth", block: "center" });
         cityEl.focus();
       }
+      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -776,6 +923,7 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
+      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -787,6 +935,7 @@ function validateCurrentPanel() {
     }
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -1217,6 +1366,8 @@ function advanceLoadingStep(stepNum) {
 }
 
 function resetApplyWizardToStep1() {
+  try { sessionStorage.removeItem(APPLY_DRAFT_KEY); } catch (e) {}
+  window._allowLowQualityIdOnce = false;
   var loadingScreen = document.getElementById("panel-loading");
   if (loadingScreen) loadingScreen.hidden = true;
   var fieldIds = [
@@ -1283,8 +1434,8 @@ async function submitRegistration() {
     var screeningActive = Boolean(getSystemSettings().ai_enabled);
     var preScreenRes = null;
 
-    if (screeningActive && !IS_DEMO_MODE && typeof apiRunScreening === "function") {
-      preScreenRes = await apiRunScreening(selectedFrontFile, {
+    if (screeningActive && typeof apiVerifyIdPreSubmit === "function") {
+      preScreenRes = await apiVerifyIdPreSubmit(selectedFrontFile, selectedBackFile, idType, {
         full_name: fullName,
         first_name: first,
         middle_name: middle,
@@ -1292,31 +1443,42 @@ async function submitRegistration() {
         birth_date: birth,
         id_type: idType,
         id_number: idNumber
-      }, selectedBackFile);
+      });
 
-      if (preScreenRes && preScreenRes.status !== "offline") {
+      if (preScreenRes) {
         var ocrInfo = preScreenRes.ocr || {};
         var qualityInfo = preScreenRes.quality || {};
-        var isNotGovId = ocrInfo.is_valid_government_id === false;
-        var isSevereQuality = Boolean(qualityInfo.severe);
+        var isNotGovId = (ocrInfo.is_valid_government_id === false || ocrInfo.is_Philippine_id === false);
+        var hasQualityIssues = Boolean(qualityInfo.severe || qualityInfo.acceptable === false || qualityInfo.passed === false || (qualityInfo.issues && qualityInfo.issues.length > 0));
+        var shouldBlockQuality = Boolean(qualityInfo.severe || (hasQualityIssues && !window._allowLowQualityIdOnce));
 
-        if (isNotGovId || isSevereQuality) {
+        if (isNotGovId || shouldBlockQuality) {
+          if (!isNotGovId && !qualityInfo.severe) {
+            window._allowLowQualityIdOnce = true;
+          }
+          var qMetrics = qualityInfo.metrics || {};
+          var metricText = (qMetrics.blur_score != null)
+            ? (" [Sharpness: " + qMetrics.blur_score + ", Brightness: " + (qMetrics.brightness != null ? qMetrics.brightness : "OK") + ", Glare: " + (qMetrics.glare_ratio != null ? Math.round(qMetrics.glare_ratio * 100) + "%" : "0%") + "]")
+            : "";
           var rejectReason = isNotGovId
-            ? ("The uploaded Front ID image does not appear to be a valid government-issued ID" +
+            ? ("The uploaded Front ID image does not appear to be a valid Philippine government-issued ID" +
               (ocrInfo.detected_document_type ? " (detected: " + ocrInfo.detected_document_type + ")" : "") +
-              ". Please upload clear photos of an authentic government ID before submitting.")
-            : ("Your uploaded ID photo failed quality screening (" +
-              ((qualityInfo.issues && qualityInfo.issues.length) ? qualityInfo.issues.join("; ") : "too blurry, dark, or unreadable") +
-              "). Please retake a sharp, well-lit photo before submitting.");
+              ". Please upload clear photos of an authentic Valid ID before submitting.")
+            : ("Your uploaded ID photo triggered image quality warnings (" +
+              ((qualityInfo.issues && qualityInfo.issues.length) ? qualityInfo.issues.join("; ") : "blurry, dark, or glare detected") +
+              ")" + metricText + ". Please upload a clearer, well-lit photo before submitting.");
 
           if (loadingScreen) loadingScreen.hidden = true;
           showPanel(4);
           var warnBox = document.getElementById("id-screen-warn");
           if (warnBox) {
+            warnBox.style.background = "#fef2f2";
+            warnBox.style.borderColor = "#fecaca";
+            warnBox.style.color = "#991b1b";
             warnBox.innerHTML = "<b>Valid ID Check Failed:</b> " + escapeHtml(rejectReason);
             warnBox.hidden = false;
           }
-          showAlert("Valid ID Verification Failed", escapeHtml(rejectReason), "bad");
+          showAlert(isNotGovId ? "Invalid Valid ID Document Blocked" : "ID Image Quality Warning", escapeHtml(rejectReason), "bad");
           return;
         }
       }

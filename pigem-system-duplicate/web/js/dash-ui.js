@@ -878,54 +878,157 @@ function renderDashReportView(opts) {
 }
 
 function exportReportToCsv(columns, rows, filename) {
+  var safeName = (filename || "PIGEM-report.csv").replace(/[^a-zA-Z0-9._-]/g, "_");
+  if (!/\.csv$/i.test(safeName)) safeName += ".csv";
   var csvRows = [(columns || []).map(function (h) { return '"' + String(h || "").replace(/"/g, '""') + '"'; }).join(",")];
   for (var i = 0; i < (rows || []).length; i++) {
-    csvRows.push(rows[i].map(function (v) {
-      return '"' + String(v || "").replace(/"/g, '""') + '"';
+    csvRows.push((rows[i] || []).map(function (v) {
+      return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
     }).join(","));
   }
-  var blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
-  var url = URL.createObjectURL(blob);
-  var link = document.createElement("a");
-  link.href = url;
-  link.download = filename || "PIGEM-report.csv";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  var csvContent = "\uFEFF" + csvRows.join("\r\n");
+  try {
+    if (window.navigator && typeof window.navigator.msSaveOrOpenBlob === "function") {
+      var msBlob = new Blob([csvContent], { type: "application/octet-stream" });
+      window.navigator.msSaveOrOpenBlob(msBlob, safeName);
+      return;
+    }
+    var blob = new Blob([csvContent], { type: "application/octet-stream" });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.style.display = "none";
+    link.href = url;
+    link.setAttribute("download", safeName);
+    link.setAttribute("target", "_self");
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function () {
+      if (link.parentNode) document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 30000);
+    if (typeof showAlert === "function") {
+      showAlert("CSV Report Downloaded", "Your CSV spreadsheet (<b>" + escapeHtml(safeName) + "</b>) has been generated and downloaded (" + (rows || []).length + " records).", "good");
+    }
+  } catch (err) {
+    var dataUri = "data:application/octet-stream;charset=utf-8," + encodeURIComponent(csvContent);
+    var dlLink = document.createElement("a");
+    dlLink.href = dataUri;
+    dlLink.download = safeName;
+    document.body.appendChild(dlLink);
+    dlLink.click();
+    document.body.removeChild(dlLink);
+  }
 }
 
-function downloadFormattedHtmlReport(title, timeframeLabel, pieSlices, columns, rows, filename) {
+function buildPrintableReportHtml(title, timeframeLabel, pieSlices, columns, rows) {
   var cols = columns || [];
   var dataRows = rows || [];
   var rowsHtml = "";
   for (var i = 0; i < dataRows.length; i++) {
     rowsHtml += "<tr>" + dataRows[i].map(function (cell) {
-      return "<td style='padding:8px;border:1px solid #d0d5dd;'>" + escapeHtml(cell) + "</td>";
+      return "<td style='padding:8px 10px;border:1px solid #d0d5dd;'>" + escapeHtml(cell) + "</td>";
     }).join("") + "</tr>";
   }
   var summaryMetrics = (pieSlices || []).map(function (s) {
     return "<li style='margin-bottom:4px;'><b>" + escapeHtml(s.label) + ":</b> " + s.value + "</li>";
   }).join("");
 
-  var htmlDoc =
-    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>" + escapeHtml(title || "Report") + "</title></head>" +
-    "<body style='font-family:Arial,sans-serif;padding:28px;color:#111827;'>" +
-      "<h1 style='margin:0;color:#c8102e;'>PIGEM COMBINED FACILITIES SUPPORT SERVICES</h1>" +
-      "<h2 style='margin:6px 0 12px;'>" + escapeHtml(title || "Operational Report") + "</h2>" +
+  return (
+    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>" +
+    "<title>" + escapeHtml(title || "Report") + " — Combined Facilities Support Services</title>" +
+    "<style>@media print { .no-print-bar { display: none !important; } body { padding: 12px !important; } }</style>" +
+    "</head>" +
+    "<body style='font-family:Arial,sans-serif;padding:28px;color:#111827;margin:0;background:#ffffff;'>" +
+      "<div class='no-print-bar' style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 16px;margin-bottom:20px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;'>" +
+        "<div><b style='font-size:14px;color:#0f172a;'>Print Preview — " + escapeHtml(title || "Report") + "</b><div style='font-size:12px;color:#64748b;'>Click Print / Save as PDF to print or save this report.</div></div>" +
+        "<div style='display:flex;gap:8px;'>" +
+          "<button type='button' onclick='window.print()' style='background:#c8102e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;'>Print / Save as PDF</button>" +
+          "<button type='button' onclick='window.close()' style='background:#fff;color:#334155;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer;'>Close</button>" +
+        "</div>" +
+      "</div>" +
+      "<h1 style='margin:0;font-size:20px;color:#c8102e;'>COMBINED FACILITIES SUPPORT SERVICES</h1>" +
+      "<h2 style='margin:6px 0 12px;font-size:17px;'>" + escapeHtml(title || "Operational Report") + "</h2>" +
       "<p style='font-size:13px;color:#475467;'>Timeframe: <b>" + escapeHtml(timeframeLabel || "All Time") + "</b> | Total Records: <b>" + dataRows.length + "</b> | Generated: " + escapeHtml(new Date().toLocaleString()) + "</p>" +
-      "<ul style='font-size:13px;background:#f8fafc;padding:12px 24px;border:1px solid #e4e7ec;border-radius:8px;'>" + summaryMetrics + "</ul>" +
+      (summaryMetrics ? "<ul style='font-size:13px;background:#f8fafc;padding:12px 24px;border:1px solid #e4e7ec;border-radius:8px;'>" + summaryMetrics + "</ul>" : "") +
       "<table style='width:100%;border-collapse:collapse;font-size:12.5px;margin-top:16px;'>" +
-        "<thead><tr>" + cols.map(function (c) { return "<th style='padding:8px;border:1px solid #d0d5dd;background:#f1f5f9;text-align:left;'>" + escapeHtml(c) + "</th>"; }).join("") + "</tr></thead>" +
+        "<thead><tr>" + cols.map(function (c) { return "<th style='padding:8px 10px;border:1px solid #d0d5dd;background:#f1f5f9;text-align:left;'>" + escapeHtml(c) + "</th>"; }).join("") + "</tr></thead>" +
         "<tbody>" + (rowsHtml || "<tr><td colspan='" + Math.max(1, cols.length) + "' style='padding:10px;border:1px solid #d0d5dd;'>No records found.</td></tr>") + "</tbody>" +
       "</table>" +
-    "</body></html>";
+    "</body></html>"
+  );
+}
 
-  var blob = new Blob([htmlDoc], { type: "text/html;charset=utf-8;" });
+function downloadFormattedHtmlReport(title, timeframeLabel, pieSlices, columns, rows, filename) {
+  var safeName = (filename || "PIGEM-summary-report.html").replace(/[^a-zA-Z0-9._-]/g, "_");
+  var htmlDoc = buildPrintableReportHtml(title, timeframeLabel, pieSlices, columns, rows);
+  var blob = new Blob([htmlDoc], { type: "application/octet-stream" });
   var url = URL.createObjectURL(blob);
   var link = document.createElement("a");
+  link.style.display = "none";
   link.href = url;
-  link.download = filename || "PIGEM-summary-report.html";
+  link.setAttribute("download", safeName);
   document.body.appendChild(link);
   link.click();
-  document.body.removeChild(link);
+  setTimeout(function () {
+    if (link.parentNode) document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, 30000);
+}
+
+function printActiveDashboardReport() {
+  var data = null;
+  if (typeof getAgentReportData === "function") data = getAgentReportData();
+  else if (typeof getMgrReportData === "function") data = getMgrReportData();
+  else if (typeof getActiveReportData === "function") data = getActiveReportData();
+
+  if (!data) {
+    window.print();
+    return;
+  }
+
+  var htmlDoc = buildPrintableReportHtml(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows);
+  var printWin = null;
+  try {
+    printWin = window.open("", "_blank");
+  } catch (e) {
+    printWin = null;
+  }
+
+  if (printWin && printWin.document) {
+    printWin.document.open();
+    printWin.document.write(htmlDoc);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(function () {
+      try { printWin.print(); } catch (e) {}
+    }, 350);
+    return;
+  }
+
+  if (typeof openPopup === "function") {
+    var cols = data.columns || [];
+    var rows = data.rows || [];
+    var tblRows = rows.slice(0, 50).map(function (r) {
+      return "<tr>" + r.map(function (c) { return "<td style='padding:6px 8px;border:1px solid var(--line);font-size:12px;'>" + escapeHtml(c) + "</td>"; }).join("") + "</tr>";
+    }).join("");
+    openPopup(
+      "<div style='text-align:left;'>" +
+        "<h3 style='margin-bottom:4px;'>" + escapeHtml(data.title || "Print Report") + "</h3>" +
+        "<p class='small muted' style='margin-bottom:12px;'>Timeframe: <b>" + escapeHtml(data.timeframeLabel || "All Time") + "</b> &bull; Records: <b>" + rows.length + "</b></p>" +
+        "<div style='max-height:300px;overflow:auto;margin-bottom:14px;border:1px solid var(--line);border-radius:8px;'>" +
+          "<table style='width:100%;border-collapse:collapse;'>" +
+            "<thead><tr>" + cols.map(function (c) { return "<th style='padding:6px 8px;border:1px solid var(--line);background:var(--soft);font-size:11.5px;text-align:left;'>" + escapeHtml(c) + "</th>"; }).join("") + "</tr></thead>" +
+            "<tbody>" + (tblRows || "<tr><td colspan='" + Math.max(1, cols.length) + "' class='muted' style='padding:10px;'>No records found.</td></tr>") + "</tbody>" +
+          "</table>" +
+        "</div>" +
+        "<div style='display:flex;justify-content:flex-end;gap:8px;'>" +
+          "<button type='button' class='btn btn-red btn-sm' onclick='window.print()'>Print Page Now</button>" +
+          "<button type='button' class='btn btn-outline btn-sm' onclick='closePopup()'>Close</button>" +
+        "</div>" +
+      "</div>",
+      { showCloseX: true, closeOnBackdrop: true }
+    );
+  } else {
+    window.print();
+  }
 }
