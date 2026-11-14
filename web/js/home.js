@@ -1,11 +1,9 @@
 var pendingApplyPlanId = null;
 
-async function openApplyWithCaptcha(planId) {
-  pendingApplyPlanId = planId || "1000";
+function openApplyWithCaptcha(planId) {
+  pendingApplyPlanId = String(planId || "1000");
   try {
-    if (typeof dbSyncLiveSettingsAndContent === "function") {
-      await dbSyncLiveSettingsAndContent();
-    }
+    sessionStorage.setItem("pigem_selected_plan", pendingApplyPlanId);
   } catch (e) {}
   var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : window._latestWebsiteContent;
   var mInfo = (typeof getMaintenanceBlockInfo === "function")
@@ -23,7 +21,7 @@ async function openApplyWithCaptcha(planId) {
     );
     return;
   }
-  var targetUrl = "apply.html" + (planId ? "?plan=" + encodeURIComponent(planId) : "");
+  var targetUrl = "apply.html?plan=" + encodeURIComponent(pendingApplyPlanId);
   if (sessionStorage.getItem("pigem_captcha_verified") === "true") {
     window.location.href = targetUrl;
     return;
@@ -39,10 +37,7 @@ function showGoogleCaptchaPopup() {
       '</div>' +
       '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
-      '<div id="g-recaptcha-wrap" style="display:flex;justify-content:center;margin:16px auto;min-height:78px;">' +
-        '<div id="g-recaptcha-box" class="g-recaptcha" data-sitekey="' + CONFIG.RECAPTCHA_SITE_KEY + '" data-callback="onGoogleCaptchaPassed"></div>' +
-      '</div>' +
-      '<div id="captcha-fallback-box" style="margin-top:8px; display:none;">' +
+      '<div id="captcha-fallback-box" style="margin-top:8px; display:block;">' +
         '<div id="home-captcha-card" class="captcha-container" role="button" tabindex="0" aria-label="Verify I am not a robot" onclick="triggerHomeCaptcha()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();triggerHomeCaptcha();}">' +
           '<div style="display:flex;align-items:center;gap:12px;">' +
             '<div id="home-captcha-check" class="captcha-box-inner"></div>' +
@@ -57,25 +52,6 @@ function showGoogleCaptchaPopup() {
     '</div>',
     { showCloseX: true, closeOnBackdrop: true }
   );
-
-  if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
-    try {
-      grecaptcha.render("g-recaptcha-box", {
-        sitekey: CONFIG.RECAPTCHA_SITE_KEY,
-        callback: onGoogleCaptchaPassed,
-        'error-callback': function () {
-          var fb = document.getElementById("captcha-fallback-box");
-          if (fb) fb.style.display = "block";
-        }
-      });
-    } catch (e) {
-      var fbCatch = document.getElementById("captcha-fallback-box");
-      if (fbCatch) fbCatch.style.display = "block";
-    }
-  } else {
-    var fbInit = document.getElementById("captcha-fallback-box");
-    if (fbInit) fbInit.style.display = "block";
-  }
 }
 
 async function onGoogleCaptchaPassed(token) {
@@ -86,11 +62,6 @@ async function onGoogleCaptchaPassed(token) {
       return;
     }
   }
-  try {
-    if (typeof dbSyncLiveSettingsAndContent === "function") {
-      await dbSyncLiveSettingsAndContent();
-    }
-  } catch (e) {}
   var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : window._latestWebsiteContent;
   var mInfo = (typeof getMaintenanceBlockInfo === "function") ? getMaintenanceBlockInfo(liveContent) : null;
   if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {

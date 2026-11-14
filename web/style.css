@@ -361,10 +361,12 @@ input[type="checkbox"], input[type="radio"] { width: auto; }
 .panel h4 { margin-top: 22px; margin-bottom: 10px; }
 
 .plan-choice { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
-.plan-choice label { border: 2px solid var(--line); border-radius: 10px; padding: 14px; cursor: pointer; font-weight: 400; margin: 0; }
-.plan-choice label b { display: block; font-size: 17px; }
+.plan-choice label, .plan-choice .plan-choice-card { border: 2px solid var(--line); border-radius: 10px; padding: 14px; cursor: pointer; font-weight: 400; margin: 0; display: block; user-select: none; transition: border-color 0.15s ease, background 0.15s ease; }
+.plan-choice label:hover, .plan-choice .plan-choice-card:hover { border-color: #ef4444; }
+.plan-choice label b, .plan-choice .plan-choice-card b { display: block; font-size: 17px; pointer-events: none; }
+.plan-choice label span, .plan-choice .plan-choice-card span { pointer-events: none; }
 .plan-choice input { display: none; }
-.plan-choice label.picked { border-color: var(--red); background: var(--red-soft); }
+.plan-choice label.picked, .plan-choice .plan-choice-card.picked { border-color: var(--red); background: var(--red-soft); box-shadow: 0 0 0 2px rgba(200, 16, 46, 0.15); }
 
 #map { height: 320px; border-radius: 10px; border: 1px solid var(--line); z-index: 1; }
 .id-preview { max-height: 200px; width: auto; border-radius: 8px; border: 1px solid var(--line); }

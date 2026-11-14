@@ -136,19 +136,25 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
       return c.key === "id_number" || c.field === "ID Number" || c.field === "id_number";
     });
     var docComp = comps.find(function (c) {
-      return c.key === "document_type" || c.key === "id_type";
+      return c.key === "document_type" || c.key === "id_type" || c.field === "ID Type Match";
     });
 
     data.name_match = Boolean(nameComp && (nameComp.status === "match" || nameComp.matched === true));
     data.birth_date_match = Boolean(dobComp && (dobComp.status === "match" || dobComp.matched === true));
     data.id_number_match = Boolean(idComp && (idComp.status === "match" || idComp.matched === true));
-    data.document_valid = !(data.ocr && data.ocr.is_valid_government_id === false) && !(docComp && docComp.status === "mismatch");
+    data.id_type_match = !(data.ocr && data.ocr.id_type_matches_declared === false) && !(docComp && docComp.status === "mismatch");
+    data.detected_id_type = (data.ocr && (data.ocr.detected_document_type || data.ocr.detected_id_type)) || (docComp && docComp.found_on_id) || "";
+    data.document_valid = !(data.ocr && data.ocr.is_valid_government_id === false) && data.id_type_match;
 
     var hasQualityIssue = Boolean(q.issues && q.issues.length > 0);
     var hasFieldGap = comps.length > 0 && !(data.name_match && data.birth_date_match && data.id_number_match && data.document_valid);
     data.overall_status = (hasQualityIssue || hasFieldGap || !data.document_valid) ? "Needs Review" : "Verified";
     data.blur_score = (q.metrics && q.metrics.blur_score) || q.blur_score || "OK";
     var aiFindings = (notes.findings && notes.findings.length) ? notes.findings : (notes.notes || []);
+    if (!data.id_type_match && data.detected_id_type) {
+      var mismatchMsg = "Selected ID Type does not match the uploaded document (detected: " + data.detected_id_type + ").";
+      if (aiFindings.indexOf(mismatchMsg) === -1) aiFindings = [mismatchMsg].concat(aiFindings);
+    }
     data.issues = aiFindings.length ? aiFindings : (q.issues || []);
     if (data.ocr) {
       if (typeof data.ocr.is_Philippine_id === "undefined" && typeof data.ocr.is_valid_government_id !== "undefined") {

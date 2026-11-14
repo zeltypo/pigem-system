@@ -15,9 +15,13 @@ window.addEventListener("DOMContentLoaded", async function () {
   currentCustomer = await requireLogin(["customer"]);
   if (!currentCustomer) return;
 
-  document.getElementById("cust-name").textContent = currentCustomer.full_name;
+  var custNameEl = document.getElementById("cust-name");
+  if (custNameEl) custNameEl.textContent = currentCustomer.full_name || currentCustomer.username || currentCustomer.email || "Customer";
+
+  // Initialize Account Drawer (Edit Profile, Avatar Upload, Change Password, Theme, Sign Out) immediately
+  initDashUI(currentCustomer, myApps, function (id) { selectMyApp(id, true); });
+
   await loadMyApplications();
-  initDashUI(currentCustomer, myApps, selectMyApp);
 
   setInterval(async function () {
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
@@ -38,7 +42,7 @@ function promptCustomerCorrectionReminder(apps) {
       banner.innerHTML = "";
     } else {
       var linksHtml = pendingFixes.map(function (a) {
-        return '<button type="button" class="btn btn-red btn-sm" onclick="selectMyApp(\'' + escapeHtml(a.id) + '\')">Open ' + escapeHtml(a.reference_no || a.ref_no) + '</button>';
+        return '<button type="button" class="btn btn-red btn-sm" onclick="selectMyApp(\'' + escapeHtml(a.id) + '\', true)">Open ' + escapeHtml(a.reference_no || a.ref_no) + '</button>';
       }).join(" ");
       banner.classList.remove("hidden");
       banner.innerHTML =
@@ -69,7 +73,7 @@ function promptCustomerCorrectionReminder(apps) {
         listItems +
         '<p class="small" style="margin:8px 0 14px;line-height:1.55;color:#7c2d12;background:#fff7ed;padding:8px 10px;border-radius:8px;border:1px solid #fed7aa;"><b>Why this is important:</b> Submitting the requested correction or clear Valid ID photos (Front &amp; Back) is required by the telecom provider validator before your line installation can be scheduled. Follow-up notices are sent at 24 hours and 72 hours.</p>' +
         '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
-          '<button type="button" class="btn btn-red btn-sm" onclick="selectMyApp(\'' + escapeHtml(pendingFixes[0].id) + '\'); closePopup();">Review &amp; Update Now</button>' +
+          '<button type="button" class="btn btn-red btn-sm" onclick="selectMyApp(\'' + escapeHtml(pendingFixes[0].id) + '\', false); closePopup();">Review &amp; Update Now</button>' +
         '</div>' +
       '</div>',
       { showCloseX: true, closeOnBackdrop: true }
@@ -94,7 +98,7 @@ function renderAppList() {
     var a = myApps[j];
     var isSel = a.id === selectedAppId;
     html +=
-      '<div class="q-card" style="cursor:pointer; border-color:' + (isSel ? "#c8102e" : "var(--line)") + '" onclick="selectMyApp(\'' + escapeHtml(a.id) + '\')">' +
+      '<div class="q-card" style="cursor:pointer; border-color:' + (isSel ? "#c8102e" : "var(--line)") + '" onclick="selectMyApp(\'' + escapeHtml(a.id) + '\', true)">' +
         '<div class="q-head">' +
           '<div>' +
             '<div class="q-name">' + escapeHtml(a.reference_no) + ' - ' + escapeHtml(a.plan_name) + '</div>' +
@@ -108,7 +112,14 @@ function renderAppList() {
 }
 
 async function loadMyApplications() {
-  myApps = await dbListApplicationsForCustomer(currentCustomer.email);
+  try {
+    myApps = await dbListApplicationsForCustomer(currentCustomer || "");
+  } catch (e) {
+    myApps = myApps || [];
+  }
+  if (typeof updateDashSearchApps === "function") {
+    updateDashSearchApps(myApps);
+  }
 
   var proc = 0, done = 0, rej = 0;
   for (var i = 0; i < myApps.length; i++) {
@@ -117,10 +128,13 @@ async function loadMyApplications() {
     else if (vis === "Rejected") rej++;
     else proc++;
   }
-  document.getElementById("st-total").textContent = myApps.length;
-  document.getElementById("st-proc").textContent = proc;
-  document.getElementById("st-done").textContent = done;
+  var totalEl = document.getElementById("st-total");
+  var procEl = document.getElementById("st-proc");
+  var doneEl = document.getElementById("st-done");
   var rejEl = document.getElementById("st-rej");
+  if (totalEl) totalEl.textContent = myApps.length;
+  if (procEl) procEl.textContent = proc;
+  if (doneEl) doneEl.textContent = done;
   if (rejEl) rejEl.textContent = rej;
 
   promptCustomerCorrectionReminder(myApps);
@@ -145,12 +159,12 @@ function findMyApp(id) {
   return null;
 }
 
-function selectMyApp(id) {
+function selectMyApp(id, showModal) {
   selectedAppId = id;
   renderAppList();
   renderSelectedApp();
   var app = findMyApp(id);
-  if (app && typeof openPopup === "function") {
+  if (showModal && app && typeof openPopup === "function") {
     var displayEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email || "-";
     var addrStr = [app.house_no, app.street, app.subdivision, app.barangay, app.city, app.province].filter(Boolean).join(", ");
     var frontImg = app.cropped_id_url || app.id_image_url || app.id_front_path || "";

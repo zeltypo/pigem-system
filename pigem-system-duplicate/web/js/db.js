@@ -115,6 +115,20 @@ async function dbBindSingleDeviceSession(userObj) {
   sessionStorage.setItem(SESSION_TOKEN_KEY, tok);
   if (uRole) sessionStorage.setItem(SESSION_KEY + "_role", uRole);
 
+  var cachePayload = JSON.stringify({
+    id: userObj.id,
+    email: userObj.email || "",
+    username: userObj.username || "",
+    full_name: userObj.full_name || "",
+    role: uRole
+  });
+  try {
+    sessionStorage.setItem("pigem_user_cache", cachePayload);
+    if (uRole) {
+      localStorage.setItem("pigem_user_cache_" + uRole, cachePayload);
+    }
+  } catch (e) {}
+
   if (uRole) {
     var rKey = getRoleSessionKey(uRole);
     localStorage.setItem(rKey, userObj.id);
@@ -164,8 +178,24 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
     if (!userRow) return { valid: false, reason: "missing" };
   } else {
     if (!supabaseClient) return { valid: true };
-    var res = await supabaseClient.from("users").select("id,active,session_token,role").eq("id", currentId).maybeSingle();
+    var res = await supabaseClient.from("users").select("id,active,session_token,role,email,username").eq("id", currentId).maybeSingle();
     if (res.error) return { valid: true };
+    if (!res.data) {
+      var targetRole = (allowedRoles && allowedRoles[0]) ? String(allowedRoles[0]).toLowerCase() : (SYSTEM === "customer" ? "customer" : "");
+      var cachedRaw = sessionStorage.getItem("pigem_user_cache") || (targetRole ? localStorage.getItem("pigem_user_cache_" + targetRole) : "");
+      if (cachedRaw) {
+        try {
+          var cachedObj = JSON.parse(cachedRaw);
+          if (cachedObj && cachedObj.email && cachedObj.email.indexOf("@") !== -1 && cachedObj.email.indexOf("@") !== 0) {
+            var byEmail = await supabaseClient.from("users").select("id,active,session_token,role,email,username").eq("email", String(cachedObj.email).toLowerCase()).maybeSingle();
+            if (byEmail && byEmail.data) res = byEmail;
+          } else if (cachedObj && cachedObj.username) {
+            var byUser = await supabaseClient.from("users").select("id,active,session_token,role,email,username").ilike("username", String(cachedObj.username)).maybeSingle();
+            if (byUser && byUser.data) res = byUser;
+          }
+        } catch (e) {}
+      }
+    }
     if (!res.data) return { valid: false, reason: "missing" };
     userRow = res.data;
   }
@@ -186,7 +216,7 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
   if (userRow.session_token && !localTok) {
     var rKeyTok = localStorage.getItem(getRoleSessionKey(role) + "_tok");
     if (rKeyTok) localTok = rKeyTok;
-    else return { valid: false, reason: "missing" };
+    else return { valid: true };
   }
   if (userRow.session_token && localTok && userRow.session_token !== localTok) {
     return { valid: false, reason: "other_device" };
@@ -324,27 +354,57 @@ async function dbGetCurrentUser() {
           return dbUser.data;
         }
       }
+    } else {
+      var localUsers = getDemoUsers();
+      for (var i = 0; i < localUsers.length; i++) {
+        var localRole = String(localUsers[i].role || "").trim().toLowerCase();
+        if (
+          localUsers[i].id === currentId &&
+          localUsers[i].active !== false &&
+          (!allowedForSystem || allowedForSystem.indexOf(localRole) !== -1)
+        ) {
+          localUsers[i].role = localRole;
+          return localUsers[i];
+        }
+      }
       return null;
     }
-    var localUsers = getDemoUsers();
-    for (var i = 0; i < localUsers.length; i++) {
-      var localRole = String(localUsers[i].role || "").trim().toLowerCase();
-      if (
-        localUsers[i].id === currentId &&
-        localUsers[i].active !== false &&
-        (!allowedForSystem || allowedForSystem.indexOf(localRole) !== -1)
-      ) {
-        localUsers[i].role = localRole;
-        return localUsers[i];
-      }
+  }
+
+  if (!IS_DEMO_MODE && supabaseClient) {
+    var prefRole = (window.PORTAL_ALLOWED_ROLES && window.PORTAL_ALLOWED_ROLES[0])
+      ? String(window.PORTAL_ALLOWED_ROLES[0]).toLowerCase()
+      : (SYSTEM === "customer" ? "customer" : "");
+    var rawCache = sessionStorage.getItem("pigem_user_cache") || (prefRole ? localStorage.getItem("pigem_user_cache_" + prefRole) : "");
+    if (rawCache) {
+      try {
+        var cObj = JSON.parse(rawCache);
+        var uInfo = (cObj && cObj.user) ? cObj.user : cObj;
+        var cEmail = String((uInfo && uInfo.email) || "").trim().toLowerCase();
+        var cUsername = String((uInfo && uInfo.username) || "").trim().replace(/^@/, "");
+        var fallbackRes = null;
+        if (cEmail && cEmail.indexOf("@") > 0) {
+          fallbackRes = await supabaseClient.from("users").select("*").eq("email", cEmail).maybeSingle();
+        } else if (cUsername) {
+          fallbackRes = await supabaseClient.from("users").select("*").ilike("username", cUsername).maybeSingle();
+        }
+        if (fallbackRes && fallbackRes.data && fallbackRes.data.active !== false) {
+          var fbRole = String(fallbackRes.data.role || "").trim().toLowerCase();
+          fallbackRes.data.role = fbRole;
+          if (!allowedForSystem || allowedForSystem.indexOf(fbRole) !== -1) {
+            sessionStorage.setItem(SESSION_KEY, fallbackRes.data.id);
+            localStorage.setItem(getRoleSessionKey(fbRole), fallbackRes.data.id);
+            return fallbackRes.data;
+          }
+        }
+      } catch (e) {}
     }
-    return null;
   }
 
   if (IS_DEMO_MODE || !supabaseClient || SYSTEM !== "customer") return null;
 
   var sessionRes = await supabaseClient.auth.getSession();
-  var session = sessionRes.data.session;
+  var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
   if (!session) return null;
 
   var authUser = session.user;
@@ -368,6 +428,8 @@ async function dbGetCurrentUser() {
   res.data.role = authRole;
   if (res.data.active === false) return null;
   if (SYSTEM_ROLES[SYSTEM] && SYSTEM_ROLES[SYSTEM].indexOf(authRole) === -1) return null;
+  sessionStorage.setItem(SESSION_KEY, res.data.id);
+  localStorage.setItem(getRoleSessionKey(authRole), res.data.id);
   return res.data;
 }
 
@@ -785,28 +847,31 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     finalUsername = await dbGenerateUniqueUsername(existing.data.full_name, cleanEmail);
   }
 
-  var authUserId = existing.data.id;
   try {
-    var signUpRes = await supabaseClient.auth.signUp({
+    await supabaseClient.auth.signUp({
       email: cleanEmail,
       password: newPassword,
       options: { data: { full_name: existing.data.full_name, username: finalUsername } }
     });
-    if (signUpRes.data && signUpRes.data.user && signUpRes.data.user.id) {
-      authUserId = signUpRes.data.user.id;
-    }
   } catch (authErr) {}
 
-  var upRes = await supabaseClient.from("users").update({
-    id: authUserId,
+  var upPayload = {
     username: finalUsername,
     password_hash: pwHash,
     password_changed_at: nowIso,
     password_history: [],
     activated: true,
     activation_code: null
-  }).eq("email", cleanEmail).select("*").maybeSingle();
-
+  };
+  var upRes = await supabaseClient.from("users").update(upPayload).eq("email", cleanEmail).select("*").maybeSingle();
+  if (upRes.error) {
+    upRes = await supabaseClient.from("users").update({
+      username: finalUsername,
+      password_hash: pwHash,
+      activated: true,
+      activation_code: null
+    }).eq("email", cleanEmail).select("*").maybeSingle();
+  }
   if (upRes.error) {
     throw new Error(upRes.error.message);
   }
@@ -815,8 +880,10 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
   } catch (e) {}
 
-  var user = (upRes.data) || (await dbGetCurrentUser()) || existing.data;
+  var user = (upRes.data) || existing.data || (await dbGetCurrentUser());
   if (user) {
+    user.activated = true;
+    user.username = finalUsername;
     await dbBindSingleDeviceSession(user);
     await dbAddLoginHistory(user, "account_activated");
   }
@@ -874,7 +941,7 @@ async function dbListApplications(user) {
     return all;
   }
   var query = supabaseClient.from("applications").select("*").order("created_at", { ascending: false });
-  if (user && user.role === "customer") query = query.eq("email", user.email);
+  if (user && user.role === "customer") query = query.ilike("email", String(user.email || "").trim().toLowerCase());
   var res = await query;
   if (res.error) throw new Error(res.error.message);
   return res.data || [];
@@ -984,6 +1051,53 @@ async function dbDeclineApplicationCorrection(appId, reasonText) {
   return updated;
 }
 
+function _stripOptionalAppColumns(payload) {
+  var copy = Object.assign({}, payload);
+  var optionalCols = [
+    "id_cropped_url",
+    "id_back_cropped_url",
+    "cropped_id_url",
+    "cropped_back_url",
+    "correction_declined",
+    "correction_declined_reason",
+    "correction_declined_at",
+    "last_correction_reminder_at",
+    "id_back_image_url",
+    "customer_name"
+  ];
+  if (copy.id_cropped_url || copy.cropped_id_url || copy.id_back_cropped_url || copy.cropped_back_url) {
+    copy.screening = Object.assign({}, copy.screening || {});
+    if (copy.id_cropped_url || copy.cropped_id_url) {
+      copy.screening.cropped_front_url = copy.id_cropped_url || copy.cropped_id_url;
+    }
+    if (copy.id_back_cropped_url || copy.cropped_back_url) {
+      copy.screening.cropped_back_url = copy.id_back_cropped_url || copy.cropped_back_url;
+    }
+  }
+  for (var i = 0; i < optionalCols.length; i++) {
+    delete copy[optionalCols[i]];
+  }
+  return copy;
+}
+
+function _saveLocalAppMirror(appRow) {
+  if (!appRow || !appRow.id) return;
+  try {
+    var all = readSaved("pigem_applications", []);
+    if (!Array.isArray(all)) all = [];
+    var found = false;
+    for (var i = 0; i < all.length; i++) {
+      if (all[i] && (all[i].id === appRow.id || (appRow.ref_no && all[i].ref_no === appRow.ref_no))) {
+        all[i] = Object.assign({}, all[i], appRow);
+        found = true;
+        break;
+      }
+    }
+    if (!found) all.unshift(appRow);
+    writeSaved("pigem_applications", all.slice(0, 50));
+  } catch (e) {}
+}
+
 async function dbCreateApplication(appData) {
   var now = new Date().toISOString();
   var refNo = "PIGEM-" + String(Date.now()).slice(-6) + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -1003,13 +1117,18 @@ async function dbCreateApplication(appData) {
 
   if (IS_DEMO_MODE) {
     row.id = "app-" + Date.now();
-    var all = readSaved("pigem_applications", []);
-    all.unshift(row);
-    writeSaved("pigem_applications", all);
+    _saveLocalAppMirror(row);
     return row;
   }
   var res = await supabaseClient.from("applications").insert(row).select("*").single();
+  if (res.error) {
+    var cleanRow = _stripOptionalAppColumns(row);
+    res = await supabaseClient.from("applications").insert(cleanRow).select("*").single();
+  }
   if (res.error) throw new Error(res.error.message);
+  if (res.data) {
+    _saveLocalAppMirror(res.data);
+  }
   if (res.data && res.data.id) {
     await dbCreateDocumentRecord(res.data.id, {
       id_type: res.data.id_type || "",
@@ -1061,7 +1180,14 @@ async function dbUpdateApplication(appId, changes) {
     throw new Error("Application not found.");
   }
   var res = await supabaseClient.from("applications").update(changes).eq("id", appId).select("*").single();
+  if (res.error) {
+    var cleanChanges = _stripOptionalAppColumns(changes);
+    res = await supabaseClient.from("applications").update(cleanChanges).eq("id", appId).select("*").single();
+  }
   if (res.error) throw new Error(res.error.message);
+  if (res.data) {
+    _saveLocalAppMirror(res.data);
+  }
   return res.data;
 }
 
@@ -1524,7 +1650,8 @@ function normalizeAppRecord(a) {
     var nMatch = ocrAvail ? true : null;
     var bMatch = ocrAvail ? true : null;
     var idMatch = ocrAvail ? true : null;
-    var nFound = "", bFound = "", idFound = "";
+    var idTypeMatch = (a.screening.ocr && a.screening.ocr.id_type_matches_declared === false) ? false : (ocrAvail ? true : null);
+    var nFound = "", bFound = "", idFound = "", idTypeFound = (a.screening.ocr && a.screening.ocr.detected_document_type) ? String(a.screening.ocr.detected_document_type) : "";
     for (var ci = 0; ci < comps.length; ci++) {
       var cItem = comps[ci] || {};
       var ck = String(cItem.key || cItem.field || "").toLowerCase();
@@ -1539,6 +1666,9 @@ function normalizeAppRecord(a) {
       } else if (ck.indexOf("birth") !== -1) {
         bMatch = resolvedVal;
         bFound = foundTxt;
+      } else if (ck === "id_type" || ck === "document_type" || (ck.indexOf("id") !== -1 && ck.indexOf("type") !== -1)) {
+        idTypeMatch = resolvedVal;
+        idTypeFound = foundTxt || idTypeFound;
       } else if (ck === "id_number" || ck === "id number" || (ck.indexOf("id") !== -1 && ck.indexOf("type") === -1)) {
         idMatch = resolvedVal;
         idFound = foundTxt;
@@ -1546,13 +1676,15 @@ function normalizeAppRecord(a) {
     }
     if (!a.ai_result || a.screening.state) {
       var findingsList = a.screening.findings || (ai.findings && ai.findings.length ? ai.findings : (q.issues || []));
-      var anyFieldIssue = (nMatch !== true || (bMatch !== true && bMatch !== "not_found") || idMatch !== true);
+      var anyFieldIssue = (nMatch !== true || (bMatch !== true && bMatch !== "not_found") || idMatch !== true || idTypeMatch === false);
       a.ai_result = Object.assign({}, a.ai_result || {}, {
         overall_status: (anyFieldIssue || (q.issues && q.issues.length > 0) || findingsList.length > 0) ? "Needs Review" : "Verified",
         blur_score: q.blur_score != null ? q.blur_score : ((a.ai_result && a.ai_result.blur_score) || "OK"),
         name_match: comps.length > 0 ? nMatch : ((a.ai_result && a.ai_result.name_match != null && ocrAvail) ? a.ai_result.name_match : nMatch),
         birth_date_match: comps.length > 0 ? bMatch : ((a.ai_result && a.ai_result.birth_date_match != null && ocrAvail) ? a.ai_result.birth_date_match : bMatch),
         id_number_match: comps.length > 0 ? idMatch : ((a.ai_result && a.ai_result.id_number_match != null && ocrAvail) ? a.ai_result.id_number_match : idMatch),
+        id_type_match: idTypeMatch,
+        detected_id_type: idTypeFound,
         name_found_on_id: nFound,
         birth_date_found_on_id: bFound,
         id_number_found_on_id: idFound,
@@ -2007,13 +2139,91 @@ async function dbListAllApplications() {
     return ensureDemoSeedApps();
   }
   var list = await dbListApplications(null);
-  return list.map(normalizeAppRecord);
+  return list.map(function (item) {
+    try { return normalizeAppRecord(item); } catch (e) { return item; }
+  });
 }
 
-async function dbListApplicationsForCustomer(email) {
-  var all = await dbListAllApplications();
-  var clean = String(email || "").trim().toLowerCase();
-  return all.filter(function (a) { return String(a.email || "").toLowerCase() === clean; });
+async function dbListApplicationsForCustomer(customerOrEmail) {
+  var cleanEmail = "";
+  var customerId = "";
+  if (customerOrEmail && typeof customerOrEmail === "object") {
+    cleanEmail = String(customerOrEmail.email || "").trim().toLowerCase();
+    customerId = String(customerOrEmail.id || "").trim();
+  } else {
+    cleanEmail = String(customerOrEmail || "").trim().toLowerCase();
+    try {
+      var curId = localStorage.getItem("pigem_current_user_id_customer") || localStorage.getItem("pigem_current_user_id") || "";
+      if (curId) customerId = String(curId).trim();
+    } catch (e) {}
+  }
+
+  var mergedMap = {};
+  function addRow(row) {
+    if (!row) return;
+    var key = String(row.id || row.reference_no || row.ref_no || "");
+    if (!key) return;
+    try {
+      mergedMap[key] = normalizeAppRecord(row);
+    } catch (e) {
+      mergedMap[key] = row;
+    }
+  }
+
+  // First include any matching local mirror rows so newly submitted apps on the same device show up immediately
+  var localApps = readSaved("pigem_applications", []) || [];
+  for (var li = 0; li < localApps.length; li++) {
+    var la = localApps[li];
+    if (!la) continue;
+    var laEmail = String(la.email || (la.corrected_copy && la.corrected_copy.contact_email) || "").trim().toLowerCase();
+    var laCustId = String(la.customer_id || "").trim();
+    if ((cleanEmail && laEmail === cleanEmail) || (customerId && laCustId === customerId)) {
+      addRow(la);
+    }
+  }
+
+  if (IS_DEMO_MODE) {
+    var demoAll = ensureDemoSeedApps();
+    for (var di = 0; di < demoAll.length; di++) {
+      var da = demoAll[di];
+      if (!da) continue;
+      if (cleanEmail && String(da.email || "").trim().toLowerCase() === cleanEmail) {
+        addRow(da);
+      }
+    }
+  } else if (supabaseClient) {
+    // Query directly for this customer's applications instead of downloading every application in the database
+    if (cleanEmail) {
+      try {
+        var byEmail = await supabaseClient
+          .from("applications")
+          .select("*")
+          .ilike("email", cleanEmail)
+          .order("created_at", { ascending: false });
+        if (byEmail.data && byEmail.data.length) {
+          for (var ei = 0; ei < byEmail.data.length; ei++) addRow(byEmail.data[ei]);
+        }
+      } catch (e) {}
+    }
+    if (customerId) {
+      try {
+        var byId = await supabaseClient
+          .from("applications")
+          .select("*")
+          .eq("customer_id", customerId)
+          .order("created_at", { ascending: false });
+        if (byId.data && byId.data.length) {
+          for (var ii = 0; ii < byId.data.length; ii++) addRow(byId.data[ii]);
+        }
+      } catch (e) {}
+    }
+  }
+
+  var results = Object.keys(mergedMap).map(function (k) { return mergedMap[k]; });
+  results.sort(function (a, b) {
+    return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+  });
+  return results;
 }
 
 async function dbUploadIdPhoto(file, label, customerId) {

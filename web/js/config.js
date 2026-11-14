@@ -850,27 +850,13 @@ function isManagerOrAdminPreview() {
 
 function getMaintenanceBlockInfo(contentObj) {
   var settings = getSystemSettings();
-  if (settings && settings.maintenance_mode) {
+  if (settings && settings.maintenance_mode === true) {
     return {
       blocked: true,
       isFullMaintenance: true,
       title: "Website Under Maintenance",
       message: settings.maintenance_message || "The website, application form, and account activation are currently under scheduled maintenance while we update our content. Please come back shortly."
     };
-  }
-  var c = contentObj || (typeof getWebsiteContent === "function" ? getWebsiteContent() : null) || window._latestWebsiteContent || {};
-  var ann = c.announcement || {};
-  if (ann && ann.active) {
-    var annBody = ann.body || ann.message || "";
-    var combined = ((ann.headline || "") + " " + annBody).toLowerCase();
-    if (/maint|unavailable|offline|upgrade|down|closed|pause|temporar/i.test(combined)) {
-      return {
-        blocked: true,
-        isFullMaintenance: false,
-        title: ann.headline || "Scheduled Maintenance Notice",
-        message: annBody || "Online plan application is temporarily paused for maintenance. Please try again shortly."
-      };
-    }
   }
   return { blocked: false, isFullMaintenance: false, title: "", message: "" };
 }
@@ -943,12 +929,16 @@ window.addEventListener("DOMContentLoaded", async function () {
   if (typeof attachEnterKeyNavigation === "function") {
     attachEnterKeyNavigation(document);
   }
-  if (typeof dbSyncLiveSettingsAndContent === "function") {
-    await dbSyncLiveSettingsAndContent();
-  }
   loadPageImages();
   checkPublicMaintenance();
   setupPublicHeader();
+  if (typeof dbSyncLiveSettingsAndContent === "function") {
+    dbSyncLiveSettingsAndContent().then(function () {
+      loadPageImages();
+      checkPublicMaintenance();
+      setupPublicHeader();
+    }).catch(function () {});
+  }
 
   var pathLower = (window.location && window.location.pathname ? window.location.pathname : "").toLowerCase();
   var isCoveredPublic =
@@ -960,15 +950,20 @@ window.addEventListener("DOMContentLoaded", async function () {
     pathLower.endsWith("/");
   if (isCoveredPublic) {
     var syncPublicMaintenance = async function () {
-      if (typeof dbSyncLiveSettingsAndContent === "function") {
-        await dbSyncLiveSettingsAndContent(false);
+      if (typeof supabaseClient !== "undefined" && supabaseClient && !IS_DEMO_MODE) {
+        try {
+          var setRes = await supabaseClient.from("system_settings").select("*").eq("id", "main").maybeSingle();
+          if (setRes && setRes.data) {
+            writeSaved("pigem_system_settings", {
+              ai_enabled: setRes.data.ai_enabled !== false,
+              maintenance_mode: Boolean(setRes.data.maintenance_mode),
+              maintenance_message: setRes.data.maintenance_message || ""
+            });
+          }
+        } catch (e) {}
       }
       checkPublicMaintenance();
     };
-    window.addEventListener("focus", syncPublicMaintenance);
-    document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) syncPublicMaintenance();
-    });
     window.addEventListener("storage", function (ev) {
       if (!ev || !ev.key || ev.key === "pigem_system_settings" || ev.key === "pigem_website_content") {
         checkPublicMaintenance();
@@ -976,7 +971,7 @@ window.addEventListener("DOMContentLoaded", async function () {
     });
     setInterval(function () {
       if (!document.hidden) syncPublicMaintenance();
-    }, 5000);
+    }, 10000);
   }
 });
 

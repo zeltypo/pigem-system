@@ -156,37 +156,15 @@ async function initApplyPage() {
     return;
   }
 
-  try {
-    if (typeof dbSyncLiveSettingsAndContent === "function") {
-      await dbSyncLiveSettingsAndContent();
-    }
-    var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : null;
-    window._latestWebsiteContent = liveContent;
-    var mInfo = (typeof getMaintenanceBlockInfo === "function")
-      ? getMaintenanceBlockInfo(liveContent)
-      : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
-    if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
-      if (typeof renderMaintenanceScreenHtml === "function") {
-        renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
-      } else {
-        closePopup();
-        document.body.innerHTML =
-          '<main class="auth-page">' +
-            '<div class="card auth-card center" style="max-width:520px">' +
-              '<h2>' + escapeHtml(mInfo.title || "Website Under Maintenance") + '</h2>' +
-              '<p class="muted mt">' + escapeHtml(mInfo.message || "Online fiber applications are temporarily paused for scheduled maintenance.") + '</p>' +
-              '<div style="margin-top:18px"><a href="index.html" class="btn btn-red">Back to Home Page</a></div>' +
-            '</div>' +
-          '</main>';
-      }
-      return;
-    }
-  } catch (e) {}
-
   var urlPlan = params.get("plan");
+  if (!urlPlan) {
+    try {
+      urlPlan = sessionStorage.getItem("pigem_selected_plan") || "";
+    } catch (e) {}
+  }
   var urlAgent = params.get("agent") || params.get("ref");
 
-  if (urlPlan) selectedPlanId = urlPlan;
+  if (urlPlan) selectedPlanId = String(urlPlan);
   if (urlAgent) {
     referralAgentId = urlAgent;
     var banner = document.getElementById("agent-ref-banner");
@@ -210,10 +188,38 @@ async function initApplyPage() {
   window.addEventListener("resize", setupDeviceUploadUI);
 
   if (sessionStorage.getItem("pigem_captcha_verified") !== "true") {
-    setTimeout(showApplySecurityCaptchaModal, 150);
+    setTimeout(showApplySecurityCaptchaModal, 100);
   } else {
     applyCaptchaVerified = true;
   }
+
+  try {
+    if (typeof dbSyncLiveSettingsAndContent === "function") {
+      await dbSyncLiveSettingsAndContent(false);
+    }
+    var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : null;
+    window._latestWebsiteContent = liveContent;
+    var mInfo = (typeof getMaintenanceBlockInfo === "function")
+      ? getMaintenanceBlockInfo(liveContent)
+      : { blocked: typeof isMaintenanceOn === "function" && isMaintenanceOn() };
+    if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
+      if (typeof renderMaintenanceScreenHtml === "function") {
+        renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
+      } else {
+        closePopup();
+        document.body.innerHTML =
+          '<main class="auth-page">' +
+            '<div class="card auth-card center" style="max-width:520px">' +
+              '<h2>' + escapeHtml(mInfo.title || "Website Under Maintenance") + '</h2>' +
+              '<p class="muted mt">' + escapeHtml(mInfo.message || "Online fiber applications are temporarily paused for scheduled maintenance.") + '</p>' +
+              '<div style="margin-top:18px"><a href="index.html" class="btn btn-red">Back to Home Page</a></div>' +
+            '</div>' +
+          '</main>';
+      }
+      return;
+    }
+    renderPlanChoices();
+  } catch (e) {}
 }
 
 function attachApplyLiveValidation() {
@@ -364,10 +370,7 @@ function showApplySecurityCaptchaModal() {
       '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>' +
       '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
-      '<div id="g-apply-recaptcha-wrap" style="display:flex;justify-content:center;margin:16px auto;min-height:78px;">' +
-        '<div id="g-apply-recaptcha-box" class="g-recaptcha" data-sitekey="' + CONFIG.RECAPTCHA_SITE_KEY + '" data-callback="onApplyCaptchaVerified"></div>' +
-      '</div>' +
-      '<div id="apply-captcha-fallback-box" style="margin-top:8px; display:none;">' +
+      '<div id="apply-captcha-fallback-box" style="margin-top:8px; display:block;">' +
         '<div id="apply-popup-captcha-card" class="captcha-container" role="button" tabindex="0" aria-label="Verify I am not a robot" onclick="triggerApplyPopupCaptcha()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();triggerApplyPopupCaptcha();}">' +
           '<div style="display:flex;align-items:center;gap:12px;">' +
             '<div id="apply-popup-captcha-check" class="captcha-box-inner"></div>' +
@@ -382,25 +385,6 @@ function showApplySecurityCaptchaModal() {
     '</div>',
     { showCloseX: true, closeOnBackdrop: true }
   );
-
-  if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
-    try {
-      grecaptcha.render("g-apply-recaptcha-box", {
-        sitekey: CONFIG.RECAPTCHA_SITE_KEY,
-        callback: onApplyCaptchaVerified,
-        "error-callback": function () {
-          var fb = document.getElementById("apply-captcha-fallback-box");
-          if (fb) fb.style.display = "block";
-        }
-      });
-    } catch (e) {
-      var fbCatch = document.getElementById("apply-captcha-fallback-box");
-      if (fbCatch) fbCatch.style.display = "block";
-    }
-  } else {
-    var fbInit = document.getElementById("apply-captcha-fallback-box");
-    if (fbInit) fbInit.style.display = "block";
-  }
 }
 
 async function onApplyCaptchaVerified(token) {
@@ -445,27 +429,32 @@ function renderPlanChoices() {
   var plans = getActivePlans();
   var box = document.getElementById("plan-choice-box");
   if (!box) return;
+  if (!selectedPlanId && plans && plans.length > 0) {
+    selectedPlanId = String(plans[0].id);
+  }
   var html = "";
   for (var i = 0; i < plans.length; i++) {
     var p = plans[i];
-    var picked = String(p.id) === String(selectedPlanId) ? "picked" : "";
+    var pid = String(p.id);
+    var isPicked = pid === String(selectedPlanId);
+    var picked = isPicked ? "picked" : "";
     html +=
-      '<label class="' + picked + '" onclick="pickPlan(\'' + p.id + '\')">' +
-        '<input type="radio" name="plan" value="' + p.id + '" ' + (picked ? "checked" : "") + '>' +
-        '<b>' + p.name + '</b>' +
-        '<span class="small muted">' + p.speed + ' Mbps &bull; ' + formatPeso(p.price) + '/mo</span>' +
-      '</label>';
+      '<div class="plan-choice-card ' + picked + '" data-plan-id="' + escapeHtml(pid) + '" role="radio" aria-checked="' + (isPicked ? "true" : "false") + '" tabindex="0" onclick="pickPlan(\'' + escapeHtml(pid) + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();pickPlan(\'' + escapeHtml(pid) + '\');}">' +
+        '<b>' + escapeHtml(p.name) + '</b>' +
+        '<span class="small muted">' + escapeHtml(String(p.speed)) + ' Mbps &bull; ' + formatPeso(p.price) + '/mo</span>' +
+      '</div>';
   }
   box.innerHTML = html;
 }
 
 function pickPlan(planId) {
   selectedPlanId = String(planId);
+  try {
+    sessionStorage.setItem("pigem_selected_plan", selectedPlanId);
+  } catch (e) {}
+  saveApplyDraftState();
   renderPlanChoices();
-  if (typeof checkPublicMaintenance === "function") checkPublicMaintenance();
-  if (typeof dbSyncLiveSettingsAndContent === "function") {
-    dbSyncLiveSettingsAndContent(false).catch(function () {});
-  }
+  if (typeof clearFieldError === "function") clearFieldError("plan-choice-box");
 }
 
 var applyCaptchaVerified = false;
@@ -1087,9 +1076,6 @@ function bindMapFieldListeners() {
 
 async function enforceLiveMaintenanceOnStep() {
   try {
-    if (typeof dbSyncLiveSettingsAndContent === "function") {
-      await dbSyncLiveSettingsAndContent(false);
-    }
     var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : window._latestWebsiteContent;
     if (liveContent) window._latestWebsiteContent = liveContent;
     var mInfo = (typeof getMaintenanceBlockInfo === "function")
@@ -1127,6 +1113,80 @@ async function nextPanel() {
     }
   }
   if (!validateCurrentPanel()) return;
+
+  if (currentPanel === 4 && Boolean(getSystemSettings().ai_enabled) && typeof apiVerifyIdPreSubmit === "function" && selectedFrontFile) {
+    var idTypeVal = document.getElementById("id_type").value;
+    var idNumVal = document.getElementById("id_number").value.trim();
+    var firstVal = document.getElementById("first_name").value.trim();
+    var midVal = document.getElementById("middle_name").value.trim();
+    var lastVal = document.getElementById("last_name").value.trim();
+    var fullVal = [firstVal, (midVal && midVal.toUpperCase() !== "N/A" ? midVal : ""), lastVal].filter(Boolean).join(" ");
+    var dobVal = document.getElementById("birth_date").value;
+    var warnEl = document.getElementById("id-screen-warn");
+    if (warnEl) {
+      warnEl.style.background = "#eff6ff";
+      warnEl.style.borderColor = "#bfdbfe";
+      warnEl.style.color = "#1e40af";
+      warnEl.innerHTML = "<b>Verifying Valid ID Document:</b> Checking if uploaded ID photo matches selected ID Type (<b>" + escapeHtml(idTypeVal) + "</b>)...";
+      warnEl.hidden = false;
+    }
+    try {
+      var step5Res = await apiVerifyIdPreSubmit(selectedFrontFile, selectedBackFile, idTypeVal, {
+        full_name: fullVal,
+        first_name: firstVal,
+        middle_name: midVal,
+        last_name: lastVal,
+        birth_date: dobVal,
+        id_type: idTypeVal,
+        id_number: idNumVal
+      });
+      window._cachedStep5PreScreen = {
+        key: [selectedFrontFile.name, selectedFrontFile.size, selectedBackFile ? selectedBackFile.name : "", idTypeVal, idNumVal, fullVal, dobVal].join("|"),
+        res: step5Res
+      };
+      if (step5Res && step5Res.status !== "offline") {
+        var s5Ocr = step5Res.ocr || {};
+        var s5Comps = Array.isArray(step5Res.comparisons) ? step5Res.comparisons : ((step5Res.comparisons && step5Res.comparisons.fields) || []);
+        var s5DocComp = s5Comps.find(function (c) { return c && (c.key === "id_type" || c.field === "ID Type Match"); });
+        var s5NotGov = (s5Ocr.is_valid_government_id === false || s5Ocr.is_Philippine_id === false);
+        var s5TypeMismatch = !s5NotGov && Boolean(
+          s5Ocr.id_type_matches_declared === false ||
+          step5Res.id_type_match === false ||
+          (s5DocComp && s5DocComp.status === "mismatch")
+        );
+        var s5Detected = s5Ocr.detected_document_type || s5Ocr.detected_id_type || step5Res.detected_id_type || (s5DocComp && s5DocComp.found_on_id) || "a different ID card";
+        if (s5TypeMismatch) {
+          var mismatchMsg = "You selected \"" + idTypeVal + "\" as your Valid ID Type, but the uploaded ID photo was detected as \"" + s5Detected + "\". Please select the matching ID Type or upload photos of your " + idTypeVal + ".";
+          if (warnEl) {
+            warnEl.style.background = "#fef2f2";
+            warnEl.style.borderColor = "#fecaca";
+            warnEl.style.color = "#991b1b";
+            warnEl.innerHTML = "<b>ID Type Mismatch Blocked:</b> " + escapeHtml(mismatchMsg);
+            warnEl.hidden = false;
+          }
+          if (typeof setFieldError === "function") {
+            setFieldError("id_type", "Selected ID Type (" + idTypeVal + ") does not match uploaded ID (" + s5Detected + ").");
+          }
+          showAlert("ID Type Mismatch Blocked", escapeHtml(mismatchMsg), "bad");
+          return;
+        }
+        if (s5NotGov && warnEl) {
+          warnEl.style.background = "#fef2f2";
+          warnEl.style.borderColor = "#fecaca";
+          warnEl.style.color = "#991b1b";
+          warnEl.innerHTML = "<b>Valid ID Warning:</b> The uploaded image does not appear to be a valid government ID" + (s5Detected ? " (detected: " + escapeHtml(s5Detected) + ")" : "") + ". Submission will be blocked on Step 6 unless replaced with a Valid ID.";
+          warnEl.hidden = false;
+        } else if (warnEl) {
+          warnEl.style.background = "#f0fdf4";
+          warnEl.style.borderColor = "#bbf7d0";
+          warnEl.style.color = "#166534";
+          warnEl.innerHTML = "<b>Valid ID Type Confirmed:</b> Uploaded ID matches <b>" + escapeHtml(idTypeVal) + "</b>.";
+          warnEl.hidden = false;
+        }
+      }
+    } catch (e) {}
+  }
+
   if (currentPanel < TOTAL_PANELS - 1) {
     showPanel(currentPanel + 1);
   }
@@ -1479,25 +1539,38 @@ async function submitRegistration() {
     var preScreenRes = null;
 
     if (screeningActive && typeof apiVerifyIdPreSubmit === "function") {
-      preScreenRes = await apiVerifyIdPreSubmit(selectedFrontFile, selectedBackFile, idType, {
-        full_name: fullName,
-        first_name: first,
-        middle_name: middle,
-        last_name: last,
-        birth_date: birth,
-        id_type: idType,
-        id_number: idNumber
-      });
+      var cacheKey = [selectedFrontFile ? selectedFrontFile.name : "", selectedFrontFile ? selectedFrontFile.size : 0, selectedBackFile ? selectedBackFile.name : "", idType, idNumber, fullName, birth].join("|");
+      if (window._cachedStep5PreScreen && window._cachedStep5PreScreen.key === cacheKey && window._cachedStep5PreScreen.res && window._cachedStep5PreScreen.res.status !== "offline") {
+        preScreenRes = window._cachedStep5PreScreen.res;
+      } else {
+        preScreenRes = await apiVerifyIdPreSubmit(selectedFrontFile, selectedBackFile, idType, {
+          full_name: fullName,
+          first_name: first,
+          middle_name: middle,
+          last_name: last,
+          birth_date: birth,
+          id_type: idType,
+          id_number: idNumber
+        });
+      }
 
       if (preScreenRes) {
         var ocrInfo = preScreenRes.ocr || {};
         var qualityInfo = preScreenRes.quality || {};
         var isNotGovId = (ocrInfo.is_valid_government_id === false || ocrInfo.is_Philippine_id === false);
+        var compsArr = Array.isArray(preScreenRes.comparisons) ? preScreenRes.comparisons : ((preScreenRes.comparisons && preScreenRes.comparisons.fields) || []);
+        var docTypeComp = compsArr.find(function (c) { return c && (c.key === "id_type" || c.field === "ID Type Match"); });
+        var isIdTypeMismatch = !isNotGovId && Boolean(
+          ocrInfo.id_type_matches_declared === false ||
+          preScreenRes.id_type_match === false ||
+          (docTypeComp && docTypeComp.status === "mismatch")
+        );
+        var detectedDocLabel = ocrInfo.detected_document_type || ocrInfo.detected_id_type || preScreenRes.detected_id_type || (docTypeComp && docTypeComp.found_on_id) || "a different ID type";
         var hasQualityIssues = Boolean(qualityInfo.severe || qualityInfo.acceptable === false || qualityInfo.passed === false || (qualityInfo.issues && qualityInfo.issues.length > 0));
         var shouldBlockQuality = Boolean(qualityInfo.severe || (hasQualityIssues && !window._allowLowQualityIdOnce));
 
-        if (isNotGovId || shouldBlockQuality) {
-          if (!isNotGovId && !qualityInfo.severe) {
+        if (isNotGovId || isIdTypeMismatch || shouldBlockQuality) {
+          if (!isNotGovId && !isIdTypeMismatch && !qualityInfo.severe) {
             window._allowLowQualityIdOnce = true;
           }
           var qMetrics = qualityInfo.metrics || {};
@@ -1506,11 +1579,13 @@ async function submitRegistration() {
             : "";
           var rejectReason = isNotGovId
             ? ("The uploaded Front ID image does not appear to be a valid Philippine government-issued ID" +
-              (ocrInfo.detected_document_type ? " (detected: " + ocrInfo.detected_document_type + ")" : "") +
+              (detectedDocLabel ? " (detected: " + detectedDocLabel + ")" : "") +
               ". Please upload clear photos of an authentic Valid ID before submitting.")
-            : ("Your uploaded ID photo triggered image quality warnings (" +
-              ((qualityInfo.issues && qualityInfo.issues.length) ? qualityInfo.issues.join("; ") : "blurry, dark, or glare detected") +
-              ")" + metricText + ". Please upload a clearer, well-lit photo before submitting.");
+            : isIdTypeMismatch
+              ? ("You selected \"" + idType + "\" as your Valid ID Type, but the uploaded ID photo was detected as \"" + detectedDocLabel + "\". Please select the matching ID Type or upload photos of your " + idType + " before submitting.")
+              : ("Your uploaded ID photo triggered image quality warnings (" +
+                ((qualityInfo.issues && qualityInfo.issues.length) ? qualityInfo.issues.join("; ") : "blurry, dark, or glare detected") +
+                ")" + metricText + ". Please upload a clearer, well-lit photo before submitting.");
 
           if (loadingScreen) loadingScreen.hidden = true;
           showPanel(4);
@@ -1519,10 +1594,16 @@ async function submitRegistration() {
             warnBox.style.background = "#fef2f2";
             warnBox.style.borderColor = "#fecaca";
             warnBox.style.color = "#991b1b";
-            warnBox.innerHTML = "<b>Valid ID Check Failed:</b> " + escapeHtml(rejectReason);
+            warnBox.innerHTML = "<b>" + (isIdTypeMismatch ? "ID Type Mismatch Blocked:" : "Valid ID Check Failed:") + "</b> " + escapeHtml(rejectReason);
             warnBox.hidden = false;
           }
-          showAlert(isNotGovId ? "Invalid Valid ID Document Blocked" : "ID Image Quality Warning", escapeHtml(rejectReason), "bad");
+          if (isIdTypeMismatch && typeof setFieldError === "function") {
+            setFieldError("id_type", "Selected ID Type (" + idType + ") does not match uploaded ID (" + detectedDocLabel + ").");
+          }
+          var alertTitle = isNotGovId
+            ? "Invalid Valid ID Document Blocked"
+            : (isIdTypeMismatch ? "ID Type Mismatch Blocked" : "ID Image Quality Warning");
+          showAlert(alertTitle, escapeHtml(rejectReason), "bad");
           return;
         }
       }
@@ -1617,6 +1698,8 @@ async function submitRegistration() {
 
     var croppedFrontUrl = (preScreenRes && preScreenRes.cropped_front_url) || (screening && screening.cropped_front_url) || "";
     var croppedBackUrl = (preScreenRes && preScreenRes.cropped_back_url) || (screening && screening.cropped_back_url) || "";
+    if (croppedFrontUrl) screening.cropped_front_url = croppedFrontUrl;
+    if (croppedBackUrl) screening.cropped_back_url = croppedBackUrl;
 
     var baseAppPayload = Object.assign({}, addrData, {
       customer_id: accountInfo.user.id,
@@ -1641,10 +1724,7 @@ async function submitRegistration() {
       id_back_image_url: backPath,
       id_front_path: frontPath,
       id_back_path: backPath,
-      id_cropped_url: croppedFrontUrl,
-      id_back_cropped_url: croppedBackUrl,
-      cropped_id_url: croppedFrontUrl,
-      cropped_back_url: croppedBackUrl,
+      cropped_id_path: croppedFrontUrl || null,
       remarks: document.getElementById("remarks").value.trim(),
       agree_tu: document.getElementById("agree_tu").checked,
       screening: screening

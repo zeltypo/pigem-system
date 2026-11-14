@@ -445,12 +445,19 @@ function renderAvatarBtn(user) {
 
 function toggleProfileDrawer() {
   var d = document.getElementById("profile-drawer");
-  if (d) d.classList.toggle("hidden");
+  if (!d) return;
+  var box = document.getElementById("profile-drawer-body");
+  var activeUser = dashCurrentUser || window.currentCustomer || null;
+  if (box && activeUser && box.getAttribute("data-rendered-user") !== String(activeUser.id || activeUser.email || "1")) {
+    renderProfileDrawer(activeUser);
+  }
+  d.classList.toggle("hidden");
 }
 
 function renderProfileDrawer(user) {
   var box = document.getElementById("profile-drawer-body");
   if (!box || !user) return;
+  box.setAttribute("data-rendered-user", String(user.id || user.email || "1"));
   var savedTheme = readSaved("pigem_theme", "light");
   var avatarHtml = user.avatar_url
     ? '<img src="' + escapeHtml(user.avatar_url) + '" style="width:68px;height:68px;border-radius:999px;object-fit:cover;margin:0 auto 8px;border:2px solid #c8102e" />'
@@ -469,13 +476,15 @@ function renderProfileDrawer(user) {
         '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmDirectProfilePassword()">Update Password</button>' +
       '</div>'
     : '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
-        '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password (OTP Verification)</div>' +
+        '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password</div>' +
         '<div id="prof-pw-msg" class="msg"></div>' +
-        '<button type="button" class="btn btn-outline btn-sm" style="width:100%" onclick="sendProfilePwOtp()">Send 6-Digit Code to ' + escapeHtml(user.email) + '</button>' +
+        '<div class="field"><label>Current Password</label><input id="prof-pw-current" type="password" placeholder="Enter current password" /></div>' +
+        '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" placeholder="Strong new password" /></div>' +
+        '<button type="button" class="btn btn-red btn-sm" style="width:100%; margin-bottom:8px" onclick="confirmDirectProfilePassword()">Update Password</button>' +
+        '<button type="button" class="btn btn-outline btn-sm" style="width:100%" onclick="sendProfilePwOtp()">Or Send 6-Digit OTP to ' + escapeHtml(user.email) + '</button>' +
         '<div id="prof-pw-step2" class="hidden" style="margin-top:10px">' +
           '<div class="field"><label>6-Digit Code</label><input id="prof-pw-code" type="text" maxlength="6" /></div>' +
-          '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" /></div>' +
-          '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmProfilePwOtp()">Update Password</button>' +
+          '<button type="button" class="btn btn-dark btn-sm" style="width:100%" onclick="confirmProfilePwOtp()">Verify OTP &amp; Save New Password</button>' +
         '</div>' +
       '</div>';
 

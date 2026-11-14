@@ -617,6 +617,65 @@ class FieldComparisonEngine(BaseTextMatcher):
 
         }
 
+    def _classify_id_category(self, text: str) -> tuple:
+        t = (text or "").lower()
+        if not t:
+            return "", ""
+        if "driver" in t or "land transportation office" in t or "lto" in t or "non-professional" in t or "professional driver" in t:
+            return "driver_license", "Philippine Driver's License (LTO)"
+        if "pambansang pagkakakilanlan" in t or "philippine identification card" in t or "philsys" in t or "ephilid" in t or "national id" in t:
+            return "national_id", "Philippine National ID (PhilSys)"
+        if "pasaporte" in t or "passport" in t or "p<phl" in t or "department of foreign affairs" in t:
+            return "passport", "Philippine Passport"
+        if "unified multi-purpose" in t or "umid" in t:
+            return "umid", "Unified Multi-Purpose ID (UMID)"
+        if "philhealth" in t or "philippine health insurance" in t:
+            return "philhealth", "PhilHealth ID"
+        if "postal identity" in t or "phlpost" in t or "postal id" in t or "philippine postal" in t:
+            return "postal", "Postal ID"
+        if "professional regulation commission" in t or "prc" in t:
+            return "prc", "PRC ID"
+        if "bureau of internal revenue" in t or "taxpayer identification" in t or "tin id" in t:
+            return "tin", "TIN ID"
+        if "commission on elections" in t or "comelec" in t or "voter" in t:
+            return "voter", "Voter's ID"
+        if "social security system" in t or "my.sss" in t or "sss id" in t or "gsis" in t:
+            return "sss_gsis", "SSS / GSIS ID"
+        if "pag-ibig" in t or "home development mutual" in t:
+            return "pagibig", "Pag-IBIG ID"
+        if "police clearance" in t:
+            return "police_clearance", "National Police Clearance"
+        if "senior citizen" in t or "osca" in t:
+            return "senior", "Senior Citizen ID"
+        if "alien certificate" in t or "acr i-card" in t:
+            return "acr", "ACR I-Card"
+        if "firearm" in t or "ltopf" in t:
+            return "firearms", "Firearms License"
+        if "integrated bar" in t or "ibp" in t:
+            return "ibp", "IBP ID"
+        if "student" in t or "university" in t or "college" in t or "school id" in t:
+            return "student", "Student ID"
+        if "barangay" in t:
+            return "barangay", "Barangay ID"
+        if "company id" in t or "employee id" in t:
+            return "company", "Company ID"
+        return "", ""
+
+    def _verify_declared_id_type_match(self, declared_id_type: str, detected_doc_type: str, lines: list, llm_match_flag: bool = True) -> tuple:
+        decl_cat, _ = self._classify_id_category(declared_id_type)
+        det_cat, det_label = self._classify_id_category(detected_doc_type)
+        if not det_cat and lines:
+            lines_joined = " ".join(str(x) for x in lines if x)
+            det_cat, det_label = self._classify_id_category(lines_joined)
+        final_label = detected_doc_type or det_label or ""
+        if decl_cat and det_cat and decl_cat != det_cat:
+            if {decl_cat, det_cat} <= {"umid", "sss_gsis"}:
+                return bool(llm_match_flag), final_label
+            return False, (det_label or final_label or "Different ID Type")
+        if not llm_match_flag:
+            return False, (final_label or det_label or "Different ID Type")
+        return True, final_label
+
     def compare(self, entered: dict, ocr_payload: dict) -> list:
         if ocr_payload.get("available") is False:
             unv = []
@@ -653,32 +712,46 @@ class FieldComparisonEngine(BaseTextMatcher):
 
         results = []
 
+        entered_doc = str(entered.get("id_type") or "").strip()
+        detected_doc = str(ocr_payload.get("detected_document_type") or ocr_payload.get("detected_id_type") or "").strip()
+        type_matches, resolved_detected_doc = self._verify_declared_id_type_match(
+            entered_doc,
+            detected_doc,
+            lines,
+            ocr_payload.get("id_type_matches_declared", True) is not False,
+        )
+        if not type_matches:
+            ocr_payload["id_type_matches_declared"] = False
+            if resolved_detected_doc:
+                ocr_payload["detected_document_type"] = resolved_detected_doc
+                ocr_payload["detected_id_type"] = resolved_detected_doc
+                detected_doc = resolved_detected_doc
+
         if ocr_payload.get("is_valid_government_id") is False:
 
-            detected_doc = str(ocr_payload.get("detected_document_type") or "Non-ID or unreadable image").strip()
+            detected_label = detected_doc or "Non-ID or unreadable image"
 
             results.append({
                 "field": "Document Authenticity Check",
                 "key": "document_type",
-                "entered": str(entered.get("id_type") or "Government ID").strip(),
-                "found_on_id": detected_doc,
+                "entered": entered_doc or "Government ID",
+                "found_on_id": detected_label,
                 "status": "mismatch",
-                "note": f"Uploaded image does not appear to be a valid government-issued ID ({detected_doc}).",
+                "note": f"Uploaded image does not appear to be a valid government-issued ID ({detected_label}).",
             })
 
-        elif ocr_payload.get("id_type_matches_declared") is False:
+        elif ocr_payload.get("id_type_matches_declared") is False or not type_matches:
 
-            detected_doc = str(ocr_payload.get("detected_document_type") or "Different ID type").strip()
-
-            entered_doc = str(entered.get("id_type") or "Selected ID").strip()
+            detected_label = detected_doc or "Different ID type"
+            entered_label = entered_doc or "Selected ID"
 
             results.append({
                 "field": "ID Type Match",
                 "key": "id_type",
-                "entered": entered_doc,
-                "found_on_id": detected_doc,
+                "entered": entered_label,
+                "found_on_id": detected_label,
                 "status": "mismatch",
-                "note": f"Selected ID type ({entered_doc}) does not match the uploaded document ({detected_doc}).",
+                "note": f"Selected ID type ({entered_label}) does not match the uploaded document ({detected_label}).",
             })
 
         if (entered.get("full_name") or "").strip():
@@ -1467,13 +1540,20 @@ class GeminiScreeningService(BaseLanguageClient):
 
                         ungrounded.append("name")
 
+            raw_detected_doc = str(parsed.get("detected_document_type") or "").strip()
+            raw_type_match = bool(parsed.get("id_type_matches_declared", True))
+            verified_type_match, resolved_detected_doc = _matcher._verify_declared_id_type_match(
+                id_type, raw_detected_doc, clean_lines, raw_type_match
+            )
+            final_detected_doc = resolved_detected_doc or raw_detected_doc
+
             return {
                 "available": True,
                 "is_valid_government_id": bool(parsed.get("is_valid_government_id", True)),
                 "is_Philippine_id": bool(parsed.get("is_valid_government_id", True)),
-                "id_type_matches_declared": bool(parsed.get("id_type_matches_declared", True)),
-                "detected_document_type": str(parsed.get("detected_document_type") or "").strip(),
-                "detected_id_type": str(parsed.get("detected_document_type") or "").strip(),
+                "id_type_matches_declared": bool(verified_type_match),
+                "detected_document_type": final_detected_doc,
+                "detected_id_type": final_detected_doc,
                 "confidence": str(parsed.get("confidence") or "medium").strip().lower(),
                 "unreadable_fields": unreadable,
                 "ungrounded_fields": ungrounded,
