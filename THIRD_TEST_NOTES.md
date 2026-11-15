@@ -56,7 +56,7 @@ Supabase's advisor also reported leaked-password protection disabled. Its limite
 - Installing missing Python runtime dependencies was blocked by network DNS access. Full FastAPI/OpenCV runtime integration was not run locally.
 - OpenAI live OCR accuracy, Vercel runtime, email delivery, cross-device QA synchronization and the full account/correction workflow remain unverified.
 
-Use `/test3` for the sixteen manual third-test cases after deploying to an appropriate test environment. A checked item must mean actually tested, not simply changed in code.
+Use `/test3` for the twenty-three manual third-test cases after deploying to an appropriate test environment. A checked item must mean actually tested, not simply changed in code.
 
 ## Manuscript reconciliation
 
