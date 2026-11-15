@@ -370,21 +370,63 @@ function showApplySecurityCaptchaModal() {
       '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>' +
       '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
-      '<div id="apply-captcha-fallback-box" style="margin-top:8px; display:block;">' +
-        '<div id="apply-popup-captcha-card" class="captcha-container" role="button" tabindex="0" aria-label="Verify I am not a robot" onclick="triggerApplyPopupCaptcha()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();triggerApplyPopupCaptcha();}">' +
-          '<div style="display:flex;align-items:center;gap:12px;">' +
-            '<div id="apply-popup-captcha-check" class="captcha-box-inner"></div>' +
-            '<span id="apply-popup-captcha-text" style="font-weight:600;font-size:14px;color:var(--text);">I\'m not a robot</span>' +
-          '</div>' +
-          '<div style="text-align:right;line-height:1.2;">' +
-            '<div style="font-size:11px;font-weight:800;color:var(--muted);">CAPTCHA</div>' +
-            '<div style="font-size:10px;color:var(--muted);">Security Verification</div>' +
-          '</div>' +
-        '</div>' +
+      '<div style="display:flex;justify-content:center;margin:8px 0;min-height:78px;">' +
+        '<div id="apply-captcha-box" style="min-width:304px;min-height:78px;"></div>' +
       '</div>' +
     '</div>',
     { showCloseX: true, closeOnBackdrop: true }
   );
+  renderApplyCaptchaBox();
+}
+
+function renderApplyCaptchaBox() {
+  var box = document.getElementById("apply-captcha-box");
+  if (!box) return;
+  var siteKey = CONFIG.RECAPTCHA_SITE_KEY;
+  box.innerHTML = '<div id="g-apply-recaptcha"></div>';
+
+  function tryRenderGoogle() {
+    if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
+      try {
+        grecaptcha.render("g-apply-recaptcha", {
+          sitekey: siteKey,
+          callback: onApplyCaptchaVerified,
+          "error-callback": function () { renderApplyCaptchaFallback(box); }
+        });
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  if (!tryRenderGoogle()) {
+    var attempts = 0;
+    var timer = setInterval(function () {
+      attempts++;
+      if (tryRenderGoogle() || attempts > 15) {
+        clearInterval(timer);
+        if (attempts > 15 && !box.querySelector("iframe")) {
+          renderApplyCaptchaFallback(box);
+        }
+      }
+    }, 250);
+  }
+}
+
+function renderApplyCaptchaFallback(box) {
+  box.innerHTML =
+    '<div id="apply-popup-captcha-card" class="captcha-container" role="button" tabindex="0" aria-label="Verify I am not a robot" onclick="triggerApplyPopupCaptcha()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();triggerApplyPopupCaptcha();}">' +
+      '<div style="display:flex;align-items:center;gap:12px;">' +
+        '<div id="apply-popup-captcha-check" class="captcha-box-inner"></div>' +
+        '<span id="apply-popup-captcha-text" style="font-weight:600;font-size:14px;color:var(--text);">I\'m not a robot</span>' +
+      '</div>' +
+      '<div style="text-align:right;line-height:1.2;">' +
+        '<div style="font-size:11px;font-weight:800;color:var(--muted);">reCAPTCHA</div>' +
+        '<div style="font-size:10px;color:var(--muted);">Security Check</div>' +
+      '</div>' +
+    '</div>';
 }
 
 async function onApplyCaptchaVerified(token) {
