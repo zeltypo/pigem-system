@@ -64,15 +64,27 @@ def complete(parts, expect_json=True, max_tokens=2048, response_schema=None, sys
         }}
     elif expect_json:
         body["response_format"] = {"type": "json_object"}
-    try:
-        request = urllib.request.Request(
+    def _post(payload):
+        req = urllib.request.Request(
             "https://api.openai.com/v1/chat/completions",
-            data=json.dumps(body).encode("utf-8"), method="POST",
+            data=json.dumps(payload).encode("utf-8"), method="POST",
             headers={"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"].strip(),
                      "Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            choice = json.load(response)["choices"][0]
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.load(resp)["choices"][0]
+
+    try:
+        try:
+            choice = _post(body)
+        except urllib.error.HTTPError as err:
+            # Some non-reasoning or variant models reject reasoning_effort with HTTP 400.
+            if err.code == 400 and "reasoning_effort" in body:
+                fallback_body = dict(body)
+                fallback_body.pop("reasoning_effort", None)
+                choice = _post(fallback_body)
+            else:
+                raise
         message = choice["message"]
         # A refusal, timeout, quota error or truncated answer is NOT a mismatch.
         if choice.get("finish_reason") != "stop" or message.get("refusal"):
