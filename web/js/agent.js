@@ -74,10 +74,10 @@ var VALIDATOR_PRESETS = [
   { label: "[Quality] Blurry / Out-of-Focus Valid ID Text", raw: "Uploaded valid ID photo is blurry or unreadable", field: "id_photo", msg: "Your uploaded Valid ID photo is slightly blurry and the printed details could not be clearly read. Please upload a sharper photo of your Valid ID in a well-lit area." },
   { label: "[Quality] Flash Glare Covering Name or ID Number", raw: "Lighting glare covering text on valid ID", field: "id_photo", msg: "There is flash or lighting glare covering important text on your Valid ID. Please take a new photo without camera flash so all printed details are readable." },
   { label: "[Quality] ID Card Corners / Edges Cut Off", raw: "Valid ID corners or borders are cut off", field: "id_photo", msg: "Some edges of your Valid ID are cut off in the photo. Please upload a full photo showing all 4 corners of your physical ID card." },
-  { label: "[OCR Mismatch] Applicant Name Does Not Match Printed ID", raw: "Applicant name entered does not match Valid ID", field: "name", msg: "The name entered on your application form does not match the legal name printed on your Valid ID. Please review and update your name in your Customer Account." },
-  { label: "[OCR Mismatch] Birth Date Does Not Match Printed ID", raw: "Birth date entered does not match Valid ID", field: "birth_date", msg: "The birth date entered on your application form does not match the birth date printed on your Valid ID. Please verify and update your birth date." },
-  { label: "[OCR Mismatch] Primary ID Number Mismatch", raw: "ID number entered does not match number printed on ID", field: "id_number", msg: "The ID number entered in the form does not match the number printed on your Valid ID card. Please check and update your ID number." },
-  { label: "[OCR Mismatch] Selected ID Type Does Not Match Uploaded Card", raw: "Selected ID type does not match uploaded government ID", field: "id_photo", msg: "The Valid ID photo uploaded does not match the ID type selected in your form. Please upload the matching government ID or update your ID details." },
+  { label: "[Details Do Not Match] Applicant Name Does Not Match Printed ID", raw: "Applicant name entered does not match Valid ID", field: "name", msg: "The name entered on your application form does not match the legal name printed on your Valid ID. Please review and update your name in your Customer Account." },
+  { label: "[Details Do Not Match] Birth Date Does Not Match Printed ID", raw: "Birth date entered does not match Valid ID", field: "birth_date", msg: "The birth date entered on your application form does not match the birth date printed on your Valid ID. Please verify and update your birth date." },
+  { label: "[Details Do Not Match] Primary ID Number Mismatch", raw: "ID number entered does not match number printed on ID", field: "id_number", msg: "The ID number entered in the form does not match the number printed on your Valid ID card. Please check and update your ID number." },
+  { label: "[Details Do Not Match] Selected ID Type Does Not Match Uploaded Card", raw: "Selected ID type does not match uploaded government ID", field: "id_photo", msg: "The Valid ID photo uploaded does not match the ID type selected in your form. Please upload the matching government ID or update your ID details." },
   { label: "[Validator] Duplicate Email in Provider Portal", raw: "Duplicate email address in provider portal", field: "email", msg: "Your email address is already linked to an existing record with the provider. Please provide an alternate active email address." },
   { label: "[Validator] Duplicate Mobile Number in Provider Portal", raw: "Mobile number already exists in provider system", field: "phone", msg: "The mobile number provided is already registered in the provider system. Please update your mobile number." },
   { label: "[Validator] Address Incomplete / Missing Nearest Landmark", raw: "Installation address missing street detail or landmark", field: "address", msg: "Please add a clearer street detail, house description, or nearest landmark to help our field team locate your installation address." }
@@ -162,7 +162,7 @@ function onValidatorPresetChange(val) {
 
 function isScreeningActiveOnApp(app) {
   var scr = (app && app.screening) || {};
-  return scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running" || visualScreeningRunningAppId === (app && app.id);
+  return ["pending_agent", "checking", "queued", "layer1_running", "layer2_running"].includes(scr.state) || visualScreeningRunningAppId === (app && app.id);
 }
 
 function formatEtaLabel(seconds) {
@@ -179,7 +179,7 @@ function cleanScreeningText(str) {
   return String(str || "")
     .replace(/\bAI Screening Engine\b/gi, "Application Screening")
     .replace(/\bAI Document Screening\b/gi, "Application Screening")
-    .replace(/\b(OpenCV|Gemini|FastAPI|Vercel|Qwen\S*|AI)\b/gi, "Screening")
+    .replace(/\b(OpenCV|OpenAI|Gemini|FastAPI|Vercel|Qwen\S*|OCR|API|AI)\b/gi, "Screening")
     .replace(/\bScreening\s+Screening\b/gi, "Screening");
 }
 
@@ -270,15 +270,20 @@ window.addEventListener("DOMContentLoaded", async function () {
     if (anyRunning || !isTyping) {
       await refreshAgentData(true);
       var modal = document.getElementById("app-detail-modal");
-      if (modal && !modal.classList.contains("hidden") && activeDetailAppId && !isTyping) {
-        await renderDetailModalContent();
-      }
+      // Do not rebuild an open review form: it would erase notes, uploads and expanded sections.
+      // Explicit screening/status actions refresh it after they finish.
     }
   }, 4500);
 });
 
 async function refreshAgentData(silent) {
+  var previousApp = findAppById(activeDetailAppId);
+  var previousScreening = JSON.stringify(previousApp && previousApp.screening);
   allApps = await dbListAllApplications();
+  var currentApp = findAppById(activeDetailAppId);
+  if (silent && currentApp && previousScreening !== JSON.stringify(currentApp.screening)) {
+    await renderDetailModalContent(true);
+  }
   updateDashSearchApps(allApps);
 
   var unclaimed = 0;
@@ -358,6 +363,11 @@ async function refreshAgentData(silent) {
 
   renderAgentCards();
   if (activeBranch === "reports") renderAgentReport();
+  if (isScreeningServiceOnline) {
+    checkPendingDocuments(allApps, async function (appId) {
+      await refreshAgentData(true);
+    });
+  }
 }
 
 function showTab(branch) {
@@ -419,9 +429,10 @@ function getScreeningCardBadge(app) {
   }
   var scr = app.screening || {};
   var state = scr.state || "";
-  if (!isAiEnabled() || !isScreeningServiceOnline || state === "unavailable" || state === "paused" || scr.fallback_original_only) {
+  if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || state === "unavailable" || state === "paused" || scr.fallback_original_only) {
     return '<span class="badge badge-gray">Original ID Copy (Manual Review)</span>';
   }
+  if (["pending_agent", "queued", "checking"].includes(state)) return '<span class="badge badge-blue">Waiting for Document Check</span>';
   var eta = formatEtaLabel(scr.eta_seconds);
 
   if (state === "queued" || state === "layer1_running") {
@@ -458,9 +469,10 @@ function getScreeningQuickSummary(app) {
     return '<span style="color:#b42318;font-weight:700;">' + escapeHtml(dup.reason) + '</span>';
   }
   var scr = app.screening || {};
-  if (!isAiEnabled() || !isScreeningServiceOnline || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only) {
+  if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only) {
     return '<span class="muted">Auto-screening unavailable - customer\'s original uploaded ID photo is ready for manual review.</span>';
   }
+  if (scr.state === "pending_agent") return '<span class="muted">Waiting for Document Check.</span>';
   if (scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running") {
     return '<span>' + escapeHtml(scr.advisory || "Screening in progress...") + '</span>';
   }
@@ -470,7 +482,8 @@ function getScreeningQuickSummary(app) {
   }
   var res = app.ai_result || {};
   var rawIssues = (res.issues || []).map(function (x) { return stripFalseReuploadMsg(x, dup); }).filter(Boolean);
-  var note = rawIssues.length > 0 ? rawIssues.join("; ") : "Document clear and details match.";
+  var note = rawIssues.length > 0 ? rawIssues.join("; ") :
+    (scr.overall_match === true ? "Document clear and details match." : "Document checks are pending.");
   return '<span class="muted">' + escapeHtml(note) + '</span>';
 }
 
@@ -602,13 +615,6 @@ async function openAppDetail(appId) {
   await renderDetailModalContent();
   document.getElementById("app-detail-modal").classList.remove("hidden");
 
-  var needsAutoScreen = app && (
-    (app.screening && app.screening.state === "queued") ||
-    !(app.cropped_id_url || app.id_cropped_url)
-  );
-  if (needsAutoScreen && isAiEnabled() && isScreeningServiceOnline) {
-    retriggerAgentScreening(appId);
-  }
 }
 
 function closeDetailModal() {
@@ -625,102 +631,17 @@ function switchIdImgMode(mode) {
   renderDetailModalContent();
 }
 
-async function retriggerAgentScreening(appId) {
-  if (!appId || !isAiEnabled()) return;
-  visualScreeningRunningAppId = appId;
-  visualScreeningStage = 1;
-  await renderDetailModalContent();
-
-  var stepTimer1 = setTimeout(function () {
-    if (visualScreeningRunningAppId === appId) {
-      visualScreeningStage = 2;
-      renderDetailModalContent();
-    }
-  }, 900);
-
-  var stepTimer2 = setTimeout(function () {
-    if (visualScreeningRunningAppId === appId) {
-      visualScreeningStage = 3;
-      renderDetailModalContent();
-    }
-  }, 1900);
-
-  try {
-    var apiRes = await apiStartBackgroundScreening(appId);
-    await new Promise(function (r) { setTimeout(r, 2600); });
-    clearTimeout(stepTimer1);
-    clearTimeout(stepTimer2);
-
-    var app = findAppById(appId);
-    if (app && (!apiRes || !apiRes.screened)) {
-      var dup = detectClientSideDuplicateId(app);
-      var issues = dup.isDup ? [dup.reason] : [];
-      var nextScr = Object.assign({}, app.screening || {}, {
-        state: "completed",
-        overall_match: !dup.isDup,
-        quality_passed: !dup.isDup,
-        fields_matched: false,
-        fallback_original_only: !dup.isDup,
-        summary: dup.isDup ? dup.reason : "Automated OCR unavailable — please visually verify the printed ID fields below.",
-        notes: issues,
-        screened_at: new Date().toISOString()
-      });
-      await dbUpdateApplication(appId, { screening: nextScr });
-    }
-  } finally {
-    visualScreeningRunningAppId = null;
-    visualScreeningStage = 0;
-    await refreshAgentData(true);
-    var updatedApp = findAppById(appId);
-    if (updatedApp && (updatedApp.cropped_id_url || updatedApp.id_cropped_url)) {
-      activeIdImgMode = "cropped";
-    }
-    if (activeDetailAppId === appId) {
-      await renderDetailModalContent();
-    }
-  }
-}
-
 function renderVisualScreeningProgressBox(app) {
-  if (visualScreeningRunningAppId !== app.id) return "";
-  var stg = visualScreeningStage || 1;
-  var pct = stg === 1 ? 34 : (stg === 2 ? 68 : 95);
-
-  var s1Icon = stg > 1 ? "&#10003;" : '<span class="inline-spinner"></span>';
-  var s2Icon = stg > 2 ? "&#10003;" : (stg === 2 ? '<span class="inline-spinner"></span>' : "2");
-  var s3Icon = stg === 3 ? '<span class="inline-spinner"></span>' : "3";
-
-  return (
-    '<div class="screening-live-box" style="margin-bottom:14px;">' +
-      '<div class="row between" style="margin-bottom:8px;">' +
-        '<div>' +
-          '<b style="font-size:14px; color:var(--text);">Automated Document Screening Running...</b>' +
-          '<div class="small muted">Inspecting uploaded Front and Back Valid ID photos and comparing printed text</div>' +
-        '</div>' +
-        '<span class="badge badge-blue">' + pct + '%</span>' +
-      '</div>' +
-      '<div class="progress" style="height:8px; margin-bottom:12px;">' +
-        '<div style="width:' + pct + '%; transition:width 0.4s ease;"></div>' +
-      '</div>' +
-      '<div class="grid-3" style="gap:8px;">' +
-        '<div class="screening-stage-pill ' + (stg >= 1 ? "active" : "") + '">' +
-          '<span class="stage-num">' + s1Icon + '</span>' +
-          '<div><b>Stage 1: Readability and Crop</b><div class="tiny muted">Checking blur, glare, and 4 corners</div></div>' +
-        '</div>' +
-        '<div class="screening-stage-pill ' + (stg >= 2 ? "active" : "") + '">' +
-          '<span class="stage-num">' + s2Icon + '</span>' +
-          '<div><b>Stage 2: Duplicate ID Check</b><div class="tiny muted">Comparing Front vs. Back hashes</div></div>' +
-        '</div>' +
-        '<div class="screening-stage-pill ' + (stg >= 3 ? "active" : "") + '">' +
-          '<span class="stage-num">' + s3Icon + '</span>' +
-          '<div><b>Stage 3: OCR Field Match</b><div class="tiny muted">Matching Name, DOB, and ID No.</div></div>' +
-        '</div>' +
-      '</div>' +
-    '</div>'
-  );
+  if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id)) return "";
+  if (!["pending_agent", "queued", "checking"].includes((app.screening || {}).state)) return "";
+  // The endpoint returns one result, not live stage events. Do not invent progress percentages.
+  return '<div class="screening-live-box" role="status" aria-live="polite" style="margin-bottom:14px">' +
+    '<span class="inline-spinner"></span> <b>' +
+    ((app.screening || {}).state === "checking" ? "Checking documents..." : "Waiting for the document check...") + '</b>' +
+    '<div class="small muted">Reading both ID photos and comparing the application details. Please wait for the saved result.</div></div>';
 }
 
-async function renderDetailModalContent() {
+async function renderDetailModalContent(updateResultsOnly) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
 
@@ -729,7 +650,7 @@ async function renderDetailModalContent() {
   var scr = app.screening || {};
   var res = app.ai_result || {};
   var dupCheck = detectClientSideDuplicateId(app);
-  var isManualFallback = (!isAiEnabled() || !isScreeningServiceOnline || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only);
+  var isManualFallback = (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || ["pending_agent", "queued", "checking"].includes(scr.state) || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only || (scr.ocr && scr.ocr.available === false));
 
   var topScreeningBanner = renderVisualScreeningProgressBox(app);
   if (!topScreeningBanner) {
@@ -743,9 +664,6 @@ async function renderDetailModalContent() {
       topScreeningBanner =
         '<div class="status-banner warn" style="margin-bottom:14px">' +
           '<div><b>Manual Document Review Active:</b> The customer\'s <b>Original Uploaded ID Photos</b> are ready below for verification.</div>' +
-          (isAiEnabled()
-            ? '<button type="button" class="btn btn-red btn-sm" onclick="retriggerAgentScreening(\'' + escapeHtml(app.id) + '\')">Run Document Screening</button>'
-            : '<span class="badge badge-yellow">Original Copy Ready</span>') +
         '</div>';
     }
   }
@@ -796,7 +714,7 @@ async function renderDetailModalContent() {
     ? dupCheck.reason
     : (isManualFallback
       ? "Please inspect the customer's original uploaded ID photos and match them with Section 1."
-      : (cleanScrSummary || (cleanIssuesList.length ? cleanIssuesList.join("; ") : "Readability, duplicate check, and printed OCR fields passed.")));
+      : (cleanScrSummary || (cleanIssuesList.length ? cleanIssuesList.join("; ") : "Readability, duplicate check, and printed details passed.")));
 
   var copySwitcher = "";
   if (app.original_submission) {
@@ -824,12 +742,6 @@ async function renderDetailModalContent() {
     idModeBar +=
       '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "cropped" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'cropped\')">Cropped Copy</button>' +
       '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "raw" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'raw\')">Original Photo</button>';
-  }
-  if (isAiEnabled()) {
-    idModeBar +=
-      '<button type="button" class="btn btn-sm btn-red" style="padding:3px 10px; font-size:12px" onclick="retriggerAgentScreening(\'' + escapeHtml(app.id) + '\')">' +
-        (visualScreeningRunningAppId === app.id ? "Running Screening..." : "Run / Refresh Document Check") +
-      '</button>';
   }
   idModeBar += '</div>';
 
@@ -869,8 +781,8 @@ async function renderDetailModalContent() {
     ? app.corrected_copy.contact_email
     : (viewData.email || app.email);
 
-  document.getElementById("det-body").innerHTML =
-    topScreeningBanner +
+  var detailHtml =
+    '<div id="document-check-status">' + topScreeningBanner + '</div>' +
 
     '<div class="grid-4" style="margin-bottom:14px">' +
       '<div class="card" style="padding:10px 14px"><div class="tiny muted">Internal Status</div><div style="margin-top:4px">' + statusBadge(app.status) + '</div></div>' +
@@ -910,7 +822,7 @@ async function renderDetailModalContent() {
       '</div>' +
     '</div>' +
 
-    '<div class="section-card">' +
+    '<div class="section-card" id="document-check-results">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos and Document Check</div>' +
         idModeBar +
@@ -928,12 +840,12 @@ async function renderDetailModalContent() {
         '</div>' +
       '</div>' +
 
-      '<div class="check-pill-grid" style="grid-template-columns:repeat(auto-fit, minmax(135px, 1fr));">' +
+      '<div class="check-pill-grid" style="grid-template-columns:repeat(auto-fit, minmax(min(100%, 210px), 1fr));">' +
         '<div class="check-pill"><span>Readability (Blur/Glare)</span><b>' + escapeHtml(docQualityLabel) + '</b></div>' +
         '<div class="check-pill"><span>Duplicate Image Check</span>' + dupBadge + '</div>' +
-        '<div class="check-pill"><span>Applicant Name (OCR)</span>' + nameCheckBadge + '</div>' +
-        '<div class="check-pill"><span>Birth Date (OCR)</span>' + bdateCheckBadge + '</div>' +
-        '<div class="check-pill"><span>ID Number (OCR)</span>' + idNoCheckBadge + '</div>' +
+        '<div class="check-pill"><span>Applicant Name</span>' + nameCheckBadge + '</div>' +
+        '<div class="check-pill"><span>Birth Date</span>' + bdateCheckBadge + '</div>' +
+        '<div class="check-pill"><span>ID Number</span>' + idNoCheckBadge + '</div>' +
         '<div class="check-pill"><span>Area Coverage</span>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : '<span class="badge badge-gray">-</span>') + '</div>' +
       '</div>' +
       (function () {
@@ -1053,6 +965,20 @@ async function renderDetailModalContent() {
             '</div>' +
           '</div>' +
         '</details>');
+  if (activeDetailAppId !== app.id) return;
+  if (updateResultsOnly) {
+    var template = document.createElement("template");
+    template.innerHTML = detailHtml;
+    var currentResults = document.getElementById("document-check-results");
+    var nextResults = template.content.querySelector("#document-check-results");
+    if (currentResults && nextResults) currentResults.replaceWith(nextResults);
+    var currentStatus = document.getElementById("document-check-status");
+    var nextStatus = template.content.querySelector("#document-check-status");
+    if (currentStatus && nextStatus) currentStatus.replaceWith(nextStatus);
+  } else {
+    document.getElementById("det-body").innerHTML = detailHtml;
+  }
+
 }
 
 function saveSelectedStatus() {
@@ -1224,8 +1150,8 @@ async function saveAgentDecision(newStatus) {
 
   await dbAddLog(staffId, "Set application " + app.reference_no + " status to " + newStatus);
 
-  closeDetailModal();
   await refreshAgentData();
+  await renderDetailModalContent();
   showAlert("Status Updated", "Application " + app.reference_no + " is now marked as " + newStatus + "." + emailNoticeNote);
 }
 
@@ -1277,7 +1203,7 @@ async function triggerImageFileDownload(url, filename) {
   }
 }
 
-async function downloadApplicantId() {
+async function downloadApplicantId(side) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
   var btn = document.getElementById("btn-download-id");
@@ -1297,10 +1223,14 @@ async function downloadApplicantId() {
     var frontSuffix = (activeIdImgMode === "cropped" && (app.cropped_id_url || app.id_cropped_url)) ? "-Front-ID-Cropped.jpg" : "-Front-ID.jpg";
     var backSuffix = (activeIdImgMode === "cropped" && (app.cropped_back_url || app.id_back_cropped_url)) ? "-Back-ID-Cropped.jpg" : "-Back-ID.jpg";
 
-    if (frontUrl) {
+    if ((side === "back" && !backUrl) || (side === "front" && !frontUrl)) {
+      showAlert("ID Copy Unavailable", "This side has not been uploaded.");
+      return;
+    }
+    if (frontUrl && side !== "back") {
       await triggerImageFileDownload(frontUrl, refBase + frontSuffix);
     }
-    if (backUrl && backUrl !== frontUrl) {
+    if (backUrl && side !== "front") {
       await new Promise(function (r) { setTimeout(r, 350); });
       await triggerImageFileDownload(backUrl, refBase + backSuffix);
     }
@@ -1395,9 +1325,7 @@ function printApplicantCopy() {
         "</div>" +
         (app.agent_remarks ? "<div style='margin-top:10px;font-size:12px;color:#334155;'><b>Verification Remarks:</b> " + escapeHtml(app.agent_remarks) + "</div>" : "") +
       "</div>" +
-      "<script>" +
-        "window.onload = function() { setTimeout(function(){ window.focus(); window.print(); }, 400); };" +
-      "<\/script>" +
+      "<button class='no-print' onclick='window.print()'>Print / Save as PDF</button>" +
     "</body></html>";
 
   printWin.document.open();

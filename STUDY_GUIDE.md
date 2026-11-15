@@ -1,3 +1,15 @@
+# Latest learning notes
+
+Use the tracked repository root for the current implementation. Read the root `DEMO_RUNBOOK.md` before following the older examples below.
+
+1. **Sa Customer form**, local lang sa browser ang brightness at sharpness check ng front at back ID. Wala pang OCR call habang nag-a-apply ang Customer.
+2. **Sa Agent at Manager portal**, automatic ang pag-check ng pending documents habang bukas ang staff dashboard. `_access.py` checks the Auth token and staff role. `_screening.py` also checks the Admin setting before requesting OCR.
+3. **Sa Python**, kinukumpara ng `_ai.py` ang printed details sa form. Ang model ay tumatanggap ng ID images at selected ID type. Kapag walang siguradong nabasa, manual review ang kailangan. The Agent makes the review decision.
+4. **Sa refresh**, SHA-256 hashes are used to see whether both image files are byte-for-byte the same. With the same model and ID type, the server can reuse the OCR text and compare it against the current application fields.
+5. **Sa database**, demo-only muna dahil may public access pa ang legacy tables at document storage. Gumamit ng fictional IDs para sa preview at defense.
+
+The following sections retain older implementation examples for reference. The Gemini, pre-submit OCR and production security descriptions are historical.
+
 # PIGEM Web-Based Internet Service Application System - Cloud Capstone Study Guide
 
 Gabay para sa **Capstone Oral Defense** at **Developer Maintenance**: nakalista rito kung paano gumagana ang live cloud system (`C:\pigem-system`), bakit ganito ang architecture ng bawat role at security rule, at paano sagutin ang posibleng tanong ng panel.
@@ -104,29 +116,9 @@ Ang buong system—kasama ang **Public Website**, **Customer Portal**, **Interna
 
 ---
 
-## 6. Separate SQL Reset Query (13 Tables) at Full Database Setup
+## 6. Fresh database and existing database
 
-Kung nais i-reset nang buo ang PostgreSQL schema bago i-paste ang laman ng `schema.sql`, patakbuhin muna ito sa Supabase SQL Editor:
-
-```sql
-DROP TABLE IF EXISTS
-  public.system_logs,
-  public.login_history,
-  public.notifications,
-  public.provider_updates,
-  public.corrections,
-  public.screenings,
-  public.documents,
-  public.applications,
-  public.agent_links,
-  public.website_content,
-  public.system_settings,
-  public.plans,
-  public.users
-CASCADE;
-```
-
-Pagkatapos i-run ang reset query, i-run nang buo ang `schema.sql` sa Supabase SQL Editor. Pagkatapos, buksan ang `/admin-login` -> **Provision Admin Account** (`/setup-accounts`) para irehistro ang nag-iisang Admin `username` account, at mag-sign in sa `/admin` upang buuin ang Manager at Agent `username`-only accounts.
+For a new fictional-data preview, follow the tracked root's `DEMO_RUNBOOK.md` and run the root `schema.sql` in the new Supabase project. For an existing database, the root `schema-upgrade.sql` is the additive upgrade. A fresh database has no accounts or uploaded banners. Open `/admin-login` to provision the first Admin.
 
 ---
 

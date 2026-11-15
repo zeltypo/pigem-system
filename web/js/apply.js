@@ -516,6 +516,7 @@ async function applyQrRemoteFile(side, url) {
     }
     var warnEl = document.getElementById("id-screen-warn");
     if (warnEl) { warnEl.hidden = true; warnEl.innerHTML = ""; }
+    checkSelectedIdQuality(side, file);
   } catch (e) {}
 }
 
@@ -721,29 +722,50 @@ function handleIdFileSelect(side, inputEl) {
       boxB.hidden = false;
     }
   }
-  window._allowLowQualityIdOnce = false;
-  if (typeof analyzeClientIdQuality === "function") {
-    analyzeClientIdQuality(file).then(function (qRes) {
-      if (!qRes || !qRes.metrics) return;
-      var m = qRes.metrics;
-      var wEl = document.getElementById("id-screen-warn");
-      if (!wEl) return;
-      var metricsSummary = "Sharpness: <b>" + (m.blur_score != null ? m.blur_score : "OK") + "</b> &bull; Brightness: <b>" + (m.brightness != null ? m.brightness : "OK") + "</b> &bull; Glare: <b>" + (m.glare_ratio != null ? Math.round(m.glare_ratio * 100) + "%" : "0%") + "</b>";
-      if (qRes.issues && qRes.issues.length > 0) {
-        wEl.style.background = "#fef2f2";
-        wEl.style.borderColor = "#fecaca";
-        wEl.style.color = "#991b1b";
-        wEl.innerHTML = "<b>ID Image Quality Warning (" + (side === "front" ? "Front ID" : "Back ID") + "):</b> " + escapeHtml(qRes.issues.join(" ")) + "<div style='margin-top:4px;font-size:12px;'>" + metricsSummary + "</div>";
-        wEl.hidden = false;
-      } else {
-        wEl.style.background = "#f0fdf4";
-        wEl.style.borderColor = "#bbf7d0";
-        wEl.style.color = "#166534";
-        wEl.innerHTML = "<b>ID Image Quality Check Passed (" + (side === "front" ? "Front ID" : "Back ID") + "):</b> Photo is clear and readable.<div style='margin-top:4px;font-size:12px;'>" + metricsSummary + "</div>";
-        wEl.hidden = false;
-      }
-    });
+  checkSelectedIdQuality(side, file);
+}
+
+var selectedIdChecks = { front: null, back: null };
+
+function checkSelectedIdQuality(side, file) {
+  var previous = selectedIdChecks[side];
+  if (previous && previous.file === file) return previous.promise;
+  var check = { file: file };
+  selectedIdChecks[side] = check;
+  var box = document.getElementById("id-" + side + "-quality");
+  if (box) {
+    box.hidden = false;
+    box.className = "notice mt";
+    box.textContent = "Checking " + side + " photo...";
   }
+  check.promise = analyzeClientIdQuality(file).then(function (result) {
+    if (selectedIdChecks[side] !== check) return result;
+    if (box) {
+      box.className = "notice mt " + (result.passed ? "ok" : "bad");
+      box.textContent = result.passed
+        ? "Photo quality check passed. Make sure all printed details and corners are visible."
+        : "Replace the " + side + " photo. " + result.issues.join(" ");
+    }
+    return result;
+  });
+  return check.promise;
+}
+
+async function validateSelectedIdQuality() {
+  var front = selectedFrontFile;
+  var back = selectedBackFile;
+  var checks = await Promise.all([
+    checkSelectedIdQuality("front", front), checkSelectedIdQuality("back", back)
+  ]);
+  if (front !== selectedFrontFile || back !== selectedBackFile) return false;
+  if (checks.every(function (result) { return result.passed; })) return true;
+  showPanel(4);
+  var warning = document.getElementById("id-screen-warn");
+  if (warning) {
+    warning.hidden = false;
+    warning.textContent = "Please replace the photo marked above before continuing.";
+  }
+  return false;
 }
 
 function showPanel(index) {
@@ -1113,79 +1135,7 @@ async function nextPanel() {
     }
   }
   if (!validateCurrentPanel()) return;
-
-  if (currentPanel === 4 && Boolean(getSystemSettings().ai_enabled) && typeof apiVerifyIdPreSubmit === "function" && selectedFrontFile) {
-    var idTypeVal = document.getElementById("id_type").value;
-    var idNumVal = document.getElementById("id_number").value.trim();
-    var firstVal = document.getElementById("first_name").value.trim();
-    var midVal = document.getElementById("middle_name").value.trim();
-    var lastVal = document.getElementById("last_name").value.trim();
-    var fullVal = [firstVal, (midVal && midVal.toUpperCase() !== "N/A" ? midVal : ""), lastVal].filter(Boolean).join(" ");
-    var dobVal = document.getElementById("birth_date").value;
-    var warnEl = document.getElementById("id-screen-warn");
-    if (warnEl) {
-      warnEl.style.background = "#eff6ff";
-      warnEl.style.borderColor = "#bfdbfe";
-      warnEl.style.color = "#1e40af";
-      warnEl.innerHTML = "<b>Verifying Valid ID Document:</b> Checking if uploaded ID photo matches selected ID Type (<b>" + escapeHtml(idTypeVal) + "</b>)...";
-      warnEl.hidden = false;
-    }
-    try {
-      var step5Res = await apiVerifyIdPreSubmit(selectedFrontFile, selectedBackFile, idTypeVal, {
-        full_name: fullVal,
-        first_name: firstVal,
-        middle_name: midVal,
-        last_name: lastVal,
-        birth_date: dobVal,
-        id_type: idTypeVal,
-        id_number: idNumVal
-      });
-      window._cachedStep5PreScreen = {
-        key: [selectedFrontFile.name, selectedFrontFile.size, selectedBackFile ? selectedBackFile.name : "", idTypeVal, idNumVal, fullVal, dobVal].join("|"),
-        res: step5Res
-      };
-      if (step5Res && step5Res.status !== "offline") {
-        var s5Ocr = step5Res.ocr || {};
-        var s5Comps = Array.isArray(step5Res.comparisons) ? step5Res.comparisons : ((step5Res.comparisons && step5Res.comparisons.fields) || []);
-        var s5DocComp = s5Comps.find(function (c) { return c && (c.key === "id_type" || c.field === "ID Type Match"); });
-        var s5NotGov = (s5Ocr.is_valid_government_id === false || s5Ocr.is_Philippine_id === false);
-        var s5TypeMismatch = !s5NotGov && Boolean(
-          s5Ocr.id_type_matches_declared === false ||
-          step5Res.id_type_match === false ||
-          (s5DocComp && s5DocComp.status === "mismatch")
-        );
-        var s5Detected = s5Ocr.detected_document_type || s5Ocr.detected_id_type || step5Res.detected_id_type || (s5DocComp && s5DocComp.found_on_id) || "a different ID card";
-        if (s5TypeMismatch) {
-          var mismatchMsg = "You selected \"" + idTypeVal + "\" as your Valid ID Type, but the uploaded ID photo was detected as \"" + s5Detected + "\". Please select the matching ID Type or upload photos of your " + idTypeVal + ".";
-          if (warnEl) {
-            warnEl.style.background = "#fef2f2";
-            warnEl.style.borderColor = "#fecaca";
-            warnEl.style.color = "#991b1b";
-            warnEl.innerHTML = "<b>ID Type Mismatch Blocked:</b> " + escapeHtml(mismatchMsg);
-            warnEl.hidden = false;
-          }
-          if (typeof setFieldError === "function") {
-            setFieldError("id_type", "Selected ID Type (" + idTypeVal + ") does not match uploaded ID (" + s5Detected + ").");
-          }
-          showAlert("ID Type Mismatch Blocked", escapeHtml(mismatchMsg), "bad");
-          return;
-        }
-        if (s5NotGov && warnEl) {
-          warnEl.style.background = "#fef2f2";
-          warnEl.style.borderColor = "#fecaca";
-          warnEl.style.color = "#991b1b";
-          warnEl.innerHTML = "<b>Valid ID Warning:</b> The uploaded image does not appear to be a valid government ID" + (s5Detected ? " (detected: " + escapeHtml(s5Detected) + ")" : "") + ". Submission will be blocked on Step 6 unless replaced with a Valid ID.";
-          warnEl.hidden = false;
-        } else if (warnEl) {
-          warnEl.style.background = "#f0fdf4";
-          warnEl.style.borderColor = "#bbf7d0";
-          warnEl.style.color = "#166534";
-          warnEl.innerHTML = "<b>Valid ID Type Confirmed:</b> Uploaded ID matches <b>" + escapeHtml(idTypeVal) + "</b>.";
-          warnEl.hidden = false;
-        }
-      }
-    } catch (e) {}
-  }
+  if (currentPanel === 4 && !(await validateSelectedIdQuality())) return;
 
   if (currentPanel < TOTAL_PANELS - 1) {
     showPanel(currentPanel + 1);
@@ -1470,7 +1420,7 @@ function advanceLoadingStep(stepNum) {
 
 function resetApplyWizardToStep1() {
   try { sessionStorage.removeItem(APPLY_DRAFT_KEY); } catch (e) {}
-  window._allowLowQualityIdOnce = false;
+  selectedIdChecks = { front: null, back: null };
   var loadingScreen = document.getElementById("panel-loading");
   if (loadingScreen) loadingScreen.hidden = true;
   var fieldIds = [
@@ -1513,6 +1463,7 @@ function resetApplyWizardToStep1() {
 async function submitRegistration() {
   if (await enforceLiveMaintenanceOnStep()) return;
   if (!validateCurrentPanel()) return;
+  if (currentPanel === 4 && !(await validateSelectedIdQuality())) return;
 
   var first = document.getElementById("first_name").value.trim();
   var middle = document.getElementById("middle_name").value.trim();
@@ -1536,77 +1487,9 @@ async function submitRegistration() {
 
     advanceLoadingStep(1);
     var screeningActive = Boolean(getSystemSettings().ai_enabled);
-    var preScreenRes = null;
-
-    if (screeningActive && typeof apiVerifyIdPreSubmit === "function") {
-      var cacheKey = [selectedFrontFile ? selectedFrontFile.name : "", selectedFrontFile ? selectedFrontFile.size : 0, selectedBackFile ? selectedBackFile.name : "", idType, idNumber, fullName, birth].join("|");
-      if (window._cachedStep5PreScreen && window._cachedStep5PreScreen.key === cacheKey && window._cachedStep5PreScreen.res && window._cachedStep5PreScreen.res.status !== "offline") {
-        preScreenRes = window._cachedStep5PreScreen.res;
-      } else {
-        preScreenRes = await apiVerifyIdPreSubmit(selectedFrontFile, selectedBackFile, idType, {
-          full_name: fullName,
-          first_name: first,
-          middle_name: middle,
-          last_name: last,
-          birth_date: birth,
-          id_type: idType,
-          id_number: idNumber
-        });
-      }
-
-      if (preScreenRes) {
-        var ocrInfo = preScreenRes.ocr || {};
-        var qualityInfo = preScreenRes.quality || {};
-        var isNotGovId = (ocrInfo.is_valid_government_id === false || ocrInfo.is_Philippine_id === false);
-        var compsArr = Array.isArray(preScreenRes.comparisons) ? preScreenRes.comparisons : ((preScreenRes.comparisons && preScreenRes.comparisons.fields) || []);
-        var docTypeComp = compsArr.find(function (c) { return c && (c.key === "id_type" || c.field === "ID Type Match"); });
-        var isIdTypeMismatch = !isNotGovId && Boolean(
-          ocrInfo.id_type_matches_declared === false ||
-          preScreenRes.id_type_match === false ||
-          (docTypeComp && docTypeComp.status === "mismatch")
-        );
-        var detectedDocLabel = ocrInfo.detected_document_type || ocrInfo.detected_id_type || preScreenRes.detected_id_type || (docTypeComp && docTypeComp.found_on_id) || "a different ID type";
-        var hasQualityIssues = Boolean(qualityInfo.severe || qualityInfo.acceptable === false || qualityInfo.passed === false || (qualityInfo.issues && qualityInfo.issues.length > 0));
-        var shouldBlockQuality = Boolean(qualityInfo.severe || (hasQualityIssues && !window._allowLowQualityIdOnce));
-
-        if (isNotGovId || isIdTypeMismatch || shouldBlockQuality) {
-          if (!isNotGovId && !isIdTypeMismatch && !qualityInfo.severe) {
-            window._allowLowQualityIdOnce = true;
-          }
-          var qMetrics = qualityInfo.metrics || {};
-          var metricText = (qMetrics.blur_score != null)
-            ? (" [Sharpness: " + qMetrics.blur_score + ", Brightness: " + (qMetrics.brightness != null ? qMetrics.brightness : "OK") + ", Glare: " + (qMetrics.glare_ratio != null ? Math.round(qMetrics.glare_ratio * 100) + "%" : "0%") + "]")
-            : "";
-          var rejectReason = isNotGovId
-            ? ("The uploaded Front ID image does not appear to be a valid Philippine government-issued ID" +
-              (detectedDocLabel ? " (detected: " + detectedDocLabel + ")" : "") +
-              ". Please upload clear photos of an authentic Valid ID before submitting.")
-            : isIdTypeMismatch
-              ? ("You selected \"" + idType + "\" as your Valid ID Type, but the uploaded ID photo was detected as \"" + detectedDocLabel + "\". Please select the matching ID Type or upload photos of your " + idType + " before submitting.")
-              : ("Your uploaded ID photo triggered image quality warnings (" +
-                ((qualityInfo.issues && qualityInfo.issues.length) ? qualityInfo.issues.join("; ") : "blurry, dark, or glare detected") +
-                ")" + metricText + ". Please upload a clearer, well-lit photo before submitting.");
-
-          if (loadingScreen) loadingScreen.hidden = true;
-          showPanel(4);
-          var warnBox = document.getElementById("id-screen-warn");
-          if (warnBox) {
-            warnBox.style.background = "#fef2f2";
-            warnBox.style.borderColor = "#fecaca";
-            warnBox.style.color = "#991b1b";
-            warnBox.innerHTML = "<b>" + (isIdTypeMismatch ? "ID Type Mismatch Blocked:" : "Valid ID Check Failed:") + "</b> " + escapeHtml(rejectReason);
-            warnBox.hidden = false;
-          }
-          if (isIdTypeMismatch && typeof setFieldError === "function") {
-            setFieldError("id_type", "Selected ID Type (" + idType + ") does not match uploaded ID (" + detectedDocLabel + ").");
-          }
-          var alertTitle = isNotGovId
-            ? "Invalid Valid ID Document Blocked"
-            : (isIdTypeMismatch ? "ID Type Mismatch Blocked" : "ID Image Quality Warning");
-          showAlert(alertTitle, escapeHtml(rejectReason), "bad");
-          return;
-        }
-      }
+    if (!(await validateSelectedIdQuality())) {
+      if (loadingScreen) loadingScreen.hidden = true;
+      return;
     }
 
     advanceLoadingStep(2);
@@ -1615,17 +1498,16 @@ async function submitRegistration() {
     var frontPath = await dbUploadDocument(selectedFrontFile, appFolder, "id-front");
     var backPath = await dbUploadDocument(selectedBackFile, appFolder, "id-back");
 
-    var screening = preScreenRes && preScreenRes.status !== "offline"
-      ? Object.assign({}, preScreenRes, { preliminary: false, state: "completed", phase: preScreenRes.overall_status || "Screened" })
-      : {
-          preliminary: true,
-          state: screeningActive ? "queued" : "paused",
-          phase: screeningActive ? "Queued for Screening" : "Manual Review Active",
-          eta_seconds: screeningActive ? 35 : 0,
-          advisory: screeningActive
-            ? "Screening in progress. Original submission is available below."
-            : "Manual document review is active."
-        };
+    var screening = {
+      preliminary: true,
+      state: screeningActive ? "pending_agent" : "paused",
+      phase: screeningActive ? "Waiting for Document Check" : "Original Copy Ready (Manual Review)",
+      eta_seconds: 0,
+      fallback_original_only: !screeningActive,
+      advisory: screeningActive
+        ? "Your documents will be checked automatically."
+        : "Manual document review is active."
+    };
     var subLat = parseFloat((document.getElementById("lat") || {}).value);
     var subLng = parseFloat((document.getElementById("lng") || {}).value);
     var subBrgy = ((document.getElementById("barangay") || {}).value || "").trim();
@@ -1696,11 +1578,6 @@ async function submitRegistration() {
         }))
       : { isDuplicate: false };
 
-    var croppedFrontUrl = (preScreenRes && preScreenRes.cropped_front_url) || (screening && screening.cropped_front_url) || "";
-    var croppedBackUrl = (preScreenRes && preScreenRes.cropped_back_url) || (screening && screening.cropped_back_url) || "";
-    if (croppedFrontUrl) screening.cropped_front_url = croppedFrontUrl;
-    if (croppedBackUrl) screening.cropped_back_url = croppedBackUrl;
-
     var baseAppPayload = Object.assign({}, addrData, {
       customer_id: accountInfo.user.id,
       agent_id: referralAgentId,
@@ -1724,7 +1601,6 @@ async function submitRegistration() {
       id_back_image_url: backPath,
       id_front_path: frontPath,
       id_back_path: backPath,
-      cropped_id_path: croppedFrontUrl || null,
       remarks: document.getElementById("remarks").value.trim(),
       agree_tu: document.getElementById("agree_tu").checked,
       screening: screening
@@ -1778,33 +1654,8 @@ async function submitRegistration() {
 
     var saved = await dbCreateApplication(baseAppPayload);
 
-    if (!screeningActive) {
-      var pausedScreening = Object.assign({}, screening, {
-        state: "paused",
-        phase: "Original Copy Ready (Manual Review)",
-        eta_seconds: 0,
-        fallback_original_only: true,
-        severity: "info",
-        advisory: "Auto-screening is currently paused. Original uploaded ID copies are ready for manual verification."
-      });
-      await dbUpdateApplication(saved.id, { screening: pausedScreening });
-      if (typeof dbNotifyScreeningUnavailable === "function") {
-        await dbNotifyScreeningUnavailable(saved.ref_no, fullName, "Original uploaded ID copies are ready for manual verification.");
-      }
-    } else if (typeof apiStartBackgroundScreening === "function") {
-      apiStartBackgroundScreening(saved.id).then(async function (bgRes) {
-        if ((!bgRes || (!bgRes.queued && !bgRes.screened)) && !(preScreenRes && preScreenRes.status !== "offline")) {
-          var fallbackScreening = Object.assign({}, screening, {
-            state: "unavailable",
-            phase: "Original Copy Ready (Manual Review)",
-            eta_seconds: 0,
-            fallback_original_only: true,
-            severity: "info",
-            advisory: "Auto-screening is currently unavailable. Original uploaded ID copies are ready for manual verification."
-          });
-          await dbUpdateApplication(saved.id, { screening: fallbackScreening });
-        }
-      });
+    if (!screeningActive && typeof dbNotifyScreeningUnavailable === "function") {
+      await dbNotifyScreeningUnavailable(saved.ref_no, fullName, "Original uploaded ID copies are ready for manual verification.");
     }
 
     await new Promise(function (r) { setTimeout(r, 300); });

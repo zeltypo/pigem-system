@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 STUDY_GUIDE.md
 schema.sql
+
+pigem-system/
+tests/

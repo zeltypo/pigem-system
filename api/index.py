@@ -4,7 +4,7 @@ import sys
 
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi import HTTPException, Depends, FastAPI, File, Form, Request, UploadFile
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,7 +18,7 @@ if _API_DIRECTORY not in sys.path:
 
 import _auth
 
-import _gemini
+import _ai
 
 import _mailer
 
@@ -76,7 +76,7 @@ class PoliteRemarkRequest(BaseModel):
 
 def health():
 
-    gemini_ok = _gemini.is_available()
+    openai_ok = _ai.is_available()
 
     opencv_ok = bool(_quality.is_available())
 
@@ -90,13 +90,15 @@ def health():
 
         "api": True,
 
-        "gemini": gemini_ok,
+        "openai": openai_ok,
+        "provider": "openai",
+        "configuration_only": True,
 
         "opencv": opencv_ok,
 
-        "ocr": gemini_ok,
+        "ocr": openai_ok,
 
-        "auto_screening_ready": bool(opencv_ok and gemini_ok),
+        "auto_screening_ready": bool(opencv_ok and openai_ok),
 
         "recaptcha": recaptcha_ok,
 
@@ -122,9 +124,12 @@ def verify_captcha(data: CaptchaVerifyRequest, request: Request):
 
 @app.post("/screen-async")
 
-def screen_document_async(data: AsyncScreenRequest, user=Depends(_auth.require_login)):
+def screen_document_async(data: AsyncScreenRequest, user=Depends(_auth.require_screening_staff)):
 
-    return _screening.run_application_screening(data.application_id)
+    if not _screening.is_admin_screening_enabled():
+        raise HTTPException(status_code=503, detail="Document screening is paused or unavailable.")
+
+    return _screening.run_automatic_screening(data.application_id)
 
 @app.post("/api/screen")
 
@@ -150,13 +155,19 @@ async def screen_document(
 
     id_number: str = Form(""),
 
-    user=Depends(_auth.require_login),
+    user=Depends(_auth.require_screening_staff),
 
 ):
 
-    front_bytes = await id_front.read()
+    if not _screening.is_admin_screening_enabled():
+        raise HTTPException(status_code=503, detail="Document screening is paused or unavailable.")
 
-    back_bytes = await id_back.read() if id_back is not None else None
+    # Bound uploaded data before decoding it. Oversized images can exhaust server memory.
+    max_bytes = 5 * 1024 * 1024
+    front_bytes = await id_front.read(max_bytes + 1)
+    back_bytes = await id_back.read(max_bytes + 1) if id_back is not None else None
+    if not front_bytes or len(front_bytes) > max_bytes or (back_bytes and len(back_bytes) > max_bytes):
+        raise HTTPException(status_code=413, detail="Each ID image must be nonempty and at most 5 MB.")
 
     quality_result, cropped_front = _quality.enhance_and_crop(front_bytes)
 
@@ -172,19 +183,11 @@ async def screen_document(
 
         ocr_back_input = cropped_back if cropped_back else back_bytes
 
-    cropped_front_url = (
-        _screening._upload_cropped_image("PRE", "front", cropped_front) or ""
-        if cropped_front
-        else ""
-    )
+    # Preliminary checks do not create permanent storage objects for unsubmitted applications.
+    cropped_front_url = ""
+    cropped_back_url = ""
 
-    cropped_back_url = (
-        _screening._upload_cropped_image("PRE", "back", cropped_back) or ""
-        if cropped_back
-        else ""
-    )
-
-    ocr_result = _gemini.extract_id_text_with_fallback(
+    ocr_result = _ai.extract_id_text_with_fallback(
         ocr_front_input,
         primary_back=ocr_back_input,
         raw_front=front_bytes,
@@ -210,9 +213,9 @@ async def screen_document(
 
     }
 
-    comparisons = _gemini.compare_fields(entered, ocr_result)
+    comparisons = _ai.compare_fields(entered, ocr_result)
 
-    notes = _gemini.write_guidance(quality_result, comparisons)
+    notes = _ai.write_guidance(quality_result, comparisons)
 
     return {
 
@@ -258,94 +261,7 @@ def send_notification(data: EmailRequest, user=Depends(_auth.require_login)):
 
 @app.post("/polite-remark")
 
-def generate_polite_remark(data: PoliteRemarkRequest, user=Depends(_auth.require_login)):
+def generate_polite_remark(data: PoliteRemarkRequest, user=Depends(_auth.require_screening_staff)):
 
-    return _gemini.write_polite_remark(data.raw_remark, data.chosen_field or "auto")
-
-@app.get("/api/tester-sync")
-
-@app.get("/tester-sync")
-
-def get_tester_sync():
-
-    import json as _json
-    import urllib.request as _ureq
-
-    base_url = _screening._supabase_url()
-    key = _screening._supabase_key()
-    headers = {"apikey": key, "Authorization": f"Bearer {key}", "Cache-Control": "no-cache"}
-    try:
-        req = _ureq.Request(f"{base_url}/rest/v1/qa_tester_sync?id=eq.master_v3&select=state,updated_at", headers=headers, method="GET")
-        with _ureq.urlopen(req, timeout=6) as resp:
-            rows = _json.loads(resp.read().decode("utf-8"))
-            if isinstance(rows, list) and rows and isinstance(rows[0].get("state"), dict):
-                return {"ok": True, "source": "qa_tester_sync", "state": rows[0]["state"], "updated_at": rows[0].get("updated_at")}
-    except Exception:
-        pass
-    try:
-        req2 = _ureq.Request(f"{base_url}/storage/v1/object/authenticated/documents/qa_tester_isolated/state.json", headers=headers, method="GET")
-        with _ureq.urlopen(req2, timeout=6) as resp2:
-            state_obj = _json.loads(resp2.read().decode("utf-8"))
-            if isinstance(state_obj, dict):
-                return {"ok": True, "source": "isolated_storage", "state": state_obj}
-    except Exception:
-        pass
-    return {"ok": True, "source": "empty", "state": {}}
-
-@app.post("/api/tester-sync")
-
-@app.post("/tester-sync")
-
-async def save_tester_sync(request: Request):
-
-    import json as _json
-    import urllib.request as _ureq
-
-    body_bytes = await request.body()
-    try:
-        payload = _json.loads(body_bytes.decode("utf-8") or "{}")
-    except Exception:
-        payload = {}
-    state_obj = payload.get("state") if isinstance(payload.get("state"), dict) else payload
-    base_url = _screening._supabase_url()
-    key = _screening._supabase_key()
-    saved_sources = []
-    try:
-        row_bytes = _json.dumps({"id": "master_v3", "state": state_obj}).encode("utf-8")
-        req = _ureq.Request(
-            f"{base_url}/rest/v1/qa_tester_sync",
-            data=row_bytes,
-            headers={
-                "apikey": key,
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "Prefer": "resolution=merge-duplicates,return=minimal",
-            },
-            method="POST",
-        )
-        with _ureq.urlopen(req, timeout=6) as resp:
-            if 200 <= resp.status < 300:
-                saved_sources.append("qa_tester_sync")
-    except Exception:
-        pass
-    try:
-        raw_state = _json.dumps(state_obj).encode("utf-8")
-        req2 = _ureq.Request(
-            f"{base_url}/storage/v1/object/documents/qa_tester_isolated/state.json",
-            data=raw_state,
-            headers={
-                "apikey": key,
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "x-upsert": "true",
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-            },
-            method="POST",
-        )
-        with _ureq.urlopen(req2, timeout=6) as resp2:
-            if 200 <= resp2.status < 300:
-                saved_sources.append("isolated_storage")
-    except Exception:
-        pass
-    return {"ok": bool(saved_sources), "saved_to": saved_sources}
+    return _ai.write_polite_remark(data.raw_remark, data.chosen_field or "auto")
 

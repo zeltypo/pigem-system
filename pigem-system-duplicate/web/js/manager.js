@@ -69,9 +69,10 @@ function formatMgrEta(seconds) {
 function getMgrScreeningBadge(app) {
   var scr = app.screening || {};
   var state = scr.state || "";
-  if (!isAiEnabled() || !isMgrScreeningOnline || state === "unavailable" || state === "paused" || scr.fallback_original_only) {
+  if (!isAiEnabled() || !isMgrScreeningOnline || documentCheckUnavailable(app.id) || state === "unavailable" || state === "paused" || scr.fallback_original_only) {
     return '<span class="badge badge-gray">Original ID Copy (Manual Review)</span>';
   }
+  if (["pending_agent", "queued", "checking"].includes(state)) return '<span class="badge badge-blue">Checking Documents</span>';
   var eta = formatMgrEta(scr.eta_seconds);
 
   if (state === "queued" || state === "layer1_running") {
@@ -133,18 +134,28 @@ window.addEventListener("DOMContentLoaded", async function () {
     }
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
     var isTyping = (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT");
-    if (anyRunning && !isTyping) {
+    if (!isTyping) {
       await refreshManagerData();
       var modal = document.getElementById("mgr-modal");
-      if (modal && !modal.classList.contains("hidden") && activeMgrAppId) {
-        openMgrAppModal(activeMgrAppId);
-      }
+
     }
   }, 5000);
 });
 
 async function refreshManagerData() {
   mgrApps = await dbListAllApplications();
+  var openApplication = findMgrApp(activeMgrAppId);
+  var badge = document.getElementById("mgr-check-badge");
+  var note = document.getElementById("mgr-check-note");
+  if (openApplication && badge && note) {
+    badge.innerHTML = getMgrScreeningBadge(openApplication);
+    var check = openApplication.screening || {};
+    note.textContent = String(check.summary || check.advisory || "Waiting for the document check.")
+      .replace(/\b(OpenAI|OpenCV|Gemini|OCR|API|AI)\b/gi, "document check");
+  }
+  if (isMgrScreeningOnline) {
+    checkPendingDocuments(mgrApps, async function () { await refreshManagerData(); });
+  }
   mgrUsers = await dbListUsers();
   mgrLogs = typeof dbListLogs === "function" ? await dbListLogs() : [];
   updateDashSearchApps(mgrApps);
@@ -401,7 +412,7 @@ function openMgrAppModal(appId) {
   var scr = app.screening || {};
   var res = app.ai_result || {};
   var covInfo = typeof getApplicationCoverageInfo === "function" ? getApplicationCoverageInfo(app) : { inPhilippines: true, serviceable: true, advisory: "" };
-  var scrDetail = scr.advisory || ((res.issues && res.issues.length > 0) ? res.issues.join("; ") : "Document clear and details match.");
+  var scrDetail = scr.advisory || ((res.issues && res.issues.length > 0) ? res.issues.join("; ") : "Document checks are pending.");
   if ((!covInfo.inPhilippines || !covInfo.serviceable) && covInfo.advisory && scrDetail.indexOf(covInfo.advisory) === -1) {
     scrDetail = scrDetail + " | " + covInfo.advisory;
   }
@@ -423,9 +434,9 @@ function openMgrAppModal(appId) {
       '<div class="kv">' +
         '<div><span>Internal Status</span><b>' + statusBadge(app.status) + '</b></div>' +
         '<div><span>Customer View</span><b>' + customerStatusBadge(app.status) + '</b></div>' +
-        '<div><span>Screening</span><b>' + getMgrScreeningBadge(app) + '</b></div>' +
+        '<div><span>Document Check</span><b id="mgr-check-badge">' + getMgrScreeningBadge(app) + '</b></div>' +
         '<div><span>Service Coverage</span><b>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : "-") + '</b></div>' +
-        '<div><span>Screening Note</span><b style="font-weight:500">' + escapeHtml(scrDetail) + '</b></div>' +
+        '<div><span>Document Notes</span><b id="mgr-check-note" style="font-weight:500">' + escapeHtml(scrDetail.replace(/\b(OpenAI|OpenCV|Gemini|OCR|API|AI)\b/gi, "document check")) + '</b></div>' +
         '<div><span>Plan</span><b>' + escapeHtml(app.plan_name) + '</b></div>' +
         '<div><span>Email and Mobile</span><b>' + escapeHtml(app.email + " / " + app.phone) + '</b></div>' +
         '<div><span>Primary ID</span><b>' + escapeHtml(app.id_type + " - " + app.id_number) + '</b></div>' +

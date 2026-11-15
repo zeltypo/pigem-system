@@ -187,6 +187,19 @@ body.menu-open .side-menu-back { display: block; }
 .slide { display: none; position: relative; width: 100%; }
 .slide.active { display: block; }
 .slide img { width: 100%; max-width: 100%; height: auto; display: block; }
+#home-slider, #about-slider { background: linear-gradient(120deg, #350b10, #841827); }
+#home-slider .slide img, #about-slider .slide img {
+  height: auto;
+  max-height: 520px;
+  width: auto;
+  margin-inline: auto;
+  object-fit: contain;
+}
+.banner-fallback {
+  color: #fff;
+  padding-block: clamp(36px, 7vw, 96px);
+}
+.banner-fallback .btn { margin-top: 16px; }
 .slide-text {
   position: absolute;
   left: 0;
@@ -1921,3 +1934,10 @@ textarea.input-invalid {
   border-radius: 12px;
   padding: 16px 18px;
 }
+
+/* Screening cards wrap long findings without pushing adjacent content off screen. */
+.check-pill { min-width: 0; align-items: flex-start; flex-wrap: wrap; }
+.check-pill > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.check-pill .badge { white-space: normal; text-align: left; }
+#app-detail-modal .grid2 > *, #app-detail-modal .section-card { min-width: 0; }
+#app-detail-modal img { max-width: 100%; }

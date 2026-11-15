@@ -1,3 +1,4 @@
+// DEFENSE: Configuration status does not prove that the AI account has credits or model access.
 var currentAdmin = null;
 var adminApps = [];
 var adminUsers = [];
@@ -159,12 +160,12 @@ async function renderAiState() {
   var health = await apiCheckHealth();
   lastHealthData = health;
   var pyOnline = Boolean(health && health.api);
-  var geminiOnline = Boolean(health && health.gemini);
+  var openaiConfigured = Boolean(health && health.openai);
   var opencvOnline = Boolean(health && health.opencv);
 
   var stAiEl = document.getElementById("st-ai");
   if (stAiEl) {
-    stAiEl.textContent = (!on) ? "PAUSED" : ((pyOnline && geminiOnline) ? "ONLINE" : "CHECK");
+    stAiEl.textContent = (!on) ? "PAUSED" : ((pyOnline && openaiConfigured) ? "CONFIGURED" : "CHECK");
   }
 
   var lbl = document.getElementById("ai-status-label");
@@ -174,10 +175,10 @@ async function renderAiState() {
       lbl.textContent = "Currently DISABLED by Admin (Agent and Manager workspaces switch cleanly to manual document review)";
     } else if (!pyOnline) {
       lbl.textContent = "Cloud FastAPI Serverless Screening Endpoint (/api) is currently unreachable - manual agent review is active.";
-    } else if (!geminiOnline) {
-      lbl.textContent = "FastAPI Serverless is ONLINE, awaiting GEMINI_API_KEY in Vercel Environment Variables - manual agent review is active.";
+    } else if (!openaiConfigured) {
+      lbl.textContent = "FastAPI Serverless is ONLINE, awaiting OPENAI_API_KEY and OPENAI_MODEL in Vercel Environment Variables - manual agent review is active.";
     } else {
-      lbl.textContent = "Cloud AI Screening Engine ONLINE (Vercel FastAPI Serverless + " + (opencvOnline ? "OpenCV Auto-Crop + " : "") + "SHA-256 Duplicate Check + Google Gemini Vision OCR)";
+      lbl.textContent = "Cloud AI Screening Engine CONFIGURED (Vercel FastAPI Serverless + " + (opencvOnline ? "OpenCV Auto-Crop + " : "") + "SHA-256 Duplicate Check + OpenAI Vision OCR)";
     }
   }
   if (btn) {
@@ -209,7 +210,7 @@ function toggleAiMode() {
   openConfirmPopup(
     next ? "Enable Cloud AI Document Screening Engine?" : "Disable Cloud AI Document Screening Engine?",
     next
-      ? "Enabling <code>public.system_settings.ai_enabled = true</code> resumes cloud OpenCV + Google Gemini Vision requirements screening via <code>POST /api/screen-async</code>."
+      ? "Enabling <code>public.system_settings.ai_enabled = true</code> resumes cloud OpenCV + OpenAI Vision requirements screening via <code>POST /api/screen-async</code>."
       : "Disabling <code>public.system_settings.ai_enabled = false</code> pauses automated screening. Customer submissions will continue without interruption using original uploaded ID copies, and all Agents and Managers will receive a manual-review notification.",
     next ? "Enable AI Screening" : "Disable AI Screening",
     async function () {
@@ -232,7 +233,7 @@ async function checkApiHealth() {
   var box = document.getElementById("api-health-list");
   var data = await apiCheckHealth();
   var pyOk = Boolean(data && data.api);
-  var geminiOk = Boolean(pyOk && data && data.gemini);
+  var openaiConfigured = Boolean(pyOk && data && data.openai);
   var opencvOk = Boolean(pyOk && data && data.opencv);
   var recaptchaOk = Boolean(pyOk && data && data.recaptcha);
   var smtpOk = Boolean(pyOk && data && data.smtp);
@@ -258,14 +259,14 @@ async function checkApiHealth() {
         : "Check Vercel deployment logs for api/index.py"
     },
     {
-      name: "Google Gemini Vision and AI API",
-      status: geminiOk ? "Online (Configured)" : "Key Missing",
-      badge: geminiOk ? "badge-green" : "badge-yellow",
-      healthy: geminiOk,
+      name: "OpenAI Vision and AI API",
+      status: openaiConfigured ? "Configured (live request not checked)" : "Key Missing",
+      badge: openaiConfigured ? "badge-green" : "badge-yellow",
+      healthy: openaiConfigured,
       checked_at: nowIso,
-      detail: geminiOk
+      detail: openaiConfigured
         ? "Performs Valid ID Vision OCR extraction, non-ID rejection, and polite customer remarks"
-        : "Add GEMINI_API_KEY in Vercel Environment Variables to activate Vision OCR"
+        : "Add OPENAI_API_KEY and OPENAI_MODEL in Vercel Environment Variables to activate Vision OCR"
     },
     {
       name: "OpenCV Readability and 4-Corner Auto-Crop",
@@ -1107,7 +1108,7 @@ async function adminSendTestEmail() {
         "Juan Dela Cruz",
         "PF-20261021-0001",
         { name: "Plan 1400", speed: "300", price: 1400 },
-        "Blk 42 Lot 19 Tokya St., Summerwind Village M., Brgy. Burol Main, Dasmariñas City, Cavite",
+        "Blk 42 Lot 19 Tokya St., Summerwind Village M., Brgy. Burol Main, DasmariÃ±as City, Cavite",
         { status: "pending", code: "849201" }
       );
     } else if (type === "correction_notice") {
@@ -1121,8 +1122,8 @@ async function adminSendTestEmail() {
         "Exclusive Fiber Speed Boost for Cavite Residents",
         "Upgrade your plan today and experience seamless fiber internet with zero lock-in period fees.",
         [
-          { name: "Red Fiber 100", speed: "100 Mbps", price: "₱1,699" },
-          { name: "Red Fiber 200", speed: "200 Mbps", price: "₱2,199" }
+          { name: "Red Fiber 100", speed: "100 Mbps", price: "â‚±1,699" },
+          { name: "Red Fiber 200", speed: "200 Mbps", price: "â‚±2,199" }
         ]
       );
     }

@@ -1,39 +1,45 @@
-# PIGEM Web-Based Internet Service Application System
+# PIGEM Internet Service Application System
 
-Cloud-hosted Web-Based Internet Service Application System with AI-Assisted Requirements Screening developed for **PIGEM Combined Facilities Support Services** (Dasmariñas City, Cavite).
+Plain HTML, CSS and JavaScript frontend; Python FastAPI backend on Vercel; Supabase database/storage; OpenAI-assisted document screening.
 
-## Live Cloud Architecture
+Read [THIRD_TEST_NOTES.md](THIRD_TEST_NOTES.md) for changes, checks and deployment blockers. This is a third-test candidate, not a production certification.
 
-- **Frontend Portals (`web/html/*.html`, `web/style.css`, `web/js/*.js`)**: Plain HTML5, CSS3 (Grid/Flexbox responsive layout), and Vanilla JavaScript (OOP validators, inline field errors, Leaflet.js + OpenStreetMap + LocationIQ map pinning, direct mobile QR ID capture, unified `dash-ui.js` Donut/Bar analytics & CSV/HTML Reports, 15-minute idle auto-logout + single-device `session_token` session guard, Google reCAPTCHA v2, and 25 Supabase Storage `website-assets/icons/*.png` UI icons).
-- **Cloud Database, Auth & Storage (`Supabase`)**: 13 fresh PostgreSQL tables (`schema.sql`), strict identity separation (`@gmail.com` Customer accounts + self-chosen `username` on `/activate` vs. `username`-only internal accounts without email for Admin/Manager/Agent), `password_history` reuse protection, `target_tab`/`target_id` clickable notifications, and two cloud storage buckets (`website-assets` and `documents`).
-- **Serverless Python Backend (`api/index.py`)**: FastAPI serverless endpoints hosted on Vercel (`/api/health`, `/api/verify-captcha`, `/api/screen-async`, `/api/screen`, `/api/notify`, `/api/polite-remark`) powered by **OpenCV** (`opencv-python-headless`), **Google Gemini API** (`gemini-flash-latest`), and **Gmail SMTP** (aligned with `SMTP_USER` delivering clean HTML emails exclusively to `@gmail.com` Customer accounts).
+## Project layout
 
-## Portal Routes on Vercel
+- `web/html/`: public pages, Customer, Agent, Manager and Admin portals.
+- `web/js/`: page behavior, shared dashboard controls, API calls and database access.
+- `web/style.css`: shared responsive styles.
+- `api/index.py`: application API routes.
+- `api/_quality.py`: image-quality checks and preview crops.
+- `api/_openai_client.py`: one bounded OpenAI image/text request.
+- `api/_ai.py`: OCR schema, field comparisons and screening guidance.
+- `api/_screening.py`: document retrieval and saved screening results.
+- `api/_auth.py`, `api/_mailer.py`: existing authentication helper and notifications; see release blockers.
+- `pigem-system-duplicate/`: learning copy with additional defense comments; excluded from deployment.
+- `test.html`: independent previous-round QA checklist.
+- `test3.html` (`/test3`): independent third-round QA checklist, separate saved state.
+- `tests/`: offline regression tests, excluded from deployment.
 
-- `/` or `/index` (`web/html/index.html`) — Public Home, Announcements Banner & Fiber Plans
-- `/about` — Company Profile, Fleet & Permits
-- `/apply` — Guided Online Application Form (`@gmail.com` inline OTP modal + duplicate check + direct mobile QR ID capture + pre-submit ID screening)
-- `/activate` — One-time Customer Username Selection, Password Setup & Account Activation link
-- `/login` & `/customer` — Customer Login (`@gmail.com` or `username` + 6-Digit OTP Forgot Username/Password) & Application Tracking / 24h-72h Correction Portal
-- `/staff-login`, `/agent-register`, `/agent`, `/manager` — Internal Agent Workspace (Queues, Screening Review & Reports) & Manager Operations / CMS / Agent Provisioning (`username`-only credentials)
-- `/setup-accounts` — One-Time Single System Administrator Provisioning (locks permanently once 1 Admin exists)
-- `/admin-login` & `/admin` — Technical Management System (Staff & Customer CRUD, Staff Password Reset Requests, Logs & Printable/CSV/HTML Reports)
+The pre-existing nested `pigem-system/` directory is not the tracked project root and is excluded from deployment.
 
-## Required Vercel Environment Variables
+## OpenAI configuration
 
-Configure these keys in **Vercel Project Settings -> Environment Variables**:
-- **Type = `Secret`**: `SUPABASE_ANON_KEY`, `GEMINI_API_KEY`, `RECAPTCHA_SECRET_KEY`, `SMTP_PASSWORD`
-- **Type = `Config`**: `APP_BASE_URL`, `SUPABASE_URL`, `GEMINI_MODEL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_FROM_NAME`, `SMTP_FROM_EMAIL`
+OpenAI screening is off by default. On an isolated demo preview using fictional records, set `OPENAI_DEMO_SCREENING_ENABLED=true`, `OPENAI_API_KEY` and `OPENAI_MODEL` on the server. Choose an API-project model that supports images, Chat Completions and strict JSON Schema. Pending documents are checked automatically while an Agent or Manager portal is open. Unavailable evidence is shown for manual review. The recording script and screen list are in [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md).
 
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL` (`gemini-flash-latest`)
-- `RECAPTCHA_SECRET_KEY`
-- `SMTP_HOST` (`smtp.gmail.com`)
-- `SMTP_PORT` (`465` for SSL, or `587` for STARTTLS)
-- `SMTP_USER` (authenticated Gmail sender address)
-- `SMTP_PASSWORD` (Gmail App Password)
-- `SMTP_FROM_NAME` (`PIGEM Combined Facilities Support Services`)
-- `SMTP_FROM_EMAIL` (optional override; leave blank to align sender with `SMTP_USER` and prevent bounce/spam filtering)
-- `APP_BASE_URL` (`https://pigem-system-web.vercel.app`)
+Keep the existing Supabase, SMTP, reCAPTCHA and `APP_BASE_URL` settings. Never put an OpenAI key or Supabase service-role key in browser code. Do not enable paid calls on an unrestricted public deployment before fixing authorization and abuse controls.
+
+## Validation commands
+
+```text
+python -m unittest discover -s tests -v
+node tests/frontend-regression.cjs
+python -m compileall -q api
+```
+
+These checks do not establish live OCR accuracy, browser rendering, cross-device synchronization, email delivery or production security.
+
+## Database setup
+
+- `schema.sql` is the fresh-install baseline for a dedicated fictional-data demo project. It stops at the first existing PIGEM table and rolls back on error.
+- `schema-upgrade.sql` is the additive upgrade for an existing database. It adds the cropped-image columns and enforces the single-Admin rule if the index is missing.
+- The portal's legacy database permissions still require replacement before real customer use. Neither SQL file was executed against a cloud database.

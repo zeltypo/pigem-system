@@ -1,19 +1,10 @@
-DROP POLICY IF EXISTS "Allow public access to website-assets" ON storage.objects;
-DROP POLICY IF EXISTS "Allow access to documents" ON storage.objects;
+-- Fresh Supabase installation for isolated demos using fictional records.
+-- CREATE TABLE deliberately fails on an existing PIGEM database.
+-- The transaction rolls back on any error and never deletes existing records.
+-- Legacy portal access still uses public policies. See the release blockers in
+-- THIRD_TEST_NOTES.md before collecting real applicant data.
 
-DROP TABLE IF EXISTS public.system_logs CASCADE;
-DROP TABLE IF EXISTS public.login_history CASCADE;
-DROP TABLE IF EXISTS public.notifications CASCADE;
-DROP TABLE IF EXISTS public.provider_updates CASCADE;
-DROP TABLE IF EXISTS public.corrections CASCADE;
-DROP TABLE IF EXISTS public.screenings CASCADE;
-DROP TABLE IF EXISTS public.documents CASCADE;
-DROP TABLE IF EXISTS public.applications CASCADE;
-DROP TABLE IF EXISTS public.agent_links CASCADE;
-DROP TABLE IF EXISTS public.website_content CASCADE;
-DROP TABLE IF EXISTS public.system_settings CASCADE;
-DROP TABLE IF EXISTS public.plans CASCADE;
-DROP TABLE IF EXISTS public.users CASCADE;
+BEGIN;
 
 CREATE TABLE public.users (
   id TEXT PRIMARY KEY,
@@ -282,7 +273,7 @@ CREATE POLICY "Allow all on system_logs" ON public.system_logs FOR ALL USING (tr
 INSERT INTO storage.buckets (id, name, public) VALUES
   ('website-assets', 'website-assets', true),
   ('documents', 'documents', true)
-ON CONFLICT (id) DO UPDATE SET public = true;
+ON CONFLICT (id) DO NOTHING;
 
 CREATE POLICY "Allow public access to website-assets"
   ON storage.objects FOR ALL
@@ -333,7 +324,6 @@ ALTER TABLE public.qa_tester_sync
 
 ALTER TABLE public.qa_tester_sync ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Public Full Access QA Tester Sync" ON public.qa_tester_sync;
 CREATE POLICY "Public Full Access QA Tester Sync"
   ON public.qa_tester_sync
   FOR ALL
@@ -349,3 +339,19 @@ ALTER TABLE public.applications
   ADD COLUMN IF NOT EXISTS id_cropped_url TEXT DEFAULT '',
   ADD COLUMN IF NOT EXISTS id_back_cropped_url TEXT DEFAULT '';
 
+
+-- Fresh projects can disable automatic public-schema grants. Legacy demo
+-- portals still require explicit Data API permissions on their own tables.
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+  public.users, public.plans, public.system_settings, public.website_content,
+  public.agent_links, public.applications, public.documents, public.screenings,
+  public.corrections, public.provider_updates, public.notifications,
+  public.login_history, public.system_logs, public.qa_tester_sync
+TO anon, authenticated;
+GRANT USAGE, SELECT ON SEQUENCE
+  public.agent_links_id_seq, public.documents_id_seq, public.screenings_id_seq,
+  public.corrections_id_seq, public.provider_updates_id_seq,
+  public.notifications_id_seq, public.login_history_id_seq, public.system_logs_id_seq
+TO anon, authenticated;
+
+COMMIT;

@@ -196,9 +196,13 @@ class FastQualityScanner(BaseImageProcessor):
 
                 severe = True
 
-        elif brightness > self._glare_limit or overexposed_ratio > 0.22:
+        elif (
+            brightness > self._glare_limit
+            and overexposed_ratio > 0.35
+            and float(np.mean(gray < 150)) < 0.02
+        ):
 
-            issues.append("The ID photo has strong lighting or flash glare.")
+            issues.append("Bright areas appear washed out. Check that the printed fields are readable.")
 
             if brightness > 225.0 or overexposed_ratio > 0.35:
 

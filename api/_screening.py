@@ -1,6 +1,6 @@
 import base64
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import hashlib
 
@@ -14,7 +14,7 @@ import urllib.parse
 
 import urllib.request
 
-import _gemini
+import _ai
 
 import _quality
 
@@ -26,7 +26,7 @@ def _supabase_url() -> str:
 
         or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 
-        or "https://wuunqfxyejxwrawtjdrf.supabase.co"
+        or ""
 
     ).strip().rstrip("/")
 
@@ -40,7 +40,7 @@ def _supabase_key() -> str:
 
         or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
-        or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g"
+        or ""
 
     ).strip()
 
@@ -98,6 +98,19 @@ def _fetch_application(application_id: str) -> Optional[Dict[str, Any]]:
 
     return None
 
+def is_admin_screening_enabled() -> bool:
+    base_url = _supabase_url()
+    if not base_url or not _supabase_key():
+        return False
+    query = "id=eq.main&select=ai_enabled&limit=1"
+    request = urllib.request.Request(f"{base_url}/rest/v1/system_settings?{query}", headers=_headers())
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            settings = json.load(response)
+        return bool(settings and settings[0].get("ai_enabled") is True)
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return False
+
 def _fetch_recent_applications_for_duplicate_check(exclude_app_id: str) -> List[Dict[str, Any]]:
 
     base_url = _supabase_url()
@@ -138,7 +151,7 @@ def _fetch_recent_applications_for_duplicate_check(exclude_app_id: str) -> List[
 
     return []
 
-def _patch_application(app_uuid: str, fields: Dict[str, Any]) -> bool:
+def _patch_application(app_uuid: str, fields: Dict[str, Any], expected_updated_at=None) -> bool:
 
     base_url = _supabase_url()
 
@@ -148,7 +161,10 @@ def _patch_application(app_uuid: str, fields: Dict[str, Any]) -> bool:
 
         return False
 
-    query = urllib.parse.urlencode({"id": f"eq.{app_uuid}"})
+    filters = {"id": f"eq.{app_uuid}"}
+    if expected_updated_at is not None:
+        filters["updated_at"] = f"eq.{expected_updated_at}"
+    query = urllib.parse.urlencode(filters)
 
     url = f"{base_url}/rest/v1/applications?{query}"
 
@@ -160,7 +176,7 @@ def _patch_application(app_uuid: str, fields: Dict[str, Any]) -> bool:
 
         data=body,
 
-        headers=_headers({"Prefer": "return=minimal"}),
+        headers=_headers({"Prefer": "return=representation"}),
 
         method="PATCH",
 
@@ -170,7 +186,7 @@ def _patch_application(app_uuid: str, fields: Dict[str, Any]) -> bool:
 
         with urllib.request.urlopen(req, timeout=10) as resp:
 
-            return 200 <= resp.status < 300
+            return bool(json.load(resp))
 
     except Exception:
 
@@ -239,6 +255,11 @@ def _download_image_bytes(url_or_data: str) -> Optional[bytes]:
             return None
 
     if raw.startswith("http://") or raw.startswith("https://"):
+        # Only download documents from this project's storage, never arbitrary URLs.
+        parsed = urllib.parse.urlparse(raw)
+        allowed = urllib.parse.urlparse(_supabase_url())
+        if parsed.scheme != "https" or parsed.netloc != allowed.netloc or not parsed.path.startswith("/storage/v1/object/"):
+            return None
 
         try:
 
@@ -568,17 +589,32 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
     id_type = str(app_row.get("id_type") or "")
 
-    ocr_result = _gemini.extract_id_text_with_fallback(
-        ocr_front_input,
-        primary_back=ocr_back_input,
-        raw_front=front_raw_bytes,
-        raw_back=back_raw_bytes,
-        id_type=id_type,
-    )
+    existing_scr = app_row.get("screening") if isinstance(app_row.get("screening"), dict) else {}
+    model = os.getenv("OPENAI_MODEL", "").strip()
+    previous_ocr = existing_scr.get("ocr")
+    if (
+        _ai.is_available()
+        and existing_scr.get("front_sha256") == front_sha256
+        and existing_scr.get("back_sha256") == back_sha256
+        and existing_scr.get("ocr_model") == model
+        and existing_scr.get("ocr_id_type") == id_type
+        and isinstance(previous_ocr, dict)
+        and previous_ocr.get("available") is True
+    ):
+        # Reuse the transcription. Compare it against the current form below.
+        ocr_result = previous_ocr
+    else:
+        ocr_result = _ai.extract_id_text_with_fallback(
+            ocr_front_input,
+            primary_back=ocr_back_input,
+            raw_front=front_raw_bytes,
+            raw_back=back_raw_bytes,
+            id_type=id_type,
+        )
 
     entered_fields = {
 
-        "full_name": app_row.get("customer_name") or app_row.get("full_name") or "",
+        "full_name": app_row.get("full_name") or app_row.get("customer_name") or "",
 
         "first_name": app_row.get("first_name") or "",
 
@@ -594,9 +630,9 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
     }
 
-    comparisons = _gemini.compare_fields(entered_fields, ocr_result)
+    comparisons = _ai.compare_fields(entered_fields, ocr_result)
 
-    guidance = _gemini.write_guidance(quality_result, comparisons)
+    guidance = _ai.write_guidance(quality_result, comparisons)
 
     is_valid_gov_id = ocr_result.get("is_valid_government_id") is not False
 
@@ -607,11 +643,11 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
     quality_ok = bool(front_readable and back_readable and bool(back_raw_bytes) and not bool(duplicate_check.get("has_duplicate")) and is_valid_gov_id)
 
     fields_ok = bool(comparisons) and all(
-        c.get("status") == "match" or (c.get("key") == "birth_date" and c.get("status") == "not_found")
+        c.get("status") == "match"
         for c in comparisons
     )
 
-    overall_match = bool(quality_ok and fields_ok)
+    overall_match = bool(ocr_result.get("available") and quality_ok and fields_ok)
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -636,8 +672,6 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
     if not back_raw_bytes:
 
         notes_list.append("Back of Valid ID has not been uploaded yet.")
-
-    existing_scr = app_row.get("screening") if isinstance(app_row.get("screening"), dict) else {}
 
     loc_scr = existing_scr.get("location_screening") if isinstance(existing_scr.get("location_screening"), dict) else None
 
@@ -722,6 +756,10 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
     )
 
     screening_payload = {
+        **existing_scr,
+        "state": "completed" if ocr_result.get("available") else "unavailable",
+        "fallback_original_only": not bool(ocr_result.get("available")),
+        "retry_after": (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat(),
 
         "preliminary": True,
 
@@ -744,6 +782,8 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
         "quality": quality_result,
 
         "ocr": ocr_result,
+        "ocr_model": model if ocr_result.get("available") else "",
+        "ocr_id_type": id_type,
 
         "comparisons": comparisons,
 
@@ -777,7 +817,8 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
 
         update_fields["id_back_cropped_url"] = cropped_back_url
 
-    _patch_application(app_uuid, update_fields)
+    if not _patch_application(app_uuid, update_fields, app_row.get("updated_at")):
+        return {"screened": False, "error": "Screening could not be saved. Please retry.", "application_id": app_uuid}
 
     doc_row = _insert_table_row(
 
@@ -852,3 +893,54 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
         "screening": screening_payload,
 
     }
+
+
+def run_automatic_screening(application_id: str) -> Dict[str, Any]:
+    """Claim a record before checking it, so two staff tabs cannot spend twice."""
+    row = _fetch_application(application_id)
+    if not row or not row.get("updated_at"):
+        return {"screened": False, "error": "This application is not ready for a document check."}
+    previous = row.get("screening") or {}
+    if previous.get("state") == "completed":
+        return {"screened": True, "screening": previous, "application_id": row["id"]}
+    now = datetime.now(timezone.utc)
+    if previous.get("state") == "checking":
+        try:
+            claimed = datetime.fromisoformat(previous["started_at"].replace("Z", "+00:00"))
+            if (now - claimed).total_seconds() < 120:
+                return {"screened": False, "queued": True}
+        except (KeyError, ValueError, TypeError):
+            pass
+    # Enforce a shared retry budget even when another portal reloads.
+    attempt_count = int(previous.get("attempt_count") or 0)
+    if previous.get("state") == "unavailable":
+        if attempt_count >= 3:
+            return {"screened": False, "error": "Please review the original documents."}
+        try:
+            retry = datetime.fromisoformat(previous["retry_after"].replace("Z", "+00:00"))
+            if now < retry:
+                return {"screened": False, "queued": True}
+        except (KeyError, ValueError, TypeError):
+            pass
+    started_at = now.isoformat()
+    claimed_screening = {
+        **previous, "state": "checking", "started_at": started_at,
+        "attempt_count": attempt_count + 1,
+    }
+    if not _patch_application(row["id"], {
+        "screening": claimed_screening, "updated_at": started_at,
+    }, row["updated_at"]):
+        return {"screened": False, "queued": True}
+    try:
+        result = run_application_screening(row["id"])
+    except Exception:
+        result = {"screened": False, "error": "Document checking is temporarily unavailable."}
+    if not result.get("screened"):
+        _patch_application(row["id"], {
+            "screening": {
+                **previous, "state": "unavailable", "attempt_count": attempt_count + 1,
+                "retry_after": (now + timedelta(minutes=1)).isoformat(),
+            },
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, started_at)
+    return result

@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Application Handling Management - PIGEM Agent Workspace</title>
+  <title>PIGEM Agent Dashboard</title>
 
   <link rel="icon" type="image/png" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" />
 
@@ -14,8 +14,8 @@
 
   <div id="splash" class="splash">
     <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
-    <b>Application Management System</b>
-    <span class="muted" style="font-size:13px">Application Handling Management (Agent)</span>
+    <b>Agent Dashboard</b>
+    <span class="muted" style="font-size:13px">Combined Facilities Support Services</span>
   </div>
 
   <header class="topbar dash-header no-print">
@@ -26,13 +26,13 @@
           <span class="bar"></span>
           <span class="bar"></span>
         </button>
-        <a href="index.html" class="brand">
+        <div class="brand">
           <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" />
           <div>
             <b>Combined Facilities Support Services</b>
-            <span>AGENT APPLICATION MANAGEMENT</span>
+            <span>Agent Dashboard</span>
           </div>
-        </a>
+        </div>
       </div>
 
       <div class="top-search">
@@ -293,6 +293,8 @@
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap">
           <button type="button" id="btn-download-id" class="btn btn-outline btn-sm" onclick="downloadApplicantId()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download ID</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantId('front')">Download Front</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantId('back')">Download Back</button>
           <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px;"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print Copy</button>
           <button type="button" class="btn btn-outline btn-sm" onclick="closeDetailModal()">Close</button>
         </div>

@@ -486,10 +486,15 @@ async function dbSignIn(identifier, password) {
       ))
     );
 
-    if (!passMatched && staffUser.email && !IS_DEMO_MODE && supabaseClient) {
+    if (staffUser.email && !IS_DEMO_MODE && supabaseClient &&
+        (!passMatched || SYSTEM_ROLES.staff.indexOf(staffUser.role) !== -1)) {
+      // A separately provisioned Supabase Auth account can authorize screening.
       var legacyAuth = await supabaseClient.auth.signInWithPassword({ email: staffUser.email, password: password });
       if (!legacyAuth.error) {
         passMatched = true;
+      } else if (passMatched && SYSTEM_ROLES.staff.indexOf(staffUser.role) !== -1) {
+        // A previous staff Auth session must not supply a different user's token.
+        await supabaseClient.auth.signOut({ scope: "local" });
       }
     }
 
@@ -650,7 +655,14 @@ async function dbResetPassword(email) {
 async function dbGetToken() {
   if (IS_DEMO_MODE) return "";
   var res = await supabaseClient.auth.getSession();
-  return res.data.session ? res.data.session.access_token : "";
+  var session = res.data.session;
+  if (session && SYSTEM === "staff") {
+    var role = session.user && session.user.app_metadata && session.user.app_metadata.role;
+    var currentUser = await dbGetCurrentUser();
+    if (!currentUser || currentUser.role !== role ||
+        String(currentUser.email || "").toLowerCase() !== String(session.user.email || "").toLowerCase()) return "";
+  }
+  return session ? session.access_token : "";
 }
 
 async function checkPageAccess(allowedRoles) {
@@ -1647,9 +1659,9 @@ function normalizeAppRecord(a) {
     var ai = a.screening.ai || {};
     var comps = Array.isArray(a.screening.comparisons) ? a.screening.comparisons : (Array.isArray(a.screening.ocr_comparisons) ? a.screening.ocr_comparisons : []);
     var ocrAvail = Boolean(a.screening.ocr && a.screening.ocr.available !== false && comps.length > 0);
-    var nMatch = ocrAvail ? true : null;
-    var bMatch = ocrAvail ? true : null;
-    var idMatch = ocrAvail ? true : null;
+    var nMatch = null;
+    var bMatch = null;
+    var idMatch = null;
     var idTypeMatch = (a.screening.ocr && a.screening.ocr.id_type_matches_declared === false) ? false : (ocrAvail ? true : null);
     var nFound = "", bFound = "", idFound = "", idTypeFound = (a.screening.ocr && a.screening.ocr.detected_document_type) ? String(a.screening.ocr.detected_document_type) : "";
     for (var ci = 0; ci < comps.length; ci++) {
@@ -1658,7 +1670,7 @@ function normalizeAppRecord(a) {
       var st = String(cItem.status || cItem.result || "").toLowerCase();
       var foundTxt = String(cItem.found_on_id || "");
       var isNotPrinted = (st === "not_found" || foundTxt.toLowerCase().indexOf("not printed") !== -1 || foundTxt.toLowerCase().indexOf("not clearly visible") !== -1);
-      var isUnv = (st === "unverified");
+      var isUnv = (st === "unverified" || st === "partial");
       var resolvedVal = (st === "match") ? true : (isNotPrinted ? "not_found" : (isUnv ? null : false));
       if (ck.indexOf("name") !== -1) {
         nMatch = resolvedVal;
@@ -1674,9 +1686,9 @@ function normalizeAppRecord(a) {
         idFound = foundTxt;
       }
     }
-    if (!a.ai_result || a.screening.state) {
+    if (a.screening) { // Latest saved screening is authoritative, not stale cached badges.
       var findingsList = a.screening.findings || (ai.findings && ai.findings.length ? ai.findings : (q.issues || []));
-      var anyFieldIssue = (nMatch !== true || (bMatch !== true && bMatch !== "not_found") || idMatch !== true || idTypeMatch === false);
+      var anyFieldIssue = (nMatch !== true || bMatch !== true || idMatch !== true || idTypeMatch === false);
       a.ai_result = Object.assign({}, a.ai_result || {}, {
         overall_status: (anyFieldIssue || (q.issues && q.issues.length > 0) || findingsList.length > 0) ? "Needs Review" : "Verified",
         blur_score: q.blur_score != null ? q.blur_score : ((a.ai_result && a.ai_result.blur_score) || "OK"),
@@ -3023,10 +3035,10 @@ document.addEventListener("DOMContentLoaded", function () {
 async function apiCheckIdPhoto(file, details) {
   var res = await apiRunScreening(file, details);
   return {
-    overall_status: res.overall_status || (res.status === "not_available" ? "Checked (Fallback)" : "Verified"),
+    overall_status: res.overall_status || "Needs Review",
     blur_score: res.blur_score || 120,
-    name_match: res.name_match !== false,
-    id_number_match: res.id_number_match !== false,
+    name_match: res.name_match === true,
+    id_number_match: res.id_number_match === true,
     issues: res.issues || []
   };
 }

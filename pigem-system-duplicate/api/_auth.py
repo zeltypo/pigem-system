@@ -4,7 +4,9 @@ import re
 
 import httpx
 
-from fastapi import Header
+from fastapi import Header, HTTPException
+
+import _access
 
 class BaseTokenVerifier:
 
@@ -98,7 +100,7 @@ class SupabaseTokenVerifier(BaseTokenVerifier):
 
         if not secret:
 
-            return {"verified": True, "unconfigured_bypass": True}
+            return {"verified": False, "reason": "CAPTCHA verification is not configured."}
 
         payload = {"secret": secret, "response": clean_token}
 
@@ -155,3 +157,11 @@ def verify_recaptcha(token: str, remote_ip: str = "") -> dict:
 def require_login(authorization: str = Header(default="")) -> dict:
 
     return _verifier.verify_header(authorization)
+
+
+def require_screening_staff(authorization: str = Header(default="")) -> dict:
+    """Fail closed for paid AI requests; legacy public login is not proof of identity."""
+    try:
+        return _access.verify_screening_staff(authorization)
+    except _access.AccessError as error:
+        raise HTTPException(status_code=error.status, detail=str(error)) from None

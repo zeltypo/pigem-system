@@ -318,10 +318,10 @@ function renderNotifBellState() {
         var isUnread = !n.is_read;
         h += '<div class="notif-item-clickable' + (isUnread ? ' notif-unread' : '') + '" onclick="onNotificationItemClick(' + i + ')">' +
           '<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:3px;">' +
-            '<b style="font-size:13px; color:var(--text);">' + escapeHtml(n.title) + '</b>' +
+            '<b style="font-size:13px; color:var(--text);">' + escapeHtml(staffNotificationText(n.title)) + '</b>' +
             (isUnread ? '<span class="notif-unread-dot" title="Unread"></span>' : '') +
           '</div>' +
-          '<div style="line-height:1.5; font-size:12.5px; color:var(--muted);">' + autoLinkUrls(n.message) + '</div>' +
+          '<div style="line-height:1.5; font-size:12.5px; color:var(--muted);">' + autoLinkUrls(staffNotificationText(n.message)) + '</div>' +
           '<div class="muted" style="font-size:11px; margin-top:6px; display:flex; justify-content:space-between; align-items:center;">' +
             '<span>' + formatDate(n.created_at) + '</span>' +
             '<span style="color:var(--red); font-weight:700;">View &rarr;</span>' +
@@ -417,14 +417,8 @@ async function toggleNotifModal() {
   if (!m) return;
   var wasHidden = m.classList.contains("hidden");
   m.classList.toggle("hidden");
-  if (wasHidden) {
-    var countEl = document.getElementById("notif-count");
-    if (countEl) {
-      countEl.textContent = "0";
-      countEl.classList.add("hidden");
-    }
-    await markAllDashNotificationsRead();
-  }
+  // Opening the list is not the same as reading every notification.
+  if (wasHidden && dashCurrentUser) await refreshNotifBell(dashCurrentUser);
 }
 
 function getInitials(name) {
@@ -520,7 +514,7 @@ function renderProfileDrawer(user) {
 
     '<div style="margin-top:16px">' +
       '<a href="index.html" target="_blank" rel="noopener" class="btn btn-outline" style="width:100%; margin-bottom:8px; display:inline-flex; align-items:center; justify-content:center;">' +
-        '<img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="" class="icon-img" />Open Main Website' +
+        '<img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="" class="icon-img" />Back to Website' +
       '</a>' +
       '<button type="button" class="btn btn-red" style="width:100%" onclick="signOutAndGoLogin(\'\', true)">Sign Out</button>' +
     '</div>';
@@ -993,10 +987,7 @@ function printActiveDashboardReport() {
   else if (typeof getMgrReportData === "function") data = getMgrReportData();
   else if (typeof getActiveReportData === "function") data = getActiveReportData();
 
-  if (!data) {
-    window.print();
-    return;
-  }
+  if (!data) return;
 
   var htmlDoc = buildPrintableReportHtml(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows);
   var printWin = null;
@@ -1011,37 +1002,14 @@ function printActiveDashboardReport() {
     printWin.document.write(htmlDoc);
     printWin.document.close();
     printWin.focus();
-    setTimeout(function () {
-      try { printWin.print(); } catch (e) {}
-    }, 350);
+    // Print only when the user clicks inside the preview; automatic print blocks some browsers.
+    printWin.opener = null;
     return;
   }
 
-  if (typeof openPopup === "function") {
-    var cols = data.columns || [];
-    var rows = data.rows || [];
-    var tblRows = rows.slice(0, 50).map(function (r) {
-      return "<tr>" + r.map(function (c) { return "<td style='padding:6px 8px;border:1px solid var(--line);font-size:12px;'>" + escapeHtml(c) + "</td>"; }).join("") + "</tr>";
-    }).join("");
-    openPopup(
-      "<div style='text-align:left;'>" +
-        "<h3 style='margin-bottom:4px;'>" + escapeHtml(data.title || "Print Report") + "</h3>" +
-        "<p class='small muted' style='margin-bottom:12px;'>Timeframe: <b>" + escapeHtml(data.timeframeLabel || "All Time") + "</b> &bull; Records: <b>" + rows.length + "</b></p>" +
-        "<div style='max-height:300px;overflow:auto;margin-bottom:14px;border:1px solid var(--line);border-radius:8px;'>" +
-          "<table style='width:100%;border-collapse:collapse;'>" +
-            "<thead><tr>" + cols.map(function (c) { return "<th style='padding:6px 8px;border:1px solid var(--line);background:var(--soft);font-size:11.5px;text-align:left;'>" + escapeHtml(c) + "</th>"; }).join("") + "</tr></thead>" +
-            "<tbody>" + (tblRows || "<tr><td colspan='" + Math.max(1, cols.length) + "' class='muted' style='padding:10px;'>No records found.</td></tr>") + "</tbody>" +
-          "</table>" +
-        "</div>" +
-        "<div style='display:flex;justify-content:flex-end;gap:8px;'>" +
-          "<button type='button' class='btn btn-red btn-sm' onclick='window.print()'>Print Page Now</button>" +
-          "<button type='button' class='btn btn-outline btn-sm' onclick='closePopup()'>Close</button>" +
-        "</div>" +
-      "</div>",
-      { showCloseX: true, closeOnBackdrop: true }
-    );
-  } else {
-    window.print();
+  downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows);
+  if (typeof showAlert === "function") {
+    showAlert("Report Downloaded", "Open the downloaded HTML report and select Print / Save as PDF.", "info");
   }
 }
 
@@ -1073,3 +1041,11 @@ window.addEventListener("keydown", function (e) {
   }
 });
 
+
+function staffNotificationText(value) {
+  var text = String(value || "");
+  if (dashCurrentUser && ["agent", "manager"].includes(dashCurrentUser.role)) {
+    text = text.replace(/\b(OpenAI|OpenCV|Gemini|FastAPI|OCR|API|AI)\b/gi, "document check");
+  }
+  return text;
+}

@@ -99,6 +99,8 @@ function triggerHomeCaptcha() {
 function buildPlanCard(plan) {
   var borderClass = plan.featured ? "card plan red-border" : "card plan";
   var buttonClass = plan.featured ? "btn btn-red btn-full" : "btn btn-full";
+  var planId = escapeHtml(String(plan.id));
+  var planName = escapeHtml(String(plan.name));
 
   var listHtml = "";
   for (var i = 0; i < CONFIG.PLAN_INCLUSIONS.length; i++) {
@@ -106,13 +108,13 @@ function buildPlanCard(plan) {
   }
 
   return (
-    '<div class="' + borderClass + '">' +
-      '<span class="tag">' + (plan.tag || "Fiber for your home") + '</span>' +
-      '<h3 class="mt">' + plan.name + '</h3>' +
-      '<div class="speed">' + plan.speed + ' <span>Mbps</span></div>' +
+    '<div class="' + borderClass + '" data-plan-id="' + planId + '">' +
+      '<span class="tag">' + escapeHtml(plan.tag || "Fiber for your home") + '</span>' +
+      '<h3 class="mt">' + planName + '</h3>' +
+      '<div class="speed">' + escapeHtml(String(plan.speed)) + ' <span>Mbps</span></div>' +
       '<p class="price">' + formatPeso(plan.price) + ' <span>/ month</span></p>' +
       '<ul>' + listHtml + '</ul>' +
-      '<button type="button" onclick="openApplyWithCaptcha(\'' + plan.id + '\')" class="' + buttonClass + '">Apply for ' + plan.name + '</button>' +
+      '<button type="button" class="' + buttonClass + '">Apply for ' + planName + '</button>' +
     '</div>'
   );
 }
@@ -178,3 +180,13 @@ function initHomePage() {
 
 window.onLiveContentSynced = initHomePage;
 initHomePage();
+
+var homePlanCards = document.getElementById("plan-cards");
+if (homePlanCards) {
+  homePlanCards.addEventListener("click", function (event) {
+    var button = event.target.closest("button");
+    if (!button) return;
+    var card = button.closest("[data-plan-id]");
+    if (card) openApplyWithCaptcha(card.dataset.planId);
+  });
+}

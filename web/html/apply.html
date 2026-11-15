@@ -296,6 +296,7 @@
           <label>Front of Valid ID <span class="req-mark">*</span></label>
           <div class="upload-box" id="id-front-box">
             <div id="id-front-filename" class="small muted">No Front ID photo selected yet</div>
+            <div id="id-front-quality" class="notice mt" role="status" aria-live="polite" hidden></div>
             <input id="id_front" aria-label="Upload front of valid ID photo" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('front', this)">
             <input id="id_front_cam" aria-label="Capture front of valid ID photo with camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('front', this)">
             <div class="upload-btns">
@@ -312,6 +313,7 @@
           <label>Back of Valid ID <span class="req-mark">*</span></label>
           <div class="upload-box" id="id-back-box">
             <div id="id-back-filename" class="small muted">No Back ID photo selected yet</div>
+            <div id="id-back-quality" class="notice mt" role="status" aria-live="polite" hidden></div>
             <input id="id_back" aria-label="Upload back of valid ID photo" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('back', this)">
             <input id="id_back_cam" aria-label="Capture back of valid ID photo with camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('back', this)">
             <div class="upload-btns">

@@ -485,17 +485,23 @@ function toggleMenu() {
 }
 
 var sliderTimers = {};
+var sliderFallbacks = {};
 function startSlider(sliderId, slides) {
   var box = document.getElementById(sliderId);
   if (!box) return;
 
+  if (!Object.prototype.hasOwnProperty.call(sliderFallbacks, sliderId)) {
+    sliderFallbacks[sliderId] = box.querySelector(".banner-fallback");
+  }
   var validSlides = (slides || []).filter(function (s) {
     return s && String(s.image || "").trim() !== "";
   });
 
   if (validSlides.length === 0) {
-    box.innerHTML = "";
-    box.style.display = "none";
+    var fallback = sliderFallbacks[sliderId];
+    box.replaceChildren();
+    if (fallback) box.appendChild(fallback);
+    box.style.display = fallback ? "" : "none";
     clearInterval(sliderTimers[sliderId]);
     return;
   }
@@ -534,7 +540,7 @@ function goToSlide(sliderId, index) {
   if (index >= slides.length) index = 0;
   for (var i = 0; i < slides.length; i++) {
     slides[i].classList.toggle("active", i === index);
-    dots[i].classList.toggle("active", i === index);
+    if (dots[i]) dots[i].classList.toggle("active", i === index);
   }
   box.setAttribute("data-index", String(index));
 }

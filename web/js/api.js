@@ -40,7 +40,7 @@ async function apiVerifyCaptcha(token) {
     var data = await res.json();
     return { verified: data.verified === true };
   } catch (err) {
-    return { verified: true, fallback: true };
+    return { verified: false, fallback: true };
   }
 }
 
@@ -66,7 +66,7 @@ function apiStartBackgroundScreening(applicationId) {
 
       var res = await fetch(_apiEndpoint("/screen-async"), fetchOpts);
       if (timer) clearTimeout(timer);
-      if (!res.ok) return { queued: false, offline: true };
+      if (!res.ok) return { screened: false, offline: true, status: res.status };
       return await res.json();
     } catch (err) {
       if (timer) clearTimeout(timer);
@@ -144,11 +144,13 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
     data.id_number_match = Boolean(idComp && (idComp.status === "match" || idComp.matched === true));
     data.id_type_match = !(data.ocr && data.ocr.id_type_matches_declared === false) && !(docComp && docComp.status === "mismatch");
     data.detected_id_type = (data.ocr && (data.ocr.detected_document_type || data.ocr.detected_id_type)) || (docComp && docComp.found_on_id) || "";
-    data.document_valid = !(data.ocr && data.ocr.is_valid_government_id === false) && data.id_type_match;
+    var ocrAvailable = Boolean(data.ocr && data.ocr.available === true);
+    data.document_valid = ocrAvailable && data.ocr.is_valid_government_id === true && data.id_type_match;
 
     var hasQualityIssue = Boolean(q.issues && q.issues.length > 0);
-    var hasFieldGap = comps.length > 0 && !(data.name_match && data.birth_date_match && data.id_number_match && data.document_valid);
-    data.overall_status = (hasQualityIssue || hasFieldGap || !data.document_valid) ? "Needs Review" : "Verified";
+    var hasFieldGap = !(data.name_match && data.birth_date_match && data.id_number_match && data.document_valid);
+    data.overall_status = !ocrAvailable ? "Manual Review" : ((hasQualityIssue || hasFieldGap || !data.document_valid) ? "Needs Review" : "Ready for Agent Review");
+    if (!ocrAvailable) data.status = "offline";
     data.blur_score = (q.metrics && q.metrics.blur_score) || q.blur_score || "OK";
     var aiFindings = (notes.findings && notes.findings.length) ? notes.findings : (notes.notes || []);
     if (!data.id_type_match && data.detected_id_type) {
@@ -173,7 +175,11 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
 async function analyzeClientIdQuality(fileObj) {
   return new Promise(function (resolve) {
     if (!fileObj || typeof Image === "undefined" || typeof document === "undefined") {
-      resolve({ passed: true, issues: [], metrics: {} });
+      resolve({ passed: false, issues: ["We could not check this photo. Please select a readable JPG or PNG image."], metrics: {} });
+      return;
+    }
+    if (fileObj.size > 5 * 1024 * 1024) {
+      resolve({ passed: false, issues: ["Choose a photo smaller than 5 MB."], metrics: {} });
       return;
     }
     var url = URL.createObjectURL(fileObj);
@@ -194,11 +200,13 @@ async function analyzeClientIdQuality(fileObj) {
         var gray = new Float32Array(cw * ch);
         var sumBright = 0;
         var brightPixels = 0;
+        var detailPixels = 0;
         for (var i = 0, p = 0; i < px.length; i += 4, p++) {
           var g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
           gray[p] = g;
           sumBright += g;
           if (g > 246) brightPixels++;
+          if (g < 150) detailPixels++;
         }
         var meanBright = sumBright / (cw * ch);
         var glareRatio = brightPixels / (cw * ch);
@@ -218,18 +226,15 @@ async function analyzeClientIdQuality(fileObj) {
         var lapVar = count > 0 ? (lapSqSum / count) - (lapMean * lapMean) : 100;
         var issues = [];
         if (w < 260 || h < 160) {
-          issues.push("Image resolution is too small (" + w + "x" + h + "). Please upload a clearer photo.");
+          issues.push("This photo is too small. Please choose the original, full-size photo.");
         }
         if (lapVar < 32) {
-          issues.push("ID photo appears blurry or out of focus (Sharpness score: " + Math.round(lapVar) + ").");
+          issues.push("The photo looks blurry. Hold the camera steady and take a sharper photo.");
         }
         if (meanBright < 42) {
-          issues.push("ID photo is too dark (Brightness: " + Math.round(meanBright) + "). Please take a photo in a well-lit area.");
-        } else if (meanBright > 238) {
-          issues.push("ID photo is overexposed / washed out.");
-        }
-        if (glareRatio > 0.22) {
-          issues.push("Heavy flash glare detected (" + Math.round(glareRatio * 100) + "% glare). Please turn off camera flash.");
+          issues.push("The photo is too dark. Take another photo in a well-lit area.");
+        } else if (meanBright > 210 && glareRatio > 0.35 && detailPixels / (cw * ch) < 0.02) {
+          issues.push("Bright areas appear washed out. Check that the printed fields are readable.");
         }
         URL.revokeObjectURL(url);
         resolve({
@@ -243,39 +248,15 @@ async function analyzeClientIdQuality(fileObj) {
         });
       } catch (e) {
         URL.revokeObjectURL(url);
-        resolve({ passed: true, issues: [], metrics: {} });
+        resolve({ passed: false, issues: ["We could not check this photo. Please select a readable JPG or PNG image."], metrics: {} });
       }
     };
     img.onerror = function () {
       URL.revokeObjectURL(url);
-      resolve({ passed: true, issues: [], metrics: {} });
+      resolve({ passed: false, issues: ["We could not check this photo. Please select a readable JPG or PNG image."], metrics: {} });
     };
     img.src = url;
   });
-}
-
-async function apiVerifyIdPreSubmit(frontFile, backFile, idType, applicantDetails) {
-  var clientQual = await analyzeClientIdQuality(frontFile);
-  var details = Object.assign({}, applicantDetails || {}, { id_type: idType || "" });
-  var res = await apiRunScreening(frontFile, details, backFile);
-  if (!res || res.status === "offline") {
-    return {
-      quality: clientQual,
-      ocr: { available: false },
-      comparisons: []
-    };
-  }
-  if (res.quality && clientQual && clientQual.issues && clientQual.issues.length) {
-    var existingIssues = res.quality.issues || [];
-    for (var i = 0; i < clientQual.issues.length; i++) {
-      if (existingIssues.indexOf(clientQual.issues[i]) === -1) {
-        existingIssues.push(clientQual.issues[i]);
-      }
-    }
-    res.quality.issues = existingIssues;
-    if (existingIssues.length > 0) res.quality.passed = false;
-  }
-  return res;
 }
 
 async function apiSendEmail(toEmail, subjectText, messageText, options) {
@@ -488,4 +469,57 @@ async function apiGeneratePoliteRemark(rawRemark, chosenField) {
     target_fields: data.target_fields || data.fields || [],
     available: data.available !== false
   };
+}
+
+// One request at a time per portal. The server also claims each record atomically.
+var automaticDocumentChecksRunning = false;
+var automaticDocumentAttempts = {};
+var automaticDocumentFailures = {};
+function documentCheckUnavailable(id) {
+  return automaticDocumentFailures[id] === true;
+}
+async function checkPendingDocuments(applications, onComplete) {
+  if (automaticDocumentChecksRunning || !isAiEnabled()) return;
+  automaticDocumentChecksRunning = true;
+  try {
+    for (var application of applications) {
+      var state = (application.screening || {}).state;
+      if (!["Pending Review", "Under Agent Review"].includes(application.status)) continue;
+      if (!["pending_agent", "queued", "checking", "unavailable", "paused", undefined].includes(state)) continue;
+      var key = application.id + "|" + (application.updated_at || application.created_at || "");
+      var attempt = automaticDocumentAttempts[key] || { count: 0, next: 0 };
+      if (attempt.count >= 3 || Date.now() < attempt.next) continue;
+      attempt.count++;
+      attempt.next = Date.now() + 60000;
+      automaticDocumentAttempts[key] = attempt;
+      var result = await apiStartBackgroundScreening(application.id);
+      automaticDocumentFailures[application.id] = !result || (!result.screened && !result.queued);
+      if (result && result.screened || automaticDocumentFailures[application.id]) await onComplete(application.id);
+      if (result && (result.status === 401 || result.status === 403)) break;
+    }
+  } finally {
+    automaticDocumentChecksRunning = false;
+  }
+}
+
+async function showSelectedPhotoQuality(input) {
+  var file = input.files && input.files[0];
+  var id = input.id + "-quality";
+  var box = document.getElementById(id);
+  if (!box) {
+    box = document.createElement("div");
+    box.id = id;
+    box.setAttribute("role", "status");
+    box.setAttribute("aria-live", "polite");
+    input.insertAdjacentElement("afterend", box);
+  }
+  box.className = "notice mt";
+  box.textContent = file ? "Checking photo..." : "";
+  if (!file) return;
+  var result = await analyzeClientIdQuality(file);
+  if (input.files[0] !== file) return;
+  box.className = "notice mt " + (result.passed ? "ok" : "bad");
+  box.textContent = result.passed
+    ? "Photo quality check passed. Check that all printed details are visible."
+    : "Please replace this photo. " + result.issues.join(" ");
 }

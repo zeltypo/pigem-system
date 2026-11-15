@@ -26,7 +26,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   setInterval(async function () {
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
     if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") return;
-    await loadMyApplications();
+    await loadMyApplications(true);
     if (typeof refreshNotifBell === "function") refreshNotifBell(currentCustomer);
   }, 8000);
 });
@@ -111,7 +111,7 @@ function renderAppList() {
   listEl.innerHTML = html;
 }
 
-async function loadMyApplications() {
+async function loadMyApplications(backgroundRefresh) {
   try {
     myApps = await dbListApplicationsForCustomer(currentCustomer || "");
   } catch (e) {
@@ -149,7 +149,8 @@ async function loadMyApplications() {
   }
 
   renderAppList();
-  renderSelectedApp();
+  // Keep the actual file inputs alive during polling. Browsers cannot restore selected files.
+  if (!backgroundRefresh || !document.getElementById("btn-fix")) renderSelectedApp();
 }
 
 function findMyApp(id) {
@@ -330,7 +331,7 @@ function renderSelectedApp() {
         '<div class="grid-2">' +
           '<div class="field">' +
             '<label>Birth Date ' + (fields.indexOf("birth_date") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-            '<input id="fix-bdate" type="date" ' + hiBdate + ' value="' + escapeHtml(app.birth_date || "") + '" onchange="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+            '<input id="fix-bdate" type="date" ' + hiBdate + ' value="' + escapeHtml(app.birth_date || "") + '" onchange="showSelectedPhotoQuality(this)" />' +
           '</div>' +
           '<div class="field">' +
             '<label>Primary ID Number (' + escapeHtml(app.id_type) + ') ' + (fields.indexOf("id_number") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
@@ -354,12 +355,12 @@ function renderSelectedApp() {
         '<div class="grid-2" ' + hiPhoto + '>' +
           '<div class="field" style="margin-bottom:0">' +
             '<label>Front of Valid ID Photo ' + (fields.indexOf("id_photo") !== -1 ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
-            '<input id="fix-file" type="file" accept="image/*" onchange="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+            '<input id="fix-file" type="file" accept="image/*" onchange="showSelectedPhotoQuality(this)" />' +
             '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Front side showing your name, photo, and ID number.</div>' +
           '</div>' +
           '<div class="field" style="margin-bottom:0">' +
             '<label>Back of Valid ID Photo ' + (fields.indexOf("id_photo") !== -1 ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
-            '<input id="fix-file-back" type="file" accept="image/*" onchange="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+            '<input id="fix-file-back" type="file" accept="image/*" onchange="showSelectedPhotoQuality(this)" />' +
             '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Back side of the same Valid ID card.</div>' +
           '</div>' +
         '</div>' +
@@ -491,6 +492,15 @@ async function submitCustomerCorrection(appId) {
       hasErr = true;
     }
     if (hasErr) return;
+    for (var item of [{ file: file, input: fileInput }, { file: fileBack, input: fileBackInput }]) {
+      if (!item.file) continue;
+      var quality = await analyzeClientIdQuality(item.file);
+      if (!quality.passed) {
+        setFieldError(item.input.id, quality.issues.join(" "));
+        return;
+      }
+      if (item.input.files[0] !== item.file) return;
+    }
 
     var changedList = [];
     if (fullName !== oldName) changedList.push("Name (" + fullName + ")");
@@ -551,14 +561,16 @@ async function submitCustomerCorrection(appId) {
       submitted_at: new Date().toISOString()
     };
 
-    var updatedScreening = Object.assign({}, app.screening || {}, {
-      state: isAiEnabled() ? "queued" : "paused",
-      phase: isAiEnabled() ? "Re-screening Updated Submission" : "Manual Review Active",
-      eta_seconds: isAiEnabled() ? 30 : 0,
-      correction_fields: [],
-      auto_correction_sent: false,
+    var rescreenEnabled = isAiEnabled();
+    var updatedScreening = {
+      state: rescreenEnabled ? "pending_agent" : "paused",
+      phase: rescreenEnabled ? "Waiting for Document Check" : "Original Copy Ready (Manual Review)",
+      eta_seconds: 0,
+      fallback_original_only: !rescreenEnabled,
+      flagged_front_sha256: app.screening && app.screening.flagged_front_sha256,
+      flagged_back_sha256: app.screening && app.screening.flagged_back_sha256,
       last_customer_changes: changedList
-    });
+    };
 
     var resumeStatus = app.assigned_agent ? "Under Agent Review" : "Pending Review";
 
@@ -567,6 +579,7 @@ async function submitCustomerCorrection(appId) {
       middle_name: cleanMid,
       last_name: lname,
       full_name: fullName,
+      customer_name: fullName,
       birth_date: bdate,
       phone: phone,
       id_number: idNo,
@@ -575,6 +588,10 @@ async function submitCustomerCorrection(appId) {
       id_image_url: idUrl,
       id_back_path: idBackUrl,
       id_back_image_url: idBackUrl,
+      id_cropped_url: file ? "" : (app.id_cropped_url || ""),
+      cropped_id_path: file ? "" : (app.cropped_id_path || ""),
+      id_back_cropped_url: fileBack ? "" : (app.id_back_cropped_url || ""),
+      ai_result: null,
       screening: updatedScreening,
       original_copy: orig,
       original_submission: orig,
@@ -595,34 +612,6 @@ async function submitCustomerCorrection(appId) {
         doc_type: "valid_id",
         file_path: idUrl,
         version: "corrected"
-      });
-    }
-
-    var rescrActive = isAiEnabled();
-    if (!rescrActive) {
-      updatedScreening.state = "paused";
-      updatedScreening.phase = "Original Copy Ready (Manual Review)";
-      updatedScreening.eta_seconds = 0;
-      updatedScreening.fallback_original_only = true;
-      updatedScreening.advisory = "Auto-screening is currently paused. Customer's updated submission and original ID photo are ready for manual review.";
-      await dbUpdateApplication(app.id, { screening: updatedScreening });
-    } else if (typeof apiStartBackgroundScreening === "function") {
-      apiStartBackgroundScreening(app.id).then(async function (rescrRes) {
-        if (!rescrRes || !rescrRes.queued) {
-          updatedScreening.state = "unavailable";
-          updatedScreening.phase = "Original Copy Ready (Manual Review)";
-          updatedScreening.eta_seconds = 0;
-          updatedScreening.fallback_original_only = true;
-          updatedScreening.advisory = "Auto-screening is currently unavailable. Customer's updated submission and original ID photo are ready for manual review.";
-          await dbUpdateApplication(app.id, { screening: updatedScreening });
-          if (typeof dbNotifyScreeningUnavailable === "function") {
-            await dbNotifyScreeningUnavailable(
-              app.reference_no,
-              fullName,
-              "Customer submitted an update; original uploaded ID photo is ready for manual review."
-            );
-          }
-        }
       });
     }
 
