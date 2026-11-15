@@ -131,7 +131,7 @@ function showSessionReasonBanner() {
     sessionStore.removeItem(SESSION_TOKEN_KEY);
   }
   if (typeof supabaseClient !== "undefined" && supabaseClient && supabaseClient.auth) {
-    try { supabaseClient.auth.signOut(); } catch (e) {}
+    try { supabaseClient.auth.signOut({ scope: "local" }); } catch (e) {}
   }
   if (window.history && typeof window.history.replaceState === "function") {
     window.history.replaceState(null, "", window.location.pathname);

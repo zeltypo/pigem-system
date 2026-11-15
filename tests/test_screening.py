@@ -91,6 +91,24 @@ class ScreeningTests(unittest.TestCase):
             self.assertFalse(body["response_format"]["json_schema"]["schema"]["additionalProperties"])
             self.assertEqual(call.call_count, 1)
 
+    def test_default_uses_bounded_vision_request(self):
+        raw = json.dumps({"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}).encode()
+        with patch.dict(os.environ, {"OPENAI_MODEL": "", "OPENAI_REASONING_EFFORT": ""}), \
+             patch("urllib.request.urlopen", return_value=io.BytesIO(raw)) as call:
+            _openai_client.complete([])
+            body = json.loads(call.call_args.args[0].data)
+        self.assertEqual(body["model"], "gpt-5.4-mini")
+        self.assertEqual(body["reasoning_effort"], "none")
+        self.assertEqual(body["max_completion_tokens"], 2048)
+
+    def test_non_id_without_text_is_reported(self):
+        payload = evidence()
+        payload.update(is_valid_government_id=False, detected_document_type="Selfie", lines=[])
+        data = self.extract(payload)
+        self.assertTrue(data["available"])
+        self.assertFalse(data["is_valid_government_id"])
+        self.assertEqual(data["extracted_name"], "")
+
     def test_refusal_requires_review(self):
         raw = json.dumps({"choices": [{"finish_reason": "stop", "message": {"refusal": "cannot read"}}]}).encode()
         with patch("urllib.request.urlopen", return_value=io.BytesIO(raw)):
@@ -113,7 +131,7 @@ class ScreeningTests(unittest.TestCase):
         row["id_number"] = "9999-999999"
         row["screening"] = {
             "front_sha256": digest, "back_sha256": digest,
-            "ocr_model": "configured-test-model", "ocr_id_type": "Student ID",
+            "ocr_model": "configured-test-model", "ocr_id_type": "Student ID", "ocr_prompt_version": 2,
             "ocr": self.extract(evidence()),
         }
         with patch.object(_screening, "_fetch_application", return_value=row), \

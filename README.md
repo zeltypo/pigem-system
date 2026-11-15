@@ -15,12 +15,11 @@ Read [THIRD_TEST_NOTES.md](THIRD_TEST_NOTES.md) for changes, checks and deployme
 - `api/_ai.py`: OCR schema, field comparisons and screening guidance.
 - `api/_screening.py`: document retrieval and saved screening results.
 - `api/_auth.py`, `api/_mailer.py`: existing authentication helper and notifications; see release blockers.
-- `web/html/test3.html` (`/test3`): standalone QA checklist. Not linked from any portal, `noindex`, and it only reads/writes its own `qa_tester_sync` row (never application/account tables or the ID `documents` bucket).
 - `tests/`: offline regression tests, excluded from deployment.
 
 ## OpenAI configuration
 
-OpenAI screening is off by default. On an isolated demo preview using fictional records, set `OPENAI_DEMO_SCREENING_ENABLED=true`, `OPENAI_API_KEY` and `OPENAI_MODEL` on the server. Choose an API-project model that supports images, Chat Completions and strict JSON Schema. Pending documents are checked automatically while an Agent or Manager portal is open. Unavailable evidence is shown for manual review. The recording script and screen list are in [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md).
+OpenAI screening is off by default. On an isolated demo preview using fictional records, set `OPENAI_DEMO_SCREENING_ENABLED=true` and `OPENAI_API_KEY` on the server. The default is `gpt-5.4-mini`. Update an existing `OPENAI_MODEL` override to switch a configured deployment. Pending documents are checked automatically while an Agent or Manager portal is open. Unavailable evidence is shown for manual review. The recording script and screen list are in [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md).
 
 Keep the existing Supabase, SMTP, reCAPTCHA and `APP_BASE_URL` settings. Never put an OpenAI key or Supabase service-role key in browser code. Do not enable paid calls on an unrestricted public deployment before fixing authorization and abuse controls.
 

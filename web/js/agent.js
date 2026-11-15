@@ -512,7 +512,9 @@ function renderAgentCards() {
   }
 
   if (filtered.length === 0) {
-    box.innerHTML = '<div class="card muted" style="text-align:center; padding:28px">No applications in this view right now.</div>';
+    box.innerHTML = '<div class="card muted" style="text-align:center; padding:28px">' +
+      (q ? 'No applications match your search. Try a different name, reference number, city, or email.'
+         : 'No applications in this view right now.') + '</div>';
     return;
   }
 

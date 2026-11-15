@@ -42,7 +42,10 @@ class BaseImageProcessor:
 
         buffer = np.frombuffer(image_bytes, dtype=np.uint8)
 
-        return cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+        try:
+            return cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+        except cv2.error:
+            return None
 
     def _order_points(self, pts) -> "np.ndarray":
 
@@ -528,17 +531,16 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
         try:
 
-            polished_color = self._polish_color_image(image)
+            preview = image
+            ph, pw = preview.shape[:2]
 
-            ph, pw = polished_color.shape[:2]
+            if max(ph, pw) > 1600:
 
-            if pw > 1600:
+                scale = 1600.0 / max(ph, pw)
 
-                scale = 1600.0 / float(pw)
+                preview = cv2.resize(
 
-                polished_color = cv2.resize(
-
-                    polished_color,
+                    preview,
 
                     None,
 
@@ -550,6 +552,7 @@ class DocumentCropEnhancer(BaseImageProcessor):
 
                 )
 
+            polished_color = self._polish_color_image(preview)
             ok, buf = cv2.imencode(".jpg", polished_color, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
 
             if ok:

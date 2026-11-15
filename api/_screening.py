@@ -15,6 +15,7 @@ import urllib.parse
 import urllib.request
 
 import _ai
+import _openai_client
 
 import _quality
 
@@ -590,13 +591,14 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
     id_type = str(app_row.get("id_type") or "")
 
     existing_scr = app_row.get("screening") if isinstance(app_row.get("screening"), dict) else {}
-    model = os.getenv("OPENAI_MODEL", "").strip()
+    model = _openai_client.configured_model()
     previous_ocr = existing_scr.get("ocr")
     if (
         _ai.is_available()
         and existing_scr.get("front_sha256") == front_sha256
         and existing_scr.get("back_sha256") == back_sha256
         and existing_scr.get("ocr_model") == model
+        and existing_scr.get("ocr_prompt_version") == 2
         and existing_scr.get("ocr_id_type") == id_type
         and isinstance(previous_ocr, dict)
         and previous_ocr.get("available") is True
@@ -784,6 +786,7 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
         "ocr": ocr_result,
         "ocr_model": model if ocr_result.get("available") else "",
         "ocr_id_type": id_type,
+        "ocr_prompt_version": 2,
 
         "comparisons": comparisons,
 

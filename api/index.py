@@ -22,6 +22,8 @@ import _ai
 
 import _mailer
 
+from starlette.concurrency import run_in_threadpool
+
 import _quality
 
 import _screening
@@ -169,31 +171,15 @@ async def screen_document(
     if not front_bytes or len(front_bytes) > max_bytes or (back_bytes and len(back_bytes) > max_bytes):
         raise HTTPException(status_code=413, detail="Each ID image must be nonempty and at most 5 MB.")
 
-    quality_result, cropped_front = _quality.enhance_and_crop(front_bytes)
-
-    ocr_front_input = cropped_front if cropped_front else front_bytes
-
-    cropped_back = None
-
-    ocr_back_input = None
-
-    if back_bytes:
-
-        _, cropped_back = _quality.enhance_and_crop(back_bytes)
-
-        ocr_back_input = cropped_back if cropped_back else back_bytes
-
-    # Preliminary checks do not create permanent storage objects for unsubmitted applications.
+    # OpenCV and the vision HTTP client are synchronous. Keep the event loop free.
+    quality_result, _, _ = await run_in_threadpool(
+        _screening._evaluate_front_and_back_quality, front_bytes, back_bytes
+    )
+    ocr_result = await run_in_threadpool(
+        _ai.extract_id_text, front_bytes, back_bytes, id_type
+    )
     cropped_front_url = ""
     cropped_back_url = ""
-
-    ocr_result = _ai.extract_id_text_with_fallback(
-        ocr_front_input,
-        primary_back=ocr_back_input,
-        raw_front=front_bytes,
-        raw_back=back_bytes,
-        id_type=id_type,
-    )
 
     entered = {
 

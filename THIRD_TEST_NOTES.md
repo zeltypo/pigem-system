@@ -32,7 +32,7 @@ The old Gemini/OpenRouter module and provider fallback chain were removed. Exist
 - Latest screening overrides cached badges. Unchecked or partial fields do not default to matched.
 - Unavailable screening does not report an overall match. Duplicate clicks are guarded. Fake progress percentages were removed.
 - Document fetches are restricted to the configured Supabase storage origin.
-- Unused tester endpoints were removed from the application API. `web/html/test3.html` is standalone: no portal links to it, it is `noindex`, and it syncs only through its own `qa_tester_sync` row (`round3b`), not the `documents` bucket.
+- The standalone tester pages and their routes were removed. Existing QA records were left in storage.
 
 ## Release blockers discovered
 
@@ -56,7 +56,7 @@ Supabase's advisor also reported leaked-password protection disabled. Its limite
 - Installing missing Python runtime dependencies was blocked by network DNS access. Full FastAPI/OpenCV runtime integration was not run locally.
 - OpenAI live OCR accuracy, Vercel runtime, email delivery, cross-device QA synchronization and the full account/correction workflow remain unverified.
 
-Use `/test3` for the eighteen remaining manual third-test cases (Scenarios 1–3 are in the demo script; reCAPTCHA and full-width banners already passed) after deploying to an appropriate test environment. A checked item must mean actually tested, not simply changed in code.
+The browser checklist was retired. The automated regression suites are in the tests directory.
 
 ## Manuscript reconciliation
 

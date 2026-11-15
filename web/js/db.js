@@ -8,7 +8,8 @@ var SYSTEM_ROLES = {
 
 var SESSION_KEY = "pigem_session_" + SYSTEM;
 var SESSION_TOKEN_KEY = SESSION_KEY + "_tok";
-var sessionStore = localStorage;
+// Manager and Agent share a login page, but their dashboard and Auth stay in the signed-in tab.
+var sessionStore = SYSTEM === "staff" ? sessionStorage : localStorage;
 
 var IS_DEMO_MODE = (CONFIG.SUPABASE_URL === "" || CONFIG.SUPABASE_ANON_KEY === "");
 var supabaseClient = null;
@@ -86,6 +87,13 @@ function getActiveSessionPair(allowedRoles) {
   var tabTok = sessionStorage.getItem(SESSION_TOKEN_KEY);
   var tabRole = sessionStorage.getItem(SESSION_KEY + "_role");
 
+  if (SYSTEM === "staff") {
+    return tabId && tabTok && SYSTEM_ROLES.staff.indexOf(tabRole) !== -1 &&
+        (!roles || roles.indexOf(tabRole) !== -1)
+      ? { id: tabId, tok: tabTok }
+      : { id: "", tok: "" };
+  }
+
   if (tabId && (!roles || !roles.length || !tabRole || roles.indexOf(tabRole) !== -1)) {
     return { id: tabId, tok: tabTok || "" };
   }
@@ -137,12 +145,12 @@ async function dbBindSingleDeviceSession(userObj) {
   });
   try {
     sessionStorage.setItem("pigem_user_cache", cachePayload);
-    if (uRole) {
+    if (uRole && SYSTEM !== "staff") {
       localStorage.setItem("pigem_user_cache_" + uRole, cachePayload);
     }
   } catch (e) {}
 
-  if (uRole) {
+  if (uRole && SYSTEM !== "staff") {
     var rKey = getRoleSessionKey(uRole);
     localStorage.setItem(rKey, userObj.id);
     localStorage.setItem(rKey + "_tok", tok);
@@ -176,7 +184,9 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
   var pair = getActiveSessionPair(allowedRoles);
   var currentId = expectedUserId || pair.id;
   var localTok = pair.tok;
-  if (!currentId) return { valid: false, reason: "missing" };
+  if (!currentId || (SYSTEM === "staff" && currentId !== pair.id)) {
+    return { valid: false, reason: "missing" };
+  }
   var allowedForSystem = SYSTEM_ROLES[SYSTEM] || null;
 
   var userRow = null;
@@ -193,7 +203,7 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
     if (!supabaseClient) return { valid: true };
     var res = await supabaseClient.from("users").select("id,active,session_token,role,email,username").eq("id", currentId).maybeSingle();
     if (res.error) return { valid: true };
-    if (!res.data) {
+    if (!res.data && SYSTEM !== "staff") {
       var targetRole = (allowedRoles && allowedRoles[0]) ? String(allowedRoles[0]).toLowerCase() : (SYSTEM === "customer" ? "customer" : "");
       var cachedRaw = sessionStorage.getItem("pigem_user_cache") || (targetRole ? localStorage.getItem("pigem_user_cache_" + targetRole) : "");
       if (cachedRaw) {
@@ -384,7 +394,7 @@ async function dbGetCurrentUser() {
     }
   }
 
-  if (!IS_DEMO_MODE && supabaseClient) {
+  if (SYSTEM !== "staff" && !IS_DEMO_MODE && supabaseClient) {
     var prefRole = (window.PORTAL_ALLOWED_ROLES && window.PORTAL_ALLOWED_ROLES[0])
       ? String(window.PORTAL_ALLOWED_ROLES[0]).toLowerCase()
       : (SYSTEM === "customer" ? "customer" : "");
@@ -636,7 +646,7 @@ async function dbSignOut(clearServerToken) {
           .eq("id", user.id).eq("session_token", localTok);
       } catch (e) {}
     }
-    if (user.role) {
+    if (user.role && SYSTEM !== "staff") {
       var rKey = getRoleSessionKey(user.role);
       if (!localStorage.getItem(rKey) || localStorage.getItem(rKey) === user.id) {
         localStorage.removeItem(rKey);
@@ -655,8 +665,10 @@ async function dbSignOut(clearServerToken) {
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_KEY + "_role");
   sessionStorage.removeItem("pigem_user_cache");
-  if (!IS_DEMO_MODE && supabaseClient && SYSTEM === "customer") {
-    try { await supabaseClient.auth.signOut(); } catch (e) {}
+  if (!IS_DEMO_MODE && supabaseClient && (SYSTEM === "customer" || SYSTEM === "staff")) {
+    try {
+      await supabaseClient.auth.signOut({ scope: SYSTEM === "staff" ? "local" : "global" });
+    } catch (e) {}
   }
 }
 

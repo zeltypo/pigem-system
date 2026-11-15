@@ -163,7 +163,7 @@
               <p id="apps-subtitle" class="muted" style="font-size:13px">Unclaimed customer applications ready for agent verification.</p>
             </div>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-              <input id="q-filter" aria-label="Filter applications by name, reference number, or city" type="text" placeholder="Filter by name, ref no., or city..." oninput="renderAgentCards()" style="max-width:240px" />
+              <input id="q-filter" aria-label="Search applications by name, reference number, city, or email" type="search" placeholder="Search name, ref no., city, or email" oninput="renderAgentCards()" style="max-width:240px" />
               <button type="button" class="btn btn-outline btn-sm" onclick="refreshAgentData()">Refresh</button>
             </div>
           </div>
