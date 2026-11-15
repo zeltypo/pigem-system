@@ -100,6 +100,19 @@ function getActiveSessionPair(allowedRoles) {
       sessionStorage.setItem(SESSION_KEY + "_role", String(roles[0]).toLowerCase());
       return { id: rId, tok: rTok || "" };
     }
+    return { id: "", tok: "" };
+  }
+
+  if (roles && roles.length > 1) {
+    for (var i = 0; i < roles.length; i++) {
+      var rk = getRoleSessionKey(roles[i]);
+      var rid = localStorage.getItem(rk);
+      var rtok = localStorage.getItem(rk + "_tok");
+      if (rid) {
+        return { id: rid, tok: rtok || "" };
+      }
+    }
+    return { id: "", tok: "" };
   }
 
   var fallbackId = localStorage.getItem(SESSION_KEY);
@@ -375,7 +388,7 @@ async function dbGetCurrentUser() {
     var prefRole = (window.PORTAL_ALLOWED_ROLES && window.PORTAL_ALLOWED_ROLES[0])
       ? String(window.PORTAL_ALLOWED_ROLES[0]).toLowerCase()
       : (SYSTEM === "customer" ? "customer" : "");
-    var rawCache = sessionStorage.getItem("pigem_user_cache") || (prefRole ? localStorage.getItem("pigem_user_cache_" + prefRole) : "");
+    var rawCache = (!prefRole ? sessionStorage.getItem("pigem_user_cache") : "") || (prefRole ? localStorage.getItem("pigem_user_cache_" + prefRole) : "");
     if (rawCache) {
       try {
         var cObj = JSON.parse(rawCache);
@@ -391,8 +404,9 @@ async function dbGetCurrentUser() {
         if (fallbackRes && fallbackRes.data && fallbackRes.data.active !== false) {
           var fbRole = String(fallbackRes.data.role || "").trim().toLowerCase();
           fallbackRes.data.role = fbRole;
-          if (!allowedForSystem || allowedForSystem.indexOf(fbRole) !== -1) {
+          if ((!allowedForSystem || allowedForSystem.indexOf(fbRole) !== -1) && (!prefRole || fbRole === prefRole)) {
             sessionStorage.setItem(SESSION_KEY, fallbackRes.data.id);
+            sessionStorage.setItem(SESSION_KEY + "_role", fbRole);
             localStorage.setItem(getRoleSessionKey(fbRole), fallbackRes.data.id);
             return fallbackRes.data;
           }

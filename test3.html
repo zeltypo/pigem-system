@@ -471,88 +471,58 @@
     var TEST_SECTIONS = [
   {
     "id": "round3",
-    "title": "Third Test — Screening and Regression",
-    "subtitle": "Use fictional records. Leave unchecked until actually verified. This checklist is separate from previous test results.",
+    "title": "Final System & AI Screening Evaluation Checklist",
+    "subtitle": "Core evaluation scenarios for IT experts, faculty, and respondents. Only items R3-01 to R3-03 use AI credits (1 check each); all other items cost $0.",
     "items": [
       {
         "id": "R3-01",
-        "title": "Clear matching application",
-        "desc": "Submit clear, different front/back sample ID images and matching form data. Agent sees supported matches. Human review remains required. Record reference, model, time and actual result."
+        "title": "Scenario 1 (Good): Clear Matching ID Application",
+        "desc": "Submit a clear, well-lit valid ID photo where the entered Full Name, Birth Date, and ID Number match the card. Open in Agent/Manager portal and confirm all fields show Match."
       },
       {
         "id": "R3-02",
-        "title": "Unclear application",
-        "desc": "Use a deliberately blurred fictional ID. Unreadable fields must require review, never invented matches or automatic rejection."
+        "title": "Scenario 2 (Medium): Single Field Mismatch (ID Number)",
+        "desc": "Submit a clear valid ID photo with matching Name and Birth Date, but change 1-2 digits of the ID Number. Confirm the screening flags only the ID Number as Mismatch while keeping Name and Birth Date as Match."
       },
       {
         "id": "R3-03",
-        "title": "Mixed application",
-        "desc": "Keep name correct but deliberately change the ID number. Verify the real mismatch is identified and matching fields remain separate."
+        "title": "Scenario 3 (Hard): Multiple Mismatches or Unclear ID Photo",
+        "desc": "Submit an application with multiple mismatched details (Name, Birth Date, and ID Number) OR a deliberately blurred/glare ID photo. Confirm mismatched or unreadable fields are flagged for review and never auto-approved."
       },
       {
         "id": "R3-04",
-        "title": "Student ID without birth date",
-        "desc": "Use a fictional student ID without DOB. Missing DOB must not be treated as verified. Agent decides how to verify it."
+        "title": "Google reCAPTCHA v2 on Plan Apply & Login ($0)",
+        "desc": "Click 'Apply for Plan' on the Home page and open the Customer/Staff login page. Confirm the Google reCAPTCHA v2 checkbox appears and verifies before proceeding."
       },
       {
         "id": "R3-05",
-        "title": "Missing key / quota / timeout",
-        "desc": "In a separate test deployment, omit the key or use an unavailable model. Application remains accessible; fields require manual review and there is no false success."
+        "title": "Full-Width Responsive Banners on Home & About Us ($0)",
+        "desc": "Open Home (index.html) and About Us (about.html) on desktop and mobile widths. Confirm the hero banner spans edge-to-edge (100% width, 0px side padding) and scales cleanly."
       },
       {
         "id": "R3-06",
-        "title": "Both ID sides and duplicate images",
-        "desc": "Try identical front/back images, then different ones. Download each side and check contents. Retest on Chrome, Edge and the tablet browser."
+        "title": "Multi-Role Same-Browser Portal Sessions ($0)",
+        "desc": "Sign in as Manager in one tab and open Agent (or Customer/Admin) portal in another tab of the same browser. Confirm each tab stays on its own role portal without forcing Agent into Manager."
       },
       {
         "id": "R3-07",
-        "title": "Customer correction survives polling",
-        "desc": "Choose front/back correction files, type a note, click away, and wait at least 20 seconds. Both files and entered values remain before submitting."
+        "title": "Single Notification View & Unread Counter ($0)",
+        "desc": "Open the notification bell with multiple unread items. Click one notification (or 'View') and confirm the list stays open, only that 1 item becomes Read (counter decreases by 1), and 'Go to Record' navigates when needed."
       },
       {
         "id": "R3-08",
-        "title": "Agent request stays open",
-        "desc": "Open Request Customer Update, type and wait 20 seconds. Send the request. The review remains open until you close it; the request is locked while awaiting resubmission."
+        "title": "Customer Correction & Resubmission Loop ($0)",
+        "desc": "From Agent portal, request a customer update. Sign in as Customer, update the flagged field/ID, and resubmit. Confirm Agent sees both Original and Latest copies."
       },
       {
         "id": "R3-09",
-        "title": "Complete correction loop",
-        "desc": "Agent requests an update; customer replaces both images; agent sees latest and original copies and runs a new check. Verify status, notifications and saved evidence."
+        "title": "Dashboard Reports Preview & Export ($0)",
+        "desc": "In Admin, Manager, or Agent portal, open Reports, filter records, and preview/download the HTML or CSV report. Confirm totals and rows match the active filter."
       },
       {
         "id": "R3-10",
-        "title": "Notification reads",
-        "desc": "Open a list with several unread notifications. Count does not clear. Click one View; only that item is marked read. Explicit Mark all still works."
-      },
-      {
-        "id": "R3-11",
-        "title": "Report preview and downloaded report",
-        "desc": "For Admin, Manager and Agent, open each report preview. Continue using the portal before printing. Compare filters, totals and rows with the downloaded HTML report; check CSV data separately."
-      },
-      {
-        "id": "R3-12",
-        "title": "Review layout on three widths",
-        "desc": "Inspect 360px, 768px and desktop widths. Long Verify Manually badges, names, ID images and correction inputs must fit without horizontal clipping."
-      },
-      {
-        "id": "R3-13",
-        "title": "Logo and website navigation",
-        "desc": "Click internal PIGEM logo: it must not navigate away. Open account settings and use Back to Website."
-      },
-      {
-        "id": "R3-14",
-        "title": "Server-side access controls — RELEASE BLOCKER",
-        "desc": "IT expert verifies anonymous users cannot read/change account/application records or ID files, and one customer cannot access another customer. Current permissive policies fail this requirement. Do not mark passed based on hidden menu buttons."
-      },
-      {
-        "id": "R3-15",
-        "title": "Independent two-device tester sync",
-        "desc": "Open this third-test page on two devices. Edit different observations, reconnect after going offline and check saved results. Previous test round must remain unchanged. Use Backup File first."
-      },
-      {
-        "id": "R3-16",
-        "title": "Fresh test environment",
-        "desc": "Only in a separately approved disposable project: create first Admin, Manager, Agent and fictional customer; verify activation, login/logout, recovery and duplicate protection. Do not run destructive schema.sql against the current project."
+        "title": "Responsive Layout & Theme Toggle ($0)",
+        "desc": "Check the portals on mobile (360px), tablet (768px), and desktop widths, and toggle Light/Dark mode in the account drawer. Confirm badges, modals, and tables fit cleanly."
       }
     ]
   }

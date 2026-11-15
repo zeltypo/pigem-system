@@ -291,6 +291,8 @@ async function refreshNotifBell(user) {
   renderNotifBellState();
 }
 
+var _expandedNotifIndex = -1;
+
 function renderNotifBellState() {
   var countEl = document.getElementById("notif-count");
   var bodyEl = document.getElementById("notif-list");
@@ -316,15 +318,19 @@ function renderNotifBellState() {
       for (var i = 0; i < Math.min(dashNotifItems.length, 20); i++) {
         var n = dashNotifItems[i];
         var isUnread = !n.is_read;
-        h += '<div class="notif-item-clickable' + (isUnread ? ' notif-unread' : '') + '" onclick="onNotificationItemClick(' + i + ')">' +
+        var isExpanded = (_expandedNotifIndex === i);
+        h += '<div class="notif-item-clickable' + (isUnread ? ' notif-unread' : '') + '" onclick="onNotificationItemClick(' + i + ', false)">' +
           '<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:3px;">' +
             '<b style="font-size:13px; color:var(--text);">' + escapeHtml(staffNotificationText(n.title)) + '</b>' +
-            (isUnread ? '<span class="notif-unread-dot" title="Unread"></span>' : '') +
+            (isUnread ? '<span class="notif-unread-dot" title="Unread"></span>' : '<span class="muted" style="font-size:10.5px;">Read</span>') +
           '</div>' +
-          '<div style="line-height:1.5; font-size:12.5px; color:var(--muted);">' + autoLinkUrls(staffNotificationText(n.message)) + '</div>' +
-          '<div class="muted" style="font-size:11px; margin-top:6px; display:flex; justify-content:space-between; align-items:center;">' +
+          '<div style="line-height:1.5; font-size:12.5px; color:var(--muted);' + (isExpanded ? ' white-space:pre-wrap; color:var(--text); margin-top:4px; padding:8px 10px; background:var(--soft); border-radius:6px;' : '') + '">' + autoLinkUrls(staffNotificationText(n.message)) + '</div>' +
+          '<div class="muted" style="font-size:11px; margin-top:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;">' +
             '<span>' + formatDate(n.created_at) + '</span>' +
-            '<span style="color:var(--red); font-weight:700;">View &rarr;</span>' +
+            '<span style="display:inline-flex; gap:10px; align-items:center;">' +
+              '<button type="button" class="link-btn" style="font-size:11.5px; font-weight:700;" onclick="event.stopPropagation(); onNotificationItemClick(' + i + ', false)">' + (isExpanded ? 'Hide Details' : 'View') + '</button>' +
+              '<button type="button" class="link-btn" style="font-size:11.5px; font-weight:700; color:var(--red);" onclick="event.stopPropagation(); onNotificationItemClick(' + i + ', true)">Go to Record &rarr;</button>' +
+            '</span>' +
           '</div>' +
           '</div>';
       }
@@ -346,17 +352,23 @@ async function markAllDashNotificationsRead() {
   renderNotifBellState();
 }
 
-function onNotificationItemClick(index) {
+function onNotificationItemClick(index, navigateOut) {
   var item = dashNotifItems[index];
-  var m = document.getElementById("notif-modal");
-  if (m) m.classList.add("hidden");
   if (!item) return;
 
   item.is_read = true;
   if (item.id != null && typeof dbMarkNotificationRead === "function") {
     dbMarkNotificationRead(item.id, dashCurrentUser);
   }
+  _expandedNotifIndex = (_expandedNotifIndex === index && !navigateOut) ? -1 : index;
   renderNotifBellState();
+
+  if (!navigateOut) {
+    return;
+  }
+
+  var m = document.getElementById("notif-modal");
+  if (m) m.classList.add("hidden");
 
   var targetTab = item.target_tab || "";
   var targetId = item.target_id || "";
