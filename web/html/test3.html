@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
   <title>Master System &amp; AI Screening Test Checklist | Combined Facilities Support Services</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -461,133 +462,107 @@
   </main>
 
   <script>
-    var STORAGE_KEY = "pigem_isolated_tester_round3";
+    var STORAGE_KEY = "pigem_isolated_tester_round3b";
     var SUPABASE_URL = "https://wuunqfxyejxwrawtjdrf.supabase.co";
     var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g";
     var ISOLATED_TABLE = "qa_tester_sync";
-    var ISOLATED_ROW_ID = "round3";
-    var ISOLATED_STORAGE_PATH = "qa_tester_isolated/round3.json";
+    var ISOLATED_ROW_ID = "round3b";
 
     var TEST_SECTIONS = [
   {
     "id": "round3",
     "title": "Final System & AI Screening Test Checklist",
-    "subtitle": "Direktang gabay para sa mga testers at evaluators. R3-01 hanggang R3-03 at R3-16 hanggang R3-23 lang ang gumagamit ng AI credit (1 screening bawat submit); lahat ng iba ay libre ($0). I-check lang kapag talagang na-test na.",
+    "subtitle": "Hiwalay ang page na ito sa main system: walang link mula sa portals at sariling QA table lang ang gamit. R3-11 hanggang R3-18 lang ang gumagamit ng AI credit (1 screening bawat submit); libre ang iba. Fictional/sample IDs lang. I-check lang kapag talagang na-test na.",
     "items": [
       {
         "id": "R3-01",
-        "title": "Scenario 1 (Good): Tama at Tugma Lahat ng Detalye sa ID",
-        "desc": "Mag-submit ng malinaw na picture ng Valid ID (Front at Back) kung saan TUGMA ang Pangalan, Birthday, at ID Number na tinype sa form. Buksan sa Agent o Manager portal: dapat 'Match' lahat ang lumabas."
-      },
-      {
-        "id": "R3-02",
-        "title": "Scenario 2 (Medium): Mali ang ID Number Lang",
-        "desc": "Mag-submit ng malinaw na Valid ID na tama ang Pangalan at Birthday, pero MALI ng 1 o 2 digit ang tinype na ID Number. Buksan sa Agent portal: dapat 'Mismatch' ang ID Number habang 'Match' pa rin ang Pangalan at Birthday."
-      },
-      {
-        "id": "R3-03",
-        "title": "Scenario 3 (Hard): Maraming Mali o Malabong ID Picture",
-        "desc": "Mag-submit ng application na mali ang Pangalan, Birthday, at ID Number (o kaya ay malabo/madilim na ID picture). Dapat ma-flag ito for review o 'Mismatch' at HINDI kailanman ma-auto-approve."
-      },
-      {
-        "id": "R3-04",
-        "title": "Google reCAPTCHA sa Apply for Plan at Login",
-        "desc": "I-click ang 'Apply for Plan' sa Home page at subukan ding mag-login. Dapat lumabas ang totoong Google reCAPTCHA ('I'm not a robot') bago makatuloy."
-      },
-      {
-        "id": "R3-05",
-        "title": "Full-Width Banner sa Home at About Us",
-        "desc": "Buksan ang Home at About Us sa desktop at cellphone size. Dapat sagad sa magkabilang gilid (walang puting espasyo o padding sa gilid) ang banner image."
-      },
-      {
-        "id": "R3-06",
         "title": "Sabay na Login ng Manager at Agent sa Iisang Browser",
         "desc": "Mag-login bilang Manager sa Tab 1, tapos mag-login bilang Agent sa Tab 2 ng parehong browser. Dapat manatili ang Manager sa Tab 1 at Agent sa Tab 2 nang hindi nagpapalit kusa."
       },
       {
-        "id": "R3-07",
+        "id": "R3-02",
         "title": "Pag-click ng Isang Notification Lang (Hindi Nagko-close Agad)",
         "desc": "Buksan ang Notification Bell na may unread items. I-click ang isang notification (o 'View'): dapat HINDI magsara ang listahan, 1 lang ang mababawas sa unread bilang, at 'Go to Record' ang pipindutin kapag gustong pumunta sa record."
       },
       {
-        "id": "R3-08",
+        "id": "R3-03",
         "title": "Pag-request ng Correction sa Customer at Pag-resubmit",
         "desc": "Sa Agent portal, mag-request ng correction sa application. Mag-login bilang Customer, itama ang detalye o mag-upload ng bagong ID, at i-submit. Dapat makita ng Agent ang Original at Latest copy."
       },
       {
-        "id": "R3-09",
+        "id": "R3-04",
         "title": "Pag-preview at Pag-download ng Reports",
         "desc": "Sa Admin, Manager, o Agent portal, pumunta sa Reports, pumili ng filter, at i-click ang Print/Preview o Download (HTML/CSV). Dapat tugma ang bilang at listahan sa napiling filter."
       },
       {
-        "id": "R3-10",
+        "id": "R3-05",
         "title": "Mobile/Desktop View at Dark Mode Toggle",
         "desc": "Tingnan ang portal sa mobile at desktop screen, at subukang magpalit ng Light/Dark theme sa Account menu. Dapat maayos ang layout at nababasa lahat."
       },
       {
-        "id": "R3-11",
+        "id": "R3-06",
         "title": "Hindi Nawawala ang Tinype ng Customer sa Correction Form",
         "desc": "Bilang Customer, buksan ang correction form, pumili ng bagong Front at Back ID, mag-type ng note, mag-click sa labas, at maghintay ng 20 segundo o higit pa. Dapat nandoon pa rin ang mga napiling file at tinype bago i-submit."
       },
       {
-        "id": "R3-12",
+        "id": "R3-07",
         "title": "Hindi Nagsasara ang 'Request Customer Update' ng Agent",
         "desc": "Sa Agent portal, buksan ang Request Customer Update, mag-type, at maghintay ng 20 segundo. Dapat hindi mabura o magsara ang form. Pagka-send, dapat bukas pa rin ang review hanggang ikaw ang magsara, at naka-lock ang request habang hinihintay ang resubmission."
       },
       {
-        "id": "R3-13",
+        "id": "R3-08",
         "title": "Pag-download ng Front at Back ID nang Hiwalay",
         "desc": "Sa application review, i-click ang Download Front at Download Back. Dapat dalawang magkaibang file ang ma-download at tama ang laman ng bawat isa. Subukan sa Chrome, Edge, at cellphone/tablet browser."
       },
       {
-        "id": "R3-14",
+        "id": "R3-09",
         "title": "PIGEM Logo at 'Back to Website' sa Portal",
         "desc": "Sa loob ng Admin/Manager/Agent/Customer portal, i-click ang PIGEM logo: dapat HINDI ka nito ilalabas sa portal. Buksan ang Account menu at i-click ang 'Back to Website': dapat bumalik sa public website."
       },
       {
-        "id": "R3-15",
+        "id": "R3-10",
         "title": "Sabay na Pag-check sa Test Page na Ito sa 2 Device",
         "desc": "I-download muna ang Backup File. Buksan ang test3 page sa 2 device, mag-check at mag-comment ng magkaibang item, i-offline ang isa saglit tapos i-online ulit. Dapat parehong lumabas ang mga sagot sa 2 device at hindi nagalaw ang resulta ng lumang test round."
       },
       {
-        "id": "R3-16",
+        "id": "R3-11",
         "title": "AI Test A: Student ID na Walang Birthday",
         "desc": "Pumili ng 'Student ID' at mag-upload ng student ID na walang nakaprint na birthday. Dapat 'Verify Manually' ang Birthday (HINDI 'Match'), habang tama pa rin ang resulta ng Pangalan at ID Number."
       },
       {
-        "id": "R3-17",
+        "id": "R3-12",
         "title": "AI Test B: Maling ID Type ang Pinili",
         "desc": "Pumili ng isang ID type sa form (hal. UMID) pero ibang ID ang i-upload (hal. Driver's License). Dapat may lumabas na ID Type mismatch / for review at HINDI 'Match' lahat."
       },
       {
-        "id": "R3-18",
+        "id": "R3-13",
         "title": "AI Test C: Mali ang Birthday Lang",
         "desc": "Tama ang Pangalan at ID Number pero mali ang tinype na Birthday (hal. ibang araw o taon). Dapat 'Mismatch' ang Birthday lang. Siguraduhing hindi nito kinuha ang Issue o Expiry date bilang birthday."
       },
       {
-        "id": "R3-19",
+        "id": "R3-14",
         "title": "AI Test D: Pangalan na may Ñ, Accent, o 'Dela Cruz'",
         "desc": "Gumamit ng ID na may Ñ o compound surname (hal. 'DE LA CRUZ' sa ID pero 'Dela Cruz' ang tinype, o 'Peña' vs 'Pena'). Dapat 'Match' pa rin ang Pangalan dahil iisang pangalan lang ito."
       },
       {
-        "id": "R3-20",
+        "id": "R3-15",
         "title": "AI Test E: Mali ang Middle Name Lang",
         "desc": "Tama ang First Name, Last Name, Birthday at ID Number pero ibang Middle Name ang tinype. Dapat HINDI 'Match' ang Pangalan (Mismatch o Verify Manually)."
       },
       {
-        "id": "R3-21",
+        "id": "R3-16",
         "title": "AI Test F: May Glare/Flash o Madilim na ID Picture",
         "desc": "Mag-upload ng ID na may tama ng ilaw/flash sa mga letra o kinunan sa madilim na lugar. Dapat may lumabas na babala sa image quality, at ang hindi mabasang detalye ay 'Verify Manually' — hindi hinuhulaan ng AI."
       },
       {
-        "id": "R3-22",
+        "id": "R3-17",
         "title": "AI Test G: Parehong Picture sa Front at Back",
         "desc": "I-upload ang IISANG picture sa Front at Back. Dapat may lumabas na 'Duplicate ID Image' na babala at hindi ito tinuturing na kumpleto at malinis na application."
       },
       {
-        "id": "R3-23",
+        "id": "R3-18",
         "title": "AI Test H: Ulitin ang Scenario 1 ng 3 Beses",
-        "desc": "I-submit ang parehong malinaw at tamang ID (gaya ng R3-01) ng 3 beses o i-re-run ang screening. Dapat pare-pareho ang resulta sa bawat ulit. Isulat sa comment kung may nagbago (para malaman kung consistent ang AI)."
+        "desc": "I-submit ang parehong malinaw at tamang ID (gaya ng Scenario 1 sa script) ng 3 beses o i-re-run ang screening. Dapat pare-pareho ang resulta sa bawat ulit. Isulat sa comment kung may nagbago (para malaman kung consistent ang AI)."
       }
     ]
   }
@@ -635,7 +610,7 @@
         var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
           auth: { persistSession: false, autoRefreshToken: false }
         });
-        _realtimeChannel = sb.channel("pigem_qa_tester_live_v3", {
+        _realtimeChannel = sb.channel("pigem_qa_tester_live_round3b", {
           config: { broadcast: { self: false, ack: false } }
         });
         _realtimeChannel
@@ -727,23 +702,6 @@
       }, typeof delayMs === "number" ? delayMs : 80);
     }
 
-    async function fetchFromIsolatedStorage() {
-      var url = SUPABASE_URL + "/storage/v1/object/authenticated/documents/" + ISOLATED_STORAGE_PATH + "?t=" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
-      var res = await fetch(url, {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          "apikey": SUPABASE_ANON_KEY,
-          "Authorization": "Bearer " + SUPABASE_ANON_KEY,
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache"
-        }
-      });
-      if (!res.ok) return null;
-      var data = await res.json();
-      return (data && typeof data === "object") ? data : null;
-    }
-
     async function fetchFromIsolatedTable() {
       if (_tableAvailable === false) return null;
       var url = SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE + "?id=eq." + encodeURIComponent(ISOLATED_ROW_ID) + "&select=state,updated_at&t=" + Date.now();
@@ -772,60 +730,34 @@
 
     async function fetchCloudState() {
       try {
-        var storageState = await fetchFromIsolatedStorage();
-        if (storageState && Object.keys(storageState).length > 0) {
-          return storageState;
-        }
-      } catch (e) {}
-
-      try {
         var tableState = await fetchFromIsolatedTable();
         if (tableState && Object.keys(tableState).length > 0) {
           return tableState;
         }
       } catch (e2) {}
-
       return null;
     }
 
     async function pushCloudState(payload) {
-      var bodyStr = JSON.stringify(payload);
-      var stUrl = SUPABASE_URL + "/storage/v1/object/documents/" + ISOLATED_STORAGE_PATH;
-      var stRes = await fetch(stUrl, {
+      // QA-only table. Never touches the main system's tables or the customer ID "documents" bucket.
+      var res = await fetch(SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE, {
         method: "POST",
         cache: "no-store",
         headers: {
           "apikey": SUPABASE_ANON_KEY,
           "Authorization": "Bearer " + SUPABASE_ANON_KEY,
           "Content-Type": "application/json",
-          "x-upsert": "true",
-          "Cache-Control": "no-cache, no-store, must-revalidate"
+          "Prefer": "resolution=merge-duplicates"
         },
-        body: bodyStr
+        body: JSON.stringify({
+          id: ISOLATED_ROW_ID,
+          state: payload,
+          updated_at: new Date().toISOString()
+        })
       });
-
-      if (_tableAvailable !== false) {
-        fetch(SUPABASE_URL + "/rest/v1/" + ISOLATED_TABLE, {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "apikey": SUPABASE_ANON_KEY,
-            "Authorization": "Bearer " + SUPABASE_ANON_KEY,
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates"
-          },
-          body: JSON.stringify({
-            id: ISOLATED_ROW_ID,
-            state: payload,
-            updated_at: new Date().toISOString()
-          })
-        }).then(function (r) {
-          if (r.status === 404) _tableAvailable = false;
-          else if (r.ok) _tableAvailable = true;
-        }).catch(function () {});
-      }
-
-      if (!stRes.ok) throw new Error("Cloud sync write failed");
+      if (res.status === 404) _tableAvailable = false;
+      if (!res.ok) throw new Error("Cloud sync write failed");
+      _tableAvailable = true;
     }
 
     function mergeRemoteIntoLocal(remote, updateUiInPlace) {
@@ -940,7 +872,7 @@
         var remote = null;
         try {
           remote = await Promise.race([
-            fetchFromIsolatedStorage(),
+            fetchFromIsolatedTable(),
             new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 450); })
           ]);
         } catch (readErr) {}

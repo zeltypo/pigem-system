@@ -15,12 +15,8 @@ Read [THIRD_TEST_NOTES.md](THIRD_TEST_NOTES.md) for changes, checks and deployme
 - `api/_ai.py`: OCR schema, field comparisons and screening guidance.
 - `api/_screening.py`: document retrieval and saved screening results.
 - `api/_auth.py`, `api/_mailer.py`: existing authentication helper and notifications; see release blockers.
-- `pigem-system-duplicate/`: learning copy with additional defense comments; excluded from deployment.
-- `test.html`: independent previous-round QA checklist.
-- `test3.html` (`/test3`): independent third-round QA checklist, separate saved state.
+- `web/html/test3.html` (`/test3`): standalone QA checklist. Not linked from any portal, `noindex`, and it only reads/writes its own `qa_tester_sync` row (never application/account tables or the ID `documents` bucket).
 - `tests/`: offline regression tests, excluded from deployment.
-
-The pre-existing nested `pigem-system/` directory is not the tracked project root and is excluded from deployment.
 
 ## OpenAI configuration
 

@@ -6,7 +6,7 @@ For the current screening flow, fresh schema and demo steps, see [DEMO_RUNBOOK.m
 
 These are local changes, not a deployed release. They have not been tested with a paid OpenAI request or real user accounts. Do not describe this build as error-free or production-ready.
 
-The tracked project is the repository root. `pigem-system-duplicate` is the commented learning copy. The pre-existing untracked nested `pigem-system/` directory was left untouched and excluded from deployment to avoid shipping a stale third copy.
+The tracked project is the repository root. The old `pigem-system-duplicate/` learning copy, the empty nested `pigem-system/` link, `STUDY_GUIDE.md`, the previous-round `test.html` and duplicate root checklist copies were removed (still recoverable from git history).
 
 ## Simple screening flow
 
@@ -32,7 +32,7 @@ The old Gemini/OpenRouter module and provider fallback chain were removed. Exist
 - Latest screening overrides cached badges. Unchecked or partial fields do not default to matched.
 - Unavailable screening does not report an overall match. Duplicate clicks are guarded. Fake progress percentages were removed.
 - Document fetches are restricted to the configured Supabase storage origin.
-- Unused tester endpoints were removed from the application API. `test.html` remains self-contained and uses its existing QA storage. `test3.html` uses a separate round ID and storage object, preserving previous results.
+- Unused tester endpoints were removed from the application API. `web/html/test3.html` is standalone: no portal links to it, it is `noindex`, and it syncs only through its own `qa_tester_sync` row (`round3b`), not the `documents` bucket.
 
 ## Release blockers discovered
 
@@ -56,7 +56,7 @@ Supabase's advisor also reported leaked-password protection disabled. Its limite
 - Installing missing Python runtime dependencies was blocked by network DNS access. Full FastAPI/OpenCV runtime integration was not run locally.
 - OpenAI live OCR accuracy, Vercel runtime, email delivery, cross-device QA synchronization and the full account/correction workflow remain unverified.
 
-Use `/test3` for the twenty-three manual third-test cases after deploying to an appropriate test environment. A checked item must mean actually tested, not simply changed in code.
+Use `/test3` for the eighteen remaining manual third-test cases (Scenarios 1–3 are in the demo script; reCAPTCHA and full-width banners already passed) after deploying to an appropriate test environment. A checked item must mean actually tested, not simply changed in code.
 
 ## Manuscript reconciliation
 

@@ -2,7 +2,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 300,
-      "excludeFiles": "{web/**,pigem-system-duplicate/**}"
+      "excludeFiles": "{web/**}"
     }
   },
   "rewrites": [
@@ -39,11 +39,11 @@
       "destination": "/web/html/$1"
     },
     {
-      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register|test|test3)\\.html",
+      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register|test3)\\.html",
       "destination": "/web/html/$1.html"
     },
     {
-      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register|test|test3)",
+      "source": "/(index|about|apply|privacy|login|activate|customer|staff-login|agent|manager|admin-login|admin|setup-accounts|agent-register|test3)",
       "destination": "/web/html/$1.html"
     }
   ]
