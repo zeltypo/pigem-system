@@ -275,6 +275,9 @@ INSERT INTO storage.buckets (id, name, public) VALUES
   ('documents', 'documents', true)
 ON CONFLICT (id) DO NOTHING;
 
+DROP POLICY IF EXISTS "Allow public access to website-assets" ON storage.objects;
+DROP POLICY IF EXISTS "Allow access to documents" ON storage.objects;
+
 CREATE POLICY "Allow public access to website-assets"
   ON storage.objects FOR ALL
   USING (bucket_id = 'website-assets')

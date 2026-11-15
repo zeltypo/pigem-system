@@ -49,7 +49,7 @@ function apiStartBackgroundScreening(applicationId) {
 
   return (async function () {
     var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    var timer = controller ? setTimeout(function () { controller.abort(); }, 55000) : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, 300000) : null;
     try {
       var headers = { "Content-Type": "application/json" };
       if (typeof dbGetToken === "function") {

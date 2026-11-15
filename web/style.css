@@ -187,14 +187,28 @@ body.menu-open .side-menu-back { display: block; }
 .slide { display: none; position: relative; width: 100%; }
 .slide.active { display: block; }
 .slide img { width: 100%; max-width: 100%; height: auto; display: block; }
-#home-slider, #about-slider { background: linear-gradient(120deg, #350b10, #841827); }
-#home-slider .slide img, #about-slider .slide img {
-  height: auto;
-  max-height: 520px;
-  width: auto;
-  margin-inline: auto;
-  object-fit: contain;
+#home-slider, #about-slider {
+  background: linear-gradient(120deg, #350b10, #841827);
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: none;
+  line-height: 0;
 }
+#home-slider .slide, #about-slider .slide { margin: 0; padding: 0; }
+#home-slider .slide img, #about-slider .slide img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  object-fit: cover;
+}
+#home-slider .banner-fallback, #about-slider .banner-fallback { line-height: 1.25; }
 .banner-fallback {
   color: #fff;
   padding-block: clamp(36px, 7vw, 96px);
