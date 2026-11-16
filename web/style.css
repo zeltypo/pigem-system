@@ -1971,3 +1971,11 @@ textarea.input-invalid {
 .agent-queue-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
 .agent-screening-note { background:var(--soft); border:1px solid var(--line); border-left:4px solid var(--red); border-radius:8px; padding:12px 14px; margin-bottom:12px; }
 .agent-screening-note > div { margin-top:4px; overflow-wrap:anywhere; }
+.agent-copy-toolbar, .agent-copy-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-copy-toolbar { margin-bottom: 16px; }
+.agent-copy-controls select { max-width: 100%; min-height: 34px; }

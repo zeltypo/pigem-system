@@ -100,6 +100,8 @@ function context(file) {
   assert(!/\b(?:OCR|OpenAI|API|AI)\b/.test(an['det-body'].innerHTML.replace(/<[^>]+>/g, ' ')),
     'Agent-visible text must use plain labels');
   const previewMarkup = an['det-body'].innerHTML;
+  assert(!previewMarkup.includes('View adjusted photo'));
+  assert(!previewMarkup.includes('Application copy'), 'No fake copy controls before a resubmission');
   assert(previewMarkup.indexOf('Screening recommendation') < previewMarkup.indexOf('Valid ID Photos'));
   assert(previewMarkup.indexOf('Valid ID Photos') < previewMarkup.indexOf('Applicant Details'));
   assert(!previewMarkup.includes('Send Update Request to Customer'));
@@ -218,23 +220,25 @@ function context(file) {
 
   const preparedImage = { src: '/front.jpg' };
   const preparedStatus = { textContent: '' };
-  const preparedButton = {
-    dataset: { photo: '/front.jpg' },
-    closest: () => ({ querySelector: selector => selector === 'img' ? preparedImage : preparedStatus }),
+  const photoContainer = {
+    dataset: { photo: '/front.jpg' }, isConnected: true,
+    querySelector: selector => selector === 'img' ? preparedImage : preparedStatus,
   };
   reader.prepareAgentIdPhoto = async () => ({
     cropped: true, canvas: { toDataURL: () => 'data:image/jpeg;base64,fixture' },
   });
-  await reader.toggleAgentPreparedPhoto(preparedButton);
-  assert(preparedStatus.textContent.includes('detected and cropped'));
+  await reader.showAgentPreparedPhoto(photoContainer);
+  assert(preparedStatus.textContent.includes('Cropped for reading'));
   assert(preparedImage.src.startsWith('data:image/'));
-  await reader.toggleAgentPreparedPhoto(preparedButton);
-  assert.equal(preparedImage.src, '/front.jpg');
   reader.prepareAgentIdPhoto = async () => ({
     cropped: false, canvas: { toDataURL: () => 'data:image/jpeg;base64,full' },
   });
-  await reader.toggleAgentPreparedPhoto(preparedButton);
-  assert(preparedStatus.textContent.includes('Full photo adjusted'));
+  await reader.showAgentPreparedPhoto(photoContainer);
+  assert(preparedStatus.textContent.includes('Whole photo kept'));
+  photoContainer.isConnected = false;
+  preparedImage.src = '/new-submission.jpg';
+  await reader.showAgentPreparedPhoto(photoContainer);
+  assert.equal(preparedImage.src, '/new-submission.jpg', 'Late preparation cannot replace another submission');
   assert.equal(reader.compareAgentDocumentType('STUDENT ID\nNAME: Demo Person', 'Philippine Passport'), 'Student ID');
   assert.equal(reader.compareAgentDocumentType('NAME: Demo Person', 'Philippine Passport'), '');
   assert.equal(reader.compareAgentDocumentType('STUDENT ID\nPASSPORT', 'Postal ID'), '');
@@ -292,6 +296,9 @@ function context(file) {
   const history = { original_submission: original, corrected_copy: latest, id_image_url: '/fourth-id.jpg' };
   const versionPicker = a.renderAgentSubmissionPicker(history);
   assert(versionPicker.includes('Latest resubmission (3)'));
+  assert(versionPicker.includes('Latest copy'));
+  assert(versionPicker.includes('Original copy'));
+  assert(versionPicker.includes('Other copies'));
   assert(versionPicker.includes('Resubmission 1'));
   assert(versionPicker.includes('Resubmission 2'));
   a.activeCopyMode = 'correction-0';
@@ -300,6 +307,20 @@ function context(file) {
   assert.equal(a.getAgentPreviewCopy(history).id_image_url, '/first-id.jpg');
   a.activeCopyMode = 'latest';
   assert.equal(a.getAgentPreviewCopy(history).id_image_url, '/fourth-id.jpg');
+  Object.assign(a.allApps[0], history);
+  a.agentDetailMode = 'preview';
+  a.document.querySelector = () => null;
+  await a.renderDetailModalContent();
+  assert.equal((an['det-body'].innerHTML.match(/aria-label="Application copy"/g) || []).length, 3);
+  a.activeCopyMode = 'original';
+  await a.renderDetailModalContent();
+  assert(an['det-body'].innerHTML.includes('/first-id.jpg'));
+  assert(an['det-body'].innerHTML.includes('Original Name'));
+  assert(!an['det-body'].innerHTML.includes('/fourth-id.jpg'));
+  a.activeCopyMode = 'correction-0';
+  await a.renderDetailModalContent();
+  assert(an['det-body'].innerHTML.includes('/second-id.jpg'));
+  assert(an['det-body'].innerHTML.includes('First Correction'));
 
   const { sandbox: statusEmail } = context('web/js/api.js');
   statusEmail.apiSendEmail = async (to, subject, body, options) => ({ to, subject, body, options });

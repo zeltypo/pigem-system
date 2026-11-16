@@ -839,27 +839,31 @@ function findAgentIdCorners(gray, cv) {
         try {
           var area = cv.contourArea(contour);
           if (area < frameArea * 0.12 || area > frameArea * 0.96) continue;
-          cv.approxPolyDP(contour, polygon, 0.022 * cv.arcLength(contour, true), true);
-          if (polygon.rows !== 4 || !cv.isContourConvex(polygon)) continue;
-          var points = [];
-          for (var j = 0; j < 4; j++) points.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
-          var shape = getAgentCardShape(points, gray.cols, gray.rows);
-          if (!shape || area < shape.width * shape.height * 0.75) continue;
-          var evidence = agentCardBoundaryEvidence(blurred, shape);
-          if (evidence.support < 7) continue;
-          var score = area * (0.6 + evidence.support / 12);
-          if (score <= bestScore) continue;
-          bestScore = score;
-          best = {
-            points: shape.points.flatMap(function (point) {
-              return [
-                Math.max(0, Math.min(gray.cols - 1, evidence.center.x + (point.x - evidence.center.x) * 1.045)),
-                Math.max(0, Math.min(gray.rows - 1, evidence.center.y + (point.y - evidence.center.y) * 1.045))
-              ];
-            }),
-            width: Math.round(shape.width * 1.045),
-            height: Math.round(shape.height * 1.045)
-          };
+          // Rounded or lightly broken edges need more than one approximation.
+          var perimeter = cv.arcLength(contour, true);
+          for (var tolerance of [0.015, 0.022, 0.035, 0.05]) {
+            cv.approxPolyDP(contour, polygon, tolerance * perimeter, true);
+            if (polygon.rows !== 4 || !cv.isContourConvex(polygon)) continue;
+            var points = [];
+            for (var j = 0; j < 4; j++) points.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
+            var shape = getAgentCardShape(points, gray.cols, gray.rows);
+            if (!shape || area < shape.width * shape.height * 0.75) continue;
+            var evidence = agentCardBoundaryEvidence(blurred, shape);
+            if (evidence.support < 7) continue;
+            var score = area * (0.6 + evidence.support / 12);
+            if (score <= bestScore) continue;
+            bestScore = score;
+            best = {
+              points: shape.points.flatMap(function (point) {
+                return [
+                  Math.max(0, Math.min(gray.cols - 1, evidence.center.x + (point.x - evidence.center.x) * 1.045)),
+                  Math.max(0, Math.min(gray.rows - 1, evidence.center.y + (point.y - evidence.center.y) * 1.045))
+                ];
+              }),
+              width: Math.round(shape.width * 1.045),
+              height: Math.round(shape.height * 1.045)
+            };
+          }
         } finally {
           contour.delete();
         }
@@ -930,10 +934,11 @@ async function enhanceAgentIdPhoto(photo, cv) {
       cv.warpPerspective(gray, source, transform, new cv.Size(w, h));
     }
     var meanLight = cv.mean(source)[0];
-    var adjustedLight = meanLight < 105;
+    var adjustedLight = meanLight < 105 || meanLight > 205;
     if (adjustedLight) {
       var levels = Array.from({ length: 256 }, function (_, value) {
-        return Math.round(255 * Math.pow(value / 255, 0.75));
+        // Tone correction helps exposure; it cannot recover blown-out text.
+        return Math.round(255 * Math.pow(value / 255, meanLight < 105 ? 0.75 : 1.2));
       });
       var lut = cv.matFromArray(1, 256, cv.CV_8U, levels);
       mats.push(lut);
@@ -993,40 +998,23 @@ function prepareAgentIdPhoto(url, photo) {
   return agentPreparedPhotos.get(url);
 }
 
-async function toggleAgentPreparedPhoto(button) {
-  var container = button.closest("[data-photo-container]");
-  var image = container && container.querySelector("img");
-  var status = container && container.querySelector("[data-photo-status]");
-  if (!image || !status) return;
-  var original = button.dataset.photo;
-  if (button.dataset.prepared === "yes") {
-    image.src = original;
-    button.dataset.prepared = "";
-    button.textContent = "View adjusted photo";
-    status.textContent = "";
+async function showAgentPreparedPhoto(container) {
+  var image = container.querySelector("img");
+  var status = container.querySelector("[data-photo-status]");
+  var url = container.dataset.photo;
+  if (!image || !status || !url) return;
+  status.textContent = "Preparing photo…";
+  var prepared = await prepareAgentIdPhoto(url);
+  // Switching submissions may finish while the old image is still processing.
+  if (!container.isConnected) return;
+  if (!prepared) {
+    status.textContent = "Original photo shown. Photo preparation is unavailable.";
     return;
   }
-
-  button.disabled = true;
-  status.textContent = "Preparing photo…";
-  try {
-    var prepared = await prepareAgentIdPhoto(original);
-    if (!prepared) {
-      status.textContent = "Photo adjustment unavailable. The original is shown.";
-      return;
-    }
-    image.src = prepared.canvas.toDataURL("image/jpeg", 0.9);
-    button.dataset.prepared = "yes";
-    button.textContent = "Show original";
-    status.textContent = prepared.cropped
-      ? "Card edges detected and cropped." + (prepared.lightingAdjusted ? " Brightened for easier reading." : "")
-      : "Full photo adjusted." + (prepared.lightingAdjusted ? " Brightened for easier reading." : "") +
-        " If you need a crop, use a photo with all four corners visible against a plain background.";
-  } catch (error) {
-    status.textContent = "Photo adjustment unavailable. The original is shown.";
-  } finally {
-    button.disabled = false;
-  }
+  image.src = prepared.canvas.toDataURL("image/jpeg", 0.9);
+  status.textContent = prepared.cropped
+    ? "Cropped for reading. Download keeps the original upload."
+    : "Whole photo kept to protect the printed details. Download keeps the original upload.";
 }
 
 async function readAgentIdPhoto(worker, photo, expected, url) {
@@ -1327,23 +1315,9 @@ async function renderDetailModalContent(updateResultsOnly) {
 
   var frontIdPhotoUrl = viewData.id_image_url || viewData.id_front_path || "";
   var rawFrontUrl = frontIdPhotoUrl || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
-  var croppedUrl = (activeCopyMode === "latest" && (app.cropped_id_url || app.id_cropped_url || (scr && scr.cropped_front_url)))
-    ? (app.cropped_id_url || app.id_cropped_url || scr.cropped_front_url)
-    : "";
-  var displayedFrontUrl = (croppedUrl && activeIdImgMode === "cropped") ? croppedUrl : rawFrontUrl;
+  var displayedFrontUrl = rawFrontUrl;
   var idBackPhotoUrl = viewData.id_back_image_url || viewData.id_back_path || "";
-  var croppedBackUrl = (activeCopyMode === "latest" && (app.cropped_back_url || app.id_back_cropped_url || (scr && scr.cropped_back_url)))
-    ? (app.cropped_back_url || app.id_back_cropped_url || scr.cropped_back_url)
-    : "";
-  var displayedBackUrl = (croppedBackUrl && activeIdImgMode === "cropped") ? croppedBackUrl : idBackPhotoUrl;
-
-  var idModeBar = '<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">';
-  if (croppedUrl || croppedBackUrl) {
-    idModeBar +=
-      '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "cropped" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'cropped\')">Cropped Copy</button>' +
-      '<button type="button" class="btn btn-sm ' + (activeIdImgMode === "raw" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchIdImgMode(\'raw\')">Original Photo</button>';
-  }
-  idModeBar += '</div>';
+  var displayedBackUrl = idBackPhotoUrl;
 
   var currentSt = app.status || "Under Agent Review";
   var selectedReqStatus = (currentSt === "Approved" || currentSt === "Rejected" || currentSt === "Encoding" || currentSt === "Under Agent Review")
@@ -1401,11 +1375,11 @@ async function renderDetailModalContent(updateResultsOnly) {
         '<div>' +
           '<div class="tiny muted" style="font-weight:700; text-transform:uppercase; margin-bottom:6px">Installation Location</div>' +
           '<div class="kv">' +
-            '<div><span>House / Bldg / Street</span><b>' + escapeHtml(((app.house_no ? app.house_no + " " : "") + (app.building_name && app.building_name !== "N/A" ? app.building_name + " " : "") + (viewData.street || app.street || "")).trim() || "-") + '</b></div>' +
-            '<div><span>Subdivision and Brgy</span><b>' + escapeHtml([app.subdivision, app.barangay].filter(Boolean).join(", ") || "-") + '</b></div>' +
-            '<div><span>City and Province</span><b>' + escapeHtml([app.city, app.province].filter(Boolean).join(", ") || "-") + '</b></div>' +
-            '<div><span>Nearest Landmark</span><b>' + escapeHtml(app.landmark || "-") + '</b></div>' +
-            '<div><span>Pinned Coordinates</span><b>' + escapeHtml((app.latitude != null ? app.latitude : "-") + ", " + (app.longitude != null ? app.longitude : "-")) + '</b></div>' +
+            '<div><span>House / Bldg / Street</span><b>' + escapeHtml(((viewData.house_no ? viewData.house_no + " " : "") + (viewData.building_name && viewData.building_name !== "N/A" ? viewData.building_name + " " : "") + (viewData.street || app.street || "")).trim() || "-") + '</b></div>' +
+            '<div><span>Subdivision and Brgy</span><b>' + escapeHtml([viewData.subdivision, viewData.barangay].filter(Boolean).join(", ") || "-") + '</b></div>' +
+            '<div><span>City and Province</span><b>' + escapeHtml([viewData.city, viewData.province].filter(Boolean).join(", ") || "-") + '</b></div>' +
+            '<div><span>Nearest Landmark</span><b>' + escapeHtml(viewData.landmark || "-") + '</b></div>' +
+            '<div><span>Pinned Coordinates</span><b>' + escapeHtml((viewData.latitude != null ? viewData.latitude : "-") + ", " + (viewData.longitude != null ? viewData.longitude : "-")) + '</b></div>' +
             '<div><span>Service Coverage</span><b>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : "-") + '</b></div>' +
           '</div>' +
         '</div>' +
@@ -1415,22 +1389,20 @@ async function renderDetailModalContent(updateResultsOnly) {
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos</div>' +
-        copySwitcher + idModeBar +
+        copySwitcher +
       '</div>' +
       '<div class="grid-2" style="margin-bottom:12px">' +
-        '<div data-photo-container style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
-          '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedUrl && activeIdImgMode === "cropped" ? "FRONT ID (CROPPED COPY)" : "FRONT ID (ORIGINAL UPLOADED COPY)") + '</div>' +
+        '<div data-photo-container data-photo="' + escapeHtml(frontIdPhotoUrl) + '" style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
+          '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + "FRONT ID" + '</div>' +
           (frontIdPhotoUrl ? '<img src="' + escapeHtml(displayedFrontUrl) + '" alt="Front ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />' +
             '<button type="button" class="btn btn-outline btn-sm mt" data-side="front" onclick="downloadAgentIdPhoto(this.dataset.side)">Download front</button>' +
-            '<button type="button" class="btn btn-outline btn-sm mt" data-photo="' + escapeHtml(frontIdPhotoUrl) + '" onclick="toggleAgentPreparedPhoto(this)">View adjusted photo</button>' +
             '<div class="small muted" role="status" data-photo-status></div>' : '<span class="muted">No front photo uploaded</span>') +
         '</div>' +
-        '<div data-photo-container style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
-          '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedBackUrl && activeIdImgMode === "cropped" ? "BACK ID (CROPPED COPY)" : "BACK ID (ORIGINAL UPLOADED COPY)") + '</div>' +
+        '<div data-photo-container data-photo="' + escapeHtml(idBackPhotoUrl) + '" style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
+          '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + "BACK ID" + '</div>' +
           (displayedBackUrl
             ? '<img src="' + escapeHtml(displayedBackUrl) + '" alt="Back ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />'
               + '<button type="button" class="btn btn-outline btn-sm mt" data-side="back" onclick="downloadAgentIdPhoto(this.dataset.side)">Download back</button>' +
-            '<button type="button" class="btn btn-outline btn-sm mt" data-photo="' + escapeHtml(idBackPhotoUrl) + '" onclick="toggleAgentPreparedPhoto(this)">View adjusted photo</button>' +
             '<div class="small muted" role="status" data-photo-status></div>'
             : '<span class="muted small" style="display:block; padding:54px 0">No Back ID uploaded</span>') +
         '</div>' +
@@ -1555,7 +1527,7 @@ async function renderDetailModalContent(updateResultsOnly) {
         '</details>');
   var detailHtml = agentDetailMode === "status" ? statusSection :
     agentDetailMode === "correction" ? recommendation + correctionSection :
-      recommendation + photosSection + applicantSection;
+      (copySwitcher ? '<div class="agent-copy-toolbar"><b>Application copy</b>' + copySwitcher + '</div>' : '') + recommendation + photosSection + applicantSection;
   if (activeDetailAppId !== app.id) return;
   if (updateResultsOnly) {
     var template = document.createElement("template");
@@ -1568,6 +1540,9 @@ async function renderDetailModalContent(updateResultsOnly) {
   }
   var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
   if (findings) showAgentIdFindings(findings, activeCopyMode === "latest" ? app : null);
+  if (!updateResultsOnly && activeCopyMode !== "original" && document.querySelectorAll) {
+    document.querySelectorAll("#det-body [data-photo-container]").forEach(showAgentPreparedPhoto);
+  }
 
 }
 
@@ -1789,11 +1764,17 @@ function getAgentSubmissionCopies(app) {
 function renderAgentSubmissionPicker(app) {
   var copies = getAgentSubmissionCopies(app);
   if (copies.length < 2) return "";
-  return '<label class="small muted">Submission version ' +
-    '<select class="agent-submission-picker" onchange="switchCopyMode(this.value)">' +
-    copies.map(function (copy) {
-      return '<option value="' + escapeHtml(copy.key) + '"' + (copy.key === activeCopyMode ? " selected" : "") + '>' + escapeHtml(copy.label) + '</option>';
-    }).join("") + '</select></label>';
+  var buttons = copies.filter(function (copy) { return copy.key === "latest" || copy.key === "original"; });
+  var earlier = copies.filter(function (copy) { return copy.key !== "latest" && copy.key !== "original"; });
+  return '<div class="agent-copy-controls" role="group" aria-label="Application copy">' +
+    buttons.map(function (copy) {
+      return '<button type="button" class="btn btn-sm ' + (copy.key === activeCopyMode ? 'btn-red' : 'btn-outline') +
+        '" aria-pressed="' + (copy.key === activeCopyMode) + '" title="' + escapeHtml(copy.label) +
+        '" onclick="switchCopyMode(\'' + copy.key + '\')">' + (copy.key === "latest" ? "Latest copy" : "Original copy") + '</button>';
+    }).join("") + (earlier.length ? '<select aria-label="Other copies" onchange="if(this.value) switchCopyMode(this.value)">' +
+      '<option value="">Other copies</option>' + earlier.map(function (copy) {
+        return '<option value="' + escapeHtml(copy.key) + '"' + (copy.key === activeCopyMode ? ' selected' : '') + '>' + escapeHtml(copy.label) + '</option>';
+      }).join("") + '</select>' : '') + '</div>';
 }
 
 function getAgentPreviewCopy(app) {
