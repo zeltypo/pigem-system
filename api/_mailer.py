@@ -369,12 +369,11 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
             </p>
             <div style="border:1px solid #d4d4d4;padding:14px 16px;margin:14px 0;">
               <div style="margin-bottom:6px;">Reference Number: <b>{ref_no}</b></div>
-              <div style="margin-bottom:6px;">Selected Plan: <b>{plan_name}</b></div>
               <div>Current Status: <b>{status_label}</b></div>
               {extra_rows}
             </div>
             <p style="margin:0;font-size:13px;">
-              Sign in to your Customer Portal anytime to view your application timeline.
+              Sign in to your account to view this update.
             </p>
             """
 

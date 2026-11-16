@@ -1,6 +1,6 @@
 # PIGEM recording script
 
-**Current recording change:** Staff now compare the ID photos with the form by hand. In the three Agent scenes, show the original photos beside the entered details. Replace voice-over lines about automatic results with what the Agent sees and checks. For each example, click **Read ID text** in the Agent portal and compare the text with the photo and form. Before recording, check a clear photo and a blurry photo. The upload quality check still runs in the browser.
+**Current recording flow:** Open each fictional application in the Agent portal and wait for **Document findings**. Show matching details, then a different ID number, then an unclear photo. The Agent reviews the findings, requests corrections as needed, and records the provider’s decision.
 
 Use the three phone-sized views together when comparing applicants. Enlarge one view when the text needs to be read. Keep the same three application reference numbers throughout the recording. Use fictional applicant details.
 

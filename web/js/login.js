@@ -1,4 +1,5 @@
 var loginCaptchaVerified = false;
+var loginCaptchaVersion = 0;
 var loginAttempts = 0;
 var MAX_ATTEMPTS = 5;
 
@@ -12,17 +13,15 @@ var _recoveryState = {
 };
 
 window.onLoginCaptchaVerified = async function (token) {
-  if (token && typeof apiVerifyCaptcha === "function") {
-    var verifyRes = await apiVerifyCaptcha(token);
-    if (!verifyRes || verifyRes.verified === false) {
-      loginCaptchaVerified = false;
-      return;
-    }
-  }
-  loginCaptchaVerified = true;
+  var version = ++loginCaptchaVersion;
+  loginCaptchaVerified = false;
+  if (!token || typeof apiVerifyCaptcha !== "function") return;
+  var result = await apiVerifyCaptcha(token);
+  if (version === loginCaptchaVersion) loginCaptchaVerified = Boolean(result && result.verified === true);
 };
 
 window.onLoginCaptchaExpired = function () {
+  loginCaptchaVersion++;
   loginCaptchaVerified = false;
 };
 
@@ -68,43 +67,13 @@ function renderLoginCaptchaBox() {
 
 function renderLoginCaptchaFallback(box) {
   if (!box) return;
-  box.innerHTML =
-    '<div id="login-captcha-card" class="captcha-container" onclick="triggerLoginCaptcha()">' +
-      '<div style="display:flex;align-items:center;gap:12px;">' +
-        '<div id="login-captcha-check" class="captcha-box-inner"></div>' +
-        '<span id="login-captcha-text" style="font-weight:600;font-size:14px;color:var(--text);">I\'m not a robot</span>' +
-      '</div>' +
-      '<div style="text-align:right;line-height:1.2;">' +
-        '<div style="font-size:11px;font-weight:800;color:var(--muted);">reCAPTCHA</div>' +
-        '<div style="font-size:10px;color:var(--muted);">Security Verification</div>' +
-      '</div>' +
-    '</div>';
-}
-
-function triggerLoginCaptcha() {
-  if (loginCaptchaVerified) return;
-  var check = document.getElementById("login-captcha-check");
-  var card = document.getElementById("login-captcha-card");
-  var text = document.getElementById("login-captcha-text");
-  if (!check || !card) return;
-
-  check.innerHTML = '<div class="captcha-spinner"></div>';
-  if (text) text.textContent = "Verifying security credentials...";
-
-  setTimeout(function () {
-    loginCaptchaVerified = true;
-    check.innerHTML = "&#10003;";
-    card.classList.add("verified");
-    if (text) text.textContent = "I\'m not a robot";
-  }, 450);
+  box.textContent = "The security check could not load. Refresh the page and try again.";
 }
 
 function resetLoginFieldsAndCaptcha() {
-  var emailEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
-  if (emailEl) emailEl.value = "";
   if (pwEl) pwEl.value = "";
-  loginCaptchaVerified = false;
+  window.onLoginCaptchaExpired();
   if (typeof grecaptcha !== "undefined" && grecaptcha.reset) {
     try {
       grecaptcha.reset();
@@ -177,6 +146,10 @@ async function redirectIfAlreadySignedIn() {
 }
 
 window.addEventListener("DOMContentLoaded", function () {
+  var field = document.getElementById("email");
+  try {
+    if (field && !field.value) field.value = localStorage.getItem("pigem_login_name_" + window.SYSTEM) || "";
+  } catch (error) {}
   var hasReason = showSessionReasonBanner();
   renderLoginCaptchaBox();
   checkAdminProvisionState();
@@ -256,6 +229,20 @@ async function submitStaffResetRequest(event) {
   }
 }
 
+function validateLoginIdentifier(raw, usernameOnly) {
+  var value = String(raw || "").trim().replace(/^@/, "");
+  if (!value) return { error: usernameOnly ? "Enter your username." : "Enter your username or Gmail address." };
+  if (value.includes("@")) {
+    if (usernameOnly) return { error: "Enter your username here." };
+    if (!isCustomerGmail(value)) return { error: "Enter a valid Gmail address." };
+    return { value: value.toLowerCase() };
+  }
+  if (!isValidUsername(value)) {
+    return { error: "Use 3–30 letters, numbers, dots, or underscores for your username." };
+  }
+  return { value: value };
+}
+
 async function handleLogin(event) {
   event.preventDefault();
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
@@ -270,58 +257,11 @@ async function handleLogin(event) {
 
   var emailEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
-  var rawIdent = (emailEl ? emailEl.value : "").trim();
-  var identifier = (rawIdent.indexOf("@") !== -1 && rawIdent.charAt(0) !== "@") ? rawIdent.toLowerCase() : rawIdent;
+  var login = validateLoginIdentifier(emailEl ? emailEl.value : "", isAdmin || isStaff);
   var password = pwEl ? pwEl.value : "";
-  var hasError = false;
-
-  if (!identifier) {
-    if (typeof setFieldError === "function") setFieldError("email", (isAdmin || isStaff) ? "Please enter your username." : "Please enter your username or email address.");
-    hasError = true;
-  } else if (isAdmin || isStaff) {
-    if (identifier.indexOf("@") !== -1) {
-      if (typeof setFieldError === "function") setFieldError("email", "Internal Admin, Manager, and Agent accounts sign in by Username only.");
-      hasError = true;
-    } else {
-      var cleanU = identifier.replace(/^@/, "");
-      if (typeof isValidUsername === "function" && !isValidUsername(cleanU)) {
-        if (typeof setFieldError === "function") setFieldError("email", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
-        hasError = true;
-      } else {
-        identifier = cleanU;
-      }
-    }
-  } else {
-    if (identifier.indexOf("@") !== -1) {
-      if (typeof isCustomerGmail === "function" && !isCustomerGmail(identifier)) {
-        if (typeof setFieldError === "function") setFieldError("email", "Customer Login accepts Customer usernames or @gmail.com email addresses only.");
-        hasError = true;
-      }
-    } else if (typeof isValidUsername === "function" && !isValidUsername(identifier.replace(/^@/, ""))) {
-      if (typeof setFieldError === "function") setFieldError("email", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_), or enter your @gmail.com.");
-      hasError = true;
-    }
-  }
-
-  if (!password) {
-    if (typeof setFieldError === "function") setFieldError("password", "Please enter your password.");
-    hasError = true;
-  }
-
-  if (hasError) {
-    if (typeof grecaptcha !== "undefined" && grecaptcha.reset) {
-      try { grecaptcha.reset(); } catch (e) {}
-    }
-    loginCaptchaVerified = false;
-    return;
-  }
-
-  if (!loginCaptchaVerified && typeof grecaptcha !== "undefined" && grecaptcha.getResponse) {
-    try {
-      var gResp = grecaptcha.getResponse();
-      if (gResp && gResp.length > 0) loginCaptchaVerified = true;
-    } catch (e) {}
-  }
+  if (login.error) setFieldError("email", login.error);
+  if (!password) setFieldError("password", "Enter your password.");
+  if (login.error || !password) return;
 
   if (!loginCaptchaVerified) {
     var card = document.getElementById("login-captcha-card") || document.getElementById("login-recaptcha-wrap");
@@ -338,12 +278,14 @@ async function handleLogin(event) {
   }
 
   var btn = document.getElementById("btn-login");
+  if (!btn || btn.disabled) return;
   btn.disabled = true;
   var oldText = btn.textContent;
   btn.textContent = "Signing in...";
 
   try {
-    var user = await dbSignIn(identifier, password);
+    var user = await dbSignIn(login.value, password);
+    try { localStorage.setItem("pigem_login_name_" + window.SYSTEM, login.value); } catch (error) {}
     loginAttempts = 0;
     var bannerEl = document.getElementById("login-attempt-banner");
     if (bannerEl) bannerEl.hidden = true;

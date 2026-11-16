@@ -1,3 +1,8 @@
+function dashboardUserLabel(user) {
+  var label = { agent: "Agent", manager: "Manager" }[user.role];
+  return user.full_name + (label ? " · " + label : "");
+}
+
 var dashCurrentUser = null;
 var dashSearchApps = [];
 var dashOnSelectApp = null;
@@ -112,7 +117,7 @@ function initDashUI(user, apps, onSelectAppCallback) {
 
   var topNameEl = document.getElementById("top-user-name");
   if (topNameEl && user && user.full_name) {
-    topNameEl.textContent = user.full_name;
+    topNameEl.textContent = dashboardUserLabel(user);
   }
 
   renderAvatarBtn(user);
@@ -576,7 +581,7 @@ async function saveProfileChanges() {
     renderAvatarBtn(dashCurrentUser);
     renderProfileDrawer(dashCurrentUser);
     var nameLabel = document.getElementById("top-user-name");
-    if (nameLabel) nameLabel.textContent = dashCurrentUser.full_name;
+    if (nameLabel) nameLabel.textContent = dashboardUserLabel(dashCurrentUser);
     showMsg("prof-msg", "ok", "Profile updated!");
   } catch (err) {
     showMsg("prof-msg", "error", err.message || "Could not update profile.");

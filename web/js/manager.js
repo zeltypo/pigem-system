@@ -93,7 +93,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   if (!currentManager) return;
 
   var topNameEl = document.getElementById("top-user-name");
-  if (topNameEl) topNameEl.textContent = currentManager.full_name;
+  if (topNameEl) topNameEl.textContent = currentManager.full_name + " · Manager";
   var repDateEl = document.getElementById("rep-date");
   var repMonthEl = document.getElementById("rep-month");
   if (repDateEl && typeof getLocalTodayIso === "function") repDateEl.value = getLocalTodayIso();
@@ -459,7 +459,15 @@ async function saveMgrOverride() {
   var newStatus = document.getElementById("mgr-override-status").value;
   var remarks = document.getElementById("mgr-remarks").value.trim();
 
-  var effectiveRemarks = remarks || (newStatus === "Needs Correction" ? "Please sign in to your Customer Account to review and update your application details." : (app.agent_remarks || ""));
+  if (newStatus === "Rejected" && newStatus !== app.status && (!remarks || remarks === (app.agent_remarks || "").trim())) {
+    showAlert("Reason needed", "Enter a short reason the customer can understand.");
+    document.getElementById("mgr-remarks").focus();
+    return;
+  }
+  var changed = newStatus !== app.status;
+  var effectiveRemarks = changed && (newStatus === "Approved" || newStatus === "Rejected")
+    ? getApplicationStatusNotice(newStatus, remarks === (app.agent_remarks || "").trim() ? "" : remarks)
+    : remarks || (newStatus === "Needs Correction" ? "Sign in to your account to see what needs to be updated." : (app.agent_remarks || ""));
 
   await dbUpdateApplication(app.id, {
     assigned_agent: agentEmail,
@@ -491,6 +499,7 @@ async function saveMgrOverride() {
   }
 
   var shouldNotifyCust = (newStatus === "Needs Correction") || (newStatus !== app.status && (newStatus === "Approved" || newStatus === "Rejected"));
+  var mailResult;
   if (shouldNotifyCust) {
     var custLabel = (newStatus === "Needs Correction") ? "Update Needed" : newStatus;
     var custEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email;
@@ -503,7 +512,7 @@ async function saveMgrOverride() {
       target_id: app.id
     });
     if (newStatus === "Needs Correction") {
-      await apiSendCorrectionEmail(
+      mailResult = await apiSendCorrectionEmail(
         custEmail,
         app.full_name,
         app.reference_no,
@@ -511,13 +520,16 @@ async function saveMgrOverride() {
         "Information / Document Clarification Required"
       );
     } else {
-      await apiSendStatusEmail(custEmail, app.full_name, app.reference_no, newStatus, effectiveRemarks);
+      mailResult = await apiSendStatusEmail(custEmail, app.full_name, app.reference_no, newStatus, effectiveRemarks);
     }
   }
 
   closeMgrModal();
   await refreshManagerData();
-  showAlert("Saved", "Application " + app.reference_no + " has been updated.");
+  var mailNote = shouldNotifyCust
+    ? (mailResult && mailResult.sent ? " The customer was emailed." : " The update is in the customer portal. The email could not be sent.")
+    : "";
+  showAlert("Saved", "Application " + app.reference_no + " has been updated." + mailNote);
 }
 
 function renderAgentPerformance() {

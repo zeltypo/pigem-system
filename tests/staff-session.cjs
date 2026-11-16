@@ -18,7 +18,7 @@ const users = ["manager", "agent"].map(role => ({
   id: role, username: role, email: role + "@example.test", role, password_hash: "test-hash",
 }));
 
-function tab() {
+function tab(browserStorage = shared) {
   const session = storage();
   const window = {
     SYSTEM: "staff",
@@ -67,7 +67,7 @@ function tab() {
   };
   const context = vm.createContext({
     window, document: { addEventListener() {} }, console,
-    localStorage: shared, sessionStorage: session,
+    localStorage: browserStorage, sessionStorage: session,
     CONFIG: { SUPABASE_URL: "test", SUPABASE_ANON_KEY: "test" },
   });
   vm.runInContext(source, context);
@@ -86,7 +86,12 @@ async function run() {
   assert.equal((await agentTab.checkPageAccess(["agent"])).role, "agent");
   assert.equal(await managerTab.dbGetToken(), "manager-jwt");
   assert.equal(await agentTab.dbGetToken(), "agent-jwt");
+  const returningTab = tab();
+  assert.equal((await returningTab.checkPageAccess(["manager"])).role, "manager");
+  const differentBrowser = tab(storage());
+  assert.equal(differentBrowser.getActiveSessionPair(["manager"]).id, "");
   await agentTab.dbSignOut(true);
+  assert.equal(tab().getActiveSessionPair(["agent"]).id, "");
   assert.equal(await agentTab.dbGetToken(), "");
   assert.equal(await managerTab.dbGetToken(), "manager-jwt");
   assert.equal((await managerTab.dbVerifyActiveSession("manager", ["manager"])).valid, true);

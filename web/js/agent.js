@@ -228,7 +228,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   if (!currentAgent) return;
 
   var topUserEl = document.getElementById("top-user-name");
-  if (topUserEl) topUserEl.textContent = currentAgent.full_name;
+  if (topUserEl) topUserEl.textContent = currentAgent.full_name + " · Agent";
   var repDateEl = document.getElementById("rep-date");
   var repMonthEl = document.getElementById("rep-month");
   if (repDateEl && typeof getLocalTodayIso === "function") repDateEl.value = getLocalTodayIso();
@@ -417,7 +417,7 @@ function getScreeningCardBadge(app) {
   var scr = app.screening || {};
   var state = scr.state || "";
   if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || state === "unavailable" || state === "paused" || scr.fallback_original_only) {
-    return '<span class="badge badge-gray">Original ID Copy (Manual Review)</span>';
+    return '<span class="badge badge-gray">Open to check documents</span>';
   }
   if (["pending_agent", "queued", "checking"].includes(state)) return '<span class="badge badge-blue">Waiting for Document Check</span>';
   var eta = formatEtaLabel(scr.eta_seconds);
@@ -457,7 +457,7 @@ function getScreeningQuickSummary(app) {
   }
   var scr = app.screening || {};
   if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only) {
-    return '<span class="muted">Open the original ID photos to review them by hand.</span>';
+    return '<span class="muted">Open the application to see the document findings.</span>';
   }
   if (scr.state === "pending_agent") return '<span class="muted">Waiting for Document Check.</span>';
   if (scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running") {
@@ -630,42 +630,79 @@ function renderVisualScreeningProgressBox(app) {
     '<div class="small muted">Reading both ID photos and comparing the application details. Please wait for the saved result.</div></div>';
 }
 
-async function readAgentIdText(button) {
-  var panel = button.parentElement;
-  var result = panel.querySelector("[data-id-text-result]");
-  var sources = [
-    { label: "Front", url: button.dataset.front },
-    { label: "Back", url: button.dataset.back }
-  ].filter(function (side) { return side.url; });
+// Only compare a value when the photo reader found a clear label for that field.
+function compareAgentIdDetails(text, expected) {
+  var checks = [
+    { label: "Name", entered: expected.name, pattern: /^(?:full\s+name|name|pangalan)\s*[:.-]\s*(.+)$/im },
+    { label: "Birth date", entered: expected.birth, pattern: /^(?:date\s+of\s+birth|birth\s*date|dob|petsa ng kapanganakan)\s*[:.-]\s*(.+)$/im },
+    { label: "ID number", entered: expected.number, pattern: /^(?:id(?:\s*(?:card|student))?\s*(?:number|no\.?|#)|student\s*(?:number|no\.?)|license\s*(?:number|no\.?))\s*[:.-]\s*(.+)$/im }
+  ];
+  return checks.map(function (field) {
+    var values = Array.from(text.matchAll(new RegExp(field.pattern.source, "gim")), function (match) {
+      var value = match[1].trim();
+      // Compare dates only when their format is clear. Month/day order can vary by ID.
+      if (field.label === "Birth date") {
+        var iso = value.match(/^(\d{4})[-/. ](\d{2})[-/. ](\d{2})$/);
+        return iso ? iso.slice(1).join("-") : "";
+      }
+      return value;
+    }).filter(Boolean);
+    var normalize = function (value) {
+      return String(value || "").normalize("NFC").trim().toUpperCase().replace(/\s+/g, field.label === "ID number" ? "" : " ");
+    };
+    var candidates = new Map(values.map(function (value) { return [normalize(value), value]; }));
+    var entered = normalize(field.entered);
+    if (!entered || candidates.size !== 1) return field.label + ": Check the photo";
+    var found = candidates.values().next().value;
+    return field.label + (normalize(found) === entered ? ": Matches" : ": Check difference (photo reads " + found + ")");
+  });
+}
 
-  button.disabled = true;
-  result.textContent = "Reading the ID photos…";
+var lastAgentIdCheck = null;
+
+async function getAgentIdFindings(sources, expected) {
   var worker;
+  var textBySide = [];
+  var notes = [];
   try {
     worker = await Tesseract.createWorker("eng");
-    var output = [];
     for (var side of sources) {
-      var message = "Could not read text clearly. Check the original photo for blur, glare, or small print.";
       try {
-        // Download the existing photo into this browser. The OCR worker receives only the local copy.
+        // The browser reads the downloaded photo locally.
         var response = await fetch(side.url, { referrerPolicy: "no-referrer" });
         if (!response.ok) throw new Error("Photo unavailable");
         var read = await worker.recognize(await response.blob());
-        var visibleText = read.data.text.trim();
-        if (read.data.confidence >= 60 && /[\p{L}\p{N}]/u.test(visibleText)) message = visibleText;
+        var text = read.data.text.trim();
+        if (read.data.confidence >= 60 && /[\p{L}\p{N}]/u.test(text)) {
+          textBySide.push(text);
+        } else {
+          notes.push(side.label + " photo: Text is unclear. Check the photo for blur or glare.");
+        }
       } catch (error) {
-        message = "Could not open or read this photo. Check it by hand.";
+        notes.push(side.label + " photo: Could not read it. Check the original photo.");
       }
-      output.push(side.label + "\n" + message);
     }
-    // Show transcribed text only. Staff decide whether each detail matches.
-    result.textContent = "Compare this text with the photos. Letters and numbers can be misread.\n\n" + output.join("\n\n");
+    return compareAgentIdDetails(textBySide.join("\n"), expected).concat(notes).join("\n");
   } catch (error) {
-    result.textContent = "The text reader could not start. Open the photo to check it by hand.";
+    return "The document check could not start. Review the photos.";
   } finally {
-    button.disabled = false;
     if (worker) await worker.terminate().catch(function () {});
   }
+}
+
+async function showAgentIdFindings(panel) {
+  if (!panel) return;
+  var sources = [
+    { label: "Front", url: panel.dataset.front },
+    { label: "Back", url: panel.dataset.back }
+  ].filter(function (side) { return side.url; });
+  if (!sources.length) return;
+  var expected = { name: panel.dataset.name, birth: panel.dataset.birth, number: panel.dataset.number };
+  var key = JSON.stringify([sources, expected]);
+  if (!lastAgentIdCheck || lastAgentIdCheck.key !== key) {
+    lastAgentIdCheck = { key: key, result: getAgentIdFindings(sources, expected) };
+  }
+  panel.textContent = await lastAgentIdCheck.result;
 }
 
 async function renderDetailModalContent(updateResultsOnly) {
@@ -710,26 +747,11 @@ async function renderDetailModalContent(updateResultsOnly) {
   }
 
   var docQualityLabel = isManualFallback
-    ? "Manual Check"
+    ? "See document findings"
     : (res.readability || (Number(res.blur_score) < 60 ? "Needs Check" : "Clear"));
   var dupBadge = dupCheck.isDup
     ? '<span class="badge badge-red">Duplicate Flagged</span>'
     : '<span class="badge badge-green">Distinct Photos</span>';
-  function renderOcrFieldStatusBadge(matchState, foundText) {
-    if (isManualFallback || matchState === null || typeof matchState === "undefined") {
-      return '<span class="badge badge-gray">Verify Manually</span>';
-    }
-    if (matchState === "not_found") {
-      return '<span class="badge badge-yellow" title="' + escapeHtml(foundText || "Not printed on uploaded ID") + '">Not Printed on ID</span>';
-    }
-    if (matchState === false) {
-      return '<span class="badge badge-red" title="Read on ID: ' + escapeHtml(foundText || "Does not match form") + '">Mismatch</span>';
-    }
-    return '<span class="badge badge-green" title="Read on ID: ' + escapeHtml(foundText || "Matched") + '">Matched</span>';
-  }
-  var nameCheckBadge = renderOcrFieldStatusBadge(res.name_match, res.name_found_on_id);
-  var bdateCheckBadge = renderOcrFieldStatusBadge(res.birth_date_match, res.birth_date_found_on_id);
-  var idNoCheckBadge = renderOcrFieldStatusBadge(res.id_number_match, res.id_number_found_on_id);
 
   var cleanIssuesList = ((res.issues && res.issues.length) ? res.issues : [])
     .map(function (x) { return stripFalseReuploadMsg(x, dupCheck); })
@@ -740,7 +762,7 @@ async function renderDetailModalContent(updateResultsOnly) {
   var findingsText = dupCheck.isDup
     ? dupCheck.reason
     : (isManualFallback
-      ? "Please inspect the customer's original uploaded ID photos and match them with Section 1."
+      ? "Review any differences or unclear details above."
       : (cleanScrSummary || (cleanIssuesList.length ? cleanIssuesList.join("; ") : "Readability, duplicate check, and printed details passed.")));
 
   var copySwitcher = "";
@@ -869,18 +891,16 @@ async function renderDetailModalContent(updateResultsOnly) {
       '</div>' +
 
       ((frontIdPhotoUrl || idBackPhotoUrl)
-        ? '<div class="mb">' +
-          '<button type="button" class="btn btn-outline btn-sm" data-front="' + escapeHtml(frontIdPhotoUrl) +
-          '" data-back="' + escapeHtml(idBackPhotoUrl) + '" onclick="readAgentIdText(this)">Read ID text</button>' +
-          '<pre class="small" data-id-text-result role="status" style="white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; margin-top:8px"></pre>' +
-          '</div>'
+        ? '<div class="mb"><b>Document findings</b>' +
+          '<p class="small muted">Review any differences before requesting a correction.</p>' +
+          '<div class="small" data-id-text-result role="status" style="white-space:pre-wrap; overflow-wrap:anywhere" data-front="' + escapeHtml(frontIdPhotoUrl) +
+          '" data-back="' + escapeHtml(idBackPhotoUrl) + '" data-name="' + escapeHtml(viewData.full_name || app.full_name || "") +
+          '" data-birth="' + escapeHtml(viewData.birth_date || "") + '" data-number="' + escapeHtml(viewData.id_number || "") +
+          '">Checking the ID photos…</div></div>'
         : '') +
       '<div class="check-pill-grid" style="grid-template-columns:repeat(auto-fit, minmax(min(100%, 210px), 1fr));">' +
         '<div class="check-pill"><span>Readability (Blur/Glare)</span><b>' + escapeHtml(docQualityLabel) + '</b></div>' +
         '<div class="check-pill"><span>Duplicate Image Check</span>' + dupBadge + '</div>' +
-        '<div class="check-pill"><span>Applicant Name</span>' + nameCheckBadge + '</div>' +
-        '<div class="check-pill"><span>Birth Date</span>' + bdateCheckBadge + '</div>' +
-        '<div class="check-pill"><span>ID Number</span>' + idNoCheckBadge + '</div>' +
         '<div class="check-pill"><span>Area Coverage</span>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : '<span class="badge badge-gray">-</span>') + '</div>' +
       '</div>' +
       (function () {
@@ -1013,6 +1033,8 @@ async function renderDetailModalContent(updateResultsOnly) {
   } else {
     document.getElementById("det-body").innerHTML = detailHtml;
   }
+  var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
+  if (findings) showAgentIdFindings(findings);
 
 }
 
@@ -1096,9 +1118,11 @@ async function saveAgentDecision(newStatus) {
   if ((newStatus === "Encoding" || newStatus === "Under Agent Review") && !remarks) {
     remarks = "Your application requirements passed initial verification and are now being encoded into the provider portal.";
   } else if (newStatus === "Approved" && !remarks) {
-    remarks = "Congratulations! Your application has been approved. Please allow 3 to 5 business days for installation scheduling.";
+    remarks = getApplicationStatusNotice(newStatus);
   } else if (newStatus === "Rejected" && !remarks) {
-    remarks = rawValidator || "Your application did not pass provider validation.";
+    showAlert("Reason needed", "Enter a short reason the customer can understand.");
+    document.getElementById("det-remarks")?.focus();
+    return;
   } else if (newStatus === "Needs Correction" && !remarks) {
     if (rawValidator || chosenField !== "auto") {
       var gen = await convertValidatorToPoliteRemark();
@@ -1178,9 +1202,9 @@ async function saveAgentDecision(newStatus) {
       target_id: app.id
     });
     var mailRes = await apiSendStatusEmail(recipientEmail, app.full_name, app.reference_no, newStatus, remarks, targetSummaryLabel);
-    if (mailRes && mailRes.sent) {
-      emailNoticeNote = " Email notification sent to " + recipientEmail + ".";
-    }
+    emailNoticeNote = mailRes && mailRes.sent
+      ? " The customer was emailed."
+      : " The update is in the customer portal. The email could not be sent.";
   }
 
   await dbAddLog(staffId, "Set application " + app.reference_no + " status to " + newStatus);

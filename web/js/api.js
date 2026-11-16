@@ -384,18 +384,31 @@ async function apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, tar
   });
 }
 
+function getApplicationStatusNotice(status, remarks) {
+  var message = String(remarks || "").trim();
+  if (message) return message;
+  if (status === "Approved") {
+    return "Your application was approved. Check your account for installation updates.";
+  }
+  if (status === "Rejected") {
+    return "Your application was not approved. Sign in to view the update or contact PIGEM for help.";
+  }
+  return "Sign in to your account to see the latest update.";
+}
+
 async function apiSendStatusEmail(toEmail, customerName, refNo, status, remarks, targetSummary) {
-  var st = (status || "").toLowerCase();
-  if (st.indexOf("correction") !== -1 || st.indexOf("need") !== -1) {
+  var st = String(status || "").trim().toLowerCase();
+  if (st === "needs correction") {
     return await apiSendCorrectionEmail(toEmail, customerName, refNo, remarks, targetSummary);
   }
-  var customerStatus = "Processing";
-  if (st.indexOf("approv") !== -1) customerStatus = "Approved";
-  else if (st.indexOf("reject") !== -1) customerStatus = "Rejected";
+
+  var statuses = { approved: "Approved", rejected: "Rejected" };
+  var customerStatus = statuses[st] || "Processing";
+  var notice = getApplicationStatusNotice(customerStatus, remarks);
 
   var tag = generateOtpRefTag();
   var subj = "PIGEM Application Update - Reference No. " + refNo + " [" + customerStatus + "]";
-  var msg = "Application " + refNo + " status: " + customerStatus + (remarks ? ("\n\nRemarks: " + remarks) : "");
+  var msg = "Application " + refNo + " status: " + customerStatus + "\n\n" + notice;
   return await apiSendEmail(toEmail, subj, msg, {
     template_type: "status_update",
     payload: {
@@ -404,7 +417,7 @@ async function apiSendStatusEmail(toEmail, customerName, refNo, status, remarks,
       customer_name: customerName,
       status_label: customerStatus,
       status: customerStatus,
-      remarks: remarks || "",
+      remarks: notice,
       portal_link: _getPortalBaseUrl() + "/login.html"
     }
   });

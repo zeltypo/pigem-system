@@ -95,10 +95,11 @@ function context(file) {
   a.statusBadge = a.customerStatusBadge = status => `<span class="badge">${status}</span>`;
   a.allApps = [{ id: 'demo', reference_no: 'DEMO-ONLY', full_name: 'Sample Applicant',
     plan_name: 'Sample Fiber Plan', status: 'Under Agent Review', city: 'Rosario', province: 'Cavite',
-    id_type: 'Student ID', screening: { state: 'unavailable' } }];
+    id_type: 'Student ID', id_image_url: '/fictional-front.jpg', screening: { state: 'unavailable' } }];
   a.activeDetailAppId = 'demo';
   await a.renderDetailModalContent();
-  assert(an['det-body'].innerHTML.includes('Verify Manually'));
+  assert(an['det-body'].innerHTML.includes('Document findings'));
+  assert(an['det-body'].innerHTML.includes('Checking the ID photos'));
   fs.writeFileSync('tests/review-preview.html', `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="../web/style.css"><title>Fictional review preview</title><main id="app-detail-modal" style="max-width:1050px;margin:auto;padding:16px"><h1>Fictional review preview</h1><p>Layout check only. No live applicant records.</p>${an['det-body'].innerHTML}</main>`);
 
   assert(!/\b(?:OCR|OpenAI|API|AI)\b/.test(an['det-body'].innerHTML.replace(/<[^>]+>/g, ' ')),
@@ -147,29 +148,61 @@ function context(file) {
   assert.equal((await quality.analyzeClientIdQuality({})).passed, false,
     'An undecodable image must not pass the upload check');
   const { sandbox: reader } = context('web/js/agent.js');
-  const output = {};
-  const button = {
-    dataset: { front: '/front.jpg', back: '/back.jpg' },
-    parentElement: { querySelector: () => output },
+  const output = {
+    dataset: { front: '/front.jpg', back: '/back.jpg', name: 'Maya Dela Cruz', birth: '2001-01-25', number: '12345' },
   };
   const photos = [];
   reader.fetch = async (url, options) => {
-    assert(!options.method && !options.body, 'The photo reader may only download existing photos');
+    assert(!options.method && !options.body, 'Document checking may only download existing photos');
     photos.push(url);
     return { ok: true, blob: async () => url };
   };
   let workerClosed = false;
   reader.Tesseract = { createWorker: async () => ({
     recognize: async photo => ({ data: photo === '/front.jpg'
-      ? { text: 'FICTIONAL STUDENT ID', confidence: 90 }
+      ? { text: 'NAME: Maya Dela Cruz\nDATE OF BIRTH: 2001-01-25\nID NUMBER: 12345', confidence: 90 }
       : { text: 'unreliable', confidence: 25 } }),
     terminate: async () => { workerClosed = true; },
   }) };
-  await reader.readAgentIdText(button);
+  await reader.showAgentIdFindings(output);
   assert.deepEqual(photos, ['/front.jpg', '/back.jpg']);
-  assert(output.textContent.includes('FICTIONAL STUDENT ID'));
-  assert(output.textContent.includes('Could not read text clearly'));
+  assert(output.textContent.includes('Name: Matches'));
+  assert(output.textContent.includes('Birth date: Matches'));
+  assert(output.textContent.includes('ID number: Matches'));
+  assert(output.textContent.includes('Back photo: Text is unclear'));
   assert(!output.textContent.includes('unreliable'));
-  assert(workerClosed && !button.disabled);
+  assert(workerClosed);
+  await reader.showAgentIdFindings(output);
+  assert.equal(photos.length, 2, 'Rendering the same open application must not read its photos twice');
+  const mismatch = reader.compareAgentIdDetails('ID NUMBER: 12345', { number: '12354' });
+  assert(mismatch.includes('ID number: Check difference (photo reads 12345)'));
+  const missing = reader.compareAgentIdDetails('DATE OF ISSUE: 2001-01-25', { birth: '2001-01-25' });
+  assert(missing.includes('Birth date: Check the photo'));
+
+  const { sandbox: statusEmail } = context('web/js/api.js');
+  statusEmail.apiSendEmail = async (to, subject, body, options) => ({ to, subject, body, options });
+  const approved = await statusEmail.apiSendStatusEmail('demo@example.test', 'Maya', 'TEST', 'Approved');
+  assert(approved.body.includes('Check your account for installation updates'));
+  const rejected = await statusEmail.apiSendStatusEmail('demo@example.test', 'Maya', 'TEST', 'Rejected', 'The provider has no open slot.');
+  assert(rejected.subject.includes('Rejected'));
+  assert(rejected.body.includes('The provider has no open slot.'));
+  const { sandbox: login } = context('web/js/login.js');
+  login.isValidUsername = value => /^[a-z0-9_.]{3,30}$/i.test(value);
+  login.isCustomerGmail = value => /^[^@\s]+@gmail\.com$/i.test(value);
+  assert.equal(login.validateLoginIdentifier(' @Test_Agent ', true).value, 'Test_Agent');
+  assert(login.validateLoginIdentifier('demo@gmail.com', true).error);
+  assert.equal(login.validateLoginIdentifier('DEMO@GMAIL.COM', false).value, 'demo@gmail.com');
+  assert(login.validateLoginIdentifier('demo@example.test', false).error);
+  assert(login.validateLoginIdentifier('x', false).error);
+  login.apiVerifyCaptcha = async () => ({ verified: false });
+  await login.window.onLoginCaptchaVerified('rejected');
+  assert.equal(login.loginCaptchaVerified, false);
+  let finishCaptcha;
+  login.apiVerifyCaptcha = () => new Promise(resolve => { finishCaptcha = resolve; });
+  const pendingCaptcha = login.window.onLoginCaptchaVerified('test');
+  login.window.onLoginCaptchaExpired();
+  finishCaptcha({ verified: true });
+  await pendingCaptcha;
+  assert.equal(login.loginCaptchaVerified, false, 'A late reply must not restore an expired security check');
   console.log('PASS: quality blocking and replacement races, automatic checks, plain staff labels, corrections, notifications and reports');
 })().catch(error => { console.error(error); process.exitCode = 1; });

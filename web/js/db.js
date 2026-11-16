@@ -88,10 +88,21 @@ function getActiveSessionPair(allowedRoles) {
   var tabRole = sessionStorage.getItem(SESSION_KEY + "_role");
 
   if (SYSTEM === "staff") {
-    return tabId && tabTok && SYSTEM_ROLES.staff.indexOf(tabRole) !== -1 &&
-        (!roles || roles.indexOf(tabRole) !== -1)
-      ? { id: tabId, tok: tabTok }
-      : { id: "", tok: "" };
+    if (tabId && tabTok && SYSTEM_ROLES.staff.includes(tabRole) && (!roles || roles.includes(tabRole))) {
+      return { id: tabId, tok: tabTok };
+    }
+    // Restore only the staff role belonging to this dashboard. The shared sign-in page stays neutral.
+    if (!roles || roles.length !== 1 || !SYSTEM_ROLES.staff.includes(roles[0])) return { id: "", tok: "" };
+    var staffKey = getRoleSessionKey(roles[0]);
+    var savedId = localStorage.getItem(staffKey);
+    var savedToken = localStorage.getItem(staffKey + "_tok");
+    if (savedId && savedToken && Number(localStorage.getItem(staffKey + "_until")) > Date.now()) {
+      sessionStorage.setItem(SESSION_KEY, savedId);
+      sessionStorage.setItem(SESSION_TOKEN_KEY, savedToken);
+      sessionStorage.setItem(SESSION_KEY + "_role", roles[0]);
+      return { id: savedId, tok: savedToken };
+    }
+    return { id: "", tok: "" };
   }
 
   if (tabId && (!roles || !roles.length || !tabRole || roles.indexOf(tabRole) !== -1)) {
@@ -150,10 +161,11 @@ async function dbBindSingleDeviceSession(userObj) {
     }
   } catch (e) {}
 
-  if (uRole && SYSTEM !== "staff") {
+  if (uRole) {
     var rKey = getRoleSessionKey(uRole);
     localStorage.setItem(rKey, userObj.id);
     localStorage.setItem(rKey + "_tok", tok);
+    if (SYSTEM === "staff") localStorage.setItem(rKey + "_until", Date.now() + 12 * 60 * 60 * 1000);
   }
   sessionStore.setItem(SESSION_KEY, userObj.id);
   sessionStore.setItem(SESSION_TOKEN_KEY, tok);
@@ -235,6 +247,9 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
       role: role,
       redirectUrl: typeof getHomeForRole === "function" ? getHomeForRole(role) : getLoginPage()
     };
+  }
+  if (SYSTEM === "staff" && userRow.session_token !== localTok) {
+    return { valid: false, reason: "other_device" };
   }
   if (userRow.session_token && !localTok) {
     var rKeyTok = localStorage.getItem(getRoleSessionKey(role) + "_tok");
@@ -640,17 +655,28 @@ async function dbSignOut(clearServerToken) {
   var localTok = pair.tok || sessionStore.getItem(SESSION_TOKEN_KEY);
   if (user) {
     await dbAddLoginHistory(user, "logout");
+    if (clearServerToken !== false && IS_DEMO_MODE && localTok) {
+      var users = getDemoUsers();
+      var signedIn = users.find(function (row) { return row.id === user.id && row.session_token === localTok; });
+      if (signedIn) {
+        signedIn.session_token = null;
+        writeSaved("pigem_users", users);
+      }
+    }
     if (clearServerToken !== false && !IS_DEMO_MODE && supabaseClient && localTok) {
       try {
         await supabaseClient.from("users").update({ session_token: null })
           .eq("id", user.id).eq("session_token", localTok);
       } catch (e) {}
     }
-    if (user.role && SYSTEM !== "staff") {
+    if (user.role) {
       var rKey = getRoleSessionKey(user.role);
-      if (!localStorage.getItem(rKey) || localStorage.getItem(rKey) === user.id) {
+      var sameSavedSession = localStorage.getItem(rKey) === user.id &&
+        (SYSTEM !== "staff" || localStorage.getItem(rKey + "_tok") === localTok);
+      if (sameSavedSession) {
         localStorage.removeItem(rKey);
         localStorage.removeItem(rKey + "_tok");
+        localStorage.removeItem(rKey + "_until");
       }
     }
     if (sessionStore.getItem(SESSION_KEY) === user.id) {

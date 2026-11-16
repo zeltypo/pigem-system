@@ -155,9 +155,9 @@ function toggleMaintMode() {
 
 async function renderAiState() {
   var stAiEl = document.getElementById("st-ai");
-  if (stAiEl) stAiEl.textContent = "MANUAL";
+  if (stAiEl) stAiEl.textContent = "BROWSER";
   var lbl = document.getElementById("ai-status-label");
-  if (lbl) lbl.textContent = "Staff review the original ID photos by hand.";
+  if (lbl) lbl.textContent = "Tesseract.js reads photos and compares fields in the Agent browser. Staff review the findings."
 
   var aiList = await dbListAiLogs();
   var box = document.getElementById("admin-ai-log-list");
