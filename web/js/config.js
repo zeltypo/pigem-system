@@ -830,21 +830,26 @@ function initPasswordEyeToggles(rootEl) {
   }
 }
 
-async function setupPublicHeader() {
-  if (typeof dbGetCurrentUser !== "function") return;
-  var user = await dbGetCurrentUser();
-  if (!user || user.role !== "customer") return;
+var publicHeaderCheck = 0;
 
+async function setupPublicHeader() {
   var accountButtons = document.querySelectorAll(".account-btn");
-  for (var i = 0; i < accountButtons.length; i++) {
-    accountButtons[i].textContent = "Apply";
-    accountButtons[i].href = ROOT + "apply.html";
-    accountButtons[i].target = "_blank";
-  }
-  var customerLinks = document.querySelectorAll(".customer-only");
-  for (var j = 0; j < customerLinks.length; j++) {
-    customerLinks[j].hidden = false;
-  }
+  if (!accountButtons.length) return;
+  var check = ++publicHeaderCheck;
+  var signedIn = false;
+  try {
+    signedIn = typeof dbHasPublicCustomerSession === "function" && await dbHasPublicCustomerSession();
+  } catch (error) {}
+  if (check !== publicHeaderCheck) return;
+  accountButtons.forEach(function (button) {
+    button.textContent = signedIn ? "Apply" : "Customer Login";
+    button.href = ROOT + (signedIn ? "apply.html" : "login.html");
+    if (signedIn) button.target = "_blank";
+    else button.removeAttribute("target");
+  });
+  document.querySelectorAll(".customer-only").forEach(function (link) {
+    link.hidden = !signedIn;
+  });
 }
 
 function isManagerOrAdminPreview() {
@@ -938,6 +943,15 @@ window.addEventListener("DOMContentLoaded", async function () {
   loadPageImages();
   checkPublicMaintenance();
   setupPublicHeader();
+  if (document.querySelector(".account-btn")) {
+    window.addEventListener("pageshow", setupPublicHeader);
+    window.addEventListener("focus", setupPublicHeader);
+    window.addEventListener("storage", function (event) {
+      if (!event.key || event.key === "pigem_session_role_customer" || event.key === "pigem_session_role_customer_tok") {
+        setupPublicHeader();
+      }
+    });
+  }
   if (typeof dbSyncLiveSettingsAndContent === "function") {
     dbSyncLiveSettingsAndContent().then(function () {
       loadPageImages();

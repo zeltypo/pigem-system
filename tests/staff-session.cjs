@@ -18,10 +18,10 @@ const users = ["manager", "agent"].map(role => ({
   id: role, username: role, email: role + "@example.test", role, password_hash: "test-hash",
 }));
 
-function tab(browserStorage = shared) {
+function tab(browserStorage = shared, system = "staff") {
   const session = storage();
   const window = {
-    SYSTEM: "staff",
+    SYSTEM: system,
     supabase: {
       createClient(_url, _key, { auth }) {
         return {
@@ -105,6 +105,18 @@ async function run() {
   await anotherAgent.dbSignIn("agent2", "password");
   assert.equal((await agentTab.dbVerifyActiveSession("agent", ["agent"])).reason, "account_switched");
   assert.equal((await anotherAgent.dbVerifyActiveSession("second-agent", ["agent"])).valid, true);
+  const customer = { id: "customer", role: "customer", email: "customer@example.test" };
+  users.push(customer);
+  const customerBrowser = storage();
+  const portal = tab(customerBrowser, "customer");
+  const publicPage = tab(customerBrowser, "customer");
+  await portal.dbBindSingleDeviceSession(customer);
+  assert.equal(await publicPage.dbHasPublicCustomerSession(), true);
+  assert.equal(publicPage.getActiveSessionPair(["customer"]).id, customer.id);
+  await portal.dbSignOut(true);
+  customerBrowser.setItem("pigem_user_cache_customer", JSON.stringify(customer));
+  assert.equal(await publicPage.dbHasPublicCustomerSession(), false);
+  assert.equal(await publicPage.dbGetCurrentUser(), null);
   console.log("PASS: independent staff portal sign-in, screening tokens and sign-out");
 }
 

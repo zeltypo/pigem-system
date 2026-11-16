@@ -190,9 +190,17 @@ async function dbBindSingleDeviceSession(userObj) {
   return tok;
 }
 
-async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
+async function dbHasPublicCustomerSession() {
+  var key = getRoleSessionKey("customer");
+  var pair = { id: localStorage.getItem(key), tok: localStorage.getItem(key + "_tok") };
+  if (!pair.id || !pair.tok) return false;
+  var check = await dbVerifyActiveSession(pair.id, ["customer"], pair);
+  return check.valid && localStorage.getItem(key) === pair.id && localStorage.getItem(key + "_tok") === pair.tok;
+}
+
+async function dbVerifyActiveSession(expectedUserId, allowedRoles, verifiedPair) {
   if (typeof allowedRoles === "string") allowedRoles = [allowedRoles];
-  var pair = getActiveSessionPair(allowedRoles);
+  var pair = verifiedPair || getActiveSessionPair(allowedRoles);
   var currentId = expectedUserId || pair.id;
   var localTok = pair.tok;
   if (!currentId || (SYSTEM === "staff" && currentId !== pair.id)) {
@@ -211,10 +219,10 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
     }
     if (!userRow) return { valid: false, reason: "missing" };
   } else {
-    if (!supabaseClient) return { valid: true };
+    if (!supabaseClient) return { valid: !verifiedPair };
     var res = await supabaseClient.from("users").select("id,active,session_token,role,email,username").eq("id", currentId).maybeSingle();
-    if (res.error) return { valid: true };
-    if (!res.data && SYSTEM !== "staff") {
+    if (res.error) return { valid: !verifiedPair };
+    if (!res.data && !verifiedPair && SYSTEM === "admin") {
       var targetRole = (allowedRoles && allowedRoles[0]) ? String(allowedRoles[0]).toLowerCase() : (SYSTEM === "customer" ? "customer" : "");
       var cachedRaw = sessionStorage.getItem("pigem_user_cache") || (targetRole ? localStorage.getItem("pigem_user_cache_" + targetRole) : "");
       if (cachedRaw) {
@@ -368,10 +376,15 @@ function getLoginPage() {
   return ROOT + "login.html";
 }
 
-async function dbGetCurrentUser() {
+async function dbGetCurrentUser(allowCustomerAuth, signingOut) {
   var pair = getActiveSessionPair(window.PORTAL_ALLOWED_ROLES || null);
   var currentId = pair.id;
   var allowedForSystem = SYSTEM_ROLES[SYSTEM] || null;
+  // A tab or profile cache can outlive sign-out elsewhere in this browser.
+  if (SYSTEM === "customer" && currentId && !signingOut) {
+    var browserKey = getRoleSessionKey("customer");
+    if (localStorage.getItem(browserKey) !== currentId || localStorage.getItem(browserKey + "_tok") !== pair.tok) currentId = "";
+  }
   if (currentId) {
     if (!IS_DEMO_MODE && supabaseClient) {
       var dbUser = await supabaseClient.from("users").select("*").eq("id", currentId).maybeSingle();
@@ -402,7 +415,7 @@ async function dbGetCurrentUser() {
     }
   }
 
-  if (SYSTEM !== "staff" && !IS_DEMO_MODE && supabaseClient) {
+  if (SYSTEM === "admin" && !IS_DEMO_MODE && supabaseClient) {
     var prefRole = (window.PORTAL_ALLOWED_ROLES && window.PORTAL_ALLOWED_ROLES[0])
       ? String(window.PORTAL_ALLOWED_ROLES[0]).toLowerCase()
       : (SYSTEM === "customer" ? "customer" : "");
@@ -433,7 +446,7 @@ async function dbGetCurrentUser() {
     }
   }
 
-  if (IS_DEMO_MODE || !supabaseClient || SYSTEM !== "customer") return null;
+  if (!allowCustomerAuth || IS_DEMO_MODE || !supabaseClient || SYSTEM !== "customer") return null;
 
   var sessionRes = await supabaseClient.auth.getSession();
   var session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
@@ -618,14 +631,14 @@ async function dbSignIn(identifier, password) {
       } else if (!rowData.password_hash) {
         var authRes = await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: password });
         if (authRes.error) throw new Error("Invalid username/email or password.");
-        user = (await dbGetCurrentUser()) || rowData;
+        user = (await dbGetCurrentUser(true)) || rowData;
       } else {
         throw new Error("Invalid username/email or password.");
       }
     } else {
       var res = await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: password });
       if (res.error) throw new Error(res.error.message);
-      user = await dbGetCurrentUser();
+      user = await dbGetCurrentUser(true);
       if (!user) throw new Error("Account record not found or disabled. Please contact PIGEM.");
     }
   } else {
@@ -643,42 +656,21 @@ async function dbSignIn(identifier, password) {
 }
 
 async function dbSignOut(clearServerToken) {
-  var user = await dbGetCurrentUser();
   var pair = getActiveSessionPair(window.PORTAL_ALLOWED_ROLES || null);
-  var localTok = pair.tok || sessionStore.getItem(SESSION_TOKEN_KEY);
-  var keepCustomerAuth = false;
-  if (user) {
-    await dbAddLoginHistory(user, "logout");
-    if (clearServerToken !== false && IS_DEMO_MODE && localTok) {
-      var users = getDemoUsers();
-      var signedIn = users.find(function (row) { return row.id === user.id && row.session_token === localTok; });
-      if (signedIn) {
-        signedIn.session_token = null;
-        writeSaved("pigem_users", users);
-      }
-    }
-    if (clearServerToken !== false && !IS_DEMO_MODE && supabaseClient && localTok) {
-      try {
-        await supabaseClient.from("users").update({ session_token: null })
-          .eq("id", user.id).eq("session_token", localTok);
-      } catch (e) {}
-    }
-    if (user.role) {
-      var rKey = getRoleSessionKey(user.role);
-      var sameSavedSession = localStorage.getItem(rKey) === user.id &&
-        (!localTok || localStorage.getItem(rKey + "_tok") === localTok);
-      keepCustomerAuth = SYSTEM === "customer" && !sameSavedSession && !!localStorage.getItem(rKey);
-      if (sameSavedSession) {
-        localStorage.removeItem(rKey);
-        localStorage.removeItem(rKey + "_tok");
-      }
-    }
-    if (sessionStore.getItem(SESSION_KEY) === user.id &&
-        (!localTok || sessionStore.getItem(SESSION_TOKEN_KEY) === localTok)) {
-      sessionStore.removeItem(SESSION_KEY);
-      sessionStore.removeItem(SESSION_TOKEN_KEY);
-    }
-  } else {
+  var role = SYSTEM === "staff" ? sessionStorage.getItem(SESSION_KEY + "_role") : SYSTEM;
+  var user;
+  try { user = await dbGetCurrentUser(false, true); } catch (error) {}
+
+  var roleKey = getRoleSessionKey(role);
+  var savedId = localStorage.getItem(roleKey);
+  var savedToken = localStorage.getItem(roleKey + "_tok") || "";
+  var sameSavedSession = savedId === pair.id && savedToken === pair.tok;
+  if (role && sameSavedSession) {
+    localStorage.removeItem(roleKey);
+    localStorage.removeItem(roleKey + "_tok");
+    localStorage.removeItem("pigem_user_cache_" + role);
+  }
+  if (sessionStore.getItem(SESSION_KEY) === pair.id && (sessionStore.getItem(SESSION_TOKEN_KEY) || "") === pair.tok) {
     sessionStore.removeItem(SESSION_KEY);
     sessionStore.removeItem(SESSION_TOKEN_KEY);
   }
@@ -686,10 +678,27 @@ async function dbSignOut(clearServerToken) {
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_KEY + "_role");
   sessionStorage.removeItem("pigem_user_cache");
+
+  try {
+    if (user) await dbAddLoginHistory(user, "logout");
+    if (clearServerToken !== false && pair.id && pair.tok) {
+      if (IS_DEMO_MODE) {
+        var users = getDemoUsers();
+        var signedIn = users.find(function (row) { return row.id === pair.id && row.session_token === pair.tok; });
+        if (signedIn) {
+          signedIn.session_token = null;
+          writeSaved("pigem_users", users);
+        }
+      } else if (supabaseClient) {
+        await supabaseClient.from("users").update({ session_token: null })
+          .eq("id", pair.id).eq("session_token", pair.tok);
+      }
+    }
+  } catch (error) {}
+
+  var keepCustomerAuth = SYSTEM === "customer" && !!localStorage.getItem(roleKey);
   if (!IS_DEMO_MODE && supabaseClient && ((SYSTEM === "customer" && !keepCustomerAuth) || SYSTEM === "staff")) {
-    try {
-      await supabaseClient.auth.signOut({ scope: "local" });
-    } catch (e) {}
+    try { await supabaseClient.auth.signOut({ scope: "local" }); } catch (error) {}
   }
 }
 
@@ -939,7 +948,7 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
   } catch (e) {}
 
-  var user = (upRes.data) || existing.data || (await dbGetCurrentUser());
+  var user = (upRes.data) || existing.data || (await dbGetCurrentUser(true));
   if (user) {
     user.activated = true;
     user.username = finalUsername;
