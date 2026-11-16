@@ -264,8 +264,11 @@ function context(file) {
   ];
   queue.activeBranch = 'queue';
   queue.renderAgentCards();
-  assert(queueNodes['agent-cards-box'].innerHTML.includes('<summary><strong>Demo Shared'));
-  assert(queueNodes['agent-cards-box'].innerHTML.includes('>Claim</button>'));
+  assert(queueNodes['agent-cards-box'].innerHTML.includes('<strong>Demo Shared'));
+  const sharedMarkup = queueNodes['agent-cards-box'].innerHTML;
+  assert(sharedMarkup.includes('>Claim</button>'));
+  assert(sharedMarkup.indexOf('</details>') < sharedMarkup.indexOf('>Claim</button>'));
+  assert(sharedMarkup.indexOf('>Claim</button>') < sharedMarkup.indexOf('class="agent-queue-details"'));
   assert(!queueNodes['agent-cards-box'].innerHTML.includes('<select'));
   let prompt;
   queue.openPopup = html => { prompt = html; };
