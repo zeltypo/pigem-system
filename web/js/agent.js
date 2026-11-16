@@ -598,7 +598,7 @@ async function openAppDetail(appId, mode, requestedStatus) {
   activeDetailAppId = appId;
   activeCopyMode = "latest";
   var app = findAppById(appId);
-  activeIdImgMode = (app && (app.cropped_id_url || app.id_cropped_url)) ? "cropped" : "raw";
+  activeIdImgMode = "raw";
   pendingProofDataUrl = "";
   pendingProofFile = null;
   await renderDetailModalContent();
@@ -619,6 +619,7 @@ function closeDetailModal() {
 
 function switchCopyMode(mode) {
   activeCopyMode = mode;
+  activeIdImgMode = "raw";
   renderDetailModalContent();
 }
 
@@ -1137,7 +1138,7 @@ async function renderDetailModalContent(updateResultsOnly) {
   if (!app) return;
 
   document.getElementById("det-title").textContent = app.reference_no + " - " + app.full_name;
-  var viewData = (activeCopyMode === "original" && app.original_submission) ? app.original_submission : app;
+  var viewData = getAgentPreviewCopy(app);
   var scr = app.screening || {};
   var res = app.ai_result || {};
   var dupCheck = detectClientSideDuplicateId(app);
@@ -1146,15 +1147,7 @@ async function renderDetailModalContent(updateResultsOnly) {
     .filter(Boolean);
   var cleanSuggestedRemark = stripFalseReuploadMsg(scr.Suggested_remark || "", dupCheck);
 
-  var copySwitcher = "";
-  if (app.original_submission) {
-    copySwitcher =
-      '<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">' +
-        '<span class="small muted">Version:</span>' +
-        '<button type="button" class="btn btn-sm ' + (activeCopyMode === "latest" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchCopyMode(\'latest\')">Latest Copy</button>' +
-        '<button type="button" class="btn btn-sm ' + (activeCopyMode === "original" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px; font-size:12px" onclick="switchCopyMode(\'original\')">Original Submission</button>' +
-      '</div>';
-  }
+  var copySwitcher = renderAgentSubmissionPicker(app);
 
   var frontIdPhotoUrl = viewData.id_image_url || viewData.id_front_path || "";
   var rawFrontUrl = frontIdPhotoUrl || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
@@ -1207,9 +1200,7 @@ async function renderDetailModalContent(updateResultsOnly) {
     : (dupCheck.isDup
       ? dupPoliteDefault
       : (hasPrelimConcern ? (cleanSuggestedRemark || "") : ""));
-  var displayEmail = (activeCopyMode === "latest" && app.corrected_copy && app.corrected_copy.contact_email)
-    ? app.corrected_copy.contact_email
-    : (viewData.email || app.email);
+  var displayEmail = viewData.contact_email || viewData.email || app.email;
 
   var applicantSection =
     '<div class="section-card">' +
@@ -1248,7 +1239,7 @@ async function renderDetailModalContent(updateResultsOnly) {
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos</div>' +
-        idModeBar +
+        copySwitcher + idModeBar +
       '</div>' +
       '<div class="grid-2" style="margin-bottom:12px">' +
         '<div data-photo-container style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
@@ -1599,14 +1590,42 @@ async function saveAgentDecision(newStatus) {
   showAlert("Status Updated", "Application " + app.reference_no + " is now marked as " + newStatus + "." + emailNoticeNote);
 }
 
+function getAgentSubmissionCopies(app) {
+  var latest = app.corrected_copy;
+  if (!latest || !latest.submitted_at) return [];
+  var earlier = Array.isArray(latest.previous_submissions) ? latest.previous_submissions : [];
+  var copies = earlier.map(function (snapshot, index) {
+    return { key: "correction-" + index, label: "Resubmission " + (index + 1) + " · " + formatDate(snapshot.submitted_at), data: snapshot };
+  });
+  copies.unshift({
+    key: "latest", label: "Latest resubmission (" + (earlier.length + 1) + ") · " + formatDate(latest.submitted_at),
+    data: Object.assign({}, app, latest)
+  });
+  var original = app.original_submission || app.original_copy;
+  if (original) copies.push({ key: "original", label: "Original submission", data: original });
+  return copies;
+}
+
+function renderAgentSubmissionPicker(app) {
+  var copies = getAgentSubmissionCopies(app);
+  if (copies.length < 2) return "";
+  return '<label class="small muted">Submission version ' +
+    '<select class="agent-submission-picker" onchange="switchCopyMode(this.value)">' +
+    copies.map(function (copy) {
+      return '<option value="' + escapeHtml(copy.key) + '"' + (copy.key === activeCopyMode ? " selected" : "") + '>' + escapeHtml(copy.label) + '</option>';
+    }).join("") + '</select></label>';
+}
+
 function getAgentPreviewCopy(app) {
-  return (activeCopyMode === "original" && app.original_submission) ? app.original_submission : app;
+  var chosen = getAgentSubmissionCopies(app).find(function (copy) { return copy.key === activeCopyMode; });
+  return chosen ? chosen.data : app;
 }
 
 async function downloadAgentIdPhoto(side) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
   var copy = getAgentPreviewCopy(app);
+  var version = activeCopyMode;
   var url = side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path;
   if (!url) return;
   try {
@@ -1614,7 +1633,7 @@ async function downloadAgentIdPhoto(side) {
     if (!response.ok) throw new Error("Photo unavailable");
     var photo = await response.blob();
     var extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" }[photo.type] || "jpg";
-    savePigemExport(photo, app.reference_no + "-" + side + "-ID." + extension);
+    savePigemExport(photo, app.reference_no + "-" + version + "-" + side + "-ID." + extension);
   } catch (error) {
     showAlert("Photo unavailable", "The photo could not be downloaded. Please try again.");
   }
@@ -1648,7 +1667,7 @@ function exportApplicantCopy(print) {
     ["Status", app.status],
     ["Submitted", formatDate(app.created_at)],
     ["Date of birth", copy.birth_date],
-    ["Email", copy.email || app.email],
+    ["Email", copy.contact_email || copy.email || app.email],
     ["Mobile number", copy.phone || app.phone],
     ["Installation address", location],
     ["Nearest landmark", copy.landmark || app.landmark],
@@ -1661,7 +1680,7 @@ function exportApplicantCopy(print) {
     note: remarks,
     section: "Applicant details",
     columns: ["Field", "Details"], rows: rows, widths: [0.3, 0.7]
-  }, "PIGEM-" + app.reference_no + ".pdf", print);
+  }, "PIGEM-" + app.reference_no + (activeCopyMode === "latest" ? "" : "-" + activeCopyMode) + ".pdf", print);
 }
 
 async function createNewAgentLink() {

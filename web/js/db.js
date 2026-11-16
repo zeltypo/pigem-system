@@ -1252,12 +1252,15 @@ async function dbClaimApplication(appId, staffId, expectedAssignee) {
   return Boolean(result.data);
 }
 
-async function dbUpdateApplication(appId, changes) {
+async function dbUpdateApplication(appId, changes, expectedUpdatedAt) {
   changes.updated_at = new Date().toISOString();
   if (IS_DEMO_MODE) {
     var all = readSaved("pigem_applications", []);
     for (var i = 0; i < all.length; i++) {
       if (all[i].id === appId) {
+        if (expectedUpdatedAt && all[i].updated_at !== expectedUpdatedAt) {
+          throw new Error("This application changed while you were editing. Reopen it and try again.");
+        }
         all[i] = Object.assign({}, all[i], changes);
         writeSaved("pigem_applications", all);
         return all[i];
@@ -1265,12 +1268,20 @@ async function dbUpdateApplication(appId, changes) {
     }
     throw new Error("Application not found.");
   }
-  var res = await supabaseClient.from("applications").update(changes).eq("id", appId).select("*").single();
+  function updateMatchingRow(payload) {
+    var query = supabaseClient.from("applications").update(payload).eq("id", appId);
+    if (expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
+    return query.select("*").maybeSingle();
+  }
+  var res = await updateMatchingRow(changes);
   if (res.error) {
     var cleanChanges = _stripOptionalAppColumns(changes);
-    res = await supabaseClient.from("applications").update(cleanChanges).eq("id", appId).select("*").single();
+    res = await updateMatchingRow(cleanChanges);
   }
   if (res.error) throw new Error(res.error.message);
+  if (!res.data) {
+    throw new Error(expectedUpdatedAt ? "This application changed while you were editing. Reopen it and try again." : "Application not found.");
+  }
   if (res.data) {
     _saveLocalAppMirror(res.data);
   }

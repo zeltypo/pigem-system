@@ -259,6 +259,25 @@ function context(file) {
   a.downloadApplicantCopy();
   assert.equal(printExport.print, false);
 
+  const original = { full_name: 'Original Name', id_image_url: '/first-id.jpg' };
+  assert.equal(a.renderAgentSubmissionPicker({ original_submission: original }), '');
+  const first = { full_name: 'First Correction', id_image_url: '/second-id.jpg', submitted_at: '2026-11-16T01:00:00Z', previous_submissions: [] };
+  const second = { full_name: 'Second Correction', id_image_url: '/third-id.jpg', submitted_at: '2026-11-16T02:00:00Z', previous_submissions: c.previousCustomerSubmissions(first) };
+  const latest = { full_name: 'Third Correction', id_image_url: '/fourth-id.jpg', submitted_at: '2026-11-16T03:00:00Z', previous_submissions: c.previousCustomerSubmissions(second) };
+  assert.equal(latest.previous_submissions.length, 2);
+  assert(!Object.hasOwn(latest.previous_submissions[1], 'previous_submissions'));
+  const history = { original_submission: original, corrected_copy: latest, id_image_url: '/fourth-id.jpg' };
+  const versionPicker = a.renderAgentSubmissionPicker(history);
+  assert(versionPicker.includes('Latest resubmission (3)'));
+  assert(versionPicker.includes('Resubmission 1'));
+  assert(versionPicker.includes('Resubmission 2'));
+  a.activeCopyMode = 'correction-0';
+  assert.equal(a.getAgentPreviewCopy(history).id_image_url, '/second-id.jpg');
+  a.activeCopyMode = 'original';
+  assert.equal(a.getAgentPreviewCopy(history).id_image_url, '/first-id.jpg');
+  a.activeCopyMode = 'latest';
+  assert.equal(a.getAgentPreviewCopy(history).id_image_url, '/fourth-id.jpg');
+
   const { sandbox: statusEmail } = context('web/js/api.js');
   statusEmail.apiSendEmail = async (to, subject, body, options) => ({ to, subject, body, options });
   const approved = await statusEmail.apiSendStatusEmail('demo@example.test', 'Maya', 'TEST', 'Approved');

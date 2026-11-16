@@ -1,3 +1,11 @@
+function previousCustomerSubmissions(latest) {
+  if (!latest || !latest.submitted_at) return [];
+  var history = Array.isArray(latest.previous_submissions) ? latest.previous_submissions : [];
+  var snapshot = Object.assign({}, latest);
+  delete snapshot.previous_submissions;
+  return history.concat(snapshot);
+}
+
 var currentCustomer = null;
 var myApps = [];
 var selectedAppId = null;
@@ -558,6 +566,8 @@ async function submitCustomerCorrection(appId) {
     }
 
     var correctedSnapshot = {
+      previous_submissions: previousCustomerSubmissions(app.corrected_copy),
+      id_type: app.id_type,
       full_name: fullName,
       first_name: fname,
       middle_name: cleanMid,
@@ -612,7 +622,7 @@ async function submitCustomerCorrection(appId) {
       correction_note: "Customer updated: " + changedList.join(", "),
       customer_instruction: "Your updated details (" + changedList.join(", ") + ") were received and your application is continuing in Processing.",
       agent_remarks: "Customer submitted update: " + changedList.join(", ")
-    });
+    }, app.updated_at);
 
     if ((file || fileBack) && typeof dbCreateDocumentRecord === "function") {
       await dbCreateDocumentRecord(app.id, {
