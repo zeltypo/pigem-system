@@ -100,7 +100,7 @@ function context(file) {
     'Agent-visible text must use plain labels');
   const previewMarkup = an['det-body'].innerHTML;
   assert(!previewMarkup.includes('View adjusted photo'));
-  assert(previewMarkup.includes('Original copy · No resubmissions yet'));
+  assert(previewMarkup.includes('Original copy') && previewMarkup.includes('Latest copy'));
   assert(previewMarkup.indexOf('Screening recommendation') < previewMarkup.indexOf('Valid ID Photos'));
   assert(previewMarkup.indexOf('Valid ID Photos') < previewMarkup.indexOf('Applicant Details'));
   assert(!previewMarkup.includes('Send Update Request to Customer'));
@@ -128,10 +128,19 @@ function context(file) {
   });
   applyContext.selectedFrontFile = { clear: false };
   applyContext.selectedBackFile = { clear: true };
-  assert.equal(await applyContext.validateSelectedIdQuality(), false);
-  assert.equal(await applyContext.validateSelectedIdQuality(), false);
+  assert.equal(await applyContext.validateSelectedIdQuality(), true);
+  assert.equal(await applyContext.validateSelectedIdQuality(), true);
   assert(applyNodes['id-front-quality'].textContent.includes('Replace'));
   assert(applyNodes['id-back-quality'].textContent.includes('passed'));
+  applyContext.analyzeClientIdQuality = async () => ({
+    passed: false, issues: ['Too dark'], metrics: { brightness: 10, blur_score: 20, glare_ratio: 0 }
+  });
+  applyContext.selectedFrontFile = { clear: false };
+  applyContext.window = { confirm: () => false };
+  assert.equal(await applyContext.validateSelectedIdQuality(true), false);
+  applyContext.window.confirm = () => true;
+  assert.deepEqual(Array.from((await applyContext.validateSelectedIdQuality(true)).severe), ['front']);
+  applyContext.analyzeClientIdQuality = async file => ({ passed: file.clear, issues: [] });
   applyContext.selectedFrontFile = { clear: true };
   assert.equal(await applyContext.validateSelectedIdQuality(), true);
   applyContext.selectedBackFile = null;
@@ -297,7 +306,7 @@ function context(file) {
   assert.equal(printExport.print, false);
 
   const original = { full_name: 'Original Name', id_image_url: '/first-id.jpg' };
-  assert(a.renderAgentSubmissionPicker({ original_submission: original }).includes('No resubmissions yet'));
+  assert(a.renderAgentSubmissionPicker({ original_submission: original }).includes('Original copy'));
   const first = { full_name: 'First Correction', id_image_url: '/second-id.jpg', submitted_at: '2026-11-16T01:00:00Z', previous_submissions: [] };
   const second = { full_name: 'Second Correction', id_image_url: '/third-id.jpg', submitted_at: '2026-11-16T02:00:00Z', previous_submissions: c.previousCustomerSubmissions(first) };
   const latest = { full_name: 'Third Correction', id_image_url: '/fourth-id.jpg', submitted_at: '2026-11-16T03:00:00Z', previous_submissions: c.previousCustomerSubmissions(second) };

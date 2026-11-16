@@ -1234,18 +1234,19 @@ async function dbCreateDocumentRecord(appId, docPayload) {
   }
 }
 
-async function dbClaimApplication(appId, staffId, expectedAssignee) {
-  var changes = { assigned_agent: staffId, status: "Under Agent Review", updated_at: new Date().toISOString() };
+async function dbClaimApplication(appId, staffId, expectedAssignee, expectedStatus) {
+  var status = expectedStatus === "Needs Correction" ? expectedStatus : "Pending Review";
+  var changes = { assigned_agent: staffId, status: status === "Needs Correction" ? status : "Under Agent Review", updated_at: new Date().toISOString() };
   if (IS_DEMO_MODE) {
     var apps = readSaved("pigem_applications", []);
-    var row = apps.find(function (app) { return app.id === appId && !app.assigned_agent && app.status === "Pending Review"; });
+    var row = apps.find(function (app) { return app.id === appId && !app.assigned_agent && app.status === status; });
     if (!row) return false;
     Object.assign(row, changes);
     writeSaved("pigem_applications", apps);
     return true;
   }
   if (expectedAssignee) return false;
-  var claim = supabaseClient.from("applications").update(changes).eq("id", appId).eq("status", "Pending Review");
+  var claim = supabaseClient.from("applications").update(changes).eq("id", appId).eq("status", status);
   claim = expectedAssignee == null ? claim.is("assigned_agent", null) : claim.eq("assigned_agent", "");
   var result = await claim.select("id").maybeSingle();
   if (result.error) throw result.error;

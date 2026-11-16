@@ -1979,3 +1979,10 @@ textarea.input-invalid {
 }
 .agent-copy-toolbar { margin-bottom: 16px; }
 .agent-copy-controls select { max-width: 100%; min-height: 34px; }
+
+.agent-queue-item { border-inline-start: 5px solid var(--line); }
+.queue-tone-green { border-inline-start-color: #168348; }
+.queue-tone-yellow { border-inline-start-color: #b77709; }
+.queue-tone-red { border-inline-start-color: #c8102e; }
+.queue-color-help { margin-bottom: 12px; }
+.queue-color-help summary { cursor: pointer; width: fit-content; }

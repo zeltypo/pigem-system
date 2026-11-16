@@ -285,8 +285,8 @@ async function refreshAgentData(silent) {
     var a = allApps[i];
     var st = a.status || "Pending Review";
 
-    if (!a.assigned_agent && st === "Pending Review") unclaimed++;
-    if (isAssignedToStaff(a.assigned_agent, currentAgent) && (st === "Pending Review" || st === "Under Agent Review")) myClaimed++;
+    if (!a.assigned_agent && isAgentClaimable(a)) unclaimed++;
+    if (isAssignedToStaff(a.assigned_agent, currentAgent) && (isAgentClaimable(a) || st === "Under Agent Review")) myClaimed++;
     if (st === "Encoding") encodingCount++;
     if (st === "Needs Correction") fix++;
     if (st === "Approved") approvedCount++;
@@ -475,6 +475,20 @@ async function checkAgentQueueDocument(appId, button) {
   if (button) button.disabled = false;
 }
 
+function isAgentClaimable(app) {
+  return app.status === "Pending Review" || (app.status === "Needs Correction" && app.screening?.auto_correction_sent);
+}
+
+function getAgentQueueTone(app) {
+  if (app.status === "Needs Correction" || app.status === "Rejected") return "red";
+  var check = getAgentAppIdCheck(app, true)?.result;
+  if (check?.fields.length && check.fields.every(function (field) { return field.status === "match"; }) &&
+      !check.unclearSides.length && !check.unavailableSides.length && !check.failedReads?.length &&
+      !check.duplicatePhotos && !check.detectedOtherType) return "green";
+  if (check || app.screening?.upload_photo_warning) return "yellow";
+  return "neutral";
+}
+
 function renderAgentCards() {
   var box = document.getElementById("agent-cards-box");
   if (!box || (document.activeElement && box.contains(document.activeElement) && document.activeElement.tagName === "SELECT")) return;
@@ -485,8 +499,8 @@ function renderAgentCards() {
     var a = allApps[i];
     var st = a.status || "Pending Review";
 
-    if (activeBranch === "queue" && (a.assigned_agent || st !== "Pending Review")) continue;
-    if (activeBranch === "claimed" && !(isAssignedToStaff(a.assigned_agent, currentAgent) && (st === "Pending Review" || st === "Under Agent Review"))) continue;
+    if (activeBranch === "queue" && (a.assigned_agent || !isAgentClaimable(a))) continue;
+    if (activeBranch === "claimed" && !(isAssignedToStaff(a.assigned_agent, currentAgent) && (isAgentClaimable(a) || st === "Under Agent Review"))) continue;
     if (activeBranch === "encoding" && st !== "Encoding") continue;
     if (activeBranch === "correction" && st !== "Needs Correction") continue;
     if (activeBranch === "approved" && st !== "Approved") continue;
@@ -519,7 +533,7 @@ function renderAgentCards() {
     var control = shared
       ? '<button type="button" class="btn btn-red btn-sm" data-id="' + id + '" onclick="confirmAgentClaim(this.dataset.id)">Claim</button>'
       : '<select class="agent-queue-action" aria-label="Application action" data-id="' + id + '" onchange="runAgentQueueAction(this)">' + actions + '</select>';
-    return '<div class="q-card agent-queue-item"><div class="agent-queue-header"><details class="agent-queue-toggle" data-id="' + id + '"' + (expandedSummaryCards[app.id] ? " open" : "") +
+    return '<div class="q-card agent-queue-item queue-tone-' + getAgentQueueTone(app) + '"><div class="agent-queue-header"><details class="agent-queue-toggle" data-id="' + id + '"' + (expandedSummaryCards[app.id] ? " open" : "") +
       ' ontoggle="expandedSummaryCards[this.dataset.id] = this.open; if(this.open && !getAgentAppIdCheck(findAppById(this.dataset.id), true)) checkAgentQueueDocument(this.dataset.id)">' +
       '<summary aria-controls="queue-details-' + id + '"><strong>' + escapeHtml(app.full_name) + '</strong><span>' + escapeHtml(app.reference_no) + '</span></summary></details>' +
       '<div class="agent-queue-header-action">' + control + '</div></div>' +
@@ -532,7 +546,9 @@ function renderAgentCards() {
         '</div>' +
       '</div></div>';
   }).join("");
-  box.innerHTML = html;
+  box.innerHTML = '<details class="queue-color-help"><summary aria-label="What do the colors mean?">? Color guide</summary>' +
+    '<p>Green: ID details match. Yellow: check the ID findings. Red: action needed or rejected. Gray: not checked yet.</p>' +
+    '<p>Status badges show the application stage, such as Encoding or Needs Correction.</p></details>' + html;
 
 }
 
@@ -548,7 +564,7 @@ function runAgentQueueAction(select) {
 
 function confirmAgentClaim(appId) {
   var app = findAppById(appId);
-  if (!app || app.assigned_agent) return;
+  if (!app || app.assigned_agent || !isAgentClaimable(app)) return;
   var id = escapeHtml(appId);
   openPopup(
     '<h3>Claim this application?</h3>' +
@@ -565,7 +581,7 @@ async function claimApplication(appId) {
   if (!app) return;
   var staffId = getStaffIdentifier(currentAgent);
   try {
-    var claimed = await dbClaimApplication(appId, staffId, app.assigned_agent);
+    var claimed = await dbClaimApplication(appId, staffId, app.assigned_agent, app.status);
     if (!claimed) {
       showAlert("Application unavailable", "This application is no longer available to claim.");
       await refreshAgentData();
@@ -838,7 +854,7 @@ function findAgentIdCorners(gray, cv) {
         var contour = contours.get(i);
         try {
           var area = cv.contourArea(contour);
-          if (area < frameArea * 0.12 || area > frameArea * 0.96) continue;
+          if (area < frameArea * 0.08 || area > frameArea * 0.96) continue;
           // Rounded or lightly broken edges need more than one approximation.
           var perimeter = cv.arcLength(contour, true);
           for (var tolerance of [0.015, 0.022, 0.035, 0.05]) {
@@ -1376,6 +1392,9 @@ async function renderDetailModalContent(updateResultsOnly) {
       ? dupPoliteDefault
       : (hasPrelimConcern ? (cleanSuggestedRemark || "") : ""));
   var displayEmail = viewData.contact_email || viewData.email || app.email;
+  var displayPhone = viewData.phone || app.phone;
+  var emailContact = displayEmail ? '<a href="mailto:' + escapeHtml(encodeURIComponent(displayEmail)) + '">' + escapeHtml(displayEmail) + '</a>' : "-";
+  var phoneContact = displayPhone ? '<a href="tel:' + escapeHtml(String(displayPhone).replace(/[^+\d]/g, "")) + '">' + escapeHtml(displayPhone) + '</a>' : "-";
 
   var applicantSection =
     '<div class="section-card">' +
@@ -1389,8 +1408,8 @@ async function renderDetailModalContent(updateResultsOnly) {
           '<div class="kv">' +
             '<div><span>Full Name</span><b>' + escapeHtml(viewData.full_name || app.full_name) + '</b></div>' +
             '<div><span>Birth Date</span><b>' + escapeHtml(viewData.birth_date || app.birth_date || "-") + '</b></div>' +
-            '<div><span>Email Address</span><b>' + escapeHtml(displayEmail || "-") + '</b></div>' +
-            '<div><span>Mobile Number</span><b>' + escapeHtml(viewData.phone || app.phone || "-") + '</b></div>' +
+            '<div><span>Email Address</span><b>' + emailContact + '</b></div>' +
+            '<div><span>Mobile Number</span><b>' + phoneContact + '</b></div>' +
             '<div><span>Plan</span><b>' + escapeHtml(app.plan_name || '-') + '</b></div>' +
             '<div><span>Status</span><b>' + escapeHtml(app.status || '-') + '</b></div>' +
             '<div><span>Valid ID Type</span><b>' + escapeHtml(viewData.id_type || app.id_type || "-") + '</b></div>' +
@@ -1772,7 +1791,10 @@ async function saveAgentDecision(newStatus) {
 
 function getAgentSubmissionCopies(app) {
   var latest = app.corrected_copy;
-  if (!latest || !latest.submitted_at) return [{ key: "latest", label: "Original copy", data: app }];
+  if (!latest || !latest.submitted_at) return [
+    { key: "latest", label: "Photo preview of the original submission", data: app },
+    { key: "original", label: "Original submission", data: app }
+  ];
   var earlier = Array.isArray(latest.previous_submissions) ? latest.previous_submissions : [];
   var copies = earlier.map(function (snapshot, index) {
     return { key: "correction-" + index, label: "Resubmission " + (index + 1) + " · " + formatDate(snapshot.submitted_at), data: snapshot };
@@ -1788,9 +1810,6 @@ function getAgentSubmissionCopies(app) {
 
 function renderAgentSubmissionPicker(app) {
   var copies = getAgentSubmissionCopies(app);
-  if (copies.length === 1 && !app.corrected_copy?.submitted_at) {
-    return '<span class="small muted">Original copy · No resubmissions yet</span>';
-  }
   var buttons = copies.filter(function (copy) { return copy.key === "latest" || copy.key === "original"; });
   var earlier = copies.filter(function (copy) { return copy.key !== "latest" && copy.key !== "original"; });
   return '<div class="agent-copy-controls" role="group" aria-label="Application copy">' +

@@ -793,21 +793,33 @@ function checkSelectedIdQuality(side, file) {
   return check.promise;
 }
 
-async function validateSelectedIdQuality() {
+function isSevereIdPhoto(result) {
+  var metrics = result.metrics;
+  return !result.passed && metrics && (metrics.brightness < 30 || metrics.blur_score < 12 ||
+    (metrics.brightness > 225 && metrics.glare_ratio > 0.55));
+}
+
+async function validateSelectedIdQuality(submitting) {
   var front = selectedFrontFile;
   var back = selectedBackFile;
   var checks = await Promise.all([
     checkSelectedIdQuality("front", front), back ? checkSelectedIdQuality("back", back) : { passed: true }
   ]);
   if (front !== selectedFrontFile || back !== selectedBackFile) return false;
-  if (checks.every(function (result) { return result.passed; })) return true;
-  showPanel(4);
+  var severe = checks.map(function (result, index) {
+    return isSevereIdPhoto(result) ? (index === 0 ? "front" : "back") : "";
+  }).filter(Boolean);
   var warning = document.getElementById("id-screen-warn");
+  var message = severe.length
+    ? "The " + severe.join(" and ") + " ID photo needs replacement. If you submit anyway, we will request a clearer photo in your account and by email."
+    : "Check the marked photo before continuing. You can replace it or continue.";
   if (warning) {
-    warning.hidden = false;
-    warning.textContent = "Please replace the photo marked above before continuing.";
+    warning.hidden = checks.every(function (result) { return result.passed; });
+    warning.textContent = message;
   }
-  return false;
+  if (!submitting) return true;
+  if (severe.length && !window.confirm(message + " Submit now?")) return false;
+  return { severe: severe, warning: checks.some(function (result) { return !result.passed; }) };
 }
 
 function showPanel(index) {
@@ -1527,7 +1539,8 @@ async function submitRegistration() {
   try {
 
     advanceLoadingStep(1);
-    if (!(await validateSelectedIdQuality())) {
+    var photoCheck = await validateSelectedIdQuality(true);
+    if (!photoCheck) {
       if (loadingScreen) loadingScreen.hidden = true;
       return;
     }
@@ -1536,6 +1549,7 @@ async function submitRegistration() {
 
     var screening = {
       preliminary: true,
+      upload_photo_warning: photoCheck.warning,
       state: "paused",
       phase: "Ready for Staff Review",
       eta_seconds: 0,
@@ -1666,6 +1680,21 @@ async function submitRegistration() {
     });
 
 
+    var photoRequest = "";
+    var photoEmailSent = false;
+    if (photoCheck.severe.length) {
+      photoRequest = "Please upload a clearer " + photoCheck.severe.join(" and ") + " ID photo in your account. Make sure the printed details are visible.";
+      Object.assign(screening, {
+        auto_correction_sent: true,
+        auto_correction_reason: photoRequest,
+        correction_photo_sides: photoCheck.severe,
+        correction_fields: ["id_photo"]
+      });
+      Object.assign(baseAppPayload, {
+        status: "Needs Correction",
+        customer_instruction: photoRequest
+      });
+    }
     var saved = await dbCreateApplication(baseAppPayload);
 
 
@@ -1677,13 +1706,22 @@ async function submitRegistration() {
       "Thank you for submitting your internet service application with PIGEM Combined Facilities Support Services.\n\n" +
       "Reference Number: " + saved.ref_no + "\n" +
       "Plan: Red Fiber " + p.name + " (" + p.speed + " Mbps - " + formatPeso(p.price) + "/mo)\n" +
-      "Status: Processing\n\n" +
+      (photoRequest ? "Status: Needs Correction\n" + photoRequest + "\n\n" : "Status: Processing\n\n") +
       "Please check your email notification for your 6-digit Activation OTP Code and Account Activation link.";
 
     await dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body, target_tab: "tab-apps", target_id: saved.id });
     await dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no, target_tab: "tab-queue", target_id: saved.id });
     await dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")", target_tab: "tab-queue", target_id: saved.id });
     await apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);
+    if (photoRequest) {
+      // The request is already saved on the application even if email delivery fails.
+      try {
+        var photoEmail = await apiSendStatusEmail(email, fullName, saved.ref_no, "Needs Correction", photoRequest, "Valid ID photos");
+        photoEmailSent = Boolean(photoEmail && photoEmail.sent);
+      } catch (error) {
+        console.warn("Photo correction email could not be sent.");
+      }
+    }
     await dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")");
 
     for (var k = 1; k <= 3; k++) {
@@ -1701,6 +1739,7 @@ async function submitRegistration() {
         '<h3>Application Submitted!</h3>' +
         '<p class="small muted mt">Your Application Reference Number is:</p>' +
         '<div class="big-ref">' + escapeHtml(saved.ref_no) + '</div>' +
+        (photoRequest ? '<p class="notice warn mt">' + escapeHtml(photoRequest) + (photoEmailSent ? ' We also sent an email.' : ' The request is available in your account.') + '</p>' : '') +
         '<div class="notice mt" style="text-align:left;line-height:1.6;">' +
           '<b>Account Summary:</b><br>' +
           'Customer Email: <b>' + escapeHtml(email) + '</b><br>' +
