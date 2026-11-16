@@ -60,7 +60,7 @@ def complete(parts, expect_json=True, max_tokens=2048, response_schema=None, sys
         timeout = 140 if reasoning else 20
     if response_schema:
         body["response_format"] = {"type": "json_schema", "json_schema": {
-            "name": "id_transcription", "strict": True, "schema": strict_schema(response_schema)
+            "name": "pigem_result", "strict": True, "schema": strict_schema(response_schema)
         }}
     elif expect_json:
         body["response_format"] = {"type": "json_object"}

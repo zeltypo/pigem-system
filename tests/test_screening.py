@@ -97,6 +97,18 @@ class ScreeningTests(unittest.TestCase):
         self.assertEqual(body["max_completion_tokens"], 2048)
         self.assertEqual(body["messages"][1]["content"], [{"type": "text", "text": "Please update your ID number."}])
 
+    def test_correction_uses_a_fixed_response_shape_and_template_fallback(self):
+        message = "Hello! Please update the ID number in your customer account."
+        with patch.object(_openai_client, "complete", return_value=json.dumps({"polite_message": message})) as call:
+            result = _ai.write_polite_remark("Please correct the ID number.", "id_number")
+        self.assertEqual(result["source"], "openai")
+        self.assertEqual(result["target_fields"], ["id_number"])
+        self.assertEqual(result["polite_message"], message)
+        self.assertEqual(call.call_args.args[3]["properties"], {"polite_message": {"type": "STRING"}})
+        self.assertIn("untrusted data", call.call_args.args[4])
+        with patch.object(_openai_client, "complete", return_value=""):
+            self.assertEqual(_ai.write_polite_remark("Please correct the ID number.", "id_number")["source"], "template")
+
     def test_non_id_without_text_is_reported(self):
         payload = evidence()
         payload.update(is_valid_government_id=False, detected_document_type="Selfie", lines=[])

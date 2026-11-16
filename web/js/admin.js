@@ -218,14 +218,14 @@ async function checkApiHealth() {
         : "Add OPENAI_API_KEY and OPENAI_MODEL in Vercel Environment Variables to enable correction-message rewriting"
     },
     {
-      name: "OpenCV Readability and 4-Corner Auto-Crop",
-      status: opencvOk ? "Online" : "Unavailable",
+      name: "OpenCV and browser document check",
+      status: opencvOk ? "Server library available" : "Server library unavailable",
       badge: opencvOk ? "badge-green" : "badge-red",
       healthy: opencvOk,
       checked_at: nowIso,
       detail: opencvOk
-        ? "Evaluates blur, brightness, glare, contrast, SHA-256 duplicate check, and saves cropped copy"
-        : "Requires opencv-python-headless in Vercel Python runtime"
+        ? "The Agent browser uses OpenCV.js for image enhancement and Tesseract.js for text reading. Test a fictional application to verify the full check."
+        : "The browser document check uses its own libraries. Verify it from the Agent portal."
     },
     {
       name: "Google reCAPTCHA v2 Security (SiteVerify)",

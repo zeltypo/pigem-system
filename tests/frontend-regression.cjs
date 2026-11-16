@@ -7,7 +7,7 @@ function context(file) {
   const nodes = {};
   const sandbox = { window: { addEventListener() {} }, console,
     document: { getElementById: id => nodes[id] || null, addEventListener() {} },
-    setTimeout() {}, setInterval() {}, clearInterval() {},
+    setTimeout() {}, clearTimeout() {}, setInterval() {}, clearInterval() {},
     escapeHtml: value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;'),
     formatDate: value => value || '',
   };
@@ -189,6 +189,16 @@ function context(file) {
   const missing = reader.compareAgentIdDetails('DATE OF ISSUE: 2001-01-25', { birth: '2001-01-25' });
   assert(missing.includes('Birth date: Could not verify'));
 
+  const bilingual = reader.compareAgentIdFields('APELYIDO\nDELA CRUZ\nGIVEN NAME: MAYA\nDATE OF BIRTH\n4 February 2001\nSTUDENT NO. 12-345', {
+    name: 'Maya Dela Cruz', birth: '2001-02-04', number: '12345',
+  });
+  assert(bilingual.every(field => field.status === 'match'));
+  const ambiguous = reader.compareAgentIdFields('DATE OF BIRTH: 04/02/2001\nID NUMBER: DEM0-12345', {
+    birth: '2001-02-04', number: 'DEMO-12345',
+  });
+  assert(ambiguous.every(field => field.status === 'unreadable'));
+  assert.equal(reader.normalizeAgentBirthDate('2023-02-29'), '');
+  assert.equal(reader.normalizeAgentBirthDate('2024-02-29'), '2024-02-29');
   const numberDraft = reader.getFindingCorrectionDraft({
     fields: reader.compareAgentIdFields('ID NUMBER: 12345', { number: '12354' }), unclearSides: [],
   });

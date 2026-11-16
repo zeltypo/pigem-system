@@ -641,31 +641,99 @@ function renderVisualScreeningProgressBox(app) {
     '<div class="small muted">Reading both ID photos and comparing the application details. Please wait for the saved result.</div></div>';
 }
 
-// Only compare a value when the photo reader found a clear label for that field.
+// Use printed labels as evidence. Unclear dates and conflicting values need review.
+function normalizeAgentBirthDate(value) {
+  var months = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+  function monthNumber(name) {
+    return months.findIndex(function (month) { return month === name || month.slice(0, 3) === name; }) + 1;
+  }
+  var text = value.trim().toUpperCase();
+  var year, month, day;
+  var iso = text.match(/^(\d{4})[-/. ](\d{1,2})[-/. ](\d{1,2})$/);
+  var dayFirst = text.match(/^(\d{1,2})[\s-]+([A-Z]{3,9})[\s,-]+(\d{4})$/);
+  var monthFirst = text.match(/^([A-Z]{3,9})[\s-]+(\d{1,2}),?[\s-]+(\d{4})$/);
+  var numeric = text.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/);
+  if (iso) [, year, month, day] = iso;
+  else if (dayFirst) {
+    [, day, month, year] = dayFirst;
+    month = monthNumber(month);
+  } else if (monthFirst) {
+    [, month, day, year] = monthFirst;
+    month = monthNumber(month);
+  } else if (numeric && (Number(numeric[1]) > 12 || Number(numeric[2]) > 12 || numeric[1] === numeric[2])) {
+    year = numeric[3];
+    day = Number(numeric[1]) > 12 ? numeric[1] : numeric[2];
+    month = Number(numeric[1]) > 12 ? numeric[2] : numeric[1];
+  } else return "";
+  var date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+var agentIdLabels = {
+  name: "full name|name|pangalan",
+  given: "given names?|first name|mga pangalan",
+  middle: "middle name|gitnang apelyido",
+  family: "last name|surname|family name|apelyido",
+  birth_date: "date of birth|birth date|birthdate|d\\.?o\\.?b\\.?|petsa ng kapanganakan|petsa ng pagsilang",
+  id_number: "(?:student id|id card|id|student|license|passport|document|pcn|crn)[ \\t]*(?:number|no\\.?|#)|(?:pcn|crn)"
+};
+var agentIdOtherLabels = "date of issue|date of expiry|expiration date|expiry date|address|address of residence|sex|gender|nationality|signature|blood type";
+var agentIdLabelLine = new RegExp("^(?:" + Object.values(agentIdLabels).concat(agentIdOtherLabels).join("|") + ")(?:$|[:.\u2013\u2014 \\t-])", "i");
+
+function readAgentIdLabelValues(lines, key) {
+  var label = agentIdLabels[key];
+  var pattern = new RegExp("^(?:" + label + ")(?:[ \\t]*[:.\u2013\u2014-][ \\t]*(.*)|[ \\t]+(.*)|)$", "i");
+  return lines.reduce(function (values, line, index) {
+    if (!line || !agentIdLabelLine.test(line)) return values;
+    var match = line.match(pattern);
+    if (!match) return values;
+    var candidate = (match[1] || match[2] || "").trim();
+    // A longer label can start with the same word. Its remaining text is not a value.
+    if (!candidate && lines[index + 1] && !agentIdLabelLine.test(lines[index + 1])) candidate = lines[index + 1];
+    if (candidate) values.push(candidate);
+    return values;
+  }, []);
+}
+
 function compareAgentIdFields(text, expected) {
+  var lines = String(text || "").split(/\r?\n/).map(function (line) { return line.trim(); });
+  var given = readAgentIdLabelValues(lines, "given");
+  var family = readAgentIdLabelValues(lines, "family");
+  var middle = readAgentIdLabelValues(lines, "middle");
   var checks = [
-    { key: "name", label: "Name", entered: expected.name, pattern: /^(?:full\s+name|name|pangalan)\s*[:.-]\s*(.+)$/im },
-    { key: "birth_date", label: "Birth date", entered: expected.birth, pattern: /^(?:date\s+of\s+birth|birth\s*date|dob|petsa ng kapanganakan)\s*[:.-]\s*(.+)$/im },
-    { key: "id_number", label: "ID number", entered: expected.number, pattern: /^(?:id(?:\s*(?:card|student))?\s*(?:number|no\.?|#)|student\s*(?:number|no\.?)|license\s*(?:number|no\.?))\s*[:.-]\s*(.+)$/im }
+    { key: "name", label: "Name", entered: expected.name },
+    { key: "birth_date", label: "Birth date", entered: expected.birth },
+    { key: "id_number", label: "ID number", entered: expected.number }
   ];
+  function normalizeName(value) {
+    var comma = value.split(",").map(function (part) { return part.trim(); });
+    var ordered = comma.length === 2 ? comma[1] + " " + comma[0] : value;
+    return ordered.normalize("NFC").trim().toUpperCase().replace(/\s+/g, " ");
+  }
   return checks.map(function (field) {
-    var values = Array.from(text.matchAll(new RegExp(field.pattern.source, "gim")), function (match) {
-      var value = match[1].trim();
-      // Compare dates only when their format is clear. Month/day order can vary by ID.
-      if (field.label === "Birth date") {
-        var iso = value.match(/^(\d{4})[-/. ](\d{2})[-/. ](\d{2})$/);
-        return iso ? iso.slice(1).join("-") : "";
-      }
-      return value;
-    }).filter(Boolean);
-    var normalize = function (value) {
-      return String(value || "").normalize("NFC").trim().toUpperCase().replace(/\s+/g, field.label === "ID number" ? "" : " ");
-    };
-    var candidates = new Map(values.map(function (value) { return [normalize(value), value]; }));
-    var entered = normalize(field.entered);
-    if (!entered || candidates.size !== 1) return { key: field.key, label: field.label, status: "unreadable" };
-    var found = candidates.values().next().value;
-    return { key: field.key, label: field.label, status: normalize(found) === entered ? "match" : "difference", found: found };
+    var values = readAgentIdLabelValues(lines, field.key);
+    var partialName = false;
+    if (field.key === "name" && !values.length && given.length === 1 && family.length === 1 && middle.length <= 1) {
+      values.push([given[0], middle[0], family[0]].filter(Boolean).join(" "));
+      partialName = !middle.length;
+    }
+    var normalize = field.key === "birth_date" ? normalizeAgentBirthDate : field.key === "name" ? normalizeName :
+      function (value) { return value.toUpperCase().replace(/[\s-]+/g, ""); };
+    var candidates = new Map(values.filter(function (value) {
+      if (field.key === "name") return !/^of\s/i.test(value) && /^[\p{L} .,'’-]+$/u.test(value) && value.trim().includes(" ");
+      if (field.key === "id_number") return /^[a-z0-9\s-]+$/i.test(value) && /\d/.test(value);
+      return true;
+    }).map(function (value) { return [normalize(value), value]; }).filter(function (entry) { return entry[0]; }));
+    var entered = normalize(String(field.entered || ""));
+    var result = { key: field.key, label: field.label, status: "unreadable" };
+    if (!entered || candidates.size !== 1) return result;
+    var entry = candidates.entries().next().value;
+    var found = entry[0];
+    if (found !== entered && partialName) return result;
+    function similarId(value) { return value.replace(/O/g, "0").replace(/[IL]/g, "1"); }
+    if (field.key === "id_number" && found !== entered && similarId(found) === similarId(entered)) return result;
+    return { key: field.key, label: field.label, status: found === entered ? "match" : "difference", found: entry[1] };
   });
 }
 
@@ -740,12 +808,22 @@ async function enhanceAgentIdPhoto(photo, cv) {
   }
 }
 
+function withAgentReadTimeout(work, milliseconds) {
+  var timer;
+  return Promise.race([
+    work,
+    new Promise(function (_, reject) {
+      timer = setTimeout(function () { reject(new Error("Document check timed out")); }, milliseconds);
+    })
+  ]).finally(function () { clearTimeout(timer); });
+}
+
 function isReadableIdText(read) {
   return read.data.confidence >= 60 && /[\p{L}\p{N}]/u.test(read.data.text);
 }
 
 async function readAgentIdPhoto(worker, photo, expected, isFront) {
-  var original = await worker.recognize(photo);
+  var original = await withAgentReadTimeout(worker.recognize(photo), 22000);
   function fieldsFound(read) {
     return compareAgentIdFields(read.data.text, expected).filter(function (field) {
       return field.status !== "unreadable";
@@ -757,7 +835,7 @@ async function readAgentIdPhoto(worker, photo, expected, isFront) {
   try {
     var adjusted = await enhanceAgentIdPhoto(photo, await loadAgentOpenCv());
     if (adjusted) {
-      var secondRead = await worker.recognize(adjusted);
+      var secondRead = await withAgentReadTimeout(worker.recognize(adjusted), 22000);
       if (isReadableIdText(secondRead) && (!originalReadable || fieldsFound(secondRead) > originalFields)) {
         return secondRead;
       }
@@ -774,52 +852,71 @@ async function collectAgentIdFindings(sources, expected) {
   var unclearSides = [];
   var unavailableSides = [];
   try {
-    worker = await Tesseract.createWorker("eng");
+    var initializing = Tesseract.createWorker("eng");
+    try {
+      worker = await withAgentReadTimeout(initializing, 20000);
+    } catch (error) {
+      initializing.then(function (lateWorker) { return lateWorker.terminate(); }).catch(function () {});
+      throw error;
+    }
+    var failedReads = [];
     for (var side of sources) {
+      var photo;
       try {
         // The browser reads the downloaded photo locally.
-        var response = await fetch(side.url, { referrerPolicy: "no-referrer" });
+        var options = { referrerPolicy: "no-referrer" };
+        if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) options.signal = AbortSignal.timeout(12000);
+        var response = await withAgentReadTimeout(fetch(side.url, options), 12000);
         if (!response.ok) throw new Error("Photo unavailable");
-        var read = await readAgentIdPhoto(worker, await response.blob(), expected, side.label === "Front");
-        if (isReadableIdText(read)) {
-          textBySide.push(read.data.text.trim());
-        } else {
-          unclearSides.push(side.label);
-        }
+        photo = await withAgentReadTimeout(response.blob(), 12000);
       } catch (error) {
         unavailableSides.push(side.label);
+        continue;
+      }
+      try {
+        var read = await readAgentIdPhoto(worker, photo, expected, side.label === "Front");
+        if (isReadableIdText(read)) textBySide.push(read.data.text.trim());
+        else unclearSides.push(side.label);
+      } catch (error) {
+        failedReads.push(side.label);
       }
     }
-    return { fields: compareAgentIdFields(textBySide.join("\n"), expected), unclearSides: unclearSides, unavailableSides: unavailableSides };
+    return {
+      fields: compareAgentIdFields(textBySide.join("\n"), expected),
+      unclearSides: unclearSides, unavailableSides: unavailableSides, failedReads: failedReads
+    };
   } catch (error) {
     return { fields: [], unclearSides: [], unavailableSides: [], failed: true };
   } finally {
-    if (worker) await worker.terminate().catch(function () {});
+    if (worker) await withAgentReadTimeout(worker.terminate(), 3000).catch(function () {});
   }
 }
 
 function summarizeAgentIdFindings(result) {
-  if (result.failed) return "Document check is unavailable. Open the original photos to review them.";
+  if (result.failed) return "The photo reader could not start. Refresh and reopen the application, or check the original photos.";
   var notes = [];
   if (result.unclearSides.length) notes.push(result.unclearSides.join(" and ") + " ID photo" + (result.unclearSides.length > 1 ? "s: text is unclear." : ": text is unclear."));
   if (result.unavailableSides.length) notes.push(result.unavailableSides.join(" and ") + " photo could not be opened.");
+  if (result.failedReads && result.failedReads.length) notes.push("The reader could not finish checking the " + result.failedReads.join(" and ").toLowerCase() + " photo. Try reopening the application.");
   var differences = result.fields.filter(function (field) { return field.status === "difference"; });
   if (differences.length) notes.push("Check " + differences.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ".");
   if (notes.length) return notes.join(" ");
   if (result.fields.every(function (field) { return field.status === "match"; })) return "Name, birth date, and ID number match.";
   var unreadable = result.fields.filter(function (field) { return field.status === "unreadable"; });
-  return "Could not verify " + unreadable.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ".";
+  return "Could not verify " + unreadable.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ". Check the printed details on the ID.";
 }
 
 function getAgentIdCheck(front, back, expected, existingOnly) {
   var sources = [{ label: "Front", url: front }, { label: "Back", url: back }].filter(function (side) { return side.url; });
   if (!sources.length) return null;
   var key = JSON.stringify([sources, expected]);
-  if (existingOnly) return agentDocumentChecks.get(key);
-  if (!agentDocumentChecks.has(key)) {
+  var existing = agentDocumentChecks.get(key);
+  if (existingOnly) return existing;
+  if (!existing || (existing.retryAt && existing.retryAt <= Date.now())) {
     var check = { result: null };
     // Run one reader at a time. Reopening a record reuses its result until the photos or fields change.
     check.pending = agentDocumentQueue.then(function () { return collectAgentIdFindings(sources, expected); }).then(function (result) {
+      if (result.failed || result.unavailableSides.length || result.failedReads.length) check.retryAt = Date.now() + 15000;
       check.result = result;
       return result;
     });
