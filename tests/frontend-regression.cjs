@@ -235,6 +235,29 @@ function context(file) {
   });
   await reader.toggleAgentPreparedPhoto(preparedButton);
   assert(preparedStatus.textContent.includes('Full photo adjusted'));
+  assert.equal(reader.compareAgentDocumentType('STUDENT ID\nNAME: Demo Person', 'Philippine Passport'), 'Student ID');
+  assert.equal(reader.compareAgentDocumentType('NAME: Demo Person', 'Philippine Passport'), '');
+  assert.equal(reader.compareAgentDocumentType('STUDENT ID\nPASSPORT', 'Postal ID'), '');
+  assert.equal(await reader.areSameAgentPhotos(new Blob(['same image']), new Blob(['same image'])), true);
+  assert.equal(await reader.areSameAgentPhotos(new Blob(['same image']), new Blob(['diff image'])), false);
+  const duplicateDraft = reader.getFindingCorrectionDraft({ duplicatePhotos: true, fields: [], unclearSides: [] });
+  assert.deepEqual(Array.from(duplicateDraft.sides), ['back']);
+  const mismatchDraft = reader.getFindingCorrectionDraft({ detectedOtherType: 'Student ID', fields: [], unclearSides: [] });
+  assert.deepEqual(Array.from(mismatchDraft.fields), ['id_photo']);
+  const savedRecord = { id: 'fixture', created_at: '2026-11-16', updated_at: 'last-change' };
+  reader.currentAgent = { id: 'agent' };
+  reader.dbUpdateApplication = async (id, changes, expected) => {
+    assert.equal(expected, 'last-change');
+    return { ...changes, updated_at: 'saved' };
+  };
+  await reader.saveAgentFindings(savedRecord, {
+    fields: [{ key: 'id_number', label: 'ID number', status: 'difference', found: 'KEEP-OUT-OF-DB' }],
+    unclearSides: [], unavailableSides: [], failedReads: [],
+  });
+  assert.equal(reader.getSavedAgentFindings(savedRecord).fields[0].status, 'difference');
+  assert(!JSON.stringify(savedRecord.screening).includes('KEEP-OUT-OF-DB'));
+  savedRecord.corrected_copy = { submitted_at: '2026-11-17' };
+  assert.equal(reader.getSavedAgentFindings(savedRecord), null);
   const numberDraft = reader.getFindingCorrectionDraft({
     fields: reader.compareAgentIdFields('ID NUMBER: 12345', { number: '12354' }), unclearSides: [],
   });

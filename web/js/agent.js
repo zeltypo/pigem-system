@@ -468,6 +468,7 @@ async function checkAgentQueueDocument(appId, button) {
   var node = document.getElementById("check-note-" + appId);
   if (node) node.textContent = "Checking ID photos…";
   var result = await check.pending;
+  saveAgentFindings(app, result);
   var summary = summarizeAgentIdFindings(result);
   node = document.getElementById("check-note-" + appId);
   if (node) node.textContent = summary;
@@ -736,7 +737,7 @@ function compareAgentIdFields(text, expected) {
 
 function describeAgentIdField(field) {
   if (field.status === "match") return field.label + ": Matches";
-  if (field.status === "difference") return field.label + ": Check difference (photo reads " + field.found + ")";
+  if (field.status === "difference") return field.label + ": Check difference" + (field.found ? " (photo reads " + field.found + ")" : "");
   return field.label + ": Could not verify";
 }
 
@@ -1049,12 +1050,42 @@ async function readAgentIdPhoto(worker, photo, expected, url) {
   return firstRead;
 }
 
+var agentDocumentTypes = [
+  { label: "Driver's License", choice: /driver|lto/i, heading: /^driver'?s licen[cs]e$/im },
+  { label: "National ID", choice: /national|philsys/i, heading: /^(?:philippine identification card|philippine identification system|national id)$/im },
+  { label: "Passport", choice: /passport/i, heading: /^(?:passport|pasaporte)$/im },
+  { label: "Student ID", choice: /student/i, heading: /^(?:student id|student identification card)$/im },
+  { label: "Postal ID", choice: /postal/i, heading: /^(?:postal id|postal identity card)$/im },
+  { label: "UMID", choice: /umid/i, heading: /^(?:umid|unified multi-purpose id)$/im }
+];
+
+function compareAgentDocumentType(text, selected) {
+  var choice = agentDocumentTypes.find(function (type) { return type.choice.test(selected || ""); });
+  var evidence = agentDocumentTypes.filter(function (type) { return type.heading.test(text); });
+  if (!choice || evidence.length !== 1 || evidence[0] === choice) return "";
+  return evidence[0].label;
+}
+
+async function areSameAgentPhotos(front, back) {
+  if (!front || !back || !front.size || front.size !== back.size ||
+      typeof front.arrayBuffer !== "function" || typeof back.arrayBuffer !== "function") return false;
+  try {
+    var bytes = await withAgentReadTimeout(Promise.all([front.arrayBuffer(), back.arrayBuffer()]), 3000);
+    var left = new Uint8Array(bytes[0]);
+    var right = new Uint8Array(bytes[1]);
+    return left.every(function (value, index) { return value === right[index]; });
+  } catch (error) {
+    return false;
+  }
+}
+
 async function collectAgentIdFindings(sources, expected, job) {
   var worker;
   var textBySide = [];
   var unclearSides = [];
   var unavailableSides = [];
   var failedReads = [];
+  var photoIssues = [];
 
   // Fetch both photos while the reader starts. The checks still read one side at a time.
   var photos = sources.map(async function (side) {
@@ -1077,9 +1108,11 @@ async function collectAgentIdFindings(sources, expected, job) {
       throw error;
     }
     if (job) job.worker = worker;
+    var duplicatePhotos = sources.length === 2 && await areSameAgentPhotos(await photos[0], await photos[1]);
 
     for (var i = 0; i < sources.length && !(job && job.expired); i++) {
       var side = sources[i];
+      if (duplicatePhotos && i === 1) break;
       var photo = await photos[i];
       if (!photo) {
         unavailableSides.push(side.label);
@@ -1088,14 +1121,24 @@ async function collectAgentIdFindings(sources, expected, job) {
       try {
         var read = await readAgentIdPhoto(worker, photo, expected, side.url);
         if (isReadableIdText(read)) textBySide.push(read.data.text.trim());
-        else unclearSides.push(side.label);
+        else {
+          unclearSides.push(side.label);
+          if (typeof analyzeClientIdQuality === "function") {
+            try {
+              var quality = await withAgentReadTimeout(analyzeClientIdQuality(photo), 2500);
+              if (quality.issues.length) photoIssues.push(side.label + " photo: " + quality.issues[0]);
+            } catch (error) {}
+          }
+        }
       } catch (error) {
         failedReads.push(side.label);
       }
     }
+    var text = textBySide.join("\n");
     return {
-      fields: compareAgentIdFields(textBySide.join("\n"), expected),
-      unclearSides: unclearSides, unavailableSides: unavailableSides, failedReads: failedReads
+      fields: compareAgentIdFields(text, expected),
+      unclearSides: unclearSides, unavailableSides: unavailableSides, failedReads: failedReads,
+      duplicatePhotos: duplicatePhotos, photoIssues: photoIssues, detectedOtherType: compareAgentDocumentType(text, expected.type)
     };
   } catch (error) {
     return { fields: [], unclearSides: [], unavailableSides: [], failed: true };
@@ -1123,9 +1166,12 @@ function summarizeAgentIdFindings(result) {
   if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
   if (result.failed) return "The photo reader could not start. Refresh and reopen the application, or check the original photos.";
   var notes = [];
+  if (result.duplicatePhotos) notes.push("Front and back contain the same photo. Check the back upload.");
+  if (result.detectedOtherType) notes.push("The photo appears to show a " + result.detectedOtherType + ". Check the selected ID type.");
   if (result.unclearSides.length) notes.push(result.unclearSides.join(" and ") + " ID photo" + (result.unclearSides.length > 1 ? "s: text is unclear." : ": text is unclear."));
   if (result.unavailableSides.length) notes.push(result.unavailableSides.join(" and ") + " photo could not be opened.");
   if (result.failedReads && result.failedReads.length) notes.push("The reader could not finish checking the " + result.failedReads.join(" and ").toLowerCase() + " photo. Try reopening the application.");
+  if (result.photoIssues && result.photoIssues.length) notes.push(result.photoIssues.join(" "));
   var differences = result.fields.filter(function (field) { return field.status === "difference"; });
   if (differences.length) notes.push("Check " + differences.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ".");
   if (notes.length) return notes.join(" ");
@@ -1154,19 +1200,70 @@ function getAgentIdCheck(front, back, expected, existingOnly) {
   return agentDocumentChecks.get(key);
 }
 
+var agentScreeningWrites = new Set();
+
+function agentScreeningRevision(app) {
+  return (app.corrected_copy && app.corrected_copy.submitted_at) || app.created_at;
+}
+
+function getSavedAgentFindings(app) {
+  var stored = app.screening && app.screening.browser_check;
+  return stored && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
+}
+
+function buildSavedAgentFindings(result) {
+  return {
+    fields: result.fields.map(function (field) {
+      return { key: field.key, label: field.label, status: field.status };
+    }),
+    unclearSides: result.unclearSides,
+    unavailableSides: [],
+    failedReads: [],
+    duplicatePhotos: Boolean(result.duplicatePhotos),
+    detectedOtherType: result.detectedOtherType || "",
+    photoIssues: result.photoIssues || []
+  };
+}
+
+async function saveAgentFindings(app, result) {
+  if (!currentAgent || !app.updated_at || !agentScreeningRevision(app) || getSavedAgentFindings(app) ||
+      result.failed || result.unavailableSides.length || (result.failedReads && result.failedReads.length)) return;
+  var version = agentScreeningRevision(app);
+  var key = app.id + "|" + version;
+  if (agentScreeningWrites.has(key)) return;
+  agentScreeningWrites.add(key);
+  try {
+    var screening = Object.assign({}, app.screening, {
+      browser_check: { revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
+    });
+    var saved = await dbUpdateApplication(app.id, { screening: screening }, app.updated_at);
+    if (saved) {
+      app.screening = saved.screening;
+      app.updated_at = saved.updated_at;
+    }
+  } catch (error) {
+    // An older tab must not overwrite a newer submission or status update.
+  } finally {
+    agentScreeningWrites.delete(key);
+  }
+}
+
 function getAgentAppIdCheck(app, existingOnly) {
   if (!app) return null;
+  var saved = getSavedAgentFindings(app);
+  if (saved) return { result: saved, pending: Promise.resolve(saved) };
   return getAgentIdCheck(app.id_image_url || app.id_front_path || "", app.id_back_image_url || app.id_back_path || "", {
-    name: app.full_name || "", birth: app.birth_date || "", number: app.id_number || ""
+    name: app.full_name || "", birth: app.birth_date || "", number: app.id_number || "", type: app.id_type || ""
   }, existingOnly);
 }
 
-async function showAgentIdFindings(panel) {
+async function showAgentIdFindings(panel, app) {
   if (!panel) return;
-  var expected = { name: panel.dataset.name, birth: panel.dataset.birth, number: panel.dataset.number };
-  var check = getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected);
+  var expected = { name: panel.dataset.name, birth: panel.dataset.birth, number: panel.dataset.number, type: panel.dataset.type || "" };
+  var check = app ? getAgentAppIdCheck(app) : getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected);
   if (!check) return;
   var result = await check.pending;
+  if (app) saveAgentFindings(app, result);
   if (panel.isConnected === false) return;
   panel._documentFindings = result;
   panel.textContent = summarizeAgentIdFindings(result);
@@ -1193,6 +1290,12 @@ function getCurrentCorrectionFindings() {
 
 function getFindingCorrectionDraft(result) {
   if (!result || result.failed) return null;
+  if (result.duplicatePhotos) {
+    return { fields: ["id_photo"], sides: ["back"], message: "Hello! The front and back uploads show the same photo. Please sign in and upload a separate photo of the back of your ID." };
+  }
+  if (result.detectedOtherType) {
+    return { fields: ["id_photo"], message: "Hello! Please sign in and upload a clear photo of the ID type selected on your application." };
+  }
   var differences = result.fields.filter(function (field) { return field.status === "difference"; });
   if (differences.length === 1) {
     var field = differences[0];
@@ -1340,6 +1443,7 @@ async function renderDetailModalContent(updateResultsOnly) {
           '<div class="small" data-id-text-result role="status" style="white-space:pre-wrap; overflow-wrap:anywhere" data-front="' + escapeHtml(frontIdPhotoUrl) +
           '" data-back="' + escapeHtml(idBackPhotoUrl) + '" data-name="' + escapeHtml(viewData.full_name || app.full_name || "") +
           '" data-birth="' + escapeHtml(viewData.birth_date || "") + '" data-number="' + escapeHtml(viewData.id_number || "") +
+          '" data-type="' + escapeHtml(viewData.id_type || app.id_type || "") +
           '">Checking the ID photos…</div></div>'
         : '<div class="agent-screening-note"><b>Screening recommendation</b><div>No ID photo was uploaded.</div></div>');
 
@@ -1463,7 +1567,7 @@ async function renderDetailModalContent(updateResultsOnly) {
     document.getElementById("det-body").innerHTML = detailHtml;
   }
   var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
-  if (findings) showAgentIdFindings(findings);
+  if (findings) showAgentIdFindings(findings, activeCopyMode === "latest" ? app : null);
 
 }
 
@@ -1591,7 +1695,10 @@ async function saveAgentDecision(newStatus) {
   var requestedSides = autoDraft && autoDraft.sides && targetFields.length === 1 && targetFields[0] === "id_photo"
     ? autoDraft.sides
     : [];
+  var observed = getCurrentCorrectionFindings() || getSavedAgentFindings(app);
+  var observedFindings = observed && !observed.failed ? buildSavedAgentFindings(observed) : null;
   var updatedScreening = Object.assign({}, app.screening || {}, {
+    correction_findings: newStatus === "Needs Correction" ? observedFindings : null,
     correction_photo_sides: newStatus === "Needs Correction" ? requestedSides : [],
     correction_fields: newStatus === "Needs Correction" ? targetFields : [],
     auto_correction_sent: false,

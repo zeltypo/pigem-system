@@ -567,6 +567,8 @@ async function submitCustomerCorrection(appId) {
 
     var correctedSnapshot = {
       previous_submissions: previousCustomerSubmissions(app.corrected_copy),
+      requested_fields: Array.isArray(app.correction_fields) ? app.correction_fields : [],
+      reviewed_findings: (app.screening && app.screening.correction_findings) || null,
       id_type: app.id_type,
       full_name: fullName,
       first_name: fname,
