@@ -767,68 +767,124 @@ function loadAgentOpenCv() {
   return agentOpenCv;
 }
 
+function getAgentCardShape(points, cols, rows) {
+  var sums = points.slice().sort(function (a, b) { return a.x + a.y - b.x - b.y; });
+  var differences = points.slice().sort(function (a, b) { return a.x - a.y - b.x + b.y; });
+  var ordered = [sums[0], differences[3], sums[3], differences[0]];
+  if (new Set(ordered).size !== 4 || ordered.some(function (point) {
+    return point.x < 3 || point.y < 3 || point.x >= cols - 3 || point.y >= rows - 3;
+  })) return null;
+
+  var distance = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
+  var top = distance(ordered[0], ordered[1]);
+  var bottom = distance(ordered[3], ordered[2]);
+  var left = distance(ordered[0], ordered[3]);
+  var right = distance(ordered[1], ordered[2]);
+  var width = (top + bottom) / 2;
+  var height = (left + right) / 2;
+  var aspect = Math.max(width, height) / Math.min(width, height);
+  if (aspect < 1.22 || aspect > 2.1 || Math.min(top, bottom) / Math.max(top, bottom) < 0.55 ||
+      Math.min(left, right) / Math.max(left, right) < 0.55) return null;
+  return { points: ordered, width: width, height: height };
+}
+
+function agentCardBoundaryEvidence(gray, shape) {
+  var points = shape.points;
+  var center = points.reduce(function (total, point) {
+    return { x: total.x + point.x / 4, y: total.y + point.y / 4 };
+  }, { x: 0, y: 0 });
+  var support = 0;
+  var step = Math.max(5, Math.round(Math.min(shape.width, shape.height) * 0.025));
+  function pixel(x, y) {
+    x = Math.max(0, Math.min(gray.cols - 1, Math.round(x)));
+    y = Math.max(0, Math.min(gray.rows - 1, Math.round(y)));
+    return gray.data[y * gray.cols + x];
+  }
+  for (var i = 0; i < 4; i++) {
+    var point = points[i];
+    var next = points[(i + 1) % 4];
+    [0.25, 0.5, 0.75].forEach(function (ratio) {
+      var x = point.x + ratio * (next.x - point.x);
+      var y = point.y + ratio * (next.y - point.y);
+      var length = Math.hypot(center.x - x, center.y - y);
+      if (!length) return;
+      var dx = (center.x - x) * step / length;
+      var dy = (center.y - y) * step / length;
+      if (Math.abs(pixel(x + dx, y + dy) - pixel(x - dx, y - dy)) >= 7) support++;
+    });
+  }
+  return { support: support, center: center };
+}
+
 function findAgentIdCorners(gray, cv) {
-  var edges = new cv.Mat();
+  var enhanced = new cv.Mat();
   var blurred = new cv.Mat();
-  var contours = new cv.MatVector();
+  var mask = new cv.Mat();
   var hierarchy = new cv.Mat();
   var polygon = new cv.Mat();
-  var best = null;
-  var bestArea = 0;
+  var kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+  var clahe = new cv.CLAHE(2.5, new cv.Size(8, 8));
   var frameArea = gray.cols * gray.rows;
-  var distance = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
-  try {
-    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-    cv.Canny(blurred, edges, 35, 105);
-    cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-    for (var i = 0; i < contours.size(); i++) {
-      var contour = contours.get(i);
-      try {
-        var area = cv.contourArea(contour);
-        if (area < frameArea * 0.3 || area > frameArea * 0.93 || area <= bestArea) continue;
-        cv.approxPolyDP(contour, polygon, 0.025 * cv.arcLength(contour, true), true);
-        if (polygon.rows !== 4 || !cv.isContourConvex(polygon)) continue;
-        var points = [];
-        for (var j = 0; j < 4; j++) points.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
-        if (points.some(function (point) {
-          return point.x < 3 || point.y < 3 || point.x >= gray.cols - 3 || point.y >= gray.rows - 3;
-        })) continue;
+  var best = null;
+  var bestScore = 0;
 
-        var bySum = points.slice().sort(function (a, b) { return a.x + a.y - b.x - b.y; });
-        var byDifference = points.slice().sort(function (a, b) { return a.x - a.y - b.x + b.y; });
-        var ordered = [bySum[0], byDifference[3], bySum[3], byDifference[0]];
-        if (new Set(ordered).size !== 4) continue;
-        var top = distance(ordered[0], ordered[1]);
-        var bottom = distance(ordered[3], ordered[2]);
-        var left = distance(ordered[0], ordered[3]);
-        var right = distance(ordered[1], ordered[2]);
-        var width = (top + bottom) / 2;
-        var height = (left + right) / 2;
-        var aspect = Math.max(width, height) / Math.min(width, height);
-        if (aspect < 1.22 || aspect > 2.1 || Math.min(top, bottom) / Math.max(top, bottom) < 0.55 ||
-            Math.min(left, right) / Math.max(left, right) < 0.55) continue;
-        if (area < width * height * 0.7) continue;
-
-        var centerX = points.reduce(function (sum, point) { return sum + point.x; }, 0) / 4;
-        var centerY = points.reduce(function (sum, point) { return sum + point.y; }, 0) / 4;
-        best = {
-          points: ordered.flatMap(function (point) {
-            return [
-              Math.max(0, Math.min(gray.cols - 1, centerX + (point.x - centerX) * 1.045)),
-              Math.max(0, Math.min(gray.rows - 1, centerY + (point.y - centerY) * 1.045))
-            ];
-          }),
-          width: Math.round(width * 1.045),
-          height: Math.round(height * 1.045)
-        };
-        bestArea = area;
-      } finally {
-        contour.delete();
+  function scanMask() {
+    var contours = new cv.MatVector();
+    try {
+      cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
+      cv.findContours(mask, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+      for (var i = 0; i < contours.size(); i++) {
+        var contour = contours.get(i);
+        try {
+          var area = cv.contourArea(contour);
+          if (area < frameArea * 0.12 || area > frameArea * 0.96) continue;
+          cv.approxPolyDP(contour, polygon, 0.022 * cv.arcLength(contour, true), true);
+          if (polygon.rows !== 4 || !cv.isContourConvex(polygon)) continue;
+          var points = [];
+          for (var j = 0; j < 4; j++) points.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
+          var shape = getAgentCardShape(points, gray.cols, gray.rows);
+          if (!shape || area < shape.width * shape.height * 0.75) continue;
+          var evidence = agentCardBoundaryEvidence(blurred, shape);
+          if (evidence.support < 7) continue;
+          var score = area * (0.6 + evidence.support / 12);
+          if (score <= bestScore) continue;
+          bestScore = score;
+          best = {
+            points: shape.points.flatMap(function (point) {
+              return [
+                Math.max(0, Math.min(gray.cols - 1, evidence.center.x + (point.x - evidence.center.x) * 1.045)),
+                Math.max(0, Math.min(gray.rows - 1, evidence.center.y + (point.y - evidence.center.y) * 1.045))
+              ];
+            }),
+            width: Math.round(shape.width * 1.045),
+            height: Math.round(shape.height * 1.045)
+          };
+        } finally {
+          contour.delete();
+        }
       }
+    } finally {
+      contours.delete();
+    }
+  }
+
+  try {
+    // Local contrast reveals edges in darker areas without brightening the entire image.
+    clahe.apply(gray, enhanced);
+    cv.GaussianBlur(enhanced, blurred, new cv.Size(5, 5), 0);
+    cv.Canny(blurred, mask, 20, 65);
+    scanMask();
+    if (!best) {
+      cv.Canny(blurred, mask, 9, 32);
+      scanMask();
+    }
+    if (!best) {
+      cv.threshold(blurred, mask, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+      scanMask();
     }
     return best;
   } finally {
-    [edges, blurred, contours, hierarchy, polygon].forEach(function (item) { item.delete(); });
+    [enhanced, blurred, mask, hierarchy, polygon, kernel, clahe].forEach(function (item) { item.delete(); });
   }
 }
 
@@ -872,11 +928,25 @@ async function enhanceAgentIdPhoto(photo, cv) {
       source = mat();
       cv.warpPerspective(gray, source, transform, new cv.Size(w, h));
     }
-    cv.equalizeHist(source, contrast);
+    var meanLight = cv.mean(source)[0];
+    var adjustedLight = meanLight < 105;
+    if (adjustedLight) {
+      var levels = Array.from({ length: 256 }, function (_, value) {
+        return Math.round(255 * Math.pow(value / 255, 0.75));
+      });
+      var lut = cv.matFromArray(1, 256, cv.CV_8U, levels);
+      mats.push(lut);
+      var brighter = mat();
+      cv.LUT(source, lut, brighter);
+      source = brighter;
+    }
+    var clahe = new cv.CLAHE(2, new cv.Size(8, 8));
+    mats.push(clahe);
+    clahe.apply(source, contrast);
     cv.GaussianBlur(contrast, soft, new cv.Size(3, 3), 0);
-    cv.addWeighted(contrast, 1.35, soft, -0.35, 0, sharpened);
+    cv.addWeighted(contrast, 1.23, soft, -0.23, 0, sharpened);
     cv.imshow(canvas, sharpened);
-    return { canvas: canvas, cropped: Boolean(corners) };
+    return { canvas: canvas, cropped: Boolean(corners), lightingAdjusted: adjustedLight };
   } finally {
     mats.forEach(function (item) { item.delete(); });
   }
@@ -947,7 +1017,10 @@ async function toggleAgentPreparedPhoto(button) {
     image.src = prepared.canvas.toDataURL("image/jpeg", 0.9);
     button.dataset.prepared = "yes";
     button.textContent = "Show original";
-    status.textContent = prepared.cropped ? "Card edges detected and cropped." : "Full photo adjusted. Card edges could not be verified.";
+    status.textContent = prepared.cropped
+      ? "Card edges detected and cropped." + (prepared.lightingAdjusted ? " Brightened for easier reading." : "")
+      : "Full photo adjusted." + (prepared.lightingAdjusted ? " Brightened for easier reading." : "") +
+        " If you need a crop, use a photo with all four corners visible against a plain background.";
   } catch (error) {
     status.textContent = "Photo adjustment unavailable. The original is shown.";
   } finally {
