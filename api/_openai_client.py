@@ -7,7 +7,7 @@ import urllib.error
 
 
 def configured_model():
-    return os.getenv("OPENAI_MODEL", "").strip() or "gpt-5.4-mini"
+    return os.getenv("OPENAI_MODEL", "").strip() or "gpt-6-luna"
 
 
 def is_configured():
@@ -39,8 +39,8 @@ def complete(parts, expect_json=True, max_tokens=2048, response_schema=None, sys
     content = [{"type": "text", "text": part["text"]} for part in parts]
     model = configured_model()
     effort = os.getenv("OPENAI_REASONING_EFFORT", "").strip().lower()
-    # OCR is transcription. Start the default model without hidden reasoning tokens.
-    default_effort = "none" if model.lower().startswith("gpt-5.4-mini") else "medium"
+    # Short correction messages can use the lowest reasoning setting.
+    default_effort = "none" if model.lower().startswith(("gpt-6-luna", "gpt-5.4-mini")) else "medium"
     reasoning = bool(effort) or model.lower().startswith(("gpt-5", "gpt-6", "o1", "o3", "o4"))
     body = {
         "model": model,
@@ -53,7 +53,7 @@ def complete(parts, expect_json=True, max_tokens=2048, response_schema=None, sys
         ],
     }
     if reasoning:
-        body["reasoning_effort"] = effort_override or effort or default_effort
+        body["reasoning_effort"] = effort or effort_override or default_effort
     try:
         timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "") or (140 if reasoning else 20))
     except ValueError:

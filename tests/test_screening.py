@@ -92,7 +92,7 @@ class ScreeningTests(unittest.TestCase):
              patch("urllib.request.urlopen", return_value=io.BytesIO(raw)) as call:
             _openai_client.complete([{"text": "Please update your ID number."}])
             body = json.loads(call.call_args.args[0].data)
-        self.assertEqual(body["model"], "gpt-5.4-mini")
+        self.assertEqual(body["model"], "gpt-6-luna")
         self.assertEqual(body["reasoning_effort"], "none")
         self.assertEqual(body["max_completion_tokens"], 2048)
         self.assertEqual(body["messages"][1]["content"], [{"type": "text", "text": "Please update your ID number."}])

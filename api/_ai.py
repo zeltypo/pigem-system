@@ -1403,7 +1403,7 @@ class OpenAIScreeningService(BaseLanguageClient):
 
         )
 
-        raw = self._call_openai(parts=[{"text": prompt}], expect_json=True, max_tokens=200, temperature=0.15, effort="low")
+        raw = self._call_openai(parts=[{"text": prompt}], expect_json=True, max_tokens=200, temperature=0.15, effort="none")
 
         if raw:
 

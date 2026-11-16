@@ -19,7 +19,7 @@ Read [THIRD_TEST_NOTES.md](THIRD_TEST_NOTES.md) for changes, checks and deployme
 
 ## OpenAI configuration
 
-Staff compare ID photos with the application by hand. The browser still checks photo quality during uploads. OpenAI is used only to help rewrite staff correction messages.
+Staff compare ID photos with the application by hand. The browser still checks photo quality during uploads. The Agent can also read ID text in the browser with Tesseract.js. The text stays in the review window and staff confirm the details. OpenAI GPT-6 Luna is used only to help rewrite staff correction messages.
 
 Keep the existing Supabase, SMTP, reCAPTCHA and `APP_BASE_URL` settings. Never put an OpenAI key or Supabase service-role key in browser code. Do not enable paid calls on an unrestricted public deployment before fixing authorization and abuse controls.
 

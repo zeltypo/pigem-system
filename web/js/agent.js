@@ -630,6 +630,44 @@ function renderVisualScreeningProgressBox(app) {
     '<div class="small muted">Reading both ID photos and comparing the application details. Please wait for the saved result.</div></div>';
 }
 
+async function readAgentIdText(button) {
+  var panel = button.parentElement;
+  var result = panel.querySelector("[data-id-text-result]");
+  var sources = [
+    { label: "Front", url: button.dataset.front },
+    { label: "Back", url: button.dataset.back }
+  ].filter(function (side) { return side.url; });
+
+  button.disabled = true;
+  result.textContent = "Reading the ID photos…";
+  var worker;
+  try {
+    worker = await Tesseract.createWorker("eng");
+    var output = [];
+    for (var side of sources) {
+      var message = "Could not read text clearly. Check the original photo for blur, glare, or small print.";
+      try {
+        // Download the existing photo into this browser. The OCR worker receives only the local copy.
+        var response = await fetch(side.url, { referrerPolicy: "no-referrer" });
+        if (!response.ok) throw new Error("Photo unavailable");
+        var read = await worker.recognize(await response.blob());
+        var visibleText = read.data.text.trim();
+        if (read.data.confidence >= 60 && /[\p{L}\p{N}]/u.test(visibleText)) message = visibleText;
+      } catch (error) {
+        message = "Could not open or read this photo. Check it by hand.";
+      }
+      output.push(side.label + "\n" + message);
+    }
+    // Show transcribed text only. Staff decide whether each detail matches.
+    result.textContent = "Compare this text with the photos. Letters and numbers can be misread.\n\n" + output.join("\n\n");
+  } catch (error) {
+    result.textContent = "The text reader could not start. Open the photo to check it by hand.";
+  } finally {
+    button.disabled = false;
+    if (worker) await worker.terminate().catch(function () {});
+  }
+}
+
 async function renderDetailModalContent(updateResultsOnly) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
@@ -715,7 +753,8 @@ async function renderDetailModalContent(updateResultsOnly) {
       '</div>';
   }
 
-  var rawFrontUrl = viewData.id_image_url || app.id_image_url || app.id_front_path || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
+  var frontIdPhotoUrl = viewData.id_image_url || app.id_image_url || app.id_front_path || "";
+  var rawFrontUrl = frontIdPhotoUrl || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
   var croppedUrl = (activeCopyMode === "latest" && (app.cropped_id_url || app.id_cropped_url || (scr && scr.cropped_front_url)))
     ? (app.cropped_id_url || app.id_cropped_url || scr.cropped_front_url)
     : "";
@@ -829,6 +868,13 @@ async function renderDetailModalContent(updateResultsOnly) {
         '</div>' +
       '</div>' +
 
+      ((frontIdPhotoUrl || idBackPhotoUrl)
+        ? '<div class="mb">' +
+          '<button type="button" class="btn btn-outline btn-sm" data-front="' + escapeHtml(frontIdPhotoUrl) +
+          '" data-back="' + escapeHtml(idBackPhotoUrl) + '" onclick="readAgentIdText(this)">Read ID text</button>' +
+          '<pre class="small" data-id-text-result role="status" style="white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; margin-top:8px"></pre>' +
+          '</div>'
+        : '') +
       '<div class="check-pill-grid" style="grid-template-columns:repeat(auto-fit, minmax(min(100%, 210px), 1fr));">' +
         '<div class="check-pill"><span>Readability (Blur/Glare)</span><b>' + escapeHtml(docQualityLabel) + '</b></div>' +
         '<div class="check-pill"><span>Duplicate Image Check</span>' + dupBadge + '</div>' +

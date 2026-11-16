@@ -146,5 +146,30 @@ function context(file) {
   quality.Image = class { set src(value) { this.onerror(); } };
   assert.equal((await quality.analyzeClientIdQuality({})).passed, false,
     'An undecodable image must not pass the upload check');
+  const { sandbox: reader } = context('web/js/agent.js');
+  const output = {};
+  const button = {
+    dataset: { front: '/front.jpg', back: '/back.jpg' },
+    parentElement: { querySelector: () => output },
+  };
+  const photos = [];
+  reader.fetch = async (url, options) => {
+    assert(!options.method && !options.body, 'The photo reader may only download existing photos');
+    photos.push(url);
+    return { ok: true, blob: async () => url };
+  };
+  let workerClosed = false;
+  reader.Tesseract = { createWorker: async () => ({
+    recognize: async photo => ({ data: photo === '/front.jpg'
+      ? { text: 'FICTIONAL STUDENT ID', confidence: 90 }
+      : { text: 'unreliable', confidence: 25 } }),
+    terminate: async () => { workerClosed = true; },
+  }) };
+  await reader.readAgentIdText(button);
+  assert.deepEqual(photos, ['/front.jpg', '/back.jpg']);
+  assert(output.textContent.includes('FICTIONAL STUDENT ID'));
+  assert(output.textContent.includes('Could not read text clearly'));
+  assert(!output.textContent.includes('unreliable'));
+  assert(workerClosed && !button.disabled);
   console.log('PASS: quality blocking and replacement races, automatic checks, plain staff labels, corrections, notifications and reports');
 })().catch(error => { console.error(error); process.exitCode = 1; });
