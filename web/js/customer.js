@@ -33,6 +33,10 @@ window.addEventListener("DOMContentLoaded", async function () {
 
   setInterval(async function () {
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
+    // Replacing the correction form clears the browser's selected files.
+    if (document.getElementById("fix-file")?.files?.length ||
+        document.getElementById("fix-file-back")?.files?.length ||
+        document.getElementById("btn-fix")?.disabled) return;
     if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") return;
     await loadMyApplications(true);
     if (typeof refreshNotifBell === "function") refreshNotifBell(currentCustomer);
@@ -458,9 +462,9 @@ async function submitCustomerCorrection(appId) {
     var street = document.getElementById("fix-street").value.trim() || app.street;
 
     var fileInput = document.getElementById("fix-file");
-    var file = fileInput && fileInput.files && fileInput.files[0];
+    var file = fileInput?.files?.[0];
     var fileBackInput = document.getElementById("fix-file-back");
-    var fileBack = fileBackInput && fileBackInput.files && fileBackInput.files[0];
+    var fileBack = fileBackInput?.files?.[0];
 
     var hasErr = false;
     var fnCheck = typeof validatePersonName === "function" ? validatePersonName(fname, "First Name", false, false) : { valid: Boolean(fname) };
@@ -521,6 +525,9 @@ async function submitCustomerCorrection(appId) {
       }
       if (item.input.files[0] !== item.file) return;
     }
+
+    // Confirm both selections still match after the asynchronous checks finish.
+    if (fileInput?.files?.[0] !== file || fileBackInput?.files?.[0] !== fileBack) return;
 
     var changedList = [];
     if (fullName !== oldName) changedList.push("Name (" + fullName + ")");

@@ -212,6 +212,8 @@ async function analyzeClientIdQuality(fileObj) {
         var glareRatio = brightPixels / (cw * ch);
         var lapSum = 0;
         var lapSqSum = 0;
+        var centerLapSq = 0;
+        var centerCount = 0;
         var count = 0;
         for (var y = 1; y < ch - 1; y++) {
           for (var x = 1; x < cw - 1; x++) {
@@ -219,6 +221,10 @@ async function analyzeClientIdQuality(fileObj) {
             var lap = -4 * gray[idx] + gray[idx - 1] + gray[idx + 1] + gray[idx - cw] + gray[idx + cw];
             lapSum += lap;
             lapSqSum += lap * lap;
+          if (x >= cw * 0.3 && x < cw * 0.7 && y >= ch * 0.3 && y < ch * 0.7) {
+            centerLapSq += lap * lap;
+            centerCount++;
+          }
             count++;
           }
         }
@@ -228,7 +234,9 @@ async function analyzeClientIdQuality(fileObj) {
         if (w < 260 || h < 160) {
           issues.push("This photo is too small. Please choose the original, full-size photo.");
         }
-        if (lapVar < 32) {
+        // Background edges can hide blur in a centered ID photo.
+        var centerBlur = centerCount ? centerLapSq / centerCount : lapVar;
+        if (lapVar < 32 || (centerBlur < 12 && lapVar < 180)) {
           issues.push("The photo looks blurry. Hold the camera steady and take a sharper photo.");
         }
         if (meanBright < 42) {
@@ -242,6 +250,7 @@ async function analyzeClientIdQuality(fileObj) {
           issues: issues,
           metrics: {
             blur_score: Math.round(lapVar),
+            center_blur_score: Math.round(centerBlur),
             brightness: Math.round(meanBright),
             glare_ratio: Number(glareRatio.toFixed(3))
           }

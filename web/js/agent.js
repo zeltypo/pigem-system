@@ -546,7 +546,8 @@ function renderAgentCards() {
         '</div>' +
       '</div></div>';
   }).join("");
-  box.innerHTML = '<details class="queue-color-help"><summary aria-label="What do the colors mean?">? Color guide</summary>' +
+  var guideOpen = box.querySelector?.(".queue-color-help")?.open;
+  box.innerHTML = '<details class="queue-color-help"' + (guideOpen ? ' open' : '') + '><summary aria-label="What do the colors mean?">? Color guide</summary>' +
     '<p>Green: ID details match. Yellow: check the ID findings. Red: action needed or rejected. Gray: not checked yet.</p>' +
     '<p>Status badges show the application stage, such as Encoding or Needs Correction.</p></details>' + html;
 
@@ -903,6 +904,10 @@ function findAgentIdCorners(gray, cv) {
       cv.threshold(blurred, mask, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
       scanMask();
     }
+    if (!best) {
+      cv.threshold(blurred, mask, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
+      scanMask();
+    }
     return best;
   } finally {
     [enhanced, blurred, mask, hierarchy, polygon, kernel, clahe].forEach(function (item) { item.delete(); });
@@ -1059,11 +1064,11 @@ async function readAgentIdPhoto(worker, photo, expected, url) {
     }).length;
   }
   var prepared = await prepareAgentIdPhoto(url, photo);
-  var firstRead = await withAgentReadTimeout(worker.recognize(prepared ? prepared.canvas : photo, {}, { text: true, blocks: true }), 14000);
+  var firstRead = await withAgentReadTimeout(worker.recognize(prepared ? prepared.canvas : photo, {}, { text: true, blocks: true }), 18000);
   if (!prepared || (isReadableIdText(firstRead) && fieldsFound(firstRead) >= 2)) return firstRead;
 
   try {
-    var original = await withAgentReadTimeout(worker.recognize(photo, {}, { text: true, blocks: true }), 14000);
+    var original = await withAgentReadTimeout(worker.recognize(photo, {}, { text: true, blocks: true }), 18000);
     if (isReadableIdText(original) && (!isReadableIdText(firstRead) || fieldsFound(original) > fieldsFound(firstRead))) {
       return original;
     }
@@ -1175,7 +1180,7 @@ async function collectAgentIdFindings(sources, expected, job) {
 
 function runAgentIdCheck(sources, expected) {
   var job = { expired: false, worker: null, terminated: false };
-  return withAgentReadTimeout(collectAgentIdFindings(sources, expected, job), 45000).catch(function () {
+  return withAgentReadTimeout(collectAgentIdFindings(sources, expected, job), 60000).catch(function () {
     job.expired = true;
     if (job.worker && !job.terminated) {
       job.terminated = true;
@@ -1197,9 +1202,17 @@ function summarizeAgentIdFindings(result) {
   if (result.photoIssues && result.photoIssues.length) notes.push(result.photoIssues.join(" "));
   var differences = result.fields.filter(function (field) { return field.status === "difference"; });
   if (differences.length) notes.push("Check " + differences.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ".");
-  if (notes.length) return notes.join(" ");
+  if (notes.length) {
+    if (result.fields.some(function (field) { return field.key === "birth_date" && field.status === "unreadable"; })) {
+      notes.push("Birth date could not be verified. Check the original ID; if no date is printed, ask for an ID that shows it.");
+    }
+    return notes.join(" ");
+  }
   if (result.fields.every(function (field) { return field.status === "match"; })) return "Name, birth date, and ID number match.";
   var unreadable = result.fields.filter(function (field) { return field.status === "unreadable"; });
+  if (unreadable.length === 1 && unreadable[0].key === "birth_date") {
+    return "Birth date could not be verified. Check the original ID; if no date is printed, ask for an ID that shows it.";
+  }
   return "Could not verify " + unreadable.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ". Check the printed details on the ID.";
 }
 

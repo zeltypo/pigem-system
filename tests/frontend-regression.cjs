@@ -212,7 +212,7 @@ function context(file) {
   const { sandbox: stuckReader } = context('web/js/agent.js');
   let finishDeadline;
   let stopped = 0;
-  stuckReader.setTimeout = (callback, delay) => { if (delay === 45000) finishDeadline = callback; };
+  stuckReader.setTimeout = (callback, delay) => { if (delay === 60000) finishDeadline = callback; };
   stuckReader.fetch = async () => ({ ok: true, blob: async () => ({}) });
   stuckReader.Tesseract = { createWorker: async () => ({
     recognize: () => new Promise(() => {}),

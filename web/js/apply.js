@@ -795,7 +795,7 @@ function checkSelectedIdQuality(side, file) {
 
 function isSevereIdPhoto(result) {
   var metrics = result.metrics;
-  return !result.passed && metrics && (metrics.brightness < 30 || metrics.blur_score < 12 ||
+  return !result.passed && metrics && (metrics.brightness < 30 || metrics.blur_score < 12 || (metrics.center_blur_score < 8 && metrics.blur_score < 180) ||
     (metrics.brightness > 225 && metrics.glare_ratio > 0.55));
 }
 
