@@ -216,6 +216,25 @@ function context(file) {
   assert.equal(stopped, 1);
   assert(stuckReader.summarizeAgentIdFindings(expired).includes('took too long'));
 
+  const preparedImage = { src: '/front.jpg' };
+  const preparedStatus = { textContent: '' };
+  const preparedButton = {
+    dataset: { photo: '/front.jpg' },
+    closest: () => ({ querySelector: selector => selector === 'img' ? preparedImage : preparedStatus }),
+  };
+  reader.prepareAgentIdPhoto = async () => ({
+    cropped: true, canvas: { toDataURL: () => 'data:image/jpeg;base64,fixture' },
+  });
+  await reader.toggleAgentPreparedPhoto(preparedButton);
+  assert(preparedStatus.textContent.includes('detected and cropped'));
+  assert(preparedImage.src.startsWith('data:image/'));
+  await reader.toggleAgentPreparedPhoto(preparedButton);
+  assert.equal(preparedImage.src, '/front.jpg');
+  reader.prepareAgentIdPhoto = async () => ({
+    cropped: false, canvas: { toDataURL: () => 'data:image/jpeg;base64,full' },
+  });
+  await reader.toggleAgentPreparedPhoto(preparedButton);
+  assert(preparedStatus.textContent.includes('Full photo adjusted'));
   const numberDraft = reader.getFindingCorrectionDraft({
     fields: reader.compareAgentIdFields('ID NUMBER: 12345', { number: '12354' }), unclearSides: [],
   });

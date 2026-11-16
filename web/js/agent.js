@@ -766,11 +766,76 @@ function loadAgentOpenCv() {
   return agentOpenCv;
 }
 
+function findAgentIdCorners(gray, cv) {
+  var edges = new cv.Mat();
+  var blurred = new cv.Mat();
+  var contours = new cv.MatVector();
+  var hierarchy = new cv.Mat();
+  var polygon = new cv.Mat();
+  var best = null;
+  var bestArea = 0;
+  var frameArea = gray.cols * gray.rows;
+  var distance = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
+  try {
+    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+    cv.Canny(blurred, edges, 35, 105);
+    cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+    for (var i = 0; i < contours.size(); i++) {
+      var contour = contours.get(i);
+      try {
+        var area = cv.contourArea(contour);
+        if (area < frameArea * 0.3 || area > frameArea * 0.93 || area <= bestArea) continue;
+        cv.approxPolyDP(contour, polygon, 0.025 * cv.arcLength(contour, true), true);
+        if (polygon.rows !== 4 || !cv.isContourConvex(polygon)) continue;
+        var points = [];
+        for (var j = 0; j < 4; j++) points.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
+        if (points.some(function (point) {
+          return point.x < 3 || point.y < 3 || point.x >= gray.cols - 3 || point.y >= gray.rows - 3;
+        })) continue;
+
+        var bySum = points.slice().sort(function (a, b) { return a.x + a.y - b.x - b.y; });
+        var byDifference = points.slice().sort(function (a, b) { return a.x - a.y - b.x + b.y; });
+        var ordered = [bySum[0], byDifference[3], bySum[3], byDifference[0]];
+        if (new Set(ordered).size !== 4) continue;
+        var top = distance(ordered[0], ordered[1]);
+        var bottom = distance(ordered[3], ordered[2]);
+        var left = distance(ordered[0], ordered[3]);
+        var right = distance(ordered[1], ordered[2]);
+        var width = (top + bottom) / 2;
+        var height = (left + right) / 2;
+        var aspect = Math.max(width, height) / Math.min(width, height);
+        if (aspect < 1.22 || aspect > 2.1 || Math.min(top, bottom) / Math.max(top, bottom) < 0.55 ||
+            Math.min(left, right) / Math.max(left, right) < 0.55) continue;
+        if (area < width * height * 0.7) continue;
+
+        var centerX = points.reduce(function (sum, point) { return sum + point.x; }, 0) / 4;
+        var centerY = points.reduce(function (sum, point) { return sum + point.y; }, 0) / 4;
+        best = {
+          points: ordered.flatMap(function (point) {
+            return [
+              Math.max(0, Math.min(gray.cols - 1, centerX + (point.x - centerX) * 1.045)),
+              Math.max(0, Math.min(gray.rows - 1, centerY + (point.y - centerY) * 1.045))
+            ];
+          }),
+          width: Math.round(width * 1.045),
+          height: Math.round(height * 1.045)
+        };
+        bestArea = area;
+      } finally {
+        contour.delete();
+      }
+    }
+    return best;
+  } finally {
+    [edges, blurred, contours, hierarchy, polygon].forEach(function (item) { item.delete(); });
+  }
+}
+
 async function enhanceAgentIdPhoto(photo, cv) {
   if (!cv || typeof createImageBitmap !== "function") return null;
   var bitmap = await createImageBitmap(photo);
   var canvas = document.createElement("canvas");
-  var scale = 1600 / Math.max(bitmap.width, bitmap.height);
+  var scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
   try {
@@ -793,11 +858,24 @@ async function enhanceAgentIdPhoto(photo, cv) {
     var soft = mat();
     var sharpened = mat();
     cv.cvtColor(image, gray, cv.COLOR_RGBA2GRAY);
-    cv.equalizeHist(gray, contrast);
+    var corners = findAgentIdCorners(gray, cv);
+    var source = gray;
+    if (corners) {
+      var w = corners.width;
+      var h = corners.height;
+      var originalPoints = cv.matFromArray(4, 1, cv.CV_32FC2, corners.points);
+      var outputPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, w - 1, 0, w - 1, h - 1, 0, h - 1]);
+      mats.push(originalPoints, outputPoints);
+      var transform = cv.getPerspectiveTransform(originalPoints, outputPoints);
+      mats.push(transform);
+      source = mat();
+      cv.warpPerspective(gray, source, transform, new cv.Size(w, h));
+    }
+    cv.equalizeHist(source, contrast);
     cv.GaussianBlur(contrast, soft, new cv.Size(3, 3), 0);
     cv.addWeighted(contrast, 1.35, soft, -0.35, 0, sharpened);
     cv.imshow(canvas, sharpened);
-    return canvas;
+    return { canvas: canvas, cropped: Boolean(corners) };
   } finally {
     mats.forEach(function (item) { item.delete(); });
   }
@@ -817,28 +895,84 @@ function isReadableIdText(read) {
   return read.data.confidence >= 60 && /[\p{L}\p{N}]/u.test(read.data.text);
 }
 
-async function readAgentIdPhoto(worker, photo, expected, isFront) {
-  var original = await withAgentReadTimeout(worker.recognize(photo), 14000);
+var agentPreparedPhotos = new Map();
+
+function prepareAgentIdPhoto(url, photo) {
+  if (!document.head) return Promise.resolve(null);
+  if (!agentPreparedPhotos.has(url)) {
+    var preparation = (async function () {
+      try {
+        if (!photo) {
+          var response = await withAgentReadTimeout(fetch(url, { referrerPolicy: "no-referrer" }), 10000);
+          if (!response.ok) return null;
+          photo = await withAgentReadTimeout(response.blob(), 10000);
+        }
+        return await enhanceAgentIdPhoto(photo, await loadAgentOpenCv());
+      } catch (error) {
+        return null;
+      }
+    })();
+    agentPreparedPhotos.set(url, preparation);
+    if (agentPreparedPhotos.size > 8) agentPreparedPhotos.delete(agentPreparedPhotos.keys().next().value);
+    preparation.then(function (result) {
+      if (!result && agentPreparedPhotos.get(url) === preparation) agentPreparedPhotos.delete(url);
+    });
+  }
+  return agentPreparedPhotos.get(url);
+}
+
+async function toggleAgentPreparedPhoto(button) {
+  var container = button.closest("[data-photo-container]");
+  var image = container && container.querySelector("img");
+  var status = container && container.querySelector("[data-photo-status]");
+  if (!image || !status) return;
+  var original = button.dataset.photo;
+  if (button.dataset.prepared === "yes") {
+    image.src = original;
+    button.dataset.prepared = "";
+    button.textContent = "View adjusted photo";
+    status.textContent = "";
+    return;
+  }
+
+  button.disabled = true;
+  status.textContent = "Preparing photo…";
+  try {
+    var prepared = await prepareAgentIdPhoto(original);
+    if (!prepared) {
+      status.textContent = "Photo adjustment unavailable. The original is shown.";
+      return;
+    }
+    image.src = prepared.canvas.toDataURL("image/jpeg", 0.9);
+    button.dataset.prepared = "yes";
+    button.textContent = "Show original";
+    status.textContent = prepared.cropped ? "Card edges detected and cropped." : "Full photo adjusted. Card edges could not be verified.";
+  } catch (error) {
+    status.textContent = "Photo adjustment unavailable. The original is shown.";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function readAgentIdPhoto(worker, photo, expected, url) {
   function fieldsFound(read) {
     return compareAgentIdFields(read.data.text, expected).filter(function (field) {
       return field.status !== "unreadable";
     }).length;
   }
-  var originalReadable = isReadableIdText(original);
-  var originalFields = originalReadable ? fieldsFound(original) : 0;
-  if ((originalReadable && (!isFront || originalFields >= 2)) || !document.head) return original;
+  var prepared = await prepareAgentIdPhoto(url, photo);
+  var firstRead = await withAgentReadTimeout(worker.recognize(prepared ? prepared.canvas : photo), 14000);
+  if (!prepared || (isReadableIdText(firstRead) && fieldsFound(firstRead) >= 2)) return firstRead;
+
   try {
-    var adjusted = await enhanceAgentIdPhoto(photo, await loadAgentOpenCv());
-    if (adjusted) {
-      var secondRead = await withAgentReadTimeout(worker.recognize(adjusted), 14000);
-      if (isReadableIdText(secondRead) && (!originalReadable || fieldsFound(secondRead) > originalFields)) {
-        return secondRead;
-      }
+    var original = await withAgentReadTimeout(worker.recognize(photo), 14000);
+    if (isReadableIdText(original) && (!isReadableIdText(firstRead) || fieldsFound(original) > fieldsFound(firstRead))) {
+      return original;
     }
   } catch (error) {
-    // An enhancement failure does not replace the original photo or its result.
+    // Retain evidence from the initial read if the second read cannot finish.
   }
-  return original;
+  return firstRead;
 }
 
 async function collectAgentIdFindings(sources, expected, job) {
@@ -878,7 +1012,7 @@ async function collectAgentIdFindings(sources, expected, job) {
         continue;
       }
       try {
-        var read = await readAgentIdPhoto(worker, photo, expected, side.label === "Front");
+        var read = await readAgentIdPhoto(worker, photo, expected, side.url);
         if (isReadableIdText(read)) textBySide.push(read.data.text.trim());
         else unclearSides.push(side.label);
       } catch (error) {
@@ -1117,16 +1251,20 @@ async function renderDetailModalContent(updateResultsOnly) {
         idModeBar +
       '</div>' +
       '<div class="grid-2" style="margin-bottom:12px">' +
-        '<div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
+        '<div data-photo-container style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedUrl && activeIdImgMode === "cropped" ? "FRONT ID (CROPPED COPY)" : "FRONT ID (ORIGINAL UPLOADED COPY)") + '</div>' +
           (frontIdPhotoUrl ? '<img src="' + escapeHtml(displayedFrontUrl) + '" alt="Front ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />' +
-            '<button type="button" class="btn btn-outline btn-sm mt" data-side="front" onclick="downloadAgentIdPhoto(this.dataset.side)">Download front</button>' : '<span class="muted">No front photo uploaded</span>') +
+            '<button type="button" class="btn btn-outline btn-sm mt" data-side="front" onclick="downloadAgentIdPhoto(this.dataset.side)">Download front</button>' +
+            '<button type="button" class="btn btn-outline btn-sm mt" data-photo="' + escapeHtml(frontIdPhotoUrl) + '" onclick="toggleAgentPreparedPhoto(this)">View adjusted photo</button>' +
+            '<div class="small muted" role="status" data-photo-status></div>' : '<span class="muted">No front photo uploaded</span>') +
         '</div>' +
-        '<div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
+        '<div data-photo-container style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedBackUrl && activeIdImgMode === "cropped" ? "BACK ID (CROPPED COPY)" : "BACK ID (ORIGINAL UPLOADED COPY)") + '</div>' +
           (displayedBackUrl
             ? '<img src="' + escapeHtml(displayedBackUrl) + '" alt="Back ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />'
-              + '<button type="button" class="btn btn-outline btn-sm mt" data-side="back" onclick="downloadAgentIdPhoto(this.dataset.side)">Download back</button>'
+              + '<button type="button" class="btn btn-outline btn-sm mt" data-side="back" onclick="downloadAgentIdPhoto(this.dataset.side)">Download back</button>' +
+            '<button type="button" class="btn btn-outline btn-sm mt" data-photo="' + escapeHtml(idBackPhotoUrl) + '" onclick="toggleAgentPreparedPhoto(this)">View adjusted photo</button>' +
+            '<div class="small muted" role="status" data-photo-status></div>'
             : '<span class="muted small" style="display:block; padding:54px 0">No Back ID uploaded</span>') +
         '</div>' +
       '</div>' +
