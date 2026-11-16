@@ -1739,7 +1739,10 @@ async function submitRegistration() {
   } catch (err) {
     if (loadingScreen) loadingScreen.hidden = true;
     showPanel(5);
-    showAlert("Submission Error", err.message || "Could not submit application.", "bad");
+    var brand = '<span class="row" style="align-items:center;gap:10px"><img src="' +
+      escapeHtml(getImageUrl("black-logo-white-mode.png")) +
+      '" alt="" width="36" height="36" style="object-fit:contain"> <span>Application could not be submitted</span></span>';
+    showAlert(brand, escapeHtml(err.message || "Please try submitting again."), "bad");
   }
 }
 

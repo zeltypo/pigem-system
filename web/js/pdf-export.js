@@ -9,30 +9,43 @@ function savePigemExport(blob, filename) {
   setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
 }
 
-function exportPigemPdf(report, filename, print) {
-  var doc;
+var pigemPdfLogo;
+
+function loadPigemPdfLogo() {
+  if (!pigemPdfLogo) {
+    pigemPdfLogo = fetch(getImageUrl("black-logo-white-mode.png"), {
+      signal: AbortSignal.timeout(5000)
+    }).then(async function (response) {
+      if (!response.ok) return null;
+      return new Uint8Array(await response.arrayBuffer());
+    }).catch(function () { return null; });
+  }
+  return pigemPdfLogo;
+}
+
+async function exportPigemPdf(report, filename, print) {
+  // Open the tab while the click still counts as a user action.
+  var preview = print ? window.open("", "_blank") : null;
+  if (preview) preview.opener = null;
+  var blob;
   try {
-    doc = buildPigemPdf(report);
+    blob = buildPigemPdf(report, await loadPigemPdfLogo()).output("blob");
   } catch (error) {
+    if (preview) preview.close();
     showAlert("PDF unavailable", "Refresh the page and try again.");
     return;
   }
-  var blob = doc.output("blob");
-  if (print) {
+  if (preview && !preview.closed) {
     var url = URL.createObjectURL(blob);
-    var preview = window.open(url, "_blank");
-    if (preview) {
-      preview.opener = null;
-      setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
-      return;
-    }
-    URL.revokeObjectURL(url);
-    showAlert("PDF downloaded", "Open the PDF to print it.");
+    preview.location.replace(url);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
+    return;
   }
   savePigemExport(blob, filename);
+  if (print) showAlert("PDF downloaded", "Open the PDF to print it.");
 }
 
-function buildPigemPdf(report) {
+function buildPigemPdf(report, logo) {
   var doc = new window.jspdf.jsPDF({ unit: "pt", format: "letter", orientation: "portrait", compress: true });
   var margin = 72;
   var width = 468;
@@ -50,11 +63,24 @@ function buildPigemPdf(report) {
   }
 
   function pageHeader() {
-    doc.setFillColor(161, 20, 41);
-    doc.roundedRect(margin, margin, 34, 34, 5, 5, "F");
-    doc.setTextColor(255, 255, 255);
-    font(20, true);
-    doc.text("P", margin + 17, margin + 24, { align: "center" });
+    var logoDrawn = false;
+    if (logo) {
+      try {
+        var image = doc.getImageProperties(logo);
+        var scale = Math.min(36 / image.width, 34 / image.height);
+        var logoWidth = image.width * scale;
+        var logoHeight = image.height * scale;
+        doc.addImage(logo, "PNG", margin, margin + (34 - logoHeight) / 2, logoWidth, logoHeight, "pigem-logo");
+        logoDrawn = true;
+      } catch (error) {}
+    }
+    if (!logoDrawn) {
+      doc.setFillColor(161, 20, 41);
+      doc.roundedRect(margin, margin, 34, 34, 5, 5, "F");
+      doc.setTextColor(255, 255, 255);
+      font(20, true);
+      doc.text("P", margin + 17, margin + 24, { align: "center" });
+    }
     doc.setTextColor(36, 45, 60);
     font(9, true);
     doc.text("PIGEM  /  COMBINED FACILITIES SUPPORT SERVICES", margin + 46, margin + 12);
