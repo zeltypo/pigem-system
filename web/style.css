@@ -1958,11 +1958,12 @@ textarea.input-invalid {
 .agent-queue-toggle > summary { cursor:pointer; padding:4px 0; }
 .agent-queue-toggle > summary strong { margin-right:10px; }
 .agent-queue-toggle > summary span { color:var(--muted); font-size:.85em; overflow-wrap:anywhere; }
-.agent-queue-item { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; column-gap:12px; }
+.agent-queue-header { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
+.agent-queue-toggle { min-width:0; }
 .agent-queue-header-action { min-width:0; }
 .agent-queue-header-action select { width:auto; max-width:100%; }
-.agent-queue-toggle:not([open]) ~ .agent-queue-details { display:none; }
-.agent-queue-details { grid-column:1 / -1; margin-top:12px; }
+.agent-queue-item:not(:has(.agent-queue-toggle[open])) > .agent-queue-details { display:none; }
+.agent-queue-details { margin-top:12px; }
 @media (max-width:480px) {
   .agent-queue-toggle > summary span { display:block; padding-left:1em; }
   .agent-queue-header-action select { max-width:9rem; }

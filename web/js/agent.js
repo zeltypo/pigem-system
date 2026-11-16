@@ -518,10 +518,10 @@ function renderAgentCards() {
     var control = shared
       ? '<button type="button" class="btn btn-red btn-sm" data-id="' + id + '" onclick="confirmAgentClaim(this.dataset.id)">Claim</button>'
       : '<select class="agent-queue-action" aria-label="Application action" data-id="' + id + '" onchange="runAgentQueueAction(this)">' + actions + '</select>';
-    return '<div class="q-card agent-queue-item"><details class="agent-queue-toggle" data-id="' + id + '"' + (expandedSummaryCards[app.id] ? " open" : "") +
+    return '<div class="q-card agent-queue-item"><div class="agent-queue-header"><details class="agent-queue-toggle" data-id="' + id + '"' + (expandedSummaryCards[app.id] ? " open" : "") +
       ' ontoggle="expandedSummaryCards[this.dataset.id] = this.open; if(this.open && !getAgentAppIdCheck(findAppById(this.dataset.id), true)) checkAgentQueueDocument(this.dataset.id)">' +
       '<summary aria-controls="queue-details-' + id + '"><strong>' + escapeHtml(app.full_name) + '</strong><span>' + escapeHtml(app.reference_no) + '</span></summary></details>' +
-      '<div class="agent-queue-header-action">' + control + '</div>' +
+      '<div class="agent-queue-header-action">' + control + '</div></div>' +
       '<div class="agent-queue-details" id="queue-details-' + id + '">' +
         '<div class="agent-screening-note"><b>Screening recommendation</b><div role="status" id="check-note-' + id + '">' + getScreeningQuickSummary(app) + '</div></div>' +
         '<p class="small muted">' + escapeHtml(app.plan_name || "Red Fiber Plan") + (place ? ' &bull; ' + escapeHtml(place) : '') +
