@@ -4,7 +4,7 @@ import sys
 
 from typing import Any, Dict, Optional
 
-from fastapi import HTTPException, Depends, FastAPI, File, Form, Request, UploadFile
+from fastapi import HTTPException, Depends, FastAPI, Request
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -22,11 +22,7 @@ import _ai
 
 import _mailer
 
-from starlette.concurrency import run_in_threadpool
-
 import _quality
-
-import _screening
 
 app = FastAPI(title="PIGEM Cloud Requirements Screening & Notification API")
 
@@ -47,10 +43,6 @@ app.add_middleware(
 class CaptchaVerifyRequest(BaseModel):
 
     token: str
-
-class AsyncScreenRequest(BaseModel):
-
-    application_id: str
 
 class EmailRequest(BaseModel):
 
@@ -98,9 +90,9 @@ def health():
 
         "opencv": opencv_ok,
 
-        "ocr": openai_ok,
+        "ocr": False,
 
-        "auto_screening_ready": bool(opencv_ok and openai_ok),
+        "auto_screening_ready": False,
 
         "recaptcha": recaptcha_ok,
 
@@ -123,103 +115,11 @@ def verify_captcha(data: CaptchaVerifyRequest, request: Request):
     return _auth.verify_recaptcha(data.token, client_ip)
 
 @app.post("/api/screen-async")
-
 @app.post("/screen-async")
-
-def screen_document_async(data: AsyncScreenRequest, user=Depends(_auth.require_screening_staff)):
-
-    if not _screening.is_admin_screening_enabled():
-        raise HTTPException(status_code=503, detail="Document screening is paused or unavailable.")
-
-    return _screening.run_automatic_screening(data.application_id)
-
 @app.post("/api/screen")
-
 @app.post("/screen")
-
-async def screen_document(
-
-    id_front: UploadFile = File(...),
-
-    id_back: Optional[UploadFile] = File(None),
-
-    full_name: str = Form(""),
-
-    first_name: str = Form(""),
-
-    middle_name: str = Form(""),
-
-    last_name: str = Form(""),
-
-    birth_date: str = Form(""),
-
-    id_type: str = Form(""),
-
-    id_number: str = Form(""),
-
-    user=Depends(_auth.require_screening_staff),
-
-):
-
-    if not _screening.is_admin_screening_enabled():
-        raise HTTPException(status_code=503, detail="Document screening is paused or unavailable.")
-
-    # Bound uploaded data before decoding it. Oversized images can exhaust server memory.
-    max_bytes = 5 * 1024 * 1024
-    front_bytes = await id_front.read(max_bytes + 1)
-    back_bytes = await id_back.read(max_bytes + 1) if id_back is not None else None
-    if not front_bytes or len(front_bytes) > max_bytes or (back_bytes and len(back_bytes) > max_bytes):
-        raise HTTPException(status_code=413, detail="Each ID image must be nonempty and at most 5 MB.")
-
-    # OpenCV and the vision HTTP client are synchronous. Keep the event loop free.
-    quality_result, _, _ = await run_in_threadpool(
-        _screening._evaluate_front_and_back_quality, front_bytes, back_bytes
-    )
-    ocr_result = await run_in_threadpool(
-        _ai.extract_id_text, front_bytes, back_bytes, id_type
-    )
-    cropped_front_url = ""
-    cropped_back_url = ""
-
-    entered = {
-
-        "full_name": full_name,
-
-        "first_name": first_name,
-
-        "middle_name": middle_name,
-
-        "last_name": last_name,
-
-        "birth_date": birth_date,
-
-        "id_type": id_type,
-
-        "id_number": id_number,
-
-    }
-
-    comparisons = _ai.compare_fields(entered, ocr_result)
-
-    notes = _ai.write_guidance(quality_result, comparisons)
-
-    return {
-
-        "preliminary": True,
-
-        "quality": quality_result,
-
-        "ocr": ocr_result,
-
-        "comparisons": comparisons,
-
-        "ai": notes,
-
-        "cropped_front_url": cropped_front_url,
-
-        "cropped_back_url": cropped_back_url,
-
-    }
+def document_screening_retired():
+    raise HTTPException(status_code=410, detail="Staff review ID photos by hand.")
 
 @app.post("/api/notify")
 

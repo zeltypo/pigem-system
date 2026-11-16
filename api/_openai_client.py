@@ -33,15 +33,10 @@ def strict_schema(schema):
 def complete(parts, expect_json=True, max_tokens=2048, response_schema=None, system_instruction="", effort_override=""):
     if not is_configured():
         return ""
-    content = []
-    for part in parts:
-        if "text" in part:
-            content.append({"type": "text", "text": part["text"]})
-        elif "inline_data" in part:
-            image = part["inline_data"]
-            content.append({"type": "image_url", "image_url": {
-                "url": "data:" + image["mime_type"] + ";base64," + image["data"], "detail": "high"
-            }})
+    # This client is for correction notes. Refuse image input before making a request.
+    if any("inline_data" in part or "text" not in part for part in parts):
+        return ""
+    content = [{"type": "text", "text": part["text"]} for part in parts]
     model = configured_model()
     effort = os.getenv("OPENAI_REASONING_EFFORT", "").strip().lower()
     # OCR is transcription. Start the default model without hidden reasoning tokens.

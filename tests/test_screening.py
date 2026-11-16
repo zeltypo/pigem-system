@@ -80,26 +80,22 @@ class ScreeningTests(unittest.TestCase):
             self.assertEqual(_openai_client.complete([]), "")
             self.assertEqual(call.call_count, 1)
 
-    def test_request_schema_and_original_images(self):
-        raw = json.dumps({"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(evidence())}}]}).encode()
-        with patch("urllib.request.urlopen", return_value=io.BytesIO(raw)) as call:
+    def test_id_photos_never_reach_openai(self):
+        with patch("urllib.request.urlopen") as call:
             result = _ai.extract_id_text_with_fallback(b"cropped", raw_front=b"original", id_type="Student ID")
-            self.assertTrue(result["available"])
-            body = json.loads(call.call_args.args[0].data)
-            self.assertEqual(body["response_format"]["type"], "json_schema")
-            self.assertFalse(body["store"])
-            self.assertFalse(body["response_format"]["json_schema"]["schema"]["additionalProperties"])
-            self.assertEqual(call.call_count, 1)
+            self.assertFalse(result["available"])
+            call.assert_not_called()
 
-    def test_default_uses_bounded_vision_request(self):
+    def test_default_uses_bounded_text_request(self):
         raw = json.dumps({"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}).encode()
         with patch.dict(os.environ, {"OPENAI_MODEL": "", "OPENAI_REASONING_EFFORT": ""}), \
              patch("urllib.request.urlopen", return_value=io.BytesIO(raw)) as call:
-            _openai_client.complete([])
+            _openai_client.complete([{"text": "Please update your ID number."}])
             body = json.loads(call.call_args.args[0].data)
         self.assertEqual(body["model"], "gpt-5.4-mini")
         self.assertEqual(body["reasoning_effort"], "none")
         self.assertEqual(body["max_completion_tokens"], 2048)
+        self.assertEqual(body["messages"][1]["content"], [{"type": "text", "text": "Please update your ID number."}])
 
     def test_non_id_without_text_is_reported(self):
         payload = evidence()

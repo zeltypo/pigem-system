@@ -1528,7 +1528,6 @@ async function submitRegistration() {
   try {
 
     advanceLoadingStep(1);
-    var screeningActive = Boolean(getSystemSettings().ai_enabled);
     if (!(await validateSelectedIdQuality())) {
       if (loadingScreen) loadingScreen.hidden = true;
       return;
@@ -1542,13 +1541,11 @@ async function submitRegistration() {
 
     var screening = {
       preliminary: true,
-      state: screeningActive ? "pending_agent" : "paused",
-      phase: screeningActive ? "Waiting for Document Check" : "Original Copy Ready (Manual Review)",
+      state: "paused",
+      phase: "Ready for Staff Review",
       eta_seconds: 0,
-      fallback_original_only: !screeningActive,
-      advisory: screeningActive
-        ? "Your documents will be checked automatically."
-        : "Manual document review is active."
+      fallback_original_only: true,
+      advisory: "Staff will review your uploaded ID photos."
     };
     var subLat = parseFloat((document.getElementById("lat") || {}).value);
     var subLng = parseFloat((document.getElementById("lng") || {}).value);
@@ -1696,9 +1693,6 @@ async function submitRegistration() {
 
     var saved = await dbCreateApplication(baseAppPayload);
 
-    if (!screeningActive && typeof dbNotifyScreeningUnavailable === "function") {
-      await dbNotifyScreeningUnavailable(saved.ref_no, fullName, "Original uploaded ID copies are ready for manual verification.");
-    }
 
     await new Promise(function (r) { setTimeout(r, 300); });
 

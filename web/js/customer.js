@@ -561,12 +561,11 @@ async function submitCustomerCorrection(appId) {
       submitted_at: new Date().toISOString()
     };
 
-    var rescreenEnabled = isAiEnabled();
     var updatedScreening = {
-      state: rescreenEnabled ? "pending_agent" : "paused",
-      phase: rescreenEnabled ? "Waiting for Document Check" : "Original Copy Ready (Manual Review)",
+      state: "paused",
+      phase: "Ready for Staff Review",
       eta_seconds: 0,
-      fallback_original_only: !rescreenEnabled,
+      fallback_original_only: true,
       flagged_front_sha256: app.screening && app.screening.flagged_front_sha256,
       flagged_back_sha256: app.screening && app.screening.flagged_back_sha256,
       last_customer_changes: changedList

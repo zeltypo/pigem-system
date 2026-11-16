@@ -1,6 +1,6 @@
 # PIGEM Internet Service Application System
 
-Plain HTML, CSS and JavaScript frontend; Python FastAPI backend on Vercel; Supabase database/storage; OpenAI-assisted document screening.
+Plain HTML, CSS and JavaScript frontend; Python FastAPI backend on Vercel; Supabase database/storage; manual document review.
 
 Read [THIRD_TEST_NOTES.md](THIRD_TEST_NOTES.md) for changes, checks and deployment blockers. This is a third-test candidate, not a production certification.
 
@@ -19,7 +19,7 @@ Read [THIRD_TEST_NOTES.md](THIRD_TEST_NOTES.md) for changes, checks and deployme
 
 ## OpenAI configuration
 
-OpenAI screening is off by default. On an isolated demo preview using fictional records, set `OPENAI_DEMO_SCREENING_ENABLED=true` and `OPENAI_API_KEY` on the server. The default is `gpt-5.4-mini`. Update an existing `OPENAI_MODEL` override to switch a configured deployment. Pending documents are checked automatically while an Agent or Manager portal is open. Unavailable evidence is shown for manual review. The recording script and screen list are in [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md).
+Staff compare ID photos with the application by hand. The browser still checks photo quality during uploads. OpenAI is used only to help rewrite staff correction messages.
 
 Keep the existing Supabase, SMTP, reCAPTCHA and `APP_BASE_URL` settings. Never put an OpenAI key or Supabase service-role key in browser code. Do not enable paid calls on an unrestricted public deployment before fixing authorization and abuse controls.
 

@@ -5,7 +5,7 @@ var mgrLogs = [];
 var activeMgrTab = "overview";
 var activeMgrReportTab = "apps";
 var activeMgrAppId = null;
-var isMgrScreeningOnline = true;
+var isMgrScreeningOnline = false;
 
 window.openDashTabById = function (tabId, targetId) {
   var tabMap = {
@@ -29,26 +29,10 @@ window.openDashTabById = function (tabId, targetId) {
 };
 
 async function checkMgrScreeningService() {
+  isMgrScreeningOnline = false;
   var banner = document.getElementById("mgr-screening-banner");
-  if (!isAiEnabled()) {
-    isMgrScreeningOnline = false;
-    if (banner) banner.classList.remove("hidden");
-    return false;
-  }
-  if (typeof apiCheckHealth === "function") {
-    var health = await apiCheckHealth();
-    if (!health || health.status !== "ok" || health.auto_screening_ready === false) {
-      isMgrScreeningOnline = false;
-      if (banner) banner.classList.remove("hidden");
-      if (typeof dbNotifyScreeningUnavailable === "function") {
-        await dbNotifyScreeningUnavailable("", "", "Auto-screening service is currently offline. Applications continue using original uploaded ID copies.");
-      }
-      return false;
-    }
-  }
-  isMgrScreeningOnline = true;
-  if (banner) banner.classList.add("hidden");
-  return true;
+  if (banner) banner.classList.remove("hidden");
+  return false;
 }
 
 function isMgrScreeningActive(app) {

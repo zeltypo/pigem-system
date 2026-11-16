@@ -6,7 +6,6 @@ var activeAdminTab = "overview";
 var activeAccountSubTab = "all";
 var activeLogSubTab = "activity";
 var activeReportSubTab = "api";
-var lastHealthData = null;
 var lastApiReportRows = [];
 
 window.openDashTabById = function (tabId, targetId) {
@@ -155,35 +154,10 @@ function toggleMaintMode() {
 }
 
 async function renderAiState() {
-  var on = isAiEnabled();
-  var health = await apiCheckHealth();
-  lastHealthData = health;
-  var pyOnline = Boolean(health && health.api);
-  var openaiConfigured = Boolean(health && health.openai);
-  var opencvOnline = Boolean(health && health.opencv);
-
   var stAiEl = document.getElementById("st-ai");
-  if (stAiEl) {
-    stAiEl.textContent = (!on) ? "PAUSED" : ((pyOnline && openaiConfigured) ? "CONFIGURED" : "CHECK");
-  }
-
+  if (stAiEl) stAiEl.textContent = "MANUAL";
   var lbl = document.getElementById("ai-status-label");
-  var btn = document.getElementById("btn-toggle-ai");
-  if (lbl) {
-    if (!on) {
-      lbl.textContent = "Currently DISABLED by Admin (Agent and Manager workspaces switch cleanly to manual document review)";
-    } else if (!pyOnline) {
-      lbl.textContent = "Cloud FastAPI Serverless Screening Endpoint (/api) is currently unreachable - manual agent review is active.";
-    } else if (!openaiConfigured) {
-      lbl.textContent = "FastAPI Serverless is ONLINE, awaiting OPENAI_API_KEY and OPENAI_MODEL in Vercel Environment Variables - manual agent review is active.";
-    } else {
-      lbl.textContent = "Cloud AI Screening Engine CONFIGURED (Vercel FastAPI Serverless + " + (opencvOnline ? "OpenCV Auto-Crop + " : "") + "SHA-256 Duplicate Check + OpenAI Vision OCR)";
-    }
-  }
-  if (btn) {
-    btn.textContent = on ? "Disable AI Screening" : "Enable AI Screening";
-    btn.className = "btn " + (on ? "btn-red" : "btn-green");
-  }
+  if (lbl) lbl.textContent = "Staff review the original ID photos by hand.";
 
   var aiList = await dbListAiLogs();
   var box = document.getElementById("admin-ai-log-list");
@@ -202,30 +176,6 @@ async function renderAiState() {
       '</div>';
   }
   box.innerHTML = html;
-}
-
-function toggleAiMode() {
-  var next = !isAiEnabled();
-  openConfirmPopup(
-    next ? "Enable Cloud AI Document Screening Engine?" : "Disable Cloud AI Document Screening Engine?",
-    next
-      ? "Enabling <code>public.system_settings.ai_enabled = true</code> resumes cloud OpenCV + OpenAI Vision requirements screening via <code>POST /api/screen-async</code>."
-      : "Disabling <code>public.system_settings.ai_enabled = false</code> pauses automated screening. Customer submissions will continue without interruption using original uploaded ID copies, and all Agents and Managers will receive a manual-review notification.",
-    next ? "Enable AI Screening" : "Disable AI Screening",
-    async function () {
-      await setAiEnabled(next);
-      await dbAddLog(getStaffIdentifier(currentAdmin), "Set AI Screening Engine to " + (next ? "ENABLED" : "DISABLED"));
-      if (!next) {
-        await dbAddNotification(null, "agent", "Auto-Screening Paused", "System Administrator paused automated document screening. Customer applications continue normally using original uploaded ID copies for manual review.");
-        await dbAddNotification(null, "manager", "Auto-Screening Paused", "System Administrator paused automated document screening. Customer applications continue normally using original uploaded ID copies for manual review.");
-      } else {
-        await dbAddNotification(null, "agent", "Auto-Screening Active", "System Administrator re-enabled automated document screening for new and updated applications.");
-        await dbAddNotification(null, "manager", "Auto-Screening Active", "System Administrator re-enabled automated document screening for new and updated applications.");
-      }
-      await refreshAdminData();
-    },
-    !next
-  );
 }
 
 async function checkApiHealth() {
@@ -254,18 +204,18 @@ async function checkApiHealth() {
       healthy: pyOk,
       checked_at: nowIso,
       detail: pyOk
-        ? "Serving /api/health, /api/screen, /api/screen-async, /api/verify-captcha, /api/notify, and /api/polite-remark"
+        ? "Serving /api/health, /api/verify-captcha, /api/notify, and /api/polite-remark"
         : "Check Vercel deployment logs for api/index.py"
     },
     {
-      name: "OpenAI Vision and AI API",
+      name: "OpenAI correction messages",
       status: openaiConfigured ? "Configured (live request not checked)" : "Key Missing",
       badge: openaiConfigured ? "badge-green" : "badge-yellow",
       healthy: openaiConfigured,
       checked_at: nowIso,
       detail: openaiConfigured
-        ? "Performs Valid ID Vision OCR extraction, non-ID rejection, and polite customer remarks"
-        : "Add OPENAI_API_KEY and OPENAI_MODEL in Vercel Environment Variables to activate Vision OCR"
+        ? "Helps staff rewrite correction messages"
+        : "Add OPENAI_API_KEY and OPENAI_MODEL in Vercel Environment Variables to enable correction-message rewriting"
     },
     {
       name: "OpenCV Readability and 4-Corner Auto-Crop",

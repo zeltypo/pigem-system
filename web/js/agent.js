@@ -31,7 +31,7 @@ var activeIdImgMode = "cropped";
 var pendingProofDataUrl = "";
 var pendingProofFile = null;
 var lastDetectedFields = null;
-var isScreeningServiceOnline = true;
+var isScreeningServiceOnline = false;
 var visualScreeningRunningAppId = null;
 var visualScreeningStage = 0;
 
@@ -48,23 +48,10 @@ var FIELD_SUMMARY_LABELS = {
 };
 
 async function checkAgentScreeningService() {
+  isScreeningServiceOnline = false;
   var banner = document.getElementById("agent-screening-banner");
-  if (!isAiEnabled()) {
-    isScreeningServiceOnline = false;
-    if (banner) banner.classList.remove("hidden");
-    return false;
-  }
-  if (typeof apiCheckHealth === "function") {
-    var health = await apiCheckHealth();
-    if (!health || health.status !== "ok" || health.auto_screening_ready === false) {
-      isScreeningServiceOnline = false;
-      if (banner) banner.classList.remove("hidden");
-      return false;
-    }
-  }
-  isScreeningServiceOnline = true;
-  if (banner) banner.classList.add("hidden");
-  return true;
+  if (banner) banner.classList.remove("hidden");
+  return false;
 }
 
 var VALIDATOR_PRESETS = [
@@ -470,7 +457,7 @@ function getScreeningQuickSummary(app) {
   }
   var scr = app.screening || {};
   if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only) {
-    return '<span class="muted">Auto-screening unavailable - customer\'s original uploaded ID photo is ready for manual review.</span>';
+    return '<span class="muted">Open the original ID photos to review them by hand.</span>';
   }
   if (scr.state === "pending_agent") return '<span class="muted">Waiting for Document Check.</span>';
   if (scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running") {
