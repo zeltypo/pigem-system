@@ -1645,6 +1645,16 @@ async function submitRegistration() {
     });
 
     if (dupCheck && dupCheck.isDuplicate) {
+      var existing = dupCheck.existingApp;
+      if (existing && existing.status === "Needs Correction" &&
+          String(existing.email || "").trim().toLowerCase() === email.trim().toLowerCase()) {
+        openPopup('<div class="center"><h3>Your application needs a correction</h3>' +
+          '<p>Application <b>' + escapeHtml(dupCheck.existingRef) + '</b> is waiting for your update.</p>' +
+          '<p>Open your account and correct that application. You do not need to submit a new one.</p>' +
+          '<a class="btn btn-red" href="customer.html">Open my applications</a></div>',
+          { showCloseX: true, closeOnBackdrop: true });
+        return;
+      }
       var rejectedSaved = await dbCreateApplication(Object.assign({}, baseAppPayload, {
         status: "Rejected",
         provider_remarks: dupCheck.reason,

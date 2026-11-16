@@ -5,3 +5,5 @@ __pycache__/
 schema.sql
 
 tests/
+
+/tmp/

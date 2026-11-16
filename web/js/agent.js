@@ -968,8 +968,27 @@ function withAgentReadTimeout(work, milliseconds) {
   ]).finally(function () { clearTimeout(timer); });
 }
 
+function getAgentReadText(read) {
+  var data = read.data || {};
+  if (!Array.isArray(data.blocks) || !data.blocks.length) {
+    return data.confidence >= 60 ? String(data.text || "") : "";
+  }
+  // Keep complete confident lines. Dropping one uncertain digit could invent a different ID number.
+  var lines = [];
+  data.blocks.forEach(function (block) {
+    (block.paragraphs || []).forEach(function (paragraph) {
+      (paragraph.lines || []).forEach(function (line) {
+        var words = (line.words || []).filter(function (word) { return /[\p{L}\p{N}]/u.test(word.text || ""); });
+        var reliable = words.length && words.every(function (word) { return word.confidence >= 60; });
+        lines.push(reliable ? line.text.trim() : "[unverified]");
+      });
+    });
+  });
+  return lines.join("\n");
+}
+
 function isReadableIdText(read) {
-  return read.data.confidence >= 60 && /[\p{L}\p{N}]/u.test(read.data.text);
+  return /[\p{L}\p{N}]/u.test(getAgentReadText(read).replace(/\[unverified\]/g, ""));
 }
 
 var agentPreparedPhotos = new Map();
@@ -1019,16 +1038,16 @@ async function showAgentPreparedPhoto(container) {
 
 async function readAgentIdPhoto(worker, photo, expected, url) {
   function fieldsFound(read) {
-    return compareAgentIdFields(read.data.text, expected).filter(function (field) {
+    return compareAgentIdFields(getAgentReadText(read), expected).filter(function (field) {
       return field.status !== "unreadable";
     }).length;
   }
   var prepared = await prepareAgentIdPhoto(url, photo);
-  var firstRead = await withAgentReadTimeout(worker.recognize(prepared ? prepared.canvas : photo), 14000);
+  var firstRead = await withAgentReadTimeout(worker.recognize(prepared ? prepared.canvas : photo, {}, { text: true, blocks: true }), 14000);
   if (!prepared || (isReadableIdText(firstRead) && fieldsFound(firstRead) >= 2)) return firstRead;
 
   try {
-    var original = await withAgentReadTimeout(worker.recognize(photo), 14000);
+    var original = await withAgentReadTimeout(worker.recognize(photo, {}, { text: true, blocks: true }), 14000);
     if (isReadableIdText(original) && (!isReadableIdText(firstRead) || fieldsFound(original) > fieldsFound(firstRead))) {
       return original;
     }
@@ -1108,7 +1127,7 @@ async function collectAgentIdFindings(sources, expected, job) {
       }
       try {
         var read = await readAgentIdPhoto(worker, photo, expected, side.url);
-        if (isReadableIdText(read)) textBySide.push(read.data.text.trim());
+        if (isReadableIdText(read)) textBySide.push(getAgentReadText(read));
         else {
           unclearSides.push(side.label);
           if (typeof analyzeClientIdQuality === "function") {
@@ -1156,7 +1175,7 @@ function summarizeAgentIdFindings(result) {
   var notes = [];
   if (result.duplicatePhotos) notes.push("Front and back contain the same photo. Check the back upload.");
   if (result.detectedOtherType) notes.push("The photo appears to show a " + result.detectedOtherType + ". Check the selected ID type.");
-  if (result.unclearSides.length) notes.push(result.unclearSides.join(" and ") + " ID photo" + (result.unclearSides.length > 1 ? "s: text is unclear." : ": text is unclear."));
+  if (result.unclearSides.length) notes.push(result.unclearSides.join(" and ") + " ID photo" + (result.unclearSides.length > 1 ? "s: Printed text could not be read. Check the photos." : ": Printed text could not be read. Check the photo."));
   if (result.unavailableSides.length) notes.push(result.unavailableSides.join(" and ") + " photo could not be opened.");
   if (result.failedReads && result.failedReads.length) notes.push("The reader could not finish checking the " + result.failedReads.join(" and ").toLowerCase() + " photo. Try reopening the application.");
   if (result.photoIssues && result.photoIssues.length) notes.push(result.photoIssues.join(" "));
@@ -1196,7 +1215,7 @@ function agentScreeningRevision(app) {
 
 function getSavedAgentFindings(app) {
   var stored = app.screening && app.screening.browser_check;
-  return stored && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
+  return stored && stored.reader_version === 2 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
 }
 
 function buildSavedAgentFindings(result) {
@@ -1222,7 +1241,7 @@ async function saveAgentFindings(app, result) {
   agentScreeningWrites.add(key);
   try {
     var screening = Object.assign({}, app.screening, {
-      browser_check: { revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
+      browser_check: { reader_version: 2, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
     });
     var saved = await dbUpdateApplication(app.id, { screening: screening }, app.updated_at);
     if (saved) {

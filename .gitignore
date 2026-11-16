@@ -12,3 +12,5 @@ Thumbs.db
 .idea/
 assets_backup/
 tests/review-preview.html
+
+/tmp/

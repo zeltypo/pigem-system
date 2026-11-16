@@ -95,7 +95,6 @@ function context(file) {
   await a.renderDetailModalContent();
   assert(an['det-body'].innerHTML.includes('Screening recommendation'));
   assert(an['det-body'].innerHTML.includes('Checking the ID photos'));
-  fs.writeFileSync('tests/review-preview.html', `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="../web/style.css"><title>Fictional review preview</title><main id="app-detail-modal" style="max-width:1050px;margin:auto;padding:16px"><h1>Fictional review preview</h1><p>Layout check only. No live applicant records.</p>${an['det-body'].innerHTML}</main>`);
 
   assert(!/\b(?:OCR|OpenAI|API|AI)\b/.test(an['det-body'].innerHTML.replace(/<[^>]+>/g, ' ')),
     'Agent-visible text must use plain labels');
@@ -181,7 +180,7 @@ function context(file) {
   assert(output.textContent.includes('Name: Matches'));
   assert(output.textContent.includes('Birth date: Matches'));
   assert(output.textContent.includes('ID number: Matches'));
-  assert(output.textContent.includes('Back ID photo: text is unclear'));
+  assert(output.textContent.includes('Back ID photo: Printed text could not be read'));
   assert(!output.textContent.includes('unreliable'));
   assert(workerClosed);
   await reader.showAgentIdFindings(output);
@@ -248,6 +247,16 @@ function context(file) {
   assert.deepEqual(Array.from(duplicateDraft.sides), ['back']);
   const mismatchDraft = reader.getFindingCorrectionDraft({ detectedOtherType: 'Student ID', fields: [], unclearSides: [] });
   assert.deepEqual(Array.from(mismatchDraft.fields), ['id_photo']);
+  const mixedRead = { data: { confidence: 35, text: 'decorative background', blocks: [{ paragraphs: [{ lines: [
+    { text: 'ID NUMBER: 12345', words: [{ text: 'ID', confidence: 95 }, { text: 'NUMBER:', confidence: 95 }, { text: '12345', confidence: 94 }] },
+    { text: 'noise', words: [{ text: 'noise', confidence: 20 }] },
+  ] }] }] } };
+  assert(reader.isReadableIdText(mixedRead));
+  assert.equal(reader.compareAgentIdFields(reader.getAgentReadText(mixedRead), { number: '12354' })[2].status, 'difference');
+  mixedRead.data.blocks[0].paragraphs[0].lines[0].words[2].confidence = 30;
+  assert.equal(reader.compareAgentIdFields(reader.getAgentReadText(mixedRead), { number: '12354' })[2].status, 'unreadable');
+  assert.equal(reader.getSavedAgentFindings({ created_at: 'old', screening: { browser_check: { revision: 'old', findings: {} } } }), null);
+  assert(fs.readFileSync('web/js/customer.js', 'utf8').includes('background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430'));
   const savedRecord = { id: 'fixture', created_at: '2026-11-16', updated_at: 'last-change' };
   reader.currentAgent = { id: 'agent' };
   reader.dbUpdateApplication = async (id, changes, expected) => {
@@ -281,7 +290,7 @@ function context(file) {
   a.printApplicantCopy();
   assert.equal(printExport.print, true);
   assert.equal(printExport.filename, 'PIGEM-DEMO-ONLY.pdf');
-  assert(printExport.report.note.includes('Front ID photo: text is unclear'));
+  assert(printExport.report.note.includes('Front ID photo: Printed text could not be read'));
   assert(!JSON.stringify(printExport.report).includes('/fictional-front.jpg'));
   a.downloadApplicantCopy();
   assert.equal(printExport.print, false);

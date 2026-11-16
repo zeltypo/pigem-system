@@ -307,16 +307,16 @@ function renderSelectedApp() {
     '</div>';
 
   if (needsFix) {
-    var hiName  = fields.indexOf("name") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
-    var hiBdate = fields.indexOf("birth_date") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
-    var hiEmail = fields.indexOf("email") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
-    var hiPhone = fields.indexOf("phone") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
-    var hiIdNo  = fields.indexOf("id_number") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
-    var hiAddr  = fields.indexOf("address") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
+    var hiName  = fields.indexOf("name") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+    var hiBdate = fields.indexOf("birth_date") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+    var hiEmail = fields.indexOf("email") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+    var hiPhone = fields.indexOf("phone") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+    var hiIdNo  = fields.indexOf("id_number") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+    var hiAddr  = fields.indexOf("address") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
     var photoSides = (app.screening && app.screening.correction_photo_sides) || [];
     var needsFront = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("front"));
     var needsBack = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("back"));
-    var hiPhoto = fields.indexOf("id_photo") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; padding:8px; border-radius:8px"' : '';
+    var hiPhoto = fields.indexOf("id_photo") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430; padding:8px; border-radius:8px"' : '';
 
     var cleanExistingMid = (app.middle_name && String(app.middle_name).toUpperCase() !== "N/A") ? app.middle_name : "";
 
