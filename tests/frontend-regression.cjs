@@ -169,7 +169,7 @@ function context(file) {
   assert(output.textContent.includes('Name: Matches'));
   assert(output.textContent.includes('Birth date: Matches'));
   assert(output.textContent.includes('ID number: Matches'));
-  assert(output.textContent.includes('Back photo: Text is unclear'));
+  assert(output.textContent.includes('Back ID photo: text is unclear'));
   assert(!output.textContent.includes('unreliable'));
   assert(workerClosed);
   await reader.showAgentIdFindings(output);
@@ -177,8 +177,25 @@ function context(file) {
   const mismatch = reader.compareAgentIdDetails('ID NUMBER: 12345', { number: '12354' });
   assert(mismatch.includes('ID number: Check difference (photo reads 12345)'));
   const missing = reader.compareAgentIdDetails('DATE OF ISSUE: 2001-01-25', { birth: '2001-01-25' });
-  assert(missing.includes('Birth date: Check the photo'));
+  assert(missing.includes('Birth date: Could not verify'));
 
+  const numberDraft = reader.getFindingCorrectionDraft({
+    fields: reader.compareAgentIdFields('ID NUMBER: 12345', { number: '12354' }), unclearSides: [],
+  });
+  assert.deepEqual(Array.from(numberDraft.fields), ['id_number']);
+  assert(numberDraft.message.includes('ID number'));
+  const photoDraft = reader.getFindingCorrectionDraft({ fields: [], unclearSides: ['Back'] });
+  assert.deepEqual(Array.from(photoDraft.fields), ['id_photo']);
+  assert.deepEqual(Array.from(photoDraft.sides), ['back']);
+  assert(photoDraft.message.includes('back'));
+  assert(!photoDraft.message.includes('front'));
+
+  let printMarkup = '';
+  a.window.open = () => ({ document: { open() {}, close() {}, write: html => { printMarkup = html; } } });
+  await a.printApplicantCopy();
+  assert(printMarkup.includes('@page{size:A4'));
+  assert(printMarkup.includes('DEMO-ONLY'));
+  assert(printMarkup.includes('For PIGEM staff use only'));
   const { sandbox: statusEmail } = context('web/js/api.js');
   statusEmail.apiSendEmail = async (to, subject, body, options) => ({ to, subject, body, options });
   const approved = await statusEmail.apiSendStatusEmail('demo@example.test', 'Maya', 'TEST', 'Approved');

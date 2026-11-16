@@ -19,7 +19,7 @@ Read [THIRD_TEST_NOTES.md](THIRD_TEST_NOTES.md) for changes, checks and deployme
 
 ## OpenAI configuration
 
-The browser checks photo quality during uploads. When an Agent opens an application, Tesseract.js reads the photos locally and compares the labeled fields with the form. The findings stay in the review window. Staff confirm differences or unreadable fields. OpenAI GPT-6 Luna is used only to help rewrite staff correction messages.
+The browser checks photo quality during uploads. When an Agent opens an application, Tesseract.js reads the photos locally and compares the labeled fields with the form. The Agent can also check documents from the shared queue. OpenCV.js enhances hard-to-read photos locally before a second read. Results stay in the browser. Staff confirm findings before sending a targeted correction request. OpenAI GPT-6 Luna is used only to help rewrite staff correction messages.
 
 Keep the existing Supabase, SMTP, reCAPTCHA and `APP_BASE_URL` settings. Never put an OpenAI key or Supabase service-role key in browser code. Do not enable paid calls on an unrestricted public deployment before fixing authorization and abuse controls.
 

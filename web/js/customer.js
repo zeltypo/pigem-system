@@ -305,6 +305,9 @@ function renderSelectedApp() {
     var hiPhone = fields.indexOf("phone") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
     var hiIdNo  = fields.indexOf("id_number") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
     var hiAddr  = fields.indexOf("address") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8"' : '';
+    var photoSides = (app.screening && app.screening.correction_photo_sides) || [];
+    var needsFront = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("front"));
+    var needsBack = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("back"));
     var hiPhoto = fields.indexOf("id_photo") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; padding:8px; border-radius:8px"' : '';
 
     var cleanExistingMid = (app.middle_name && String(app.middle_name).toUpperCase() !== "N/A") ? app.middle_name : "";
@@ -354,12 +357,12 @@ function renderSelectedApp() {
         '</div>' +
         '<div class="grid-2" ' + hiPhoto + '>' +
           '<div class="field" style="margin-bottom:0">' +
-            '<label>Front of Valid ID Photo ' + (fields.indexOf("id_photo") !== -1 ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
+            '<label>Front of Valid ID Photo ' + (needsFront ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
             '<input id="fix-file" type="file" accept="image/*" onchange="showSelectedPhotoQuality(this)" />' +
             '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Front side showing your name, photo, and ID number.</div>' +
           '</div>' +
           '<div class="field" style="margin-bottom:0">' +
-            '<label>Back of Valid ID Photo ' + (fields.indexOf("id_photo") !== -1 ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
+            '<label>Back of Valid ID Photo ' + (needsBack ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
             '<input id="fix-file-back" type="file" accept="image/*" onchange="showSelectedPhotoQuality(this)" />' +
             '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Back side of the same Valid ID card.</div>' +
           '</div>' +
@@ -483,7 +486,16 @@ async function submitCustomerCorrection(appId) {
       setFieldError("fix-phone", "Please enter an updated Mobile Number.");
       hasErr = true;
     }
-    if (fields.indexOf("id_photo") !== -1 && !file && !fileBack) {
+    var requestedSides = (app.screening && app.screening.correction_photo_sides) || [];
+    if (fields.includes("id_photo") && requestedSides.includes("front") && !file) {
+      setFieldError("fix-file", "Upload a clearer photo of the front of your ID.");
+      hasErr = true;
+    }
+    if (fields.includes("id_photo") && requestedSides.includes("back") && !fileBack) {
+      setFieldError("fix-file-back", "Upload a clearer photo of the back of your ID.");
+      hasErr = true;
+    }
+    if (fields.indexOf("id_photo") !== -1 && !requestedSides.length && !file && !fileBack) {
       setFieldError("fix-file", "Please upload a clearer Front and/or Back photo of your Valid ID before resubmitting.");
       hasErr = true;
     }

@@ -95,13 +95,6 @@ function showSessionReasonBanner() {
   var params = new URLSearchParams(window.location.search);
   var reason = String(params.get("reason") || "").toLowerCase();
   if (!reason) return false;
-  if (typeof sessionStore !== "undefined" && typeof SESSION_KEY !== "undefined") {
-    sessionStore.removeItem(SESSION_KEY);
-    sessionStore.removeItem(SESSION_TOKEN_KEY);
-  }
-  if (typeof supabaseClient !== "undefined" && supabaseClient && supabaseClient.auth) {
-    try { supabaseClient.auth.signOut({ scope: "local" }); } catch (e) {}
-  }
   if (window.history && typeof window.history.replaceState === "function") {
     window.history.replaceState(null, "", window.location.pathname);
   }
@@ -109,10 +102,13 @@ function showSessionReasonBanner() {
   if (!banner) return true;
   if (reason === "idle") {
     banner.hidden = false;
-    banner.innerHTML = "<b>Session Ended:</b> You missed your active session — you were automatically logged out due to inactivity. Please sign in again.";
+    banner.innerHTML = "<b>Session Ended:</b> You were signed out after 15 minutes without activity. Sign in again to continue.";
   } else if (reason === "other_device") {
     banner.hidden = false;
     banner.innerHTML = "<b>Signed Out:</b> Another browser or device recently logged into this account, so this session was automatically signed out.";
+  } else if (reason === "account_switched") {
+    banner.hidden = false;
+    banner.textContent = "Another account is now using this portal in this browser.";
   } else if (reason === "disabled") {
     banner.hidden = false;
     banner.innerHTML = "<b>Account Disabled:</b> This account has been deactivated. Contact System Admin at Tel: <b>(046) 458-0908</b>.";
@@ -123,39 +119,14 @@ function showSessionReasonBanner() {
   return true;
 }
 
-async function redirectIfAlreadySignedIn() {
-  if (typeof dbGetCurrentUser !== "function") return;
-  try {
-    var activeUser = await dbGetCurrentUser();
-    var sysRoles = (typeof SYSTEM_ROLES !== "undefined" && SYSTEM_ROLES[window.SYSTEM || "customer"]) || [];
-    if (activeUser && activeUser.active !== false && sysRoles.indexOf(activeUser.role) !== -1) {
-      var banner = document.getElementById("login-attempt-banner");
-      var homeUrl = typeof getHomeForRole === "function" ? getHomeForRole(activeUser.role) : "index.html";
-      var roleLabel = String(activeUser.role || "user").charAt(0).toUpperCase() + String(activeUser.role || "user").slice(1);
-      var ident = activeUser.username ? ("@" + activeUser.username) : (activeUser.full_name || activeUser.email || roleLabel);
-      if (banner && banner.hidden) {
-        banner.className = "notice ok mt";
-        banner.hidden = false;
-        banner.innerHTML =
-          "<b>Active Session Detected:</b> Currently signed in as <b>" + escapeHtml(ident) + "</b> (" + escapeHtml(roleLabel) + "). " +
-          '<a href="' + escapeHtml(homeUrl) + '" style="color:var(--red); font-weight:700; text-decoration:underline; margin-left:4px;">Return to ' + escapeHtml(roleLabel) + ' Portal &rarr;</a>' +
-          '<div class="small muted" style="margin-top:4px;">Or sign in below with a different account in this tab.</div>';
-      }
-    }
-  } catch (e) {}
-}
-
 window.addEventListener("DOMContentLoaded", function () {
   var field = document.getElementById("email");
   try {
     if (field && !field.value) field.value = localStorage.getItem("pigem_login_name_" + window.SYSTEM) || "";
   } catch (error) {}
-  var hasReason = showSessionReasonBanner();
+  showSessionReasonBanner();
   renderLoginCaptchaBox();
   checkAdminProvisionState();
-  if (!hasReason) {
-    redirectIfAlreadySignedIn();
-  }
   var idEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
   if (idEl && typeof clearFieldError === "function") idEl.addEventListener("input", function () { clearFieldError("email"); });

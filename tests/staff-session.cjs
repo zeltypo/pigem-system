@@ -95,6 +95,16 @@ async function run() {
   assert.equal(await agentTab.dbGetToken(), "");
   assert.equal(await managerTab.dbGetToken(), "manager-jwt");
   assert.equal((await managerTab.dbVerifyActiveSession("manager", ["manager"])).valid, true);
+  // A second browser signing into the same account replaces only that account's session.
+  await differentBrowser.dbSignIn("manager", "password");
+  assert.equal((await managerTab.dbVerifyActiveSession("manager", ["manager"])).reason, "other_device");
+  assert.equal((await differentBrowser.dbVerifyActiveSession("manager", ["manager"])).valid, true);
+  users.push({ id: "second-agent", role: "agent", username: "agent2", email: "agent2@example.test", password_hash: "test-hash" });
+  await agentTab.dbSignIn("agent", "password");
+  const anotherAgent = tab();
+  await anotherAgent.dbSignIn("agent2", "password");
+  assert.equal((await agentTab.dbVerifyActiveSession("agent", ["agent"])).reason, "account_switched");
+  assert.equal((await anotherAgent.dbVerifyActiveSession("second-agent", ["agent"])).valid, true);
   console.log("PASS: independent staff portal sign-in, screening tokens and sign-out");
 }
 

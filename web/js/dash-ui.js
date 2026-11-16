@@ -8,34 +8,47 @@ var dashSearchApps = [];
 var dashOnSelectApp = null;
 var dashNotifItems = [];
 var _dashSecurityStarted = false;
-var _dashLastActivityAt = Date.now();
 var _dashSessionTimer = null;
 var _dashIdleTimer = null;
 var DASH_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
-
 var _dashSessionRedirecting = false;
+
+function confirmDashboardSignOut() {
+  openConfirmPopup("Sign out?", "Are you sure you want to sign out?", "Sign Out",
+    function () { return signOutAndGoLogin("", true); }, true);
+}
 
 function startDashSecurityWatchers() {
   if (_dashSecurityStarted || !dashCurrentUser) return;
   _dashSecurityStarted = true;
-  _dashLastActivityAt = Date.now();
+  var session = getActiveSessionPair();
+  var activityKey = "pigem_activity_" + (session.tok || dashCurrentUser.id);
+  var lastActivity = Date.now();
+  var lastSaved = 0;
 
-  var touchActivity = function () {
-    _dashLastActivityAt = Date.now();
-  };
-  var evs = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
-  for (var i = 0; i < evs.length; i++) {
-    window.addEventListener(evs[i], touchActivity, { passive: true });
+  function touchActivity() {
+    lastActivity = Date.now();
+    if (lastActivity - lastSaved >= 10000) {
+      lastSaved = lastActivity;
+      try { localStorage.setItem(activityKey, String(lastSaved)); } catch (error) {}
+    }
   }
 
+  touchActivity();
+  ["pointerdown", "keydown", "scroll", "touchstart"].forEach(function (event) {
+    window.addEventListener(event, touchActivity, { passive: true });
+  });
+
   _dashIdleTimer = setInterval(function () {
-    if (!dashCurrentUser || _dashSessionRedirecting) return;
-    if (Date.now() - _dashLastActivityAt >= DASH_IDLE_TIMEOUT_MS) {
-      _dashSessionRedirecting = true;
-      clearInterval(_dashIdleTimer);
-      clearInterval(_dashSessionTimer);
-      signOutAndGoLogin("idle", true);
-    }
+    if (_dashSessionRedirecting) return;
+    var sharedActivity = 0;
+    try { sharedActivity = Number(localStorage.getItem(activityKey)) || 0; } catch (error) {}
+    if (Date.now() - Math.max(lastActivity, sharedActivity) < DASH_IDLE_TIMEOUT_MS) return;
+    _dashSessionRedirecting = true;
+    clearInterval(_dashIdleTimer);
+    clearInterval(_dashSessionTimer);
+    try { localStorage.removeItem(activityKey); } catch (error) {}
+    signOutAndGoLogin("idle", true);
   }, 15000);
 
   var verifySingleDevice = async function () {
@@ -46,7 +59,7 @@ function startDashSecurityWatchers() {
         _dashSessionRedirecting = true;
         clearInterval(_dashIdleTimer);
         clearInterval(_dashSessionTimer);
-        if (chk.reason === "account_switched" || chk.reason === "wrong_portal") {
+        if (chk.reason === "wrong_portal") {
           window.location.replace(chk.redirectUrl || (typeof getLoginPage === "function" ? getLoginPage() : "index.html"));
           return;
         }
@@ -54,7 +67,7 @@ function startDashSecurityWatchers() {
           window.location.replace(typeof getLoginPage === "function" ? getLoginPage() : "index.html");
           return;
         }
-        if (chk.reason === "other_device" || chk.reason === "disabled") {
+        if (["other_device", "account_switched", "disabled"].includes(chk.reason)) {
           signOutAndGoLogin(chk.reason, false);
         } else {
           signOutAndGoLogin("", false);
@@ -478,25 +491,12 @@ function renderProfileDrawer(user) {
     ? (escapeHtml(user.email) + " - " + escapeHtml((user.role || "").toUpperCase()))
     : ("Internal Staff - " + escapeHtml((user.role || "").toUpperCase()));
 
-  var pwSection = (!user.email || user.role !== "customer")
-    ? '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
+  var pwSection = '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
         '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password</div>' +
         '<div id="prof-pw-msg" class="msg"></div>' +
         '<div class="field"><label>Current Password</label><input id="prof-pw-current" type="password" placeholder="Enter current password" /></div>' +
         '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" placeholder="Strong new password" /></div>' +
         '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmDirectProfilePassword()">Update Password</button>' +
-      '</div>'
-    : '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
-        '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password</div>' +
-        '<div id="prof-pw-msg" class="msg"></div>' +
-        '<div class="field"><label>Current Password</label><input id="prof-pw-current" type="password" placeholder="Enter current password" /></div>' +
-        '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" placeholder="Strong new password" /></div>' +
-        '<button type="button" class="btn btn-red btn-sm" style="width:100%; margin-bottom:8px" onclick="confirmDirectProfilePassword()">Update Password</button>' +
-        '<button type="button" class="btn btn-outline btn-sm" style="width:100%" onclick="sendProfilePwOtp()">Or Send 6-Digit OTP to ' + escapeHtml(user.email) + '</button>' +
-        '<div id="prof-pw-step2" class="hidden" style="margin-top:10px">' +
-          '<div class="field"><label>6-Digit Code</label><input id="prof-pw-code" type="text" maxlength="6" /></div>' +
-          '<button type="button" class="btn btn-dark btn-sm" style="width:100%" onclick="confirmProfilePwOtp()">Verify OTP &amp; Save New Password</button>' +
-        '</div>' +
       '</div>';
 
   box.innerHTML =
@@ -533,7 +533,7 @@ function renderProfileDrawer(user) {
       '<a href="index.html" target="_blank" rel="noopener" class="btn btn-outline" style="width:100%; margin-bottom:8px; display:inline-flex; align-items:center; justify-content:center;">' +
         '<img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="" class="icon-img" />Back to Website' +
       '</a>' +
-      '<button type="button" class="btn btn-red" style="width:100%" onclick="signOutAndGoLogin(\'\', true)">Sign Out</button>' +
+      '<button type="button" class="btn btn-red" style="width:100%" onclick="confirmDashboardSignOut()">Sign Out</button>' +
     '</div>';
   if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles(box);
 }
@@ -959,7 +959,7 @@ function buildPrintableReportHtml(title, timeframeLabel, pieSlices, columns, row
   return (
     "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>" +
     "<title>" + escapeHtml(title || "Report") + " — Combined Facilities Support Services</title>" +
-    "<style>@media print { .no-print-bar { display: none !important; } body { padding: 12px !important; } }</style>" +
+    "<style>@page{size:A4 landscape;margin:14mm} table{table-layout:auto} th,td{overflow-wrap:anywhere} thead{display:table-header-group} @media print{.no-print-bar{display:none!important}body{padding:0!important}tr{break-inside:avoid}}</style>" +
     "</head>" +
     "<body style='font-family:Arial,sans-serif;padding:28px;color:#111827;margin:0;background:#ffffff;'>" +
       "<div class='no-print-bar' style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 16px;margin-bottom:20px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;'>" +

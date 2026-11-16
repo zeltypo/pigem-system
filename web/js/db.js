@@ -96,7 +96,7 @@ function getActiveSessionPair(allowedRoles) {
     var staffKey = getRoleSessionKey(roles[0]);
     var savedId = localStorage.getItem(staffKey);
     var savedToken = localStorage.getItem(staffKey + "_tok");
-    if (savedId && savedToken && Number(localStorage.getItem(staffKey + "_until")) > Date.now()) {
+    if (savedId && savedToken) {
       sessionStorage.setItem(SESSION_KEY, savedId);
       sessionStorage.setItem(SESSION_TOKEN_KEY, savedToken);
       sessionStorage.setItem(SESSION_KEY + "_role", roles[0]);
@@ -165,7 +165,6 @@ async function dbBindSingleDeviceSession(userObj) {
     var rKey = getRoleSessionKey(uRole);
     localStorage.setItem(rKey, userObj.id);
     localStorage.setItem(rKey + "_tok", tok);
-    if (SYSTEM === "staff") localStorage.setItem(rKey + "_until", Date.now() + 12 * 60 * 60 * 1000);
   }
   sessionStore.setItem(SESSION_KEY, userObj.id);
   sessionStore.setItem(SESSION_TOKEN_KEY, tok);
@@ -248,15 +247,9 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles) {
       redirectUrl: typeof getHomeForRole === "function" ? getHomeForRole(role) : getLoginPage()
     };
   }
-  if (SYSTEM === "staff" && userRow.session_token !== localTok) {
-    return { valid: false, reason: "other_device" };
-  }
-  if (userRow.session_token && !localTok) {
-    var rKeyTok = localStorage.getItem(getRoleSessionKey(role) + "_tok");
-    if (rKeyTok) localTok = rKeyTok;
-    else return { valid: true };
-  }
-  if (userRow.session_token && localTok && userRow.session_token !== localTok) {
+  var browserUser = localStorage.getItem(getRoleSessionKey(role));
+  if (browserUser && browserUser !== currentId) return { valid: false, reason: "account_switched" };
+  if (localTok && userRow.session_token !== localTok) {
     return { valid: false, reason: "other_device" };
   }
   return { valid: true };
@@ -653,6 +646,7 @@ async function dbSignOut(clearServerToken) {
   var user = await dbGetCurrentUser();
   var pair = getActiveSessionPair(window.PORTAL_ALLOWED_ROLES || null);
   var localTok = pair.tok || sessionStore.getItem(SESSION_TOKEN_KEY);
+  var keepCustomerAuth = false;
   if (user) {
     await dbAddLoginHistory(user, "logout");
     if (clearServerToken !== false && IS_DEMO_MODE && localTok) {
@@ -672,14 +666,15 @@ async function dbSignOut(clearServerToken) {
     if (user.role) {
       var rKey = getRoleSessionKey(user.role);
       var sameSavedSession = localStorage.getItem(rKey) === user.id &&
-        (SYSTEM !== "staff" || localStorage.getItem(rKey + "_tok") === localTok);
+        (!localTok || localStorage.getItem(rKey + "_tok") === localTok);
+      keepCustomerAuth = SYSTEM === "customer" && !sameSavedSession && !!localStorage.getItem(rKey);
       if (sameSavedSession) {
         localStorage.removeItem(rKey);
         localStorage.removeItem(rKey + "_tok");
-        localStorage.removeItem(rKey + "_until");
       }
     }
-    if (sessionStore.getItem(SESSION_KEY) === user.id) {
+    if (sessionStore.getItem(SESSION_KEY) === user.id &&
+        (!localTok || sessionStore.getItem(SESSION_TOKEN_KEY) === localTok)) {
       sessionStore.removeItem(SESSION_KEY);
       sessionStore.removeItem(SESSION_TOKEN_KEY);
     }
@@ -691,9 +686,9 @@ async function dbSignOut(clearServerToken) {
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_KEY + "_role");
   sessionStorage.removeItem("pigem_user_cache");
-  if (!IS_DEMO_MODE && supabaseClient && (SYSTEM === "customer" || SYSTEM === "staff")) {
+  if (!IS_DEMO_MODE && supabaseClient && ((SYSTEM === "customer" && !keepCustomerAuth) || SYSTEM === "staff")) {
     try {
-      await supabaseClient.auth.signOut({ scope: SYSTEM === "staff" ? "local" : "global" });
+      await supabaseClient.auth.signOut({ scope: "local" });
     } catch (e) {}
   }
 }
@@ -728,7 +723,7 @@ async function checkPageAccess(allowedRoles) {
         window.location.replace(chk.redirectUrl);
         return null;
       }
-      await signOutAndGoLogin(chk.reason === "other_device" || chk.reason === "disabled" ? chk.reason : "", false);
+      await signOutAndGoLogin(["other_device", "account_switched", "disabled"].includes(chk.reason) ? chk.reason : "", false);
       return null;
     }
   }

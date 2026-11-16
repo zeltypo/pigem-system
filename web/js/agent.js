@@ -396,7 +396,7 @@ function showTab(branch) {
 
   if (isAppBranch) {
     var titles = {
-      queue: ["Application Queue (Unclaimed)", "Customer applications incoming for screening and agent verification."],
+      queue: ["Shared Queue", "Unclaimed applications, including referrals, are available for any Agent to claim."],
       claimed: ["My Claimed Applications", "Applications claimed by you for Valid ID review and provider encoding."],
       encoding: ["Encoding Queue", "Verified applications forwarded to the provider portal and awaiting validator decision."],
       correction: ["Needs Correction", "Applications awaiting customer updates for an unclear ID or field discrepancy."],
@@ -451,27 +451,27 @@ function stripFalseReuploadMsg(str, dup) {
 }
 
 function getScreeningQuickSummary(app) {
-  var dup = detectClientSideDuplicateId(app);
-  if (dup.isDup) {
-    return '<span style="color:#b42318;font-weight:700;">' + escapeHtml(dup.reason) + '</span>';
-  }
-  var scr = app.screening || {};
-  if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only) {
-    return '<span class="muted">Open the application to see the document findings.</span>';
-  }
-  if (scr.state === "pending_agent") return '<span class="muted">Waiting for Document Check.</span>';
-  if (scr.state === "queued" || scr.state === "layer1_running" || scr.state === "layer2_running") {
-    return '<span>' + escapeHtml(scr.advisory || "Screening in progress...") + '</span>';
-  }
-  var cleanSum = stripFalseReuploadMsg(scr.summary || "", dup);
-  if (cleanSum) {
-    return '<span>' + escapeHtml(cleanSum) + '</span>';
-  }
-  var res = app.ai_result || {};
-  var rawIssues = (res.issues || []).map(function (x) { return stripFalseReuploadMsg(x, dup); }).filter(Boolean);
-  var note = rawIssues.length > 0 ? rawIssues.join("; ") :
-    (scr.overall_match === true ? "Document clear and details match." : "Document checks are pending.");
-  return '<span class="muted">' + escapeHtml(note) + '</span>';
+  var duplicate = detectClientSideDuplicateId(app);
+  if (duplicate.isDup) return escapeHtml(duplicate.reason);
+  var check = getAgentAppIdCheck(app, true);
+  if (check && check.result) return escapeHtml(summarizeAgentIdFindings(check.result));
+  if (check) return "Checking ID photos…";
+  return app.id_image_url || app.id_front_path ? "Document check has not run yet." : "No front ID photo is available.";
+}
+
+async function checkAgentQueueDocument(appId, button) {
+  var app = findAppById(appId);
+  if (!app) return;
+  var check = getAgentAppIdCheck(app);
+  if (!check) return;
+  if (button) button.disabled = true;
+  var node = document.getElementById("check-note-" + appId);
+  if (node) node.textContent = "Checking ID photos…";
+  var result = await check.pending;
+  var summary = summarizeAgentIdFindings(result);
+  node = document.getElementById("check-note-" + appId);
+  if (node) node.textContent = summary;
+  if (button) button.disabled = false;
 }
 
 function renderAgentCards() {
@@ -522,13 +522,14 @@ function renderAgentCards() {
     var locText = [app.barangay, app.city, app.province].filter(Boolean).join(", ");
 
     html +=
-      '<div class="q-card">' +
+      '<div class="q-card">'  +
         '<div class="q-head">' +
           '<div style="min-width:0; flex:1">' +
             '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">' +
               '<span class="q-name">' + escapeHtml(app.full_name) + '</span>' +
               '<span class="badge badge-gray" style="font-weight:700">' + escapeHtml(app.reference_no) + '</span>' +
               statusBadge(app.status) +
+              (app.agent_link_code ? '<span class="badge badge-blue">Referral · ' + escapeHtml(app.agent_link_code) + '</span>' : '') +
             '</div>' +
             '<div class="q-sub" style="margin-top:4px">' +
               '<b>' + escapeHtml(app.plan_name || "Red Fiber Plan") + '</b>' +
@@ -545,16 +546,22 @@ function renderAgentCards() {
           '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">' +
             '<button type="button" id="btn-more-' + escapeHtml(app.id) + '" class="btn ' + (expandedSummaryCards['more-' + app.id] ? 'btn-red' : 'btn-outline') + ' btn-sm" onclick="toggleCardMore(\'more-' + escapeHtml(app.id) + '\')">' + (expandedSummaryCards['more-' + app.id] ? 'Hide Summary' : 'Summary') + '</button>' +
             '<button type="button" class="btn btn-outline btn-sm" style="font-weight:700" onclick="openAppDetail(\'' + escapeHtml(app.id) + '\')">Open and Verify</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" data-app-id="' + escapeHtml(app.id) + '" onclick="checkAgentQueueDocument(this.dataset.appId, this)">Check documents</button>' +
             claimBtn +
           '</div>' +
         '</div>' +
+        '<p class="small muted" style="margin:8px 0 0" id="check-note-' + escapeHtml(app.id) + '">' + getScreeningQuickSummary(app) + '</p>' +
         '<div id="more-' + escapeHtml(app.id) + '" class="q-more' + (expandedSummaryCards['more-' + app.id] ? '' : ' hidden') + '">' +
-          '<div><b>Screening Note:</b> ' + getScreeningQuickSummary(app) + '</div>' +
           '<div style="margin-top:4px" class="small muted"><b>Contact:</b> ' + escapeHtml(app.email || "-") + ' | ' + escapeHtml(app.phone || "-") + '</div>' +
         '</div>' +
       '</div>';
   }
   box.innerHTML = html;
+  if (!q && (activeBranch === "queue" || activeBranch === "claimed")) {
+    filtered.slice(0, 2).forEach(function (app) {
+      if (!getAgentAppIdCheck(app, true)) checkAgentQueueDocument(app.id);
+    });
+  }
 }
 
 function toggleCardMore(elId) {
@@ -595,6 +602,7 @@ function findAppById(id) {
 }
 
 async function openAppDetail(appId) {
+  lastDetectedFields = null;
   activeDetailAppId = appId;
   activeCopyMode = "latest";
   var app = findAppById(appId);
@@ -631,11 +639,11 @@ function renderVisualScreeningProgressBox(app) {
 }
 
 // Only compare a value when the photo reader found a clear label for that field.
-function compareAgentIdDetails(text, expected) {
+function compareAgentIdFields(text, expected) {
   var checks = [
-    { label: "Name", entered: expected.name, pattern: /^(?:full\s+name|name|pangalan)\s*[:.-]\s*(.+)$/im },
-    { label: "Birth date", entered: expected.birth, pattern: /^(?:date\s+of\s+birth|birth\s*date|dob|petsa ng kapanganakan)\s*[:.-]\s*(.+)$/im },
-    { label: "ID number", entered: expected.number, pattern: /^(?:id(?:\s*(?:card|student))?\s*(?:number|no\.?|#)|student\s*(?:number|no\.?)|license\s*(?:number|no\.?))\s*[:.-]\s*(.+)$/im }
+    { key: "name", label: "Name", entered: expected.name, pattern: /^(?:full\s+name|name|pangalan)\s*[:.-]\s*(.+)$/im },
+    { key: "birth_date", label: "Birth date", entered: expected.birth, pattern: /^(?:date\s+of\s+birth|birth\s*date|dob|petsa ng kapanganakan)\s*[:.-]\s*(.+)$/im },
+    { key: "id_number", label: "ID number", entered: expected.number, pattern: /^(?:id(?:\s*(?:card|student))?\s*(?:number|no\.?|#)|student\s*(?:number|no\.?)|license\s*(?:number|no\.?))\s*[:.-]\s*(.+)$/im }
   ];
   return checks.map(function (field) {
     var values = Array.from(text.matchAll(new RegExp(field.pattern.source, "gim")), function (match) {
@@ -652,18 +660,116 @@ function compareAgentIdDetails(text, expected) {
     };
     var candidates = new Map(values.map(function (value) { return [normalize(value), value]; }));
     var entered = normalize(field.entered);
-    if (!entered || candidates.size !== 1) return field.label + ": Check the photo";
+    if (!entered || candidates.size !== 1) return { key: field.key, label: field.label, status: "unreadable" };
     var found = candidates.values().next().value;
-    return field.label + (normalize(found) === entered ? ": Matches" : ": Check difference (photo reads " + found + ")");
+    return { key: field.key, label: field.label, status: normalize(found) === entered ? "match" : "difference", found: found };
   });
 }
 
-var lastAgentIdCheck = null;
+function describeAgentIdField(field) {
+  if (field.status === "match") return field.label + ": Matches";
+  if (field.status === "difference") return field.label + ": Check difference (photo reads " + field.found + ")";
+  return field.label + ": Could not verify";
+}
 
-async function getAgentIdFindings(sources, expected) {
+function compareAgentIdDetails(text, expected) {
+  return compareAgentIdFields(text, expected).map(describeAgentIdField);
+}
+
+var agentDocumentChecks = new Map();
+var agentDocumentQueue = Promise.resolve();
+var agentOpenCv;
+
+function loadAgentOpenCv() {
+  if (!agentOpenCv) {
+    agentOpenCv = new Promise(function (resolve) {
+      var script = document.createElement("script");
+      var timeout = setTimeout(function () { resolve(null); }, 8000);
+      script.src = "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.11.0-release.1/dist/opencv.js";
+      script.integrity = "sha256-WtIp0mZvzmgDo69KVpEhvW2o0J1cFk26+w1/dYRgwl4=";
+      script.crossOrigin = "anonymous";
+      script.onload = function () {
+        Promise.resolve(window.cv).then(function (cv) {
+          if (cv && typeof cv.Mat === "function") { clearTimeout(timeout); resolve(cv); }
+        }).catch(function () { clearTimeout(timeout); resolve(null); });
+      };
+      script.onerror = function () { clearTimeout(timeout); resolve(null); };
+      document.head.appendChild(script);
+    });
+  }
+  return agentOpenCv;
+}
+
+async function enhanceAgentIdPhoto(photo, cv) {
+  if (!cv || typeof createImageBitmap !== "function") return null;
+  var bitmap = await createImageBitmap(photo);
+  var canvas = document.createElement("canvas");
+  var scale = 1600 / Math.max(bitmap.width, bitmap.height);
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  try {
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  } finally {
+    bitmap.close();
+  }
+
+  var mats = [];
+  function mat() {
+    var result = new cv.Mat();
+    mats.push(result);
+    return result;
+  }
+  try {
+    var image = cv.imread(canvas);
+    mats.push(image);
+    var gray = mat();
+    var contrast = mat();
+    var soft = mat();
+    var sharpened = mat();
+    cv.cvtColor(image, gray, cv.COLOR_RGBA2GRAY);
+    cv.equalizeHist(gray, contrast);
+    cv.GaussianBlur(contrast, soft, new cv.Size(3, 3), 0);
+    cv.addWeighted(contrast, 1.35, soft, -0.35, 0, sharpened);
+    cv.imshow(canvas, sharpened);
+    return canvas;
+  } finally {
+    mats.forEach(function (item) { item.delete(); });
+  }
+}
+
+function isReadableIdText(read) {
+  return read.data.confidence >= 60 && /[\p{L}\p{N}]/u.test(read.data.text);
+}
+
+async function readAgentIdPhoto(worker, photo, expected, isFront) {
+  var original = await worker.recognize(photo);
+  function fieldsFound(read) {
+    return compareAgentIdFields(read.data.text, expected).filter(function (field) {
+      return field.status !== "unreadable";
+    }).length;
+  }
+  var originalReadable = isReadableIdText(original);
+  var originalFields = originalReadable ? fieldsFound(original) : 0;
+  if ((originalReadable && (!isFront || originalFields >= 2)) || !document.head) return original;
+  try {
+    var adjusted = await enhanceAgentIdPhoto(photo, await loadAgentOpenCv());
+    if (adjusted) {
+      var secondRead = await worker.recognize(adjusted);
+      if (isReadableIdText(secondRead) && (!originalReadable || fieldsFound(secondRead) > originalFields)) {
+        return secondRead;
+      }
+    }
+  } catch (error) {
+    // An enhancement failure does not replace the original photo or its result.
+  }
+  return original;
+}
+
+async function collectAgentIdFindings(sources, expected) {
   var worker;
   var textBySide = [];
-  var notes = [];
+  var unclearSides = [];
+  var unavailableSides = [];
   try {
     worker = await Tesseract.createWorker("eng");
     for (var side of sources) {
@@ -671,38 +777,105 @@ async function getAgentIdFindings(sources, expected) {
         // The browser reads the downloaded photo locally.
         var response = await fetch(side.url, { referrerPolicy: "no-referrer" });
         if (!response.ok) throw new Error("Photo unavailable");
-        var read = await worker.recognize(await response.blob());
-        var text = read.data.text.trim();
-        if (read.data.confidence >= 60 && /[\p{L}\p{N}]/u.test(text)) {
-          textBySide.push(text);
+        var read = await readAgentIdPhoto(worker, await response.blob(), expected, side.label === "Front");
+        if (isReadableIdText(read)) {
+          textBySide.push(read.data.text.trim());
         } else {
-          notes.push(side.label + " photo: Text is unclear. Check the photo for blur or glare.");
+          unclearSides.push(side.label);
         }
       } catch (error) {
-        notes.push(side.label + " photo: Could not read it. Check the original photo.");
+        unavailableSides.push(side.label);
       }
     }
-    return compareAgentIdDetails(textBySide.join("\n"), expected).concat(notes).join("\n");
+    return { fields: compareAgentIdFields(textBySide.join("\n"), expected), unclearSides: unclearSides, unavailableSides: unavailableSides };
   } catch (error) {
-    return "The document check could not start. Review the photos.";
+    return { fields: [], unclearSides: [], unavailableSides: [], failed: true };
   } finally {
     if (worker) await worker.terminate().catch(function () {});
   }
 }
 
+function summarizeAgentIdFindings(result) {
+  if (result.failed) return "Document check is unavailable. Open the original photos to review them.";
+  var notes = [];
+  if (result.unclearSides.length) notes.push(result.unclearSides.join(" and ") + " ID photo" + (result.unclearSides.length > 1 ? "s: text is unclear." : ": text is unclear."));
+  if (result.unavailableSides.length) notes.push(result.unavailableSides.join(" and ") + " photo could not be opened.");
+  var differences = result.fields.filter(function (field) { return field.status === "difference"; });
+  if (differences.length) notes.push("Check " + differences.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ".");
+  if (notes.length) return notes.join(" ");
+  if (result.fields.every(function (field) { return field.status === "match"; })) return "Name, birth date, and ID number match.";
+  var unreadable = result.fields.filter(function (field) { return field.status === "unreadable"; });
+  return "Could not verify " + unreadable.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ".";
+}
+
+function getAgentIdCheck(front, back, expected, existingOnly) {
+  var sources = [{ label: "Front", url: front }, { label: "Back", url: back }].filter(function (side) { return side.url; });
+  if (!sources.length) return null;
+  var key = JSON.stringify([sources, expected]);
+  if (existingOnly) return agentDocumentChecks.get(key);
+  if (!agentDocumentChecks.has(key)) {
+    var check = { result: null };
+    // Run one reader at a time. Reopening a record reuses its result until the photos or fields change.
+    check.pending = agentDocumentQueue.then(function () { return collectAgentIdFindings(sources, expected); }).then(function (result) {
+      check.result = result;
+      return result;
+    });
+    agentDocumentQueue = check.pending.catch(function () {});
+    agentDocumentChecks.set(key, check);
+    if (agentDocumentChecks.size > 40) agentDocumentChecks.delete(agentDocumentChecks.keys().next().value);
+  }
+  return agentDocumentChecks.get(key);
+}
+
+function getAgentAppIdCheck(app, existingOnly) {
+  return getAgentIdCheck(app.id_image_url || app.id_front_path || "", app.id_back_image_url || app.id_back_path || "", {
+    name: app.full_name || "", birth: app.birth_date || "", number: app.id_number || ""
+  }, existingOnly);
+}
+
 async function showAgentIdFindings(panel) {
   if (!panel) return;
-  var sources = [
-    { label: "Front", url: panel.dataset.front },
-    { label: "Back", url: panel.dataset.back }
-  ].filter(function (side) { return side.url; });
-  if (!sources.length) return;
   var expected = { name: panel.dataset.name, birth: panel.dataset.birth, number: panel.dataset.number };
-  var key = JSON.stringify([sources, expected]);
-  if (!lastAgentIdCheck || lastAgentIdCheck.key !== key) {
-    lastAgentIdCheck = { key: key, result: getAgentIdFindings(sources, expected) };
+  var check = getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected);
+  if (!check) return;
+  var result = await check.pending;
+  if (panel.isConnected === false) return;
+  panel._documentFindings = result;
+  panel.textContent = summarizeAgentIdFindings(result);
+  if (!result.failed && result.fields.some(function (field) { return field.status !== "unreadable"; })) {
+    panel.textContent += "\n" + result.fields.filter(function (field) {
+      return field.status !== "unreadable";
+    }).map(describeAgentIdField).join("\n");
   }
-  panel.textContent = await lastAgentIdCheck.result;
+
+  var field = document.getElementById("det-correction-field");
+  var note = document.getElementById("det-validator-raw");
+  var message = document.getElementById("det-correction-message");
+  var draft = getFindingCorrectionDraft(result);
+  if (draft && field && field.value === "auto" && note && !note.value.trim() && message && !message.value.trim()) {
+    message.value = draft.message;
+    lastDetectedFields = draft.fields;
+  }
+}
+
+function getCurrentCorrectionFindings() {
+  var panel = document.querySelector("#det-body [data-id-text-result]");
+  return panel && panel._documentFindings;
+}
+
+function getFindingCorrectionDraft(result) {
+  if (!result || result.failed) return null;
+  var differences = result.fields.filter(function (field) { return field.status === "difference"; });
+  if (differences.length === 1) {
+    var field = differences[0];
+    var preset = VALIDATOR_PRESETS.find(function (item) { return item.field === field.key; });
+    if (preset) return { fields: [field.key], message: preset.msg };
+  }
+  if (differences.length > 1) return null;
+  if (!result.unclearSides.length) return null;
+  var sides = result.unclearSides.join(" and ").toLowerCase();
+  return { fields: ["id_photo"], sides: result.unclearSides.map(function (side) { return side.toLowerCase(); }), message: "Hello! Please upload a clearer photo of the " + sides +
+    " of your ID in your account. Make sure the printed details are readable." };
 }
 
 async function renderDetailModalContent(updateResultsOnly) {
@@ -746,9 +919,6 @@ async function renderDetailModalContent(updateResultsOnly) {
     logItemsHtml = '<div class="small muted">No activity log entries recorded yet.</div>';
   }
 
-  var docQualityLabel = isManualFallback
-    ? "See document findings"
-    : (res.readability || (Number(res.blur_score) < 60 ? "Needs Check" : "Clear"));
   var dupBadge = dupCheck.isDup
     ? '<span class="badge badge-red">Duplicate Flagged</span>'
     : '<span class="badge badge-green">Distinct Photos</span>';
@@ -758,12 +928,6 @@ async function renderDetailModalContent(updateResultsOnly) {
     .filter(Boolean);
   var cleanScrSummary = stripFalseReuploadMsg(scr.summary || "", dupCheck);
   var cleanSuggestedRemark = stripFalseReuploadMsg(scr.Suggested_remark || "", dupCheck);
-
-  var findingsText = dupCheck.isDup
-    ? dupCheck.reason
-    : (isManualFallback
-      ? "Review any differences or unclear details above."
-      : (cleanScrSummary || (cleanIssuesList.length ? cleanIssuesList.join("; ") : "Readability, duplicate check, and printed details passed.")));
 
   var copySwitcher = "";
   if (app.original_submission) {
@@ -899,7 +1063,6 @@ async function renderDetailModalContent(updateResultsOnly) {
           '">Checking the ID photos…</div></div>'
         : '') +
       '<div class="check-pill-grid" style="grid-template-columns:repeat(auto-fit, minmax(min(100%, 210px), 1fr));">' +
-        '<div class="check-pill"><span>Readability (Blur/Glare)</span><b>' + escapeHtml(docQualityLabel) + '</b></div>' +
         '<div class="check-pill"><span>Duplicate Image Check</span>' + dupBadge + '</div>' +
         '<div class="check-pill"><span>Area Coverage</span>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : '<span class="badge badge-gray">-</span>') + '</div>' +
       '</div>' +
@@ -908,7 +1071,6 @@ async function renderDetailModalContent(updateResultsOnly) {
         if (!covInfo || (covInfo.inPhilippines && covInfo.serviceable)) return "";
         return '<div class="small" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:#fefce8; border:1px solid #fde047; color:#854d0e"><b>Location Coverage Notice:</b> ' + escapeHtml(covInfo.advisory || "Outside standard serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu) — verify facility coverage.") + '</div>';
       })() +
-      '<div class="small muted" style="margin-top:8px"><b>Screening Summary:</b> ' + escapeHtml(findingsText) + '</div>' +
 
       '<details style="margin-top:10px; border-top:1px dashed var(--line); padding-top:8px">' +
         '<summary style="cursor:pointer; font-size:12.5px; font-weight:600; color:var(--muted)">View Activity Log (' + logs.length + ' entries)</summary>' +
@@ -982,7 +1144,7 @@ async function renderDetailModalContent(updateResultsOnly) {
               '<div class="field" style="margin-bottom:0">' +
                 '<label>Field for Customer to Update</label>' +
                 '<select id="det-correction-field">' +
-                  '<option value="auto">Auto-Detect Field</option>' +
+                  '<option value="auto">Use document findings</option>' +
                   '<option value="id_photo" ' + (activeCorrFields === "id_photo" ? "selected" : "") + '>Valid ID Photos - Front &amp; Back (Blurry / Glare / Duplicate)</option>' +
                   '<option value="name" ' + (activeCorrFields === "name" ? "selected" : "") + '>Applicant Name</option>' +
                   '<option value="birth_date" ' + (activeCorrFields === "birth_date" ? "selected" : "") + '>Birth Date</option>' +
@@ -1009,10 +1171,10 @@ async function renderDetailModalContent(updateResultsOnly) {
             '<div class="field" style="margin-bottom:12px">' +
               '<div class="row between" style="margin-bottom:4px">' +
                 '<label style="margin:0">Polite Instruction Shown to Customer</label>' +
-                '<button type="button" id="btn-polite-gen" class="btn btn-outline btn-sm" style="padding:3px 10px; font-size:12px" onclick="convertValidatorToPoliteRemark()">Compose Polite Message</button>' +
+                '<button type="button" id="btn-polite-gen" class="btn btn-outline btn-sm" style="padding:3px 10px; font-size:12px" onclick="convertValidatorToPoliteRemark()">Draft message</button>' +
               '</div>' +
               '<span id="polite-running-spinner" class="badge badge-blue" style="display:none; margin-bottom:6px">Composing message...</span>' +
-              '<textarea id="det-correction-message" rows="2" placeholder="Select a preset above, click Compose Polite Message, or type your instruction for the customer...">' + escapeHtml(prefillPoliteMsg) + '</textarea>' +
+              '<textarea id="det-correction-message" rows="2" placeholder="Select a preset above, click Draft message, or type your instruction for the customer...">' + escapeHtml(prefillPoliteMsg) + '</textarea>' +
             '</div>' +
 
             '<div class="row" style="justify-content:flex-end">' +
@@ -1055,6 +1217,12 @@ async function convertValidatorToPoliteRemark() {
   var chosenField = fieldEl ? fieldEl.value : "auto";
 
   if (!rawText && chosenField === "auto") {
+    var draft = getFindingCorrectionDraft(getCurrentCorrectionFindings());
+    if (draft) {
+      if (corrEl) corrEl.value = draft.message;
+      lastDetectedFields = draft.fields;
+      return { polite_message: draft.message, target_fields: draft.fields };
+    }
     showAlert("Note Needed", "Please select a field, choose a preset, or type a short note first so a polite customer message can be composed.");
     return null;
   }
@@ -1081,7 +1249,7 @@ async function convertValidatorToPoliteRemark() {
     if (spin) spin.style.display = "none";
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Compose Polite Message";
+      btn.textContent = "Draft message";
     }
   }
 }
@@ -1124,7 +1292,7 @@ async function saveAgentDecision(newStatus) {
     document.getElementById("det-remarks")?.focus();
     return;
   } else if (newStatus === "Needs Correction" && !remarks) {
-    if (rawValidator || chosenField !== "auto") {
+    if (rawValidator || chosenField !== "auto" || getFindingCorrectionDraft(getCurrentCorrectionFindings())) {
       var gen = await convertValidatorToPoliteRemark();
       if (gen && gen.polite_message) {
         remarks = gen.polite_message;
@@ -1134,6 +1302,12 @@ async function saveAgentDecision(newStatus) {
     if (!remarks) {
       remarks = rawValidator || "Please review your application details and submit the requested update in your Customer Account.";
     }
+  }
+
+  if (newStatus === "Needs Correction" && !targetFields.length) {
+    showAlert("Choose a correction", "Select the exact detail or photo the customer needs to update.");
+    document.getElementById("det-correction-field")?.focus();
+    return;
   }
 
   var proofUrl = app.encoding_proof_url || "";
@@ -1146,7 +1320,12 @@ async function saveAgentDecision(newStatus) {
     proofUrl = pendingProofDataUrl;
     pendingProofDataUrl = "";
   }
+  var autoDraft = chosenField === "auto" ? getFindingCorrectionDraft(getCurrentCorrectionFindings()) : null;
+  var requestedSides = autoDraft && autoDraft.sides && targetFields.length === 1 && targetFields[0] === "id_photo"
+    ? autoDraft.sides
+    : [];
   var updatedScreening = Object.assign({}, app.screening || {}, {
+    correction_photo_sides: newStatus === "Needs Correction" ? requestedSides : [],
     correction_fields: newStatus === "Needs Correction" ? targetFields : [],
     auto_correction_sent: false,
     validator_raw_remark: rawValidator,
@@ -1154,9 +1333,7 @@ async function saveAgentDecision(newStatus) {
     flagged_back_sha256: newStatus === "Needs Correction" ? ((app.screening && app.screening.back_sha256) || "") : ""
   });
 
-  if (newStatus === "Needs Correction" && remarks && remarks.toLowerCase().indexOf("important") === -1 && remarks.toLowerCase().indexOf("proceed") === -1) {
-    remarks = remarks.replace(/\s*$/, "") + " Completing this update promptly is important so your internet service application can proceed to provider encoding and installation scheduling without delay.";
-  }
+
 
   var staffId = getStaffIdentifier(currentAgent);
   await dbUpdateApplication(app.id, {
@@ -1190,7 +1367,7 @@ async function saveAgentDecision(newStatus) {
     var custTitle = newStatus === "Needs Correction"
       ? "Update Needed for Application (" + app.reference_no + ")"
       : "Application " + newStatus + " (" + app.reference_no + ")";
-    var targetSummaryLabel = FIELD_SUMMARY_LABELS[chosenField] || (rawValidator ? rawValidator : "Information / Document Clarification");
+    var targetSummaryLabel = targetFields.map(function (field) { return FIELD_SUMMARY_LABELS[field]; }).filter(Boolean).join(", ");
     var recipientEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email;
 
     await dbAddNotification({
@@ -1214,99 +1391,35 @@ async function saveAgentDecision(newStatus) {
   showAlert("Status Updated", "Application " + app.reference_no + " is now marked as " + newStatus + "." + emailNoticeNote);
 }
 
-async function triggerImageFileDownload(url, filename) {
-  if (!url) return false;
-  try {
-    var resp = await fetch(url, { mode: "cors", credentials: "omit" });
-    if (resp.ok) {
-      var blob = await resp.blob();
-      var blobUrl = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(blobUrl); }, 4000);
-      return true;
-    }
-  } catch (e) {}
+function printApplicantCopy() {
+  return exportApplicantCopy(false);
+}
 
+function downloadApplicantCopy() {
+  return exportApplicantCopy(true);
+}
+
+async function embedApplicantPhoto(url) {
+  if (!url) return "";
   try {
-    var dataUrl = await new Promise(function (resolve, reject) {
-      var img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = function () {
-        try {
-          var c = document.createElement("canvas");
-          c.width = img.naturalWidth || img.width || 800;
-          c.height = img.naturalHeight || img.height || 500;
-          var ctx = c.getContext("2d");
-          ctx.drawImage(img, 0, 0);
-          resolve(c.toDataURL("image/jpeg", 0.92));
-        } catch (err) { reject(err); }
-      };
-      img.onerror = reject;
-      img.src = url;
+    var response = await fetch(url, { referrerPolicy: "no-referrer" });
+    if (!response.ok) return "";
+    var photo = await response.blob();
+    if (!/^image\/(?:jpeg|png|webp|gif|bmp)$/i.test(photo.type)) return "";
+    return await new Promise(function (resolve) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result || "")); };
+      reader.onerror = function () { resolve(""); };
+      reader.readAsDataURL(photo);
     });
-    var a2 = document.createElement("a");
-    a2.href = dataUrl;
-    a2.download = filename;
-    document.body.appendChild(a2);
-    a2.click();
-    document.body.removeChild(a2);
-    return true;
-  } catch (e2) {
-    window.open(url, "_blank");
-    return false;
+  } catch (error) {
+    return "";
   }
 }
 
-async function downloadApplicantId(side) {
+async function exportApplicantCopy(download) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
-  var btn = document.getElementById("btn-download-id");
-  var origHtml = btn ? btn.innerHTML : "";
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Downloading...";
-  }
-  try {
-    var refBase = (app.reference_no || app.ref_no || "applicant").replace(/[^a-zA-Z0-9_-]/g, "_");
-    var frontUrl = (activeIdImgMode === "cropped" && (app.cropped_id_url || app.id_cropped_url))
-      ? (app.cropped_id_url || app.id_cropped_url)
-      : (app.id_image_url || app.id_front_path || "");
-    var backUrl = (activeIdImgMode === "cropped" && (app.cropped_back_url || app.id_back_cropped_url))
-      ? (app.cropped_back_url || app.id_back_cropped_url)
-      : (app.id_back_image_url || app.id_back_path || "");
-    var frontSuffix = (activeIdImgMode === "cropped" && (app.cropped_id_url || app.id_cropped_url)) ? "-Front-ID-Cropped.jpg" : "-Front-ID.jpg";
-    var backSuffix = (activeIdImgMode === "cropped" && (app.cropped_back_url || app.id_back_cropped_url)) ? "-Back-ID-Cropped.jpg" : "-Back-ID.jpg";
-
-    if ((side === "back" && !backUrl) || (side === "front" && !frontUrl)) {
-      showAlert("ID Copy Unavailable", "This side has not been uploaded.");
-      return;
-    }
-    if (frontUrl && side !== "back") {
-      await triggerImageFileDownload(frontUrl, refBase + frontSuffix);
-    }
-    if (backUrl && side !== "front") {
-      await new Promise(function (r) { setTimeout(r, 350); });
-      await triggerImageFileDownload(backUrl, refBase + backSuffix);
-    }
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
-    }
-  }
-}
-
-function printApplicantCopy() {
-  var app = findAppById(activeDetailAppId);
-  if (!app) {
-    window.print();
-    return;
-  }
   var viewData = (activeCopyMode === "original" && app.original_submission) ? app.original_submission : app;
   var displayEmail = (activeCopyMode === "latest" && app.corrected_copy && app.corrected_copy.contact_email)
     ? app.corrected_copy.contact_email
@@ -1325,16 +1438,25 @@ function printApplicantCopy() {
     app.province || ""
   ].filter(Boolean).join(", ");
 
-  var printWin = window.open("", "_blank", "width=920,height=780");
-  if (!printWin) {
-    window.print();
+  var printWin = download ? null : window.open("", "_blank", "width=920,height=780");
+  if (!download && !printWin) {
+    showAlert("Print preview blocked", "Allow pop-ups for PIGEM, then click Print again.");
     return;
   }
+  var missingFrontLabel = "No front ID available";
+  var missingBackLabel = "No back ID available";
+  if (download) {
+    var embedded = await Promise.all([embedApplicantPhoto(frontUrl), embedApplicantPhoto(backUrl)]);
+    if (frontUrl && !embedded[0]) missingFrontLabel = "Front photo could not be downloaded";
+    if (backUrl && !embedded[1]) missingBackLabel = "Back photo could not be downloaded";
+    frontUrl = embedded[0];
+    backUrl = embedded[1];
+  }
   var docHtml =
-    "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>" +
     "<title>Application Verification Copy - " + escapeHtml(app.reference_no || "") + "</title>" +
     "<style>" +
-      "body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;margin:24px;font-size:13px;line-height:1.45;}" +
+      "body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;max-width:880px;margin:28px auto;padding:0 22px;font-size:12px;line-height:1.45;}" +
       ".hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #c8102e;padding-bottom:12px;margin-bottom:16px;}" +
       ".hdr h1{font-size:18px;margin:0;color:#c8102e;}" +
       ".hdr p{margin:3px 0 0;color:#475467;font-size:12px;}" +
@@ -1343,16 +1465,16 @@ function printApplicantCopy() {
       ".grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;}" +
       ".row-kv{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed #e2e8f0;padding:4px 0;}" +
       ".row-kv span{color:#64748b;}" +
-      ".row-kv b{text-align:right;color:#0f172a;}" +
+      ".row-kv b{text-align:right;color:#0f172a;overflow-wrap:anywhere;min-width:0;}" +
       ".id-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;margin-top:8px;}" +
       ".id-box{border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#f8fafc;}" +
       ".id-box b{display:block;font-size:11.5px;margin-bottom:6px;color:#334155;}" +
       ".id-box img{max-width:100%;max-height:220px;object-fit:contain;border-radius:4px;}" +
-      "@media print{body{margin:10mm;}.no-print{display:none!important;}}" +
+      "@page{size:A4;margin:14mm;}@media print{body{margin:0;padding:0;max-width:none;}.no-print{display:none!important;}}" +
     "</style></head><body>" +
       "<div class='hdr'>" +
-        "<div><h1>PIGEM COMBINED FACILITIES SUPPORT SERVICES</h1><p>Internet Service Application &amp; Valid ID Verification Copy</p></div>" +
-        "<div style='text-align:right;'><b>Ref No: " + escapeHtml(app.reference_no || "-") + "</b><p>Status: " + escapeHtml(app.status || "-") + " | Printed: " + escapeHtml(new Date().toLocaleString()) + "</p></div>" +
+        "<div><h1>PIGEM COMBINED FACILITIES SUPPORT SERVICES</h1><p>Internet Service Application · Verification Copy</p></div>" +
+        "<div style='text-align:right;'><b>Ref No: " + escapeHtml(app.reference_no || "-") + "</b><p>Status: " + escapeHtml(app.status || "-") + " | Prepared: " + escapeHtml(new Date().toLocaleString()) + "</p></div>" +
       "</div>" +
       "<div class='sec'>" +
         "<h2>1. Applicant Profile &amp; Service Plan</h2>" +
@@ -1379,14 +1501,28 @@ function printApplicantCopy() {
       "<div class='sec'>" +
         "<h2>3. Uploaded Valid ID Copies (Front &amp; Back)</h2>" +
         "<div class='id-grid'>" +
-          "<div class='id-box'><b>FRONT OF VALID ID</b>" + (frontUrl ? "<img src='" + escapeHtml(frontUrl) + "' alt='Front ID' />" : "<span>No Front ID</span>") + "</div>" +
-          "<div class='id-box'><b>BACK OF VALID ID</b>" + (backUrl ? "<img src='" + escapeHtml(backUrl) + "' alt='Back ID' />" : "<span>No Back ID uploaded</span>") + "</div>" +
+          "<div class='id-box'><b>FRONT OF VALID ID</b>" + (frontUrl ? "<img src='" + escapeHtml(frontUrl) + "' alt='Front ID' />" : "<span>" + missingFrontLabel + "</span>") + "</div>" +
+          "<div class='id-box'><b>BACK OF VALID ID</b>" + (backUrl ? "<img src='" + escapeHtml(backUrl) + "' alt='Back ID' />" : "<span>" + missingBackLabel + "</span>") + "</div>" +
         "</div>" +
         (app.agent_remarks ? "<div style='margin-top:10px;font-size:12px;color:#334155;'><b>Verification Remarks:</b> " + escapeHtml(app.agent_remarks) + "</div>" : "") +
       "</div>" +
-      "<button class='no-print' onclick='window.print()'>Print / Save as PDF</button>" +
+      "<p>For PIGEM staff use only.</p>" +
+      (download ? "" : "<button class='no-print' onclick='window.print()'>Print</button>") +
     "</body></html>";
 
+  if (download) {
+    var filename = "PIGEM-" + String(app.reference_no || "application").replace(/[^a-zA-Z0-9_-]/g, "_") + ".html";
+    var url = URL.createObjectURL(new Blob([docHtml], { type: "text/html" }));
+    var link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+    return;
+  }
+  printWin.opener = null;
   printWin.document.open();
   printWin.document.write(docHtml);
   printWin.document.close();
@@ -1404,9 +1540,11 @@ async function renderAgentLinks() {
   if (!body) return;
   var links = await dbListAgentLinks();
   agentLinks = links || [];
-  var referralOnly = agentLinks.filter(function (l) { return String(l.code || "").indexOf("INV-") !== 0; });
+  var referralOnly = agentLinks.filter(function (link) {
+    return !String(link.code || "").startsWith("INV-") && isAssignedToStaff(link.agent_email || link.agent_id, currentAgent);
+  });
   if (referralOnly.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" class="muted">No links generated yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="muted">No links generated yet.</td></tr>';
     return;
   }
   var baseUrl = _getPortalBaseUrl() + "/apply.html";
@@ -1420,6 +1558,7 @@ async function renderAgentLinks() {
         '<td>' + escapeHtml(l.note) + '</td>' +
         '<td><input type="text" readonly value="' + escapeHtml(fullUrl) + '" style="font-size:12px; padding:5px 8px" /></td>' +
         '<td>' + formatDate(l.created_at) + '</td>' +
+        '<td>' + allApps.filter(function (app) { return app.agent_link_code === l.code; }).length + '</td>' +
         '<td><button type="button" class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(\'' + escapeHtml(fullUrl) + '\'); showAlert(\'Copied\', \'Application link copied to clipboard!\')">Copy URL</button></td>' +
       '</tr>';
   }
