@@ -199,6 +199,23 @@ function context(file) {
   assert(ambiguous.every(field => field.status === 'unreadable'));
   assert.equal(reader.normalizeAgentBirthDate('2023-02-29'), '');
   assert.equal(reader.normalizeAgentBirthDate('2024-02-29'), '2024-02-29');
+  const { sandbox: stuckReader } = context('web/js/agent.js');
+  let finishDeadline;
+  let stopped = 0;
+  stuckReader.setTimeout = (callback, delay) => { if (delay === 45000) finishDeadline = callback; };
+  stuckReader.fetch = async () => ({ ok: true, blob: async () => ({}) });
+  stuckReader.Tesseract = { createWorker: async () => ({
+    recognize: () => new Promise(() => {}),
+    terminate: async () => { stopped++; },
+  }) };
+  const stuckCheck = stuckReader.runAgentIdCheck([{ label: 'Front', url: '/fixture.jpg' }], {});
+  await new Promise(resolve => setImmediate(resolve));
+  finishDeadline();
+  const expired = await stuckCheck;
+  assert.equal(expired.timedOut, true);
+  assert.equal(stopped, 1);
+  assert(stuckReader.summarizeAgentIdFindings(expired).includes('took too long'));
+
   const numberDraft = reader.getFindingCorrectionDraft({
     fields: reader.compareAgentIdFields('ID NUMBER: 12345', { number: '12354' }), unclearSides: [],
   });

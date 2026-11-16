@@ -532,11 +532,7 @@ function renderAgentCards() {
       '</div></div>';
   }).join("");
   box.innerHTML = html;
-  if (!q && (activeBranch === "queue" || activeBranch === "claimed")) {
-    filtered.slice(0, 2).forEach(function (app) {
-      if (!getAgentAppIdCheck(app, true)) checkAgentQueueDocument(app.id);
-    });
-  }
+
 }
 
 function runAgentQueueAction(select) {
@@ -748,7 +744,6 @@ function compareAgentIdDetails(text, expected) {
 }
 
 var agentDocumentChecks = new Map();
-var agentDocumentQueue = Promise.resolve();
 var agentOpenCv;
 
 function loadAgentOpenCv() {
@@ -823,7 +818,7 @@ function isReadableIdText(read) {
 }
 
 async function readAgentIdPhoto(worker, photo, expected, isFront) {
-  var original = await withAgentReadTimeout(worker.recognize(photo), 22000);
+  var original = await withAgentReadTimeout(worker.recognize(photo), 14000);
   function fieldsFound(read) {
     return compareAgentIdFields(read.data.text, expected).filter(function (field) {
       return field.status !== "unreadable";
@@ -835,7 +830,7 @@ async function readAgentIdPhoto(worker, photo, expected, isFront) {
   try {
     var adjusted = await enhanceAgentIdPhoto(photo, await loadAgentOpenCv());
     if (adjusted) {
-      var secondRead = await withAgentReadTimeout(worker.recognize(adjusted), 22000);
+      var secondRead = await withAgentReadTimeout(worker.recognize(adjusted), 14000);
       if (isReadableIdText(secondRead) && (!originalReadable || fieldsFound(secondRead) > originalFields)) {
         return secondRead;
       }
@@ -846,30 +841,39 @@ async function readAgentIdPhoto(worker, photo, expected, isFront) {
   return original;
 }
 
-async function collectAgentIdFindings(sources, expected) {
+async function collectAgentIdFindings(sources, expected, job) {
   var worker;
   var textBySide = [];
   var unclearSides = [];
   var unavailableSides = [];
+  var failedReads = [];
+
+  // Fetch both photos while the reader starts. The checks still read one side at a time.
+  var photos = sources.map(async function (side) {
+    try {
+      var options = { referrerPolicy: "no-referrer" };
+      if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) options.signal = AbortSignal.timeout(12000);
+      var response = await withAgentReadTimeout(fetch(side.url, options), 12000);
+      if (!response.ok) return null;
+      return await withAgentReadTimeout(response.blob(), 12000);
+    } catch (error) {
+      return null;
+    }
+  });
   try {
     var initializing = Tesseract.createWorker("eng");
     try {
-      worker = await withAgentReadTimeout(initializing, 20000);
+      worker = await withAgentReadTimeout(initializing, 15000);
     } catch (error) {
       initializing.then(function (lateWorker) { return lateWorker.terminate(); }).catch(function () {});
       throw error;
     }
-    var failedReads = [];
-    for (var side of sources) {
-      var photo;
-      try {
-        // The browser reads the downloaded photo locally.
-        var options = { referrerPolicy: "no-referrer" };
-        if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) options.signal = AbortSignal.timeout(12000);
-        var response = await withAgentReadTimeout(fetch(side.url, options), 12000);
-        if (!response.ok) throw new Error("Photo unavailable");
-        photo = await withAgentReadTimeout(response.blob(), 12000);
-      } catch (error) {
+    if (job) job.worker = worker;
+
+    for (var i = 0; i < sources.length && !(job && job.expired); i++) {
+      var side = sources[i];
+      var photo = await photos[i];
+      if (!photo) {
         unavailableSides.push(side.label);
         continue;
       }
@@ -888,11 +892,27 @@ async function collectAgentIdFindings(sources, expected) {
   } catch (error) {
     return { fields: [], unclearSides: [], unavailableSides: [], failed: true };
   } finally {
-    if (worker) await withAgentReadTimeout(worker.terminate(), 3000).catch(function () {});
+    if (worker && !(job && job.terminated)) {
+      if (job) job.terminated = true;
+      Promise.resolve().then(function () { return worker.terminate(); }).catch(function () {});
+    }
   }
 }
 
+function runAgentIdCheck(sources, expected) {
+  var job = { expired: false, worker: null, terminated: false };
+  return withAgentReadTimeout(collectAgentIdFindings(sources, expected, job), 45000).catch(function () {
+    job.expired = true;
+    if (job.worker && !job.terminated) {
+      job.terminated = true;
+      Promise.resolve().then(function () { return job.worker.terminate(); }).catch(function () {});
+    }
+    return { fields: [], unclearSides: [], unavailableSides: [], failed: true, timedOut: true };
+  });
+}
+
 function summarizeAgentIdFindings(result) {
+  if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
   if (result.failed) return "The photo reader could not start. Refresh and reopen the application, or check the original photos.";
   var notes = [];
   if (result.unclearSides.length) notes.push(result.unclearSides.join(" and ") + " ID photo" + (result.unclearSides.length > 1 ? "s: text is unclear." : ": text is unclear."));
@@ -914,13 +934,12 @@ function getAgentIdCheck(front, back, expected, existingOnly) {
   if (existingOnly) return existing;
   if (!existing || (existing.retryAt && existing.retryAt <= Date.now())) {
     var check = { result: null };
-    // Run one reader at a time. Reopening a record reuses its result until the photos or fields change.
-    check.pending = agentDocumentQueue.then(function () { return collectAgentIdFindings(sources, expected); }).then(function (result) {
+    // Reuse an in-progress or completed check for these exact photos and form values.
+    check.pending = runAgentIdCheck(sources, expected).then(function (result) {
       if (result.failed || result.unavailableSides.length || result.failedReads.length) check.retryAt = Date.now() + 15000;
       check.result = result;
       return result;
     });
-    agentDocumentQueue = check.pending.catch(function () {});
     agentDocumentChecks.set(key, check);
     if (agentDocumentChecks.size > 40) agentDocumentChecks.delete(agentDocumentChecks.keys().next().value);
   }
