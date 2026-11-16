@@ -943,91 +943,21 @@ function exportReportToCsv(columns, rows, filename) {
   }
 }
 
-function buildPrintableReportHtml(title, timeframeLabel, pieSlices, columns, rows) {
-  var cols = columns || [];
-  var dataRows = rows || [];
-  var rowsHtml = "";
-  for (var i = 0; i < dataRows.length; i++) {
-    rowsHtml += "<tr>" + dataRows[i].map(function (cell) {
-      return "<td style='padding:8px 10px;border:1px solid #d0d5dd;'>" + escapeHtml(cell) + "</td>";
-    }).join("") + "</tr>";
-  }
-  var summaryMetrics = (pieSlices || []).map(function (s) {
-    return "<li style='margin-bottom:4px;'><b>" + escapeHtml(s.label) + ":</b> " + s.value + "</li>";
-  }).join("");
-
-  return (
-    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>" +
-    "<title>" + escapeHtml(title || "Report") + " — Combined Facilities Support Services</title>" +
-    "<style>@page{size:A4 landscape;margin:14mm} table{table-layout:auto} th,td{overflow-wrap:anywhere} thead{display:table-header-group} @media print{.no-print-bar{display:none!important}body{padding:0!important}tr{break-inside:avoid}}</style>" +
-    "</head>" +
-    "<body style='font-family:Arial,sans-serif;padding:28px;color:#111827;margin:0;background:#ffffff;'>" +
-      "<div class='no-print-bar' style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 16px;margin-bottom:20px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;'>" +
-        "<div><b style='font-size:14px;color:#0f172a;'>Print Preview — " + escapeHtml(title || "Report") + "</b><div style='font-size:12px;color:#64748b;'>Click Print / Save as PDF to print or save this report.</div></div>" +
-        "<div style='display:flex;gap:8px;'>" +
-          "<button type='button' onclick='window.print()' style='background:#c8102e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer;'>Print / Save as PDF</button>" +
-          "<button type='button' onclick='window.close()' style='background:#fff;color:#334155;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer;'>Close</button>" +
-        "</div>" +
-      "</div>" +
-      "<h1 style='margin:0;font-size:20px;color:#c8102e;'>COMBINED FACILITIES SUPPORT SERVICES</h1>" +
-      "<h2 style='margin:6px 0 12px;font-size:17px;'>" + escapeHtml(title || "Operational Report") + "</h2>" +
-      "<p style='font-size:13px;color:#475467;'>Timeframe: <b>" + escapeHtml(timeframeLabel || "All Time") + "</b> | Total Records: <b>" + dataRows.length + "</b> | Generated: " + escapeHtml(new Date().toLocaleString()) + "</p>" +
-      (summaryMetrics ? "<ul style='font-size:13px;background:#f8fafc;padding:12px 24px;border:1px solid #e4e7ec;border-radius:8px;'>" + summaryMetrics + "</ul>" : "") +
-      "<table style='width:100%;border-collapse:collapse;font-size:12.5px;margin-top:16px;'>" +
-        "<thead><tr>" + cols.map(function (c) { return "<th style='padding:8px 10px;border:1px solid #d0d5dd;background:#f1f5f9;text-align:left;'>" + escapeHtml(c) + "</th>"; }).join("") + "</tr></thead>" +
-        "<tbody>" + (rowsHtml || "<tr><td colspan='" + Math.max(1, cols.length) + "' style='padding:10px;border:1px solid #d0d5dd;'>No records found.</td></tr>") + "</tbody>" +
-      "</table>" +
-    "</body></html>"
-  );
-}
-
-function downloadFormattedHtmlReport(title, timeframeLabel, pieSlices, columns, rows, filename) {
-  var safeName = (filename || "PIGEM-summary-report.html").replace(/[^a-zA-Z0-9._-]/g, "_");
-  var htmlDoc = buildPrintableReportHtml(title, timeframeLabel, pieSlices, columns, rows);
-  var blob = new Blob([htmlDoc], { type: "application/octet-stream" });
-  var url = URL.createObjectURL(blob);
-  var link = document.createElement("a");
-  link.style.display = "none";
-  link.href = url;
-  link.setAttribute("download", safeName);
-  document.body.appendChild(link);
-  link.click();
-  setTimeout(function () {
-    if (link.parentNode) document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, 30000);
+function exportDashboardReport(title, timeframe, slices, columns, rows, filename, print) {
+  var metrics = (slices || []).map(function (slice) { return slice.label + " " + slice.value; });
+  exportPigemPdf({
+    title: title,
+    subtitle: (timeframe || "All dates") + " | " + (rows || []).length + " records",
+    noteTitle: "Summary", note: metrics.join("  |  "),
+    section: "Report details", columns: columns, rows: rows
+  }, (filename || "PIGEM-report.pdf").replace(/\.html$/, ".pdf"), print);
 }
 
 function printActiveDashboardReport() {
-  var data = null;
-  if (typeof getAgentReportData === "function") data = getAgentReportData();
-  else if (typeof getMgrReportData === "function") data = getMgrReportData();
-  else if (typeof getActiveReportData === "function") data = getActiveReportData();
-
-  if (!data) return;
-
-  var htmlDoc = buildPrintableReportHtml(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows);
-  var printWin = null;
-  try {
-    printWin = window.open("", "_blank");
-  } catch (e) {
-    printWin = null;
-  }
-
-  if (printWin && printWin.document) {
-    printWin.document.open();
-    printWin.document.write(htmlDoc);
-    printWin.document.close();
-    printWin.focus();
-    // Print only when the user clicks inside the preview; automatic print blocks some browsers.
-    printWin.opener = null;
-    return;
-  }
-
-  downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows);
-  if (typeof showAlert === "function") {
-    showAlert("Report Downloaded", "Open the downloaded HTML report and select Print / Save as PDF.", "info");
-  }
+  var data = typeof getAgentReportData === "function" ? getAgentReportData() :
+    typeof getMgrReportData === "function" ? getMgrReportData() :
+    typeof getActiveReportData === "function" ? getActiveReportData() : null;
+  if (data) exportDashboardReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, null, true);
 }
 
 window.addEventListener("keydown", function (e) {

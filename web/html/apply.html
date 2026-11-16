@@ -200,7 +200,7 @@
     <section id="panel-4" class="card panel" hidden>
       <div class="row between" style="align-items:flex-start; flex-wrap:wrap; gap:10px;">
         <div>
-          <h3>Valid Government ID Upload (Front and Back)</h3>
+          <h3>Valid ID Photos</h3>
           <p class="small muted">Upload clear, distinct photos of both the <b>Front</b> and <b>Back</b> of your valid government-issued ID.</p>
         </div>
         <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="Phone QR" class="icon-img"> Continue on Phone (QR Code)</button>
@@ -310,7 +310,7 @@
         </div>
 
         <div>
-          <label>Back of Valid ID <span class="req-mark">*</span></label>
+          <label>Back of Valid ID <span class="muted">(optional)</span></label>
           <div class="upload-box" id="id-back-box">
             <div id="id-back-filename" class="small muted">No Back ID photo selected yet</div>
             <div id="id-back-quality" class="notice mt" role="status" aria-live="polite" hidden></div>
@@ -396,7 +396,7 @@
     <section id="panel-qr-mobile" class="card panel" hidden>
       <div class="center">
         <h3>Mobile Valid ID Capture or Upload</h3>
-        <p class="small muted mt">Take camera photos or upload existing gallery photos of the Front and Back of your Valid Government ID. Uploaded photos sync directly back to your computer application session.</p>
+        <p class="small muted mt">Take camera photos or upload existing gallery a photo of the front of your ID and the back if it has printed details. Uploaded photos sync directly back to your computer application session.</p>
         <div id="qr-mobile-session-badge" class="badge mt">Session Ready</div>
       </div>
       <div class="form-grid mt-big">
@@ -414,7 +414,7 @@
           </div>
         </div>
         <div class="upload-box">
-          <div style="font-weight:700;margin-bottom:6px;">Back of Valid ID</div>
+          <div style="font-weight:700;margin-bottom:6px;">Back of Valid ID (optional)</div>
           <div id="qr-back-status" class="small muted">Waiting for Back photo...</div>
           <input id="qr_back_cam" aria-label="Capture back ID photo on mobile camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleMobileQrUpload('back', this)">
           <input id="qr_back_file" aria-label="Choose back ID photo file on mobile" type="file" accept="image/*,.heic,.heif" style="display:none" onchange="handleMobileQrUpload('back', this)">
@@ -428,7 +428,7 @@
         </div>
       </div>
       <div id="qr-mobile-done-note" class="notice ok mt-big" hidden>
-        <b>Synced!</b> Your ID photos have been uploaded. Look at your computer screen to continue submitting your application.
+        <b>Synced!</b> Your front ID photo has been uploaded. Add the back if it has printed details, or return to your computer to continue.
       </div>
     </section>
   </main>

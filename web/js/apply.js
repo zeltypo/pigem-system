@@ -355,7 +355,7 @@ async function handleMobileQrUpload(side, inputEl) {
       box.hidden = false;
     }
     var files = await dbListQrSessionFiles(_qrActiveSid);
-    if (files.frontUrl && files.backUrl) {
+    if (files.frontUrl) {
       var doneNote = document.getElementById("qr-mobile-done-note");
       if (doneNote) doneNote.hidden = false;
     }
@@ -581,7 +581,7 @@ function openPhoneQrModal() {
   openPopup(
     '<div class="center">' +
       '<h3>Continue ID Upload on Phone</h3>' +
-      '<p class="small muted mt">Scan this QR code with your phone to capture or upload ONLY the Front &amp; Back photos of your Valid ID without restarting your application.</p>' +
+      '<p class="small muted mt">Scan this QR code with your phone to upload the front photo of your ID and the back if it has printed details without restarting your application.</p>' +
       '<div class="mt-big" style="background:#fff; padding:16px; border-radius:12px; display:inline-block; border:1px solid var(--line);">' +
         '<img src="' + qrImgUrl + '" alt="Scan with Phone" style="width:180px; height:180px; display:block;" />' +
       '</div>' +
@@ -797,7 +797,7 @@ async function validateSelectedIdQuality() {
   var front = selectedFrontFile;
   var back = selectedBackFile;
   var checks = await Promise.all([
-    checkSelectedIdQuality("front", front), checkSelectedIdQuality("back", back)
+    checkSelectedIdQuality("front", front), back ? checkSelectedIdQuality("back", back) : { passed: true }
   ]);
   if (front !== selectedFrontFile || back !== selectedBackFile) return false;
   if (checks.every(function (result) { return result.passed; })) return true;
@@ -990,7 +990,6 @@ function validateCurrentPanel() {
     if (!idType) markInvalid("id_type", "Valid ID Type", "Select your government ID type.");
     if (!idNumber || idNumber.length < 4) markInvalid("id_number", "ID Number", "Enter the valid number on your ID card.");
     if (!selectedFrontFile) markInvalid("id_front", "Front of Valid ID", "Upload photo of the FRONT of your ID.");
-    if (!selectedBackFile) markInvalid("id_back", "Back of Valid ID", "Upload photo of the BACK of your ID.");
 
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });

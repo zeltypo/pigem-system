@@ -287,8 +287,10 @@
           <h2 id="det-title" style="font-size:20px; margin-top:4px">Reference</h2>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap">
-          <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantCopy()">Download</button>
-          <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()">Print</button>
+          <div id="det-export-actions" class="row" style="gap:8px">
+            <button type="button" class="btn btn-outline btn-sm" onclick="downloadApplicantCopy()">Download PDF</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="printApplicantCopy()">Print</button>
+          </div>
           <button type="button" class="btn btn-outline btn-sm" onclick="closeDetailModal()">Close</button>
         </div>
       </div>
@@ -329,6 +331,8 @@ window.SYSTEM = "staff";
 
   <script src="../js/api.js"></script>
 
+  <script defer src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js" integrity="sha256-5lUfzcMvCdaFOyxRJtGNAdlEfg2mGKQaEevu4PbCDVQ=" crossorigin="anonymous"></script>
+  <script src="../js/pdf-export.js"></script>
   <script src="../js/dash-ui.js"></script>
 
   <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js"></script>

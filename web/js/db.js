@@ -1234,6 +1234,24 @@ async function dbCreateDocumentRecord(appId, docPayload) {
   }
 }
 
+async function dbClaimApplication(appId, staffId, expectedAssignee) {
+  var changes = { assigned_agent: staffId, status: "Under Agent Review", updated_at: new Date().toISOString() };
+  if (IS_DEMO_MODE) {
+    var apps = readSaved("pigem_applications", []);
+    var row = apps.find(function (app) { return app.id === appId && !app.assigned_agent && app.status === "Pending Review"; });
+    if (!row) return false;
+    Object.assign(row, changes);
+    writeSaved("pigem_applications", apps);
+    return true;
+  }
+  if (expectedAssignee) return false;
+  var claim = supabaseClient.from("applications").update(changes).eq("id", appId).eq("status", "Pending Review");
+  claim = expectedAssignee == null ? claim.is("assigned_agent", null) : claim.eq("assigned_agent", "");
+  var result = await claim.select("id").maybeSingle();
+  if (result.error) throw result.error;
+  return Boolean(result.data);
+}
+
 async function dbUpdateApplication(appId, changes) {
   changes.updated_at = new Date().toISOString();
   if (IS_DEMO_MODE) {

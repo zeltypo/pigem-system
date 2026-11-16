@@ -1018,7 +1018,7 @@ function exportActiveReportCsv() {
 
 function downloadFormattedAdminReport() {
   var data = getActiveReportData();
-  downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-" + activeReportSubTab + "-summary-report.html");
+  exportDashboardReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-" + activeReportSubTab + "-summary-report.pdf");
 }
 
 function resetDemoDatabase() {

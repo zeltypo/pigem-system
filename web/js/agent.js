@@ -476,7 +476,7 @@ async function checkAgentQueueDocument(appId, button) {
 
 function renderAgentCards() {
   var box = document.getElementById("agent-cards-box");
-  if (!box) return;
+  if (!box || (document.activeElement && box.contains(document.activeElement) && document.activeElement.tagName === "SELECT")) return;
   var q = (document.getElementById("q-filter") ? document.getElementById("q-filter").value : "").trim().toLowerCase();
 
   var filtered = [];
@@ -505,57 +505,31 @@ function renderAgentCards() {
     return;
   }
 
-  var html = "";
-  for (var j = 0; j < filtered.length; j++) {
-    var app = filtered[j];
-    var isClaimedByMe = isAssignedToStaff(app.assigned_agent, currentAgent);
-    var claimBtn = "";
-
-    if (!app.assigned_agent) {
-      claimBtn = '<button type="button" class="btn btn-red btn-sm" onclick="claimApplication(\'' + escapeHtml(app.id) + '\')">Claim</button>';
-    } else if (isClaimedByMe) {
-      claimBtn = '<span class="badge badge-blue">Claimed by You</span>';
-    } else {
-      claimBtn = '<span class="badge badge-gray">Assigned: ' + escapeHtml(app.assigned_agent) + '</span>';
+  var html = filtered.map(function (app) {
+    var id = escapeHtml(app.id);
+    var shared = activeBranch === "queue";
+    var owned = isAssignedToStaff(app.assigned_agent, currentAgent);
+    var place = [app.barangay, app.city, app.province].filter(Boolean).join(", ");
+    var actions = '<option value="">Choose an action</option><option value="documents">Check documents</option>';
+    if (owned) {
+      actions += '<option value="correction">Needs correction</option><option value="status">Validator decision</option>' +
+        '<option value="Encoding">Encoding</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option>';
     }
-
-    var locText = [app.barangay, app.city, app.province].filter(Boolean).join(", ");
-
-    html +=
-      '<div class="q-card">'  +
-        '<div class="q-head">' +
-          '<div style="min-width:0; flex:1">' +
-            '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">' +
-              '<span class="q-name">' + escapeHtml(app.full_name) + '</span>' +
-              '<span class="badge badge-gray" style="font-weight:700">' + escapeHtml(app.reference_no) + '</span>' +
-              statusBadge(app.status) +
-              (app.agent_link_code ? '<span class="badge badge-blue">Referral · ' + escapeHtml(app.agent_link_code) + '</span>' : '') +
-            '</div>' +
-            '<div class="q-sub" style="margin-top:4px">' +
-              '<b>' + escapeHtml(app.plan_name || "Red Fiber Plan") + '</b>' +
-              (locText ? ' &bull; ' + escapeHtml(locText) : '') +
-              ' &bull; Submitted ' + formatDate(app.created_at) +
-            '</div>' +
-            '<div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap">' +
-              getScreeningCardBadge(app) +
-              (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, false) : "") +
-              (app.cropped_id_url ? '<span class="badge badge-green">Cropped ID Ready</span>' : '') +
-              (app.has_correction ? '<span class="badge badge-blue">Customer Resubmitted</span>' : '') +
-            '</div>' +
-          '</div>' +
-          '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">' +
-            '<button type="button" id="btn-more-' + escapeHtml(app.id) + '" class="btn ' + (expandedSummaryCards['more-' + app.id] ? 'btn-red' : 'btn-outline') + ' btn-sm" onclick="toggleCardMore(\'more-' + escapeHtml(app.id) + '\')">' + (expandedSummaryCards['more-' + app.id] ? 'Hide Summary' : 'Summary') + '</button>' +
-            '<button type="button" class="btn btn-outline btn-sm" style="font-weight:700" onclick="openAppDetail(\'' + escapeHtml(app.id) + '\')">Open and Verify</button>' +
-            '<button type="button" class="btn btn-outline btn-sm" data-app-id="' + escapeHtml(app.id) + '" onclick="checkAgentQueueDocument(this.dataset.appId, this)">Check documents</button>' +
-            claimBtn +
-          '</div>' +
+    var control = shared
+      ? '<button type="button" class="btn btn-red btn-sm" data-id="' + id + '" onclick="confirmAgentClaim(this.dataset.id)">Claim</button>'
+      : '<select class="agent-queue-action" aria-label="Application action" data-id="' + id + '" onchange="runAgentQueueAction(this)">' + actions + '</select>';
+    return '<details class="q-card agent-queue-item" data-id="' + id + '"' + (expandedSummaryCards[app.id] ? " open" : "") +
+      ' ontoggle="expandedSummaryCards[this.dataset.id] = this.open; if(this.open && !getAgentAppIdCheck(findAppById(this.dataset.id), true)) checkAgentQueueDocument(this.dataset.id)">' +
+      '<summary><strong>' + escapeHtml(app.full_name) + '</strong><span>' + escapeHtml(app.reference_no) + '</span></summary>' +
+      '<div class="agent-queue-details">' +
+        '<div class="agent-screening-note"><b>Screening recommendation</b><div role="status" id="check-note-' + id + '">' + getScreeningQuickSummary(app) + '</div></div>' +
+        '<p class="small muted">' + escapeHtml(app.plan_name || "Red Fiber Plan") + (place ? ' &bull; ' + escapeHtml(place) : '') +
+          ' &bull; Submitted ' + escapeHtml(formatDate(app.created_at)) + '</p>' +
+        '<div class="agent-queue-controls">' + statusBadge(app.status) +
+        (app.agent_link_code ? '<span class="badge badge-blue">Referral · ' + escapeHtml(app.agent_link_code) + '</span>' : '') + control +
         '</div>' +
-        '<p class="small muted" style="margin:8px 0 0" id="check-note-' + escapeHtml(app.id) + '">' + getScreeningQuickSummary(app) + '</p>' +
-        '<div id="more-' + escapeHtml(app.id) + '" class="q-more' + (expandedSummaryCards['more-' + app.id] ? '' : ' hidden') + '">' +
-          '<div style="margin-top:4px" class="small muted"><b>Contact:</b> ' + escapeHtml(app.email || "-") + ' | ' + escapeHtml(app.phone || "-") + '</div>' +
-        '</div>' +
-      '</div>';
-  }
+      '</div></details>';
+  }).join("");
   box.innerHTML = html;
   if (!q && (activeBranch === "queue" || activeBranch === "claimed")) {
     filtered.slice(0, 2).forEach(function (app) {
@@ -564,34 +538,48 @@ function renderAgentCards() {
   }
 }
 
-function toggleCardMore(elId) {
-  var el = document.getElementById(elId);
-  if (!el) return;
-  var willShow = el.classList.contains("hidden");
-  expandedSummaryCards[elId] = willShow;
-  el.classList.toggle("hidden", !willShow);
-  var btn = document.getElementById("btn-" + elId);
-  if (btn) {
-    btn.classList.toggle("btn-red", willShow);
-    btn.classList.toggle("btn-outline", !willShow);
-    btn.textContent = willShow ? "Hide Summary" : "Summary";
+function runAgentQueueAction(select) {
+  var action = select.value;
+  select.value = "";
+  if (["Encoding", "Approved", "Rejected"].includes(action)) {
+    openAppDetail(select.dataset.id, "status", action);
+  } else if (action) {
+    openAppDetail(select.dataset.id, action);
   }
+}
+
+function confirmAgentClaim(appId) {
+  var app = findAppById(appId);
+  if (!app || app.assigned_agent) return;
+  var id = escapeHtml(appId);
+  openPopup(
+    '<h3>Claim this application?</h3>' +
+    '<p class="mt">If you claim this application, you will be responsible for reviewing it. Would you like to check the documents first?</p>' +
+    '<div class="row mt" style="gap:8px;justify-content:flex-end;flex-wrap:wrap">' +
+      '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+      '<button type="button" class="btn btn-outline" data-id="' + id + '" onclick="closePopup(); openAppDetail(this.dataset.id)">Check documents first</button>' +
+      '<button type="button" class="btn btn-red" data-id="' + id + '" onclick="closePopup(); claimApplication(this.dataset.id)">Yes, claim</button>' +
+    '</div>');
 }
 
 async function claimApplication(appId) {
   var app = findAppById(appId);
-  var keepCorrection = app && app.status === "Needs Correction";
+  if (!app) return;
   var staffId = getStaffIdentifier(currentAgent);
-  await dbUpdateApplication(appId, {
-    assigned_agent: staffId,
-    status: keepCorrection ? "Needs Correction" : "Under Agent Review"
-  });
-  if (app) {
-    await dbAddAiLog(app.id, app.reference_no, "Agent (" + currentAgent.full_name + ")", "Claimed application from queue.");
+  try {
+    var claimed = await dbClaimApplication(appId, staffId, app.assigned_agent);
+    if (!claimed) {
+      showAlert("Application unavailable", "This application is no longer available to claim.");
+      await refreshAgentData();
+      return;
+    }
     await dbAddLog(staffId, "Claimed application " + app.reference_no);
+    await refreshAgentData();
+    expandedSummaryCards[appId] = true;
+    showTab("claimed");
+  } catch (error) {
+    showAlert("Could not claim", "Refresh the queue and try again.");
   }
-  await refreshAgentData();
-  showTab(keepCorrection ? "correction" : "claimed");
 }
 
 function findAppById(id) {
@@ -601,7 +589,14 @@ function findAppById(id) {
   return null;
 }
 
-async function openAppDetail(appId) {
+var agentDetailMode = "documents";
+
+async function openAppDetail(appId, mode, requestedStatus) {
+  var record = findAppById(appId);
+  if (!record) return;
+  agentDetailMode = ["status", "correction"].includes(mode) && isAssignedToStaff(record.assigned_agent, currentAgent) ? mode : "documents";
+  var exports = document.getElementById("det-export-actions");
+  if (exports) exports.hidden = agentDetailMode !== "documents";
   lastDetectedFields = null;
   activeDetailAppId = appId;
   activeCopyMode = "latest";
@@ -610,6 +605,13 @@ async function openAppDetail(appId) {
   pendingProofDataUrl = "";
   pendingProofFile = null;
   await renderDetailModalContent();
+  var statusSelect = document.getElementById("det-status-select");
+  if (statusSelect && requestedStatus) {
+    statusSelect.value = requestedStatus;
+    var statusRemarks = document.getElementById("det-remarks");
+    if (statusRemarks && requestedStatus !== record.status) statusRemarks.value = "";
+    onStatusSelectChange();
+  }
   document.getElementById("app-detail-modal").classList.remove("hidden");
 
 }
@@ -828,6 +830,7 @@ function getAgentIdCheck(front, back, expected, existingOnly) {
 }
 
 function getAgentAppIdCheck(app, existingOnly) {
+  if (!app) return null;
   return getAgentIdCheck(app.id_image_url || app.id_front_path || "", app.id_back_image_url || app.id_back_path || "", {
     name: app.full_name || "", birth: app.birth_date || "", number: app.id_number || ""
   }, existingOnly);
@@ -887,46 +890,9 @@ async function renderDetailModalContent(updateResultsOnly) {
   var scr = app.screening || {};
   var res = app.ai_result || {};
   var dupCheck = detectClientSideDuplicateId(app);
-  var isManualFallback = (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || ["pending_agent", "queued", "checking"].includes(scr.state) || scr.state === "unavailable" || scr.state === "paused" || scr.fallback_original_only || (scr.ocr && scr.ocr.available === false));
-
-  var topScreeningBanner = renderVisualScreeningProgressBox(app);
-  if (!topScreeningBanner) {
-    if (dupCheck.isDup) {
-      topScreeningBanner =
-        '<div class="status-banner warn" style="margin-bottom:14px">' +
-          '<div><b>Duplicate ID Image Flagged:</b> ' + escapeHtml(dupCheck.reason) + ' Use Section 4 below to request a corrected ID photo from the customer.</div>' +
-          '<span class="badge badge-red">Duplicate Detected</span>' +
-        '</div>';
-    } else if (isManualFallback) {
-      topScreeningBanner =
-        '<div class="status-banner warn" style="margin-bottom:14px">' +
-          '<div><b>Manual Document Review Active:</b> The customer\'s <b>Original Uploaded ID Photos</b> are ready below for verification.</div>' +
-        '</div>';
-    }
-  }
-
-  var logs = await dbListAiLogs(app.id);
-  var logItemsHtml = "";
-  for (var i = 0; i < logs.length; i++) {
-    var item = logs[i];
-    logItemsHtml +=
-      '<div class="chat-item">' +
-        '<div class="who">' + escapeHtml(cleanScreeningText(item.actor)) + ' &bull; <span class="muted" style="font-weight:400">' + formatDate(item.created_at) + '</span></div>' +
-        '<div>' + escapeHtml(cleanScreeningText(item.message)) + '</div>' +
-      '</div>';
-  }
-  if (!logItemsHtml) {
-    logItemsHtml = '<div class="small muted">No activity log entries recorded yet.</div>';
-  }
-
-  var dupBadge = dupCheck.isDup
-    ? '<span class="badge badge-red">Duplicate Flagged</span>'
-    : '<span class="badge badge-green">Distinct Photos</span>';
-
   var cleanIssuesList = ((res.issues && res.issues.length) ? res.issues : [])
     .map(function (x) { return stripFalseReuploadMsg(x, dupCheck); })
     .filter(Boolean);
-  var cleanScrSummary = stripFalseReuploadMsg(scr.summary || "", dupCheck);
   var cleanSuggestedRemark = stripFalseReuploadMsg(scr.Suggested_remark || "", dupCheck);
 
   var copySwitcher = "";
@@ -939,13 +905,13 @@ async function renderDetailModalContent(updateResultsOnly) {
       '</div>';
   }
 
-  var frontIdPhotoUrl = viewData.id_image_url || app.id_image_url || app.id_front_path || "";
+  var frontIdPhotoUrl = viewData.id_image_url || viewData.id_front_path || "";
   var rawFrontUrl = frontIdPhotoUrl || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
   var croppedUrl = (activeCopyMode === "latest" && (app.cropped_id_url || app.id_cropped_url || (scr && scr.cropped_front_url)))
     ? (app.cropped_id_url || app.id_cropped_url || scr.cropped_front_url)
     : "";
   var displayedFrontUrl = (croppedUrl && activeIdImgMode === "cropped") ? croppedUrl : rawFrontUrl;
-  var idBackPhotoUrl = viewData.id_back_image_url || viewData.id_back_path || app.id_back_image_url || app.id_back_path || "";
+  var idBackPhotoUrl = viewData.id_back_image_url || viewData.id_back_path || "";
   var croppedBackUrl = (activeCopyMode === "latest" && (app.cropped_back_url || app.id_back_cropped_url || (scr && scr.cropped_back_url)))
     ? (app.cropped_back_url || app.id_back_cropped_url || scr.cropped_back_url)
     : "";
@@ -972,7 +938,6 @@ async function renderDetailModalContent(updateResultsOnly) {
     cleanIssuesList.length > 0
   );
   var hasPrelimConcern = Boolean(hasRealQualityOrFieldConcern && currentSt !== "Approved" && currentSt !== "Rejected");
-  var isCorrectionOpen = (currentSt === "Needs Correction" || hasPrelimConcern) ? " open" : "";
   var activeCorrFields = dupCheck.isDup
     ? "id_photo"
     : ((app.correction_fields && app.correction_fields.length)
@@ -980,7 +945,7 @@ async function renderDetailModalContent(updateResultsOnly) {
       : ((scr.suggested_fields && scr.suggested_fields.length) ? scr.suggested_fields[0] : (Number(res.blur_score) < 55 ? "id_photo" : "")));
   var prefillRawNote = (currentSt === "Needs Correction" && app.validator_raw_remark)
     ? stripFalseReuploadMsg(app.validator_raw_remark, dupCheck)
-    : (dupCheck.isDup ? dupCheck.reason : (hasPrelimConcern ? (cleanScrSummary || cleanIssuesList[0] || "") : ""));
+    : (dupCheck.isDup ? dupCheck.reason : (hasPrelimConcern ? (cleanIssuesList[0] || "") : ""));
   var dupPoliteDefault = dupCheck.type === "front_back"
     ? "We noticed that the same photo was uploaded for both the Front and Back of your Valid ID. Please sign in to your Customer Account and upload clear, separate photos of the Front and Back sides of your Valid ID so your application can proceed."
     : (dupCheck.type === "reupload_same"
@@ -995,19 +960,10 @@ async function renderDetailModalContent(updateResultsOnly) {
     ? app.corrected_copy.contact_email
     : (viewData.email || app.email);
 
-  var detailHtml =
-    '<div id="document-check-status">' + topScreeningBanner + '</div>' +
-
-    '<div class="grid-4" style="margin-bottom:14px">' +
-      '<div class="card" style="padding:10px 14px"><div class="tiny muted">Internal Status</div><div style="margin-top:4px">' + statusBadge(app.status) + '</div></div>' +
-      '<div class="card" style="padding:10px 14px"><div class="tiny muted">Customer Sees</div><div style="margin-top:4px">' + customerStatusBadge(app.status) + '</div></div>' +
-      '<div class="card" style="padding:10px 14px"><div class="tiny muted">Selected Plan</div><div style="margin-top:4px; font-weight:700; font-size:13.5px">' + escapeHtml(app.plan_name || "-") + '</div></div>' +
-      '<div class="card" style="padding:10px 14px"><div class="tiny muted">Assigned Agent</div><div style="margin-top:4px; font-weight:700; font-size:13px">' + escapeHtml(app.assigned_agent || "Unclaimed") + '</div></div>' +
-    '</div>' +
-
+  var applicantSection =
     '<div class="section-card">' +
       '<div class="section-head">' +
-        '<div class="section-head-title"><span class="step-badge">1</span>Applicant Profile and Installation Address</div>' +
+        '<div class="section-head-title"><span class="step-badge">3</span>Applicant Details</div>' +
         copySwitcher +
       '</div>' +
       '<div class="grid-2" style="align-items:start">' +
@@ -1018,6 +974,8 @@ async function renderDetailModalContent(updateResultsOnly) {
             '<div><span>Birth Date</span><b>' + escapeHtml(viewData.birth_date || app.birth_date || "-") + '</b></div>' +
             '<div><span>Email Address</span><b>' + escapeHtml(displayEmail || "-") + '</b></div>' +
             '<div><span>Mobile Number</span><b>' + escapeHtml(viewData.phone || app.phone || "-") + '</b></div>' +
+            '<div><span>Plan</span><b>' + escapeHtml(app.plan_name || '-') + '</b></div>' +
+            '<div><span>Status</span><b>' + escapeHtml(app.status || '-') + '</b></div>' +
             '<div><span>Valid ID Type</span><b>' + escapeHtml(viewData.id_type || app.id_type || "-") + '</b></div>' +
             '<div><span>Primary ID Number</span><b>' + escapeHtml(viewData.id_number || app.id_number || "-") + '</b></div>' +
           '</div>' +
@@ -1034,54 +992,45 @@ async function renderDetailModalContent(updateResultsOnly) {
           '</div>' +
         '</div>' +
       '</div>' +
-    '</div>' +
-
-    '<div class="section-card" id="document-check-results">' +
+    '</div>';
+  var photosSection =
+    '<div class="section-card">' +
       '<div class="section-head">' +
-        '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos and Document Check</div>' +
+        '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos</div>' +
         idModeBar +
       '</div>' +
       '<div class="grid-2" style="margin-bottom:12px">' +
         '<div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedUrl && activeIdImgMode === "cropped" ? "FRONT ID (CROPPED COPY)" : "FRONT ID (ORIGINAL UPLOADED COPY)") + '</div>' +
-          '<img src="' + escapeHtml(displayedFrontUrl) + '" alt="Front ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />' +
+          (frontIdPhotoUrl ? '<img src="' + escapeHtml(displayedFrontUrl) + '" alt="Front ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />' +
+            '<button type="button" class="btn btn-outline btn-sm mt" data-side="front" onclick="downloadAgentIdPhoto(this.dataset.side)">Download front</button>' : '<span class="muted">No front photo uploaded</span>') +
         '</div>' +
         '<div style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + (croppedBackUrl && activeIdImgMode === "cropped" ? "BACK ID (CROPPED COPY)" : "BACK ID (ORIGINAL UPLOADED COPY)") + '</div>' +
           (displayedBackUrl
             ? '<img src="' + escapeHtml(displayedBackUrl) + '" alt="Back ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />'
+              + '<button type="button" class="btn btn-outline btn-sm mt" data-side="back" onclick="downloadAgentIdPhoto(this.dataset.side)">Download back</button>'
             : '<span class="muted small" style="display:block; padding:54px 0">No Back ID uploaded</span>') +
         '</div>' +
       '</div>' +
 
+      '</div>';
+  var recommendation = '<section id="document-check-results">' +
       ((frontIdPhotoUrl || idBackPhotoUrl)
-        ? '<div class="mb"><b>Document findings</b>' +
-          '<p class="small muted">Review any differences before requesting a correction.</p>' +
+        ? '<div class="agent-screening-note"><b>Screening recommendation</b>' +
           '<div class="small" data-id-text-result role="status" style="white-space:pre-wrap; overflow-wrap:anywhere" data-front="' + escapeHtml(frontIdPhotoUrl) +
           '" data-back="' + escapeHtml(idBackPhotoUrl) + '" data-name="' + escapeHtml(viewData.full_name || app.full_name || "") +
           '" data-birth="' + escapeHtml(viewData.birth_date || "") + '" data-number="' + escapeHtml(viewData.id_number || "") +
           '">Checking the ID photos…</div></div>'
-        : '') +
-      '<div class="check-pill-grid" style="grid-template-columns:repeat(auto-fit, minmax(min(100%, 210px), 1fr));">' +
-        '<div class="check-pill"><span>Duplicate Image Check</span>' + dupBadge + '</div>' +
-        '<div class="check-pill"><span>Area Coverage</span>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : '<span class="badge badge-gray">-</span>') + '</div>' +
-      '</div>' +
-      (function () {
-        var covInfo = typeof getApplicationCoverageInfo === "function" ? getApplicationCoverageInfo(app) : null;
-        if (!covInfo || (covInfo.inPhilippines && covInfo.serviceable)) return "";
-        return '<div class="small" style="margin-top:8px; padding:8px 10px; border-radius:8px; background:#fefce8; border:1px solid #fde047; color:#854d0e"><b>Location Coverage Notice:</b> ' + escapeHtml(covInfo.advisory || "Outside standard serviceable areas (Metro Manila, Bulacan, Cavite, Laguna, Rizal, Cebu) — verify facility coverage.") + '</div>';
-      })() +
+        : '<div class="agent-screening-note"><b>Screening recommendation</b><div>No ID photo was uploaded.</div></div>');
 
-      '<details style="margin-top:10px; border-top:1px dashed var(--line); padding-top:8px">' +
-        '<summary style="cursor:pointer; font-size:12.5px; font-weight:600; color:var(--muted)">View Activity Log (' + logs.length + ' entries)</summary>' +
-        '<div class="chat-log" style="max-height:170px; overflow-y:auto; margin-top:8px">' + logItemsHtml + '</div>' +
-      '</details>' +
-    '</div>' +
-
+  if (dupCheck.isDup) recommendation += '<p class="notice warn">' + escapeHtml(dupCheck.reason) + '</p>';
+  recommendation += "</section>";
+  var statusSection =
     '<div class="section-card">' +
       '<div class="section-head">' +
-        '<div class="section-head-title"><span class="step-badge">3</span>Application Status and Validator Decision</div>' +
-        '<span class="tiny muted">Customers see Processing, Approved, or Rejected</span>' +
+        '<div class="section-head-title">Application Status and Validator Decision</div>' +
+        '' +
       '</div>' +
       '<div class="grid-3" style="margin-bottom:10px">' +
         '<div class="field" style="margin-bottom:0">' +
@@ -1116,12 +1065,12 @@ async function renderDetailModalContent(updateResultsOnly) {
       '<div class="row" style="justify-content:flex-end">' +
         '<button type="button" class="btn btn-red" onclick="saveSelectedStatus()">Save Status Update</button>' +
       '</div>' +
-    '</div>' +
-
+    '</div>';
+  var correctionSection =
     (currentSt === "Needs Correction"
       ? '<div class="section-card" style="background:#fffaf5; border-color:#fed7aa">' +
           '<div class="section-head" style="margin-bottom:8px">' +
-            '<div class="section-head-title"><span class="step-badge" style="background:#d97706">4</span>Customer Update Request Sent (Awaiting Customer Resubmission)</div>' +
+            '<div class="section-head-title">Customer Update Request Sent (Awaiting Customer Resubmission)</div>' +
             '<span class="badge badge-yellow">Waiting for Customer</span>' +
           '</div>' +
           '<div class="small" style="color:#7c2d12; line-height:1.55">' +
@@ -1131,10 +1080,9 @@ async function renderDetailModalContent(updateResultsOnly) {
             '<div class="tiny muted" style="margin-top:8px">This update request form is hidden while awaiting the customer\'s response and will automatically reopen once the customer resubmits their updated application or requirements.</div>' +
           '</div>' +
         '</div>'
-      : '<details' + isCorrectionOpen + ' class="section-card" style="background:var(--soft)">' +
+      : '<details open' + ' class="section-card" style="background:var(--soft)">' +
           '<summary style="cursor:pointer; font-weight:700; font-size:14.5px; color:var(--text); display:flex; align-items:center; gap:8px">' +
-            '<span class="step-badge" style="background:#d97706">4</span>' +
-            '<span>Request Customer Update (Needs Correction)</span>' +
+              '<span>Request Customer Update (Needs Correction)</span>' +
             (app.has_correction ? '<span class="badge badge-blue" style="margin-left:auto">Customer Resubmitted - Reopened for Review</span>' : '') +
           '</summary>' +
           '<div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line)">' +
@@ -1182,6 +1130,9 @@ async function renderDetailModalContent(updateResultsOnly) {
             '</div>' +
           '</div>' +
         '</details>');
+  var detailHtml = agentDetailMode === "status" ? statusSection :
+    agentDetailMode === "correction" ? recommendation + correctionSection :
+      recommendation + photosSection + applicantSection;
   if (activeDetailAppId !== app.id) return;
   if (updateResultsOnly) {
     var template = document.createElement("template");
@@ -1189,9 +1140,6 @@ async function renderDetailModalContent(updateResultsOnly) {
     var currentResults = document.getElementById("document-check-results");
     var nextResults = template.content.querySelector("#document-check-results");
     if (currentResults && nextResults) currentResults.replaceWith(nextResults);
-    var currentStatus = document.getElementById("document-check-status");
-    var nextStatus = template.content.querySelector("#document-check-status");
-    if (currentStatus && nextStatus) currentStatus.replaceWith(nextStatus);
   } else {
     document.getElementById("det-body").innerHTML = detailHtml;
   }
@@ -1267,7 +1215,7 @@ function onEncodingProofPick(inputEl) {
 
 async function saveAgentDecision(newStatus) {
   var app = findAppById(activeDetailAppId);
-  if (!app) return;
+  if (!app || !isAssignedToStaff(app.assigned_agent, currentAgent)) return;
 
   var rawValidator = document.getElementById("det-validator-raw") ? document.getElementById("det-validator-raw").value.trim() : "";
   var chosenField = document.getElementById("det-correction-field") ? document.getElementById("det-correction-field").value : "auto";
@@ -1386,146 +1334,79 @@ async function saveAgentDecision(newStatus) {
 
   await dbAddLog(staffId, "Set application " + app.reference_no + " status to " + newStatus);
 
+  closeDetailModal();
   await refreshAgentData();
-  await renderDetailModalContent();
+  var statusTab = { "Under Agent Review": "claimed", "Encoding": "encoding", "Needs Correction": "correction", "Approved": "approved", "Rejected": "rejected" };
+  if (statusTab[newStatus]) {
+    expandedSummaryCards[app.id] = true;
+    showTab(statusTab[newStatus]);
+  }
   showAlert("Status Updated", "Application " + app.reference_no + " is now marked as " + newStatus + "." + emailNoticeNote);
 }
 
-function printApplicantCopy() {
-  return exportApplicantCopy(false);
+function getAgentPreviewCopy(app) {
+  return (activeCopyMode === "original" && app.original_submission) ? app.original_submission : app;
 }
 
-function downloadApplicantCopy() {
+async function downloadAgentIdPhoto(side) {
+  var app = findAppById(activeDetailAppId);
+  if (!app) return;
+  var copy = getAgentPreviewCopy(app);
+  var url = side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path;
+  if (!url) return;
+  try {
+    var response = await fetch(url, { referrerPolicy: "no-referrer" });
+    if (!response.ok) throw new Error("Photo unavailable");
+    var photo = await response.blob();
+    var extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" }[photo.type] || "jpg";
+    savePigemExport(photo, app.reference_no + "-" + side + "-ID." + extension);
+  } catch (error) {
+    showAlert("Photo unavailable", "The photo could not be downloaded. Please try again.");
+  }
+}
+
+function printApplicantCopy() {
   return exportApplicantCopy(true);
 }
 
-async function embedApplicantPhoto(url) {
-  if (!url) return "";
-  try {
-    var response = await fetch(url, { referrerPolicy: "no-referrer" });
-    if (!response.ok) return "";
-    var photo = await response.blob();
-    if (!/^image\/(?:jpeg|png|webp|gif|bmp)$/i.test(photo.type)) return "";
-    return await new Promise(function (resolve) {
-      var reader = new FileReader();
-      reader.onload = function () { resolve(String(reader.result || "")); };
-      reader.onerror = function () { resolve(""); };
-      reader.readAsDataURL(photo);
-    });
-  } catch (error) {
-    return "";
-  }
+function downloadApplicantCopy() {
+  return exportApplicantCopy(false);
 }
 
-async function exportApplicantCopy(download) {
+function exportApplicantCopy(print) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
-  var viewData = (activeCopyMode === "original" && app.original_submission) ? app.original_submission : app;
-  var displayEmail = (activeCopyMode === "latest" && app.corrected_copy && app.corrected_copy.contact_email)
-    ? app.corrected_copy.contact_email
-    : (viewData.email || app.email || "-");
-  var frontUrl = (activeIdImgMode === "cropped" && (app.cropped_id_url || app.id_cropped_url))
-    ? (app.cropped_id_url || app.id_cropped_url)
-    : (viewData.id_image_url || app.id_image_url || app.id_front_path || "");
-  var backUrl = viewData.id_back_image_url || viewData.id_back_path || app.id_back_image_url || app.id_back_path || "";
-  var fullAddr = [
-    app.house_no ? app.house_no : "",
-    app.building_name && app.building_name !== "N/A" ? app.building_name : "",
-    viewData.street || app.street || "",
-    app.subdivision || "",
-    app.barangay ? "Brgy. " + app.barangay : "",
-    app.city || "",
-    app.province || ""
-  ].filter(Boolean).join(", ");
-
-  var printWin = download ? null : window.open("", "_blank", "width=920,height=780");
-  if (!download && !printWin) {
-    showAlert("Print preview blocked", "Allow pop-ups for PIGEM, then click Print again.");
+  var copy = getAgentPreviewCopy(app);
+  var panel = document.querySelector("#det-body [data-id-text-result]");
+  if (panel && !panel._documentFindings) {
+    showAlert("Checking documents", "Wait for the screening recommendation before exporting.");
     return;
   }
-  var missingFrontLabel = "No front ID available";
-  var missingBackLabel = "No back ID available";
-  if (download) {
-    var embedded = await Promise.all([embedApplicantPhoto(frontUrl), embedApplicantPhoto(backUrl)]);
-    if (frontUrl && !embedded[0]) missingFrontLabel = "Front photo could not be downloaded";
-    if (backUrl && !embedded[1]) missingBackLabel = "Back photo could not be downloaded";
-    frontUrl = embedded[0];
-    backUrl = embedded[1];
-  }
-  var docHtml =
-    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>" +
-    "<title>Application Verification Copy - " + escapeHtml(app.reference_no || "") + "</title>" +
-    "<style>" +
-      "body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;max-width:880px;margin:28px auto;padding:0 22px;font-size:12px;line-height:1.45;}" +
-      ".hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #c8102e;padding-bottom:12px;margin-bottom:16px;}" +
-      ".hdr h1{font-size:18px;margin:0;color:#c8102e;}" +
-      ".hdr p{margin:3px 0 0;color:#475467;font-size:12px;}" +
-      ".sec{border:1px solid #d0d5dd;border-radius:8px;padding:12px 14px;margin-bottom:14px;page-break-inside:avoid;}" +
-      ".sec h2{font-size:13.5px;margin:0 0 10px;text-transform:uppercase;color:#1e293b;border-bottom:1px solid #e4e7ec;padding-bottom:6px;}" +
-      ".grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;}" +
-      ".row-kv{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed #e2e8f0;padding:4px 0;}" +
-      ".row-kv span{color:#64748b;}" +
-      ".row-kv b{text-align:right;color:#0f172a;overflow-wrap:anywhere;min-width:0;}" +
-      ".id-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;margin-top:8px;}" +
-      ".id-box{border:1px solid #cbd5e1;border-radius:8px;padding:10px;background:#f8fafc;}" +
-      ".id-box b{display:block;font-size:11.5px;margin-bottom:6px;color:#334155;}" +
-      ".id-box img{max-width:100%;max-height:220px;object-fit:contain;border-radius:4px;}" +
-      "@page{size:A4;margin:14mm;}@media print{body{margin:0;padding:0;max-width:none;}.no-print{display:none!important;}}" +
-    "</style></head><body>" +
-      "<div class='hdr'>" +
-        "<div><h1>PIGEM COMBINED FACILITIES SUPPORT SERVICES</h1><p>Internet Service Application · Verification Copy</p></div>" +
-        "<div style='text-align:right;'><b>Ref No: " + escapeHtml(app.reference_no || "-") + "</b><p>Status: " + escapeHtml(app.status || "-") + " | Prepared: " + escapeHtml(new Date().toLocaleString()) + "</p></div>" +
-      "</div>" +
-      "<div class='sec'>" +
-        "<h2>1. Applicant Profile &amp; Service Plan</h2>" +
-        "<div class='grid2'>" +
-          "<div class='row-kv'><span>Full Name</span><b>" + escapeHtml(viewData.full_name || app.full_name || "-") + "</b></div>" +
-          "<div class='row-kv'><span>Selected Plan</span><b>" + escapeHtml(app.plan_name || "-") + "</b></div>" +
-          "<div class='row-kv'><span>Birth Date</span><b>" + escapeHtml(viewData.birth_date || app.birth_date || "-") + "</b></div>" +
-          "<div class='row-kv'><span>Submitted Date</span><b>" + escapeHtml(formatDate(app.created_at)) + "</b></div>" +
-          "<div class='row-kv'><span>Email Address</span><b>" + escapeHtml(displayEmail) + "</b></div>" +
-          "<div class='row-kv'><span>Mobile Number</span><b>" + escapeHtml(viewData.phone || app.phone || "-") + "</b></div>" +
-          "<div class='row-kv'><span>Valid ID Type</span><b>" + escapeHtml(viewData.id_type || app.id_type || "-") + "</b></div>" +
-          "<div class='row-kv'><span>Primary ID Number</span><b>" + escapeHtml(viewData.id_number || app.id_number || "-") + "</b></div>" +
-        "</div>" +
-      "</div>" +
-      "<div class='sec'>" +
-        "<h2>2. Installation Address &amp; Coordinates</h2>" +
-        "<div class='grid2'>" +
-          "<div class='row-kv'><span>Complete Address</span><b>" + escapeHtml(fullAddr || "-") + "</b></div>" +
-          "<div class='row-kv'><span>Nearest Landmark</span><b>" + escapeHtml(app.landmark || "-") + "</b></div>" +
-          "<div class='row-kv'><span>Pinned Coordinates</span><b>" + escapeHtml((app.latitude != null ? app.latitude : "-") + ", " + (app.longitude != null ? app.longitude : "-")) + "</b></div>" +
-          "<div class='row-kv'><span>Assigned Agent</span><b>" + escapeHtml(app.assigned_agent || "Unassigned") + "</b></div>" +
-        "</div>" +
-      "</div>" +
-      "<div class='sec'>" +
-        "<h2>3. Uploaded Valid ID Copies (Front &amp; Back)</h2>" +
-        "<div class='id-grid'>" +
-          "<div class='id-box'><b>FRONT OF VALID ID</b>" + (frontUrl ? "<img src='" + escapeHtml(frontUrl) + "' alt='Front ID' />" : "<span>" + missingFrontLabel + "</span>") + "</div>" +
-          "<div class='id-box'><b>BACK OF VALID ID</b>" + (backUrl ? "<img src='" + escapeHtml(backUrl) + "' alt='Back ID' />" : "<span>" + missingBackLabel + "</span>") + "</div>" +
-        "</div>" +
-        (app.agent_remarks ? "<div style='margin-top:10px;font-size:12px;color:#334155;'><b>Verification Remarks:</b> " + escapeHtml(app.agent_remarks) + "</div>" : "") +
-      "</div>" +
-      "<p>For PIGEM staff use only.</p>" +
-      (download ? "" : "<button class='no-print' onclick='window.print()'>Print</button>") +
-    "</body></html>";
-
-  if (download) {
-    var filename = "PIGEM-" + String(app.reference_no || "application").replace(/[^a-zA-Z0-9_-]/g, "_") + ".html";
-    var url = URL.createObjectURL(new Blob([docHtml], { type: "text/html" }));
-    var link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
-    return;
-  }
-  printWin.opener = null;
-  printWin.document.open();
-  printWin.document.write(docHtml);
-  printWin.document.close();
+  var remarks = panel ? summarizeAgentIdFindings(panel._documentFindings) : "No ID photo was uploaded.";
+  var duplicate = detectClientSideDuplicateId(app);
+  if (duplicate.isDup) remarks += " " + duplicate.reason;
+  var location = [copy.house_no || app.house_no, copy.street || app.street, copy.subdivision || app.subdivision,
+    copy.barangay || app.barangay, copy.city || app.city, copy.province || app.province].filter(Boolean).join(", ");
+  var rows = [
+    ["Full name", copy.full_name || app.full_name],
+    ["Plan", app.plan_name],
+    ["Status", app.status],
+    ["Submitted", formatDate(app.created_at)],
+    ["Date of birth", copy.birth_date],
+    ["Email", copy.email || app.email],
+    ["Mobile number", copy.phone || app.phone],
+    ["Installation address", location],
+    ["Nearest landmark", copy.landmark || app.landmark],
+    ["Assigned Agent", app.assigned_agent || "Unassigned"]
+  ];
+  exportPigemPdf({
+    title: "Internet Service Application",
+    subtitle: "Reference " + app.reference_no,
+    noteTitle: "Screening recommendation",
+    note: remarks,
+    section: "Applicant details",
+    columns: ["Field", "Details"], rows: rows, widths: [0.3, 0.7]
+  }, "PIGEM-" + app.reference_no + ".pdf", print);
 }
 
 async function createNewAgentLink() {
@@ -1737,5 +1618,5 @@ function exportAgentReportCsv() {
 
 function downloadFormattedAgentReport() {
   var data = getAgentReportData();
-  downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-agent-" + activeAgentReportTab + "-report.html");
+  exportDashboardReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-agent-" + activeAgentReportTab + "-report.pdf");
 }

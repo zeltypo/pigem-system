@@ -1563,5 +1563,5 @@ function exportMgrReportCsv() {
 
 function downloadFormattedMgrReport() {
   var data = getMgrReportData();
-  downloadFormattedHtmlReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-manager-" + activeMgrReportTab + "-report.html");
+  exportDashboardReport(data.title, data.timeframeLabel, data.pieSlices, data.columns, data.rows, "PIGEM-manager-" + activeMgrReportTab + "-report.pdf");
 }

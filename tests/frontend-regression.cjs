@@ -39,18 +39,13 @@ function context(file) {
   await d.toggleNotifModal();
   assert.equal(readAll, 0, 'Opening notifications must not mark them all read');
   assert.equal(refreshes, 1);
-  let autoPrints = 0;
-  const preview = { document: { open() {}, write() {}, close() {} }, focus() {}, print() { autoPrints++; } };
-  d.window.open = () => preview;
+  let reportExport;
+  d.exportPigemPdf = (report, filename, print) => { reportExport = { report, filename, print }; };
   d.getAgentReportData = () => ({ title: 'Test', columns: ['Ref'], rows: [['TEST']], pieSlices: [] });
-  d.setTimeout = fn => fn();
   d.printActiveDashboardReport();
-  assert.equal(autoPrints, 0, 'Preview must not automatically block the parent with a print dialog');
-  let downloadedRows;
-  d.downloadFormattedHtmlReport = (title, timeframe, slices, columns, rows) => { downloadedRows = rows; };
-  d.window.open = () => null;
-  d.printActiveDashboardReport();
-  assert.equal(downloadedRows[0][0], 'TEST', 'Blocked popups must offer the full filtered report');
+  assert.equal(reportExport.report.rows[0][0], 'TEST');
+  assert.equal(reportExport.print, true);
+  assert.equal(reportExport.filename, 'PIGEM-report.pdf');
 
   const { sandbox: quality } = context('web/js/api.js');
   const width = 300, height = 200;
@@ -98,13 +93,26 @@ function context(file) {
     id_type: 'Student ID', id_image_url: '/fictional-front.jpg', screening: { state: 'unavailable' } }];
   a.activeDetailAppId = 'demo';
   await a.renderDetailModalContent();
-  assert(an['det-body'].innerHTML.includes('Document findings'));
+  assert(an['det-body'].innerHTML.includes('Screening recommendation'));
   assert(an['det-body'].innerHTML.includes('Checking the ID photos'));
   fs.writeFileSync('tests/review-preview.html', `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="../web/style.css"><title>Fictional review preview</title><main id="app-detail-modal" style="max-width:1050px;margin:auto;padding:16px"><h1>Fictional review preview</h1><p>Layout check only. No live applicant records.</p>${an['det-body'].innerHTML}</main>`);
 
   assert(!/\b(?:OCR|OpenAI|API|AI)\b/.test(an['det-body'].innerHTML.replace(/<[^>]+>/g, ' ')),
     'Agent-visible text must use plain labels');
-  assert(!an['det-body'].innerHTML.includes('Run / Refresh Document Check'));
+  const previewMarkup = an['det-body'].innerHTML;
+  assert(previewMarkup.indexOf('Screening recommendation') < previewMarkup.indexOf('Valid ID Photos'));
+  assert(previewMarkup.indexOf('Valid ID Photos') < previewMarkup.indexOf('Applicant Details'));
+  assert(!previewMarkup.includes('Send Update Request to Customer'));
+  assert(!previewMarkup.includes('Save Status Update'));
+  a.agentDetailMode = 'correction';
+  await a.renderDetailModalContent();
+  assert(an['det-body'].innerHTML.includes('Send Update Request to Customer'));
+  assert(!an['det-body'].innerHTML.includes('Save Status Update'));
+  a.agentDetailMode = 'status';
+  await a.renderDetailModalContent();
+  assert(an['det-body'].innerHTML.includes('Save Status Update'));
+  assert(!an['det-body'].innerHTML.includes('Send Update Request to Customer'));
+  a.agentDetailMode = 'documents';
 
   // Exercise the application gate twice: a second click must not bypass the failure.
   const applyContext = { window: { addEventListener() {} }, document: {
@@ -125,6 +133,8 @@ function context(file) {
   assert(applyNodes['id-back-quality'].textContent.includes('passed'));
   applyContext.selectedFrontFile = { clear: true };
   assert.equal(await applyContext.validateSelectedIdQuality(), true);
+  applyContext.selectedBackFile = null;
+  assert.equal(await applyContext.validateSelectedIdQuality(), true, 'A back photo is optional');
   // A late response from an old selection must not overwrite its replacement.
   let oldResolve;
   applyContext.analyzeClientIdQuality = file => file.old
@@ -190,12 +200,19 @@ function context(file) {
   assert(photoDraft.message.includes('back'));
   assert(!photoDraft.message.includes('front'));
 
-  let printMarkup = '';
-  a.window.open = () => ({ document: { open() {}, close() {}, write: html => { printMarkup = html; } } });
-  await a.printApplicantCopy();
-  assert(printMarkup.includes('@page{size:A4'));
-  assert(printMarkup.includes('DEMO-ONLY'));
-  assert(printMarkup.includes('For PIGEM staff use only'));
+  let printExport;
+  a.document.querySelector = () => ({
+    _documentFindings: { fields: [], unclearSides: ['Front'], unavailableSides: [] },
+  });
+  a.exportPigemPdf = (report, filename, print) => { printExport = { report, filename, print }; };
+  a.printApplicantCopy();
+  assert.equal(printExport.print, true);
+  assert.equal(printExport.filename, 'PIGEM-DEMO-ONLY.pdf');
+  assert(printExport.report.note.includes('Front ID photo: text is unclear'));
+  assert(!JSON.stringify(printExport.report).includes('/fictional-front.jpg'));
+  a.downloadApplicantCopy();
+  assert.equal(printExport.print, false);
+
   const { sandbox: statusEmail } = context('web/js/api.js');
   statusEmail.apiSendEmail = async (to, subject, body, options) => ({ to, subject, body, options });
   const approved = await statusEmail.apiSendStatusEmail('demo@example.test', 'Maya', 'TEST', 'Approved');
@@ -235,5 +252,28 @@ function context(file) {
   assert.equal(accountButton.href, 'login.html');
   assert.equal(accountButton.target, undefined);
   assert.equal(customerLink.hidden, true);
+  const { sandbox: queue, nodes: queueNodes } = context('web/js/agent.js');
+  queueNodes['agent-cards-box'] = {};
+  queueNodes['q-filter'] = { value: 'Demo' };
+  queue.currentAgent = { username: 'agent' };
+  queue.isAssignedToStaff = (assigned, user) => assigned === user.username;
+  queue.statusBadge = status => status;
+  queue.allApps = [
+    { id: 'shared', full_name: 'Demo Shared', reference_no: 'REF-SHARED', status: 'Pending Review' },
+    { id: 'claimed', full_name: 'Demo Claimed', reference_no: 'REF-CLAIMED', status: 'Under Agent Review', assigned_agent: 'agent' },
+  ];
+  queue.activeBranch = 'queue';
+  queue.renderAgentCards();
+  assert(queueNodes['agent-cards-box'].innerHTML.includes('<summary><strong>Demo Shared'));
+  assert(queueNodes['agent-cards-box'].innerHTML.includes('>Claim</button>'));
+  assert(!queueNodes['agent-cards-box'].innerHTML.includes('<select'));
+  let prompt;
+  queue.openPopup = html => { prompt = html; };
+  queue.confirmAgentClaim('shared');
+  assert(prompt.includes('Check documents first') && prompt.includes('Yes, claim'));
+  queue.activeBranch = 'claimed';
+  queue.renderAgentCards();
+  assert(queueNodes['agent-cards-box'].innerHTML.includes('<option value="correction">Needs correction'));
+  assert(!queueNodes['agent-cards-box'].innerHTML.includes('REF-SHARED'));
   console.log('PASS: quality blocking and replacement races, automatic checks, plain staff labels, corrections, notifications and reports');
 })().catch(error => { console.error(error); process.exitCode = 1; });
