@@ -100,7 +100,7 @@ function context(file) {
     'Agent-visible text must use plain labels');
   const previewMarkup = an['det-body'].innerHTML;
   assert(!previewMarkup.includes('View adjusted photo'));
-  assert(!previewMarkup.includes('Application copy'), 'No fake copy controls before a resubmission');
+  assert(previewMarkup.includes('Original copy · No resubmissions yet'));
   assert(previewMarkup.indexOf('Screening recommendation') < previewMarkup.indexOf('Valid ID Photos'));
   assert(previewMarkup.indexOf('Valid ID Photos') < previewMarkup.indexOf('Applicant Details'));
   assert(!previewMarkup.includes('Send Update Request to Customer'));
@@ -276,7 +276,8 @@ function context(file) {
   });
   assert.deepEqual(Array.from(numberDraft.fields), ['id_number']);
   assert(numberDraft.message.includes('ID number'));
-  const photoDraft = reader.getFindingCorrectionDraft({ fields: [], unclearSides: ['Back'] });
+  assert.equal(reader.getFindingCorrectionDraft({ fields: [], unclearSides: ['Back'] }), null);
+  const photoDraft = reader.getFindingCorrectionDraft({ fields: [], unclearSides: ['Back'], photoIssues: ['Back photo: The photo is too dark.'] });
   assert.deepEqual(Array.from(photoDraft.fields), ['id_photo']);
   assert.deepEqual(Array.from(photoDraft.sides), ['back']);
   assert(photoDraft.message.includes('back'));
@@ -296,7 +297,7 @@ function context(file) {
   assert.equal(printExport.print, false);
 
   const original = { full_name: 'Original Name', id_image_url: '/first-id.jpg' };
-  assert.equal(a.renderAgentSubmissionPicker({ original_submission: original }), '');
+  assert(a.renderAgentSubmissionPicker({ original_submission: original }).includes('No resubmissions yet'));
   const first = { full_name: 'First Correction', id_image_url: '/second-id.jpg', submitted_at: '2026-11-16T01:00:00Z', previous_submissions: [] };
   const second = { full_name: 'Second Correction', id_image_url: '/third-id.jpg', submitted_at: '2026-11-16T02:00:00Z', previous_submissions: c.previousCustomerSubmissions(first) };
   const latest = { full_name: 'Third Correction', id_image_url: '/fourth-id.jpg', submitted_at: '2026-11-16T03:00:00Z', previous_submissions: c.previousCustomerSubmissions(second) };

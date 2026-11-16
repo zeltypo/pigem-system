@@ -524,7 +524,7 @@ function renderAgentCards() {
       '<summary aria-controls="queue-details-' + id + '"><strong>' + escapeHtml(app.full_name) + '</strong><span>' + escapeHtml(app.reference_no) + '</span></summary></details>' +
       '<div class="agent-queue-header-action">' + control + '</div></div>' +
       '<div class="agent-queue-details" id="queue-details-' + id + '">' +
-        '<div class="agent-screening-note"><b>Screening recommendation</b><div role="status" id="check-note-' + id + '">' + getScreeningQuickSummary(app) + '</div></div>' +
+        '<div class="agent-screening-note"><b>Screening recommendation</b><div class="small muted">Review the findings before sending a correction request.</div><div role="status" id="check-note-' + id + '">' + getScreeningQuickSummary(app) + '</div></div>' +
         '<p class="small muted">' + escapeHtml(app.plan_name || "Red Fiber Plan") + (place ? ' &bull; ' + escapeHtml(place) : '') +
           ' &bull; Submitted ' + escapeHtml(formatDate(app.created_at)) + '</p>' +
         '<div class="agent-queue-controls">' + statusBadge(app.status) +
@@ -1310,9 +1310,15 @@ function getFindingCorrectionDraft(result) {
     if (preset) return { fields: [field.key], message: preset.msg };
   }
   if (differences.length > 1) return null;
-  if (!result.unclearSides.length) return null;
-  var sides = result.unclearSides.join(" and ").toLowerCase();
-  return { fields: ["id_photo"], sides: result.unclearSides.map(function (side) { return side.toLowerCase(); }), message: "Hello! Please upload a clearer photo of the " + sides +
+  // Unreadable text alone can be caused by the reader or the ID layout.
+  var poorPhotos = result.unclearSides.filter(function (side) {
+    return (result.photoIssues || []).some(function (issue) {
+      return issue.startsWith(side + " photo:") && /looks blurry|too dark|washed out/i.test(issue);
+    });
+  });
+  if (!poorPhotos.length) return null;
+  var sides = poorPhotos.join(" and ").toLowerCase();
+  return { fields: ["id_photo"], sides: poorPhotos.map(function (side) { return side.toLowerCase(); }), message: "Hello! Please upload a clearer photo of the " + sides +
     " of your ID in your account. Make sure the printed details are readable." };
 }
 
@@ -1430,13 +1436,13 @@ async function renderDetailModalContent(updateResultsOnly) {
       '</div>';
   var recommendation = '<section id="document-check-results">' +
       ((frontIdPhotoUrl || idBackPhotoUrl)
-        ? '<div class="agent-screening-note"><b>Screening recommendation</b>' +
+        ? '<div class="agent-screening-note"><b>Screening recommendation</b><div class="small muted">Review the findings before sending a correction request.</div>' +
           '<div class="small" data-id-text-result role="status" style="white-space:pre-wrap; overflow-wrap:anywhere" data-front="' + escapeHtml(frontIdPhotoUrl) +
           '" data-back="' + escapeHtml(idBackPhotoUrl) + '" data-name="' + escapeHtml(viewData.full_name || app.full_name || "") +
           '" data-birth="' + escapeHtml(viewData.birth_date || "") + '" data-number="' + escapeHtml(viewData.id_number || "") +
           '" data-type="' + escapeHtml(viewData.id_type || app.id_type || "") +
           '">Checking the ID photos…</div></div>'
-        : '<div class="agent-screening-note"><b>Screening recommendation</b><div>No ID photo was uploaded.</div></div>');
+        : '<div class="agent-screening-note"><b>Screening recommendation</b><div class="small muted">Review the findings before sending a correction request.</div><div>No ID photo was uploaded.</div></div>');
 
   if (dupCheck.isDup) recommendation += '<p class="notice warn">' + escapeHtml(dupCheck.reason) + '</p>';
   recommendation += "</section>";
@@ -1766,7 +1772,7 @@ async function saveAgentDecision(newStatus) {
 
 function getAgentSubmissionCopies(app) {
   var latest = app.corrected_copy;
-  if (!latest || !latest.submitted_at) return [];
+  if (!latest || !latest.submitted_at) return [{ key: "latest", label: "Original copy", data: app }];
   var earlier = Array.isArray(latest.previous_submissions) ? latest.previous_submissions : [];
   var copies = earlier.map(function (snapshot, index) {
     return { key: "correction-" + index, label: "Resubmission " + (index + 1) + " · " + formatDate(snapshot.submitted_at), data: snapshot };
@@ -1782,7 +1788,9 @@ function getAgentSubmissionCopies(app) {
 
 function renderAgentSubmissionPicker(app) {
   var copies = getAgentSubmissionCopies(app);
-  if (copies.length < 2) return "";
+  if (copies.length === 1 && !app.corrected_copy?.submitted_at) {
+    return '<span class="small muted">Original copy · No resubmissions yet</span>';
+  }
   var buttons = copies.filter(function (copy) { return copy.key === "latest" || copy.key === "original"; });
   var earlier = copies.filter(function (copy) { return copy.key !== "latest" && copy.key !== "original"; });
   return '<div class="agent-copy-controls" role="group" aria-label="Application copy">' +

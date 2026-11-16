@@ -1533,10 +1533,6 @@ async function submitRegistration() {
     }
 
     advanceLoadingStep(2);
-    var accountInfo = await dbCreateAccountFromApplication(fullName, email);
-    var appFolder = "applications/" + (accountInfo.user.id || "public") + "/original";
-    var frontPath = await dbUploadDocument(selectedFrontFile, appFolder, "id-front");
-    var backPath = await dbUploadDocument(selectedBackFile, appFolder, "id-back");
 
     var screening = {
       preliminary: true,
@@ -1604,7 +1600,6 @@ async function submitRegistration() {
       landmark: document.getElementById("landmark").value.trim()
     };
 
-    advanceLoadingStep(3);
     var latNum = parseFloat(document.getElementById("lat").value);
     var lngNum = parseFloat(document.getElementById("lng").value);
     var dupCheck = typeof dbFindDuplicateCustomerApplication === "function"
@@ -1616,6 +1611,32 @@ async function submitRegistration() {
         }))
       : { isDuplicate: false };
 
+    if (dupCheck && dupCheck.isDuplicate) {
+      if (loadingScreen) loadingScreen.hidden = true;
+      var existing = dupCheck.existingApp;
+      if (existing && existing.status === "Needs Correction" &&
+          String(existing.email || "").trim().toLowerCase() === email.trim().toLowerCase()) {
+        openPopup('<div class="center"><h3>Your application needs a correction</h3>' +
+          '<p>Application <b>' + escapeHtml(dupCheck.existingRef) + '</b> is waiting for your update.</p>' +
+          '<p>Open your account and correct that application. You do not need to submit a new one.</p>' +
+          '<a class="btn btn-red" href="customer.html">Open my applications</a></div>',
+          { showCloseX: true, closeOnBackdrop: true });
+        return;
+      }
+      openPopup('<div class="center"><h3>Application already on file</h3>' +
+        '<p>We found an existing application that may match this submission.</p>' +
+        '<p>Check your applications or contact PIGEM if you think this is a mistake.</p>' +
+        '<a class="btn btn-red" href="customer.html">Open my applications</a></div>',
+        { showCloseX: true, closeOnBackdrop: true });
+      return;
+    }
+
+    var accountInfo = await dbCreateAccountFromApplication(fullName, email);
+    var appFolder = "applications/" + (accountInfo.user.id || "public") + "/original";
+    var frontPath = await dbUploadDocument(selectedFrontFile, appFolder, "id-front");
+    var backPath = await dbUploadDocument(selectedBackFile, appFolder, "id-back");
+
+    advanceLoadingStep(3);
     var baseAppPayload = Object.assign({}, addrData, {
       customer_id: accountInfo.user.id,
       agent_id: referralAgentId,
@@ -1644,61 +1665,6 @@ async function submitRegistration() {
       screening: screening
     });
 
-    if (dupCheck && dupCheck.isDuplicate) {
-      var existing = dupCheck.existingApp;
-      if (existing && existing.status === "Needs Correction" &&
-          String(existing.email || "").trim().toLowerCase() === email.trim().toLowerCase()) {
-        openPopup('<div class="center"><h3>Your application needs a correction</h3>' +
-          '<p>Application <b>' + escapeHtml(dupCheck.existingRef) + '</b> is waiting for your update.</p>' +
-          '<p>Open your account and correct that application. You do not need to submit a new one.</p>' +
-          '<a class="btn btn-red" href="customer.html">Open my applications</a></div>',
-          { showCloseX: true, closeOnBackdrop: true });
-        return;
-      }
-      var rejectedSaved = await dbCreateApplication(Object.assign({}, baseAppPayload, {
-        status: "Rejected",
-        provider_remarks: dupCheck.reason,
-        customer_instruction: "Auto-Rejected: " + dupCheck.reason
-      }));
-      await dbAddNotification({
-        user_id: accountInfo.user.id,
-        email: email,
-        subject: "Application Auto-Rejected (Duplicate) - " + rejectedSaved.ref_no,
-        body: dupCheck.reason,
-        target_tab: "tab-apps",
-        target_id: rejectedSaved.id
-      });
-      await dbAddNotification({
-        role: "agent",
-        subject: "Duplicate Application Auto-Rejected - " + rejectedSaved.ref_no,
-        body: fullName + " (" + email + ") auto-rejected: " + dupCheck.reason,
-        target_tab: "tab-queue",
-        target_id: rejectedSaved.id
-      });
-      if (typeof apiSendStatusEmail === "function") {
-        await apiSendStatusEmail(email, fullName, rejectedSaved.ref_no, "Rejected", dupCheck.reason);
-      }
-      await dbAddActivity("application_auto_rejected_duplicate", rejectedSaved.ref_no + " (" + email + ")");
-      for (var dk = 1; dk <= 3; dk++) {
-        var dItem = document.getElementById("step-ld-" + dk);
-        if (dItem) {
-          dItem.className = "reg-step-item done";
-          dItem.querySelector(".reg-step-icon").innerHTML = "&#10003;";
-        }
-      }
-      openPopup(
-        '<div class="center">' +
-          '<h3 style="color:#b42318;">Application Auto-Rejected</h3>' +
-          '<p class="small muted mt">Reference Number: <b>' + escapeHtml(rejectedSaved.ref_no) + '</b></p>' +
-          '<div class="notice mt" style="text-align:left;line-height:1.6;border-color:#fca5a5;background:#fef2f2;color:#991b1b;">' +
-            '<b>Reason:</b> ' + escapeHtml(dupCheck.reason) +
-          '</div>' +
-          '<p class="small muted mt">Click outside or press X to return to Step 1.</p>' +
-        '</div>',
-        { showCloseX: true, closeOnBackdrop: true, onClose: resetApplyWizardToStep1 }
-      );
-      return;
-    }
 
     var saved = await dbCreateApplication(baseAppPayload);
 
