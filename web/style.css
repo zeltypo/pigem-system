@@ -1986,3 +1986,20 @@ textarea.input-invalid {
 .queue-tone-red { border-inline-start-color: #c8102e; }
 .queue-color-help { margin-bottom: 12px; }
 .queue-color-help summary { cursor: pointer; width: fit-content; }
+
+.back-to-top {
+  position: fixed;
+  inset-inline-end: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 49;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 21px;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 22%);
+}
+.back-to-top[hidden] { display: none; }
+@media (min-width: 641px) {
+  .back-to-top-phone-only { display: none; }
+}
