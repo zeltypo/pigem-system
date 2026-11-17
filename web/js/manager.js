@@ -29,10 +29,23 @@ window.openDashTabById = function (tabId, targetId) {
 };
 
 async function checkMgrScreeningService() {
-  isMgrScreeningOnline = false;
   var banner = document.getElementById("mgr-screening-banner");
-  if (banner) banner.classList.remove("hidden");
-  return false;
+  if (typeof isAiEnabled === "function" && !isAiEnabled()) {
+    isMgrScreeningOnline = false;
+    if (banner) banner.classList.remove("hidden");
+    return false;
+  }
+  if (typeof apiCheckHealth === "function") {
+    var health = await apiCheckHealth();
+    if (!health || health.status !== "ok" || health.auto_screening_ready === false) {
+      isMgrScreeningOnline = false;
+      if (banner) banner.classList.remove("hidden");
+      return false;
+    }
+  }
+  isMgrScreeningOnline = true;
+  if (banner) banner.classList.add("hidden");
+  return true;
 }
 
 function isMgrScreeningActive(app) {

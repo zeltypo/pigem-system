@@ -444,13 +444,16 @@ async function startRecoveryVerification() {
     _recoveryState.channel = "email";
     _recoveryState.remainingSec = 300;
 
-    await apiSendOtpEmail(
+    var mailRes = await apiSendOtpEmail(
       info.email,
       info.code,
       "recover your " + _recoveryState.tab,
       info.fullName,
       info.refTag
     );
+    if (!mailRes || mailRes.sent !== true) {
+      throw new Error((mailRes && mailRes.reason) || "Verification email could not be sent right now.");
+    }
     renderRecoveryOtpPinModal();
   } catch (err) {
     if (btn) {
@@ -561,17 +564,21 @@ async function resendRecoveryOtpCode() {
     var info = await dbFindAccountForRecovery(_recoveryState.account.email, _recoveryState.tab);
     _recoveryState.account = info;
     _recoveryState.remainingSec = 300;
-    await apiSendOtpEmail(
+    var mailRes = await apiSendOtpEmail(
       info.email,
       info.code,
       "recover your " + _recoveryState.tab,
       info.fullName,
       info.refTag
     );
+    if (!mailRes || mailRes.sent !== true) {
+      throw new Error((mailRes && mailRes.reason) || "Verification email could not be sent right now.");
+    }
     renderRecoveryOtpPinModal();
   } catch (err) {
     if (box) {
-      box.innerHTML = '<a href="#" class="resend-otp-link" onclick="resendRecoveryOtpCode(); return false;">Resend OTP</a>';
+      box.innerHTML = '<div class="field-error" style="text-align:center;margin-bottom:4px;">' + escapeHtml(err.message || "Could not resend verification code.") + '</div>' +
+        '<a href="#" class="resend-otp-link" onclick="resendRecoveryOtpCode(); return false;">Resend OTP</a>';
     }
   }
 }

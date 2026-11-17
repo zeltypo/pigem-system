@@ -22,7 +22,15 @@ if (!IS_DEMO_MODE && window.supabase) {
 }
 
 function generateSessionToken() {
-  return "sess-" + Date.now() + "-" + Math.random().toString(36).slice(2, 12);
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+      var bytes = new Uint8Array(24);
+      crypto.getRandomValues(bytes);
+      var hex = Array.from(bytes).map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+      return "sess-" + hex;
+    }
+  } catch (e) {}
+  return "sess-" + Date.now() + "-" + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
 }
 
 function parsePasswordHistory(raw) {
@@ -710,15 +718,29 @@ async function dbResetPassword(email) {
 
 async function dbGetToken() {
   if (IS_DEMO_MODE) return "";
-  var res = await supabaseClient.auth.getSession();
-  var session = res.data.session;
-  if (session && SYSTEM === "staff") {
-    var role = session.user && session.user.app_metadata && session.user.app_metadata.role;
-    var currentUser = await dbGetCurrentUser();
-    if (!currentUser || currentUser.role !== role ||
-        String(currentUser.email || "").toLowerCase() !== String(session.user.email || "").toLowerCase()) return "";
+  if (supabaseClient && supabaseClient.auth) {
+    try {
+      var res = await supabaseClient.auth.getSession();
+      var session = res && res.data ? res.data.session : null;
+      if (session && session.access_token) {
+        if (SYSTEM === "staff") {
+          var role = session.user && session.user.app_metadata && session.user.app_metadata.role;
+          var currentUser = await dbGetCurrentUser();
+          if (currentUser && currentUser.role === role &&
+              String(currentUser.email || "").toLowerCase() === String(session.user.email || "").toLowerCase()) {
+            return session.access_token;
+          }
+        } else {
+          return session.access_token;
+        }
+      }
+    } catch (e) {}
   }
-  return session ? session.access_token : "";
+  var pair = getActiveSessionPair(window.PORTAL_ALLOWED_ROLES || null);
+  if (pair && pair.id && pair.tok) {
+    return "staff:" + pair.id + ":" + pair.tok;
+  }
+  return "";
 }
 
 async function checkPageAccess(allowedRoles) {

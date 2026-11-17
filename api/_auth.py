@@ -21,36 +21,41 @@ class BaseTokenVerifier:
 class SupabaseTokenVerifier(BaseTokenVerifier):
 
     _BEARER_REGEX = re.compile(r"^Bearer\s+([A-Za-z0-9._\-]+)$", re.IGNORECASE)
+    _STAFF_REGEX = re.compile(r"^Bearer\s+staff:([A-Za-z0-9._\-]+):([A-Za-z0-9._\-]+)$", re.IGNORECASE)
+
+    def _clean_env(self, name: str, default: str = "") -> str:
+        raw = (getenv(name) or default).strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
+            raw = raw[1:-1].strip()
+        return raw
 
     def _get_credentials(self) -> tuple:
-
-        url = (getenv("SUPABASE_URL") or "").strip().rstrip("/")
-
-        key = (getenv("SUPABASE_ANON_KEY") or "").strip()
-
+        url = self._clean_env("SUPABASE_URL").rstrip("/")
+        key = self._clean_env("SUPABASE_ANON_KEY")
         return url, key
 
     def is_configured(self) -> bool:
-
         url, key = self._get_credentials()
-
         return bool(url and key)
 
     def is_recaptcha_configured(self) -> bool:
-        secret = (getenv("RECAPTCHA_SECRET_KEY") or "6Lcj2iQuAAAAAM4POqrE5vg0KYT3YISUBM2RXomY").strip()
+        secret = self._clean_env("RECAPTCHA_SECRET_KEY", "6Lcj2iQuAAAAAM4POqrE5vg0KYT3YISUBM2RXomY")
         return bool(secret)
 
     def verify_header(self, authorization: str) -> dict:
-
         if not self.is_configured():
-
             return {"demo": True}
-
         header_text = (authorization or "").strip()
-
         if not header_text:
-
             return {"public": True}
+
+        staff_match = self._STAFF_REGEX.match(header_text)
+        if staff_match:
+            url, key = self._get_credentials()
+            try:
+                return _access._verify_staff_db_session(url, key, staff_match.group(1), staff_match.group(2))
+            except Exception:
+                return {"public": True}
 
         match = self._BEARER_REGEX.match(header_text)
 
@@ -91,7 +96,7 @@ class SupabaseTokenVerifier(BaseTokenVerifier):
         if not clean_token:
             return {"verified": False, "reason": "Missing CAPTCHA verification token."}
 
-        secret = (getenv("RECAPTCHA_SECRET_KEY") or "6Lcj2iQuAAAAAM4POqrE5vg0KYT3YISUBM2RXomY").strip()
+        secret = self._clean_env("RECAPTCHA_SECRET_KEY", "6Lcj2iQuAAAAAM4POqrE5vg0KYT3YISUBM2RXomY")
         if not secret:
             return {"verified": True, "warning": "RECAPTCHA_SECRET_KEY is not configured on server."}
 

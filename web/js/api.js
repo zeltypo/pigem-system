@@ -158,7 +158,17 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
       body: formData
     });
 
-    if (!response.ok) return offlineResult;
+    if (!response.ok) {
+      var errDetail = "";
+      try {
+        var errJson = await response.json();
+        errDetail = errJson.detail || errJson.reason || "";
+      } catch (e) {}
+      return Object.assign({}, offlineResult, {
+        api_error: errDetail || ("HTTP " + response.status),
+        status_code: response.status
+      });
+    }
     var data = await response.json();
     var q = data.quality || {};
     var notes = data.ai || {};
@@ -540,27 +550,10 @@ function documentCheckUnavailable(id) {
   return automaticDocumentFailures[id] === true;
 }
 async function checkPendingDocuments(applications, onComplete) {
-  if (automaticDocumentChecksRunning || !isAiEnabled()) return;
-  automaticDocumentChecksRunning = true;
-  try {
-    for (var application of applications) {
-      var state = (application.screening || {}).state;
-      if (!["Pending Review", "Under Agent Review"].includes(application.status)) continue;
-      if (!["pending_agent", "queued", "checking", "unavailable", "paused", undefined].includes(state)) continue;
-      var key = application.id + "|" + (application.updated_at || application.created_at || "");
-      var attempt = automaticDocumentAttempts[key] || { count: 0, next: 0 };
-      if (attempt.count >= 3 || Date.now() < attempt.next) continue;
-      attempt.count++;
-      attempt.next = Date.now() + 60000;
-      automaticDocumentAttempts[key] = attempt;
-      var result = await apiStartBackgroundScreening(application.id);
-      automaticDocumentFailures[application.id] = !result || (!result.screened && !result.queued);
-      if (result && result.screened || automaticDocumentFailures[application.id]) await onComplete(application.id);
-      if (result && (result.status === 401 || result.status === 403)) break;
-    }
-  } finally {
-    automaticDocumentChecksRunning = false;
-  }
+  // Screening now runs live on demand via browser OpenCV + POST /api/screen
+  // when an Agent opens or inspects an application. Avoid calling /api/screen-async
+  // in a background loop, which previously flagged pending apps as failed.
+  return;
 }
 
 async function showSelectedPhotoQuality(input) {

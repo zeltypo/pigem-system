@@ -592,7 +592,11 @@ async function sendProfilePwOtp() {
   if (!dashCurrentUser) return;
   try {
     var code = await dbStartPasswordReset(dashCurrentUser.email);
-    await apiSendOtpEmail(dashCurrentUser.email, code, "Password Change Verification");
+    var mailRes = await apiSendOtpEmail(dashCurrentUser.email, code, "Password Change Verification");
+    if (!mailRes || mailRes.sent !== true) {
+      showMsg("prof-pw-msg", "error", "Could not send verification code: " + ((mailRes && mailRes.reason) || "Email service unavailable."));
+      return;
+    }
     document.getElementById("prof-pw-step2").classList.remove("hidden");
     showMsg("prof-pw-msg", "info", "Verification code sent to your email. Please check your inbox or spam folder.");
   } catch (err) {

@@ -1675,7 +1675,8 @@ async function performApplicationSubmission() {
     await dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body, target_tab: "tab-apps", target_id: saved.id });
     await dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no, target_tab: "tab-queue", target_id: saved.id });
     await dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")", target_tab: "tab-queue", target_id: saved.id });
-    await apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);
+    var confMailRes = await apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);
+    var confMailSent = Boolean(confMailRes && confMailRes.sent);
     if (photoRequest) {
 
       try {
@@ -1696,6 +1697,8 @@ async function performApplicationSubmission() {
     }
 
     var isAlreadyActive = accountInfo.status === "active";
+    var actCode = (accountInfo && accountInfo.code) ? String(accountInfo.code) : "";
+    var actHref = "activate.html?email=" + encodeURIComponent(email) + (actCode ? "&code=" + encodeURIComponent(actCode) : "");
 
     openPopup(
       '<div class="center">' +
@@ -1708,7 +1711,9 @@ async function performApplicationSubmission() {
           'Customer Email: <b>' + escapeHtml(email) + '</b><br>' +
           (isAlreadyActive
             ? 'Your Customer Account is already active. You may sign in anytime to track your application.'
-            : 'We emailed your one-time activation link to <b>' + escapeHtml(email) + '</b>. Please check your Gmail inbox to create your own username and password and activate your Customer Account.') +
+            : (confMailSent
+              ? 'We emailed your one-time activation link to <b>' + escapeHtml(email) + '</b>. Please check your Gmail inbox to create your own username and password and activate your Customer Account.'
+              : 'Your application is saved, though confirmation email delivery had a hiccup (' + escapeHtml((confMailRes && confMailRes.reason) || "SMTP unavailable") + '). Use your one-time activation code <b>' + escapeHtml(actCode) + '</b> or click <a href="' + escapeHtml(actHref) + '" style="color:#c8102e;font-weight:700;">Activate Account Now</a>.')) +
         '</div>' +
         '<p class="small muted mt">Click outside or press X to return to Step 1.</p>' +
       '</div>',

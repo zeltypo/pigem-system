@@ -48,10 +48,23 @@ var FIELD_SUMMARY_LABELS = {
 };
 
 async function checkAgentScreeningService() {
-  isScreeningServiceOnline = false;
   var banner = document.getElementById("agent-screening-banner");
-  if (banner) banner.classList.remove("hidden");
-  return false;
+  if (typeof isAiEnabled === "function" && !isAiEnabled()) {
+    isScreeningServiceOnline = false;
+    if (banner) banner.classList.remove("hidden");
+    return false;
+  }
+  if (typeof apiCheckHealth === "function") {
+    var health = await apiCheckHealth();
+    if (!health || health.status !== "ok" || health.auto_screening_ready === false) {
+      isScreeningServiceOnline = false;
+      if (banner) banner.classList.remove("hidden");
+      return false;
+    }
+  }
+  isScreeningServiceOnline = true;
+  if (banner) banner.classList.add("hidden");
+  return true;
 }
 
 var VALIDATOR_PRESETS = [
@@ -1127,7 +1140,7 @@ async function collectAgentIdFindings(sources, expected, job) {
         id_number: expected.number || "",
         id_back: backUpload
       }, backUpload),
-      45000
+      65000
     );
 
     if (!screenData || screenData.status === "offline" || !(screenData.ocr && screenData.ocr.available)) {
@@ -1140,6 +1153,7 @@ async function collectAgentIdFindings(sources, expected, job) {
         unclearSides: unclearSides,
         unavailableSides: unavailableSides,
         failedReads: ["IDP service"],
+        apiError: (screenData && screenData.api_error) || "",
         duplicatePhotos: duplicatePhotos,
         photoIssues: photoIssues
       };
@@ -1266,6 +1280,9 @@ async function runAgentIdCheckNow(sources, expected) {
 function summarizeAgentIdFindings(result) {
   if (result.offline) return "Connection lost. Document checking will resume when you are online.";
   if (result.unavailableSides?.length || result.failedReads?.length) {
+    if (result.apiError) {
+      return "Document check service error (" + result.apiError + "). Original photos remain ready for manual verification.";
+    }
     return "Document check incomplete. Configure AZURE_DI_ENDPOINT and AZURE_DI_KEY (or check connection) and reopen the application. No correction is recommended from this incomplete check.";
   }
   if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
@@ -1370,6 +1387,7 @@ async function saveAgentFindings(app, result) {
     var reviewRec = result.aiRecommendation ? (result.aiRecommendation !== "approve") : !allMatched;
     var screening = Object.assign({}, app.screening, {
       state: "completed",
+      fallback_original_only: false,
       summary: summaryText,
       review_recommended: reviewRec,
       Suggested_remark: result.suggestedPoliteRemark || "",

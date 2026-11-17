@@ -1,4 +1,5 @@
 """Step 2 (IDP Extraction): Azure AI Document Intelligence, Nanonets OCR-3 / ID Analyzer, with GPT-5.4 IDP fallback."""
+from concurrent.futures import ThreadPoolExecutor
 import base64
 import json
 import os
@@ -10,38 +11,42 @@ import httpx
 import _openai_client
 
 
+def _clean_env(name: str) -> str:
+    raw = (os.getenv(name) or "").strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
+        raw = raw[1:-1].strip()
+    return raw
+
+
 def _azure_endpoint() -> str:
     return (
-        os.getenv("AZURE_DI_ENDPOINT")
-        or os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
-        or os.getenv("AZURE_FORM_RECOGNIZER_ENDPOINT")
-        or ""
-    ).strip().rstrip("/")
+        _clean_env("AZURE_DI_ENDPOINT")
+        or _clean_env("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
+        or _clean_env("AZURE_FORM_RECOGNIZER_ENDPOINT")
+    ).rstrip("/")
 
 
 def _azure_key() -> str:
     return (
-        os.getenv("AZURE_DI_KEY")
-        or os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
-        or os.getenv("AZURE_FORM_RECOGNIZER_KEY")
-        or ""
-    ).strip()
+        _clean_env("AZURE_DI_KEY")
+        or _clean_env("AZURE_DOCUMENT_INTELLIGENCE_KEY")
+        or _clean_env("AZURE_FORM_RECOGNIZER_KEY")
+    )
 
 
 def _nanonets_key() -> str:
-    return (os.getenv("NANONETS_API_KEY") or "").strip()
+    return _clean_env("NANONETS_API_KEY")
 
 
 def _nanonets_model() -> str:
-    return (os.getenv("NANONETS_MODEL_ID") or "").strip()
+    return _clean_env("NANONETS_MODEL_ID")
 
 
 def _id_analyzer_key() -> str:
     return (
-        os.getenv("ID_ANALYZER_API_KEY")
-        or os.getenv("IDANALYZER_API_KEY")
-        or ""
-    ).strip()
+        _clean_env("ID_ANALYZER_API_KEY")
+        or _clean_env("IDANALYZER_API_KEY")
+    )
 
 
 def is_configured() -> bool:
@@ -185,7 +190,7 @@ def _analyze_bytes_azure(image_bytes: bytes) -> Optional[Dict[str, Any]]:
         poll_headers = {"Ocp-Apim-Subscription-Key": key}
         deadline = time.time() + 24.0
         while time.time() < deadline:
-            time.sleep(0.9)
+            time.sleep(0.5)
             try:
                 poll_resp = client.get(op_location, headers=poll_headers)
                 if poll_resp.status_code != 200:
@@ -653,13 +658,23 @@ def extract_id_document(
     used_provider = provider_name()
 
     if _azure_endpoint() and _azure_key():
-        raw_front = _analyze_bytes_azure(front_bytes)
-        if raw_front:
-            front_parsed = _parse_azure_analyze_result(raw_front)
         if back_bytes:
-            raw_back = _analyze_bytes_azure(back_bytes)
-            if raw_back:
-                back_parsed = _parse_azure_analyze_result(raw_back)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                fut_front = pool.submit(_analyze_bytes_azure, front_bytes)
+                fut_back = pool.submit(_analyze_bytes_azure, back_bytes)
+                raw_front = fut_front.result()
+                raw_back = fut_back.result()
+        else:
+            raw_front = _analyze_bytes_azure(front_bytes)
+            raw_back = None
+        if raw_front:
+            candidate_front = _parse_azure_analyze_result(raw_front)
+            if candidate_front.get("lines") or candidate_front.get("full_name") or candidate_front.get("id_number"):
+                front_parsed = candidate_front
+        if raw_back:
+            candidate_back = _parse_azure_analyze_result(raw_back)
+            if candidate_back.get("lines") or candidate_back.get("full_name") or candidate_back.get("id_number"):
+                back_parsed = candidate_back
 
     if not front_parsed and _nanonets_key():
         front_parsed = _analyze_bytes_nanonets(front_bytes)
