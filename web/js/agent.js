@@ -500,9 +500,7 @@ function isAgentClaimable(app) {
 function getAgentQueueTone(app) {
   if (app.status === "Needs Correction" || app.status === "Rejected") return "red";
   var check = getAgentAppIdCheck(app, true)?.result;
-  if (check?.fields.length && check.fields.every(function (field) { return field.status === "match"; }) &&
-      !check.unclearSides.length && !check.unavailableSides.length && !check.failedReads?.length &&
-      !check.duplicatePhotos && !check.detectedOtherType) return "green";
+  if (check && agentFindingsReadyForReview(check)) return "green";
   if (check || app.screening?.upload_photo_warning) return "yellow";
   return "neutral";
 }
@@ -961,7 +959,7 @@ async function enhanceAgentIdPhoto(photo, cv) {
     var sharpened = mat();
     cv.cvtColor(image, gray, cv.COLOR_RGBA2GRAY);
     var corners = findAgentIdCorners(gray, cv);
-    var source = gray;
+    var color = image;
     if (corners) {
       var w = corners.width;
       var h = corners.height;
@@ -970,9 +968,11 @@ async function enhanceAgentIdPhoto(photo, cv) {
       mats.push(originalPoints, outputPoints);
       var transform = cv.getPerspectiveTransform(originalPoints, outputPoints);
       mats.push(transform);
-      source = mat();
-      cv.warpPerspective(gray, source, transform, new cv.Size(w, h));
+      color = mat();
+      cv.warpPerspective(image, color, transform, new cv.Size(w, h));
+      cv.cvtColor(color, gray, cv.COLOR_RGBA2GRAY);
     }
+    var source = gray;
     var meanLight = cv.mean(source)[0];
     var adjustedLight = meanLight < 105 || meanLight > 205;
     if (adjustedLight) {
@@ -991,7 +991,17 @@ async function enhanceAgentIdPhoto(photo, cv) {
     clahe.apply(source, contrast);
     cv.GaussianBlur(contrast, soft, new cv.Size(3, 3), 0);
     cv.addWeighted(contrast, 1.23, soft, -0.23, 0, sharpened);
-    cv.imshow(canvas, sharpened);
+    var originalLight = gray.data;
+    var enhancedLight = sharpened.data;
+    var pixels = color.data;
+    for (var i = 0, pixel = 0; i < originalLight.length; i++, pixel += 4) {
+      var adjustment = enhancedLight[i] - originalLight[i];
+      for (var channel = 0; channel < 3; channel++) {
+        var index = pixel + channel;
+        pixels[index] = Math.max(0, Math.min(255, pixels[index] + adjustment));
+      }
+    }
+    cv.imshow(canvas, color);
     var cleanedBlob = await new Promise(function (resolve) {
       if (typeof canvas.toBlob === "function") {
         canvas.toBlob(function (b) { resolve(b); }, "image/jpeg", 0.92);
@@ -1051,13 +1061,13 @@ async function showAgentPreparedPhoto(container) {
 
   if (!container.isConnected) return;
   if (!prepared) {
-    status.textContent = "Original photo shown. OpenCV pre-processing is unavailable.";
+    status.textContent = "Original photo shown. The server can still prepare it for screening.";
     return;
   }
   image.src = prepared.canvas.toDataURL("image/jpeg", 0.9);
   status.textContent = prepared.cropped
-    ? "Step 1 OpenCV: Auto-cropped, straightened (deskewed), and contrast-enhanced."
-    : "Step 1 OpenCV: Contrast-enhanced (full frame preserved).";
+    ? "Cropped and straightened. Contrast enhanced with color preserved."
+    : "Contrast enhanced. The full photo is shown because the card edges could not be verified.";
 }
 
 var agentDocumentTypes = [
@@ -1317,6 +1327,16 @@ async function runAgentIdCheckNow(sources, expected) {
   }
 }
 
+function agentFindingsReadyForReview(result) {
+  return !result.failed && !result.unavailableSides?.length && !result.failedReads?.length &&
+    result.fields.length === 3 && result.fields.every(function (field) { return field.status === "match"; }) &&
+    !result.unclearSides?.length && !result.photoIssues?.length && !result.duplicatePhotos &&
+    !result.detectedOtherType && !result.tamperingFlags?.length &&
+    result.nlpValidation?.age_eligible !== false && !result.nlpValidation?.is_expired &&
+    result.nlpValidation?.id_format_valid !== false &&
+    (!result.aiRecommendation || result.aiRecommendation === "approve");
+}
+
 function summarizeAgentIdFindings(result) {
   if (result.uploadTooLarge) return "The ID photos are too large to send for checking. Try smaller clear copies.";
   if (result.accessDenied) return "Screening access is missing or expired. Sign in again with your screening-enabled username or ask your administrator to enable it.";
@@ -1362,10 +1382,11 @@ function summarizeAgentIdFindings(result) {
     }
     return notes.join(" ");
   }
-  if (result.fields.length === 3 && result.fields.every(function (field) { return field.status === "match"; })) {
+  if (agentFindingsReadyForReview(result)) {
     return "Name, birth date, and ID number match. Ready for Agent review.";
   }
   var unreadable = result.fields.filter(function (field) { return field.status === "unreadable"; });
+  if (!unreadable.length) return "Manual review recommended. Compare the ID with the application before proceeding.";
   if (unreadable.length === 1 && unreadable[0].key === "birth_date") {
     return "Birth date could not be verified. Check the original ID; if no date is printed, ask for an ID that shows it.";
   }
@@ -1436,8 +1457,7 @@ async function saveAgentFindings(app, result) {
       if (!latest || agentScreeningRevision(latest) !== version || !latest.updated_at) return null;
       if (getSavedAgentFindings(latest)) return latest;
       var summaryText = summarizeAgentIdFindings(result);
-      var allMatched = result.fields.length === 3 && result.fields.every(function (f) { return f.status === "match"; });
-      var reviewRec = result.aiRecommendation ? (result.aiRecommendation !== "approve") : !allMatched;
+      var reviewRec = !agentFindingsReadyForReview(result);
       var screening = Object.assign({}, latest.screening, {
         state: "completed",
         summary: summaryText,
