@@ -531,7 +531,7 @@ async function dbSignIn(identifier, password) {
       ))
     );
 
-    if (SYSTEM === "staff" && !IS_DEMO_MODE && supabaseClient) {
+    if (!IS_DEMO_MODE && supabaseClient) {
       sessionStorage.removeItem("pigem_verified_screening_token");
       try {
         var verified = await supabaseClient.rpc("pigem_screening_sign_in", {
@@ -2631,6 +2631,21 @@ async function dbCreateUserAccount(fullName, email, password, role, username) {
     if (alreadyHasAdmin) {
       throw new Error("Only one System Administrator account is permitted in the system.");
     }
+  }
+
+  if (SYSTEM === "admin" && !IS_DEMO_MODE && supabaseClient && ["agent", "manager"].includes(targetRole)) {
+    var adminToken = sessionStorage.getItem("pigem_verified_screening_token");
+    if (!adminToken) throw new Error("Sign in with your verified Admin password to create staff with screening access.");
+    var created = await supabaseClient.rpc("pigem_create_screening_staff", {
+      admin_token: adminToken,
+      staff_username: cleanUsername,
+      staff_name: fullName,
+      staff_password: password,
+      staff_role: targetRole
+    });
+    if (created.error) throw new Error(created.error.message);
+    if (!created.data?.id) throw new Error("The staff account could not be created.");
+    return created.data;
   }
 
   var users = getDemoUsers();

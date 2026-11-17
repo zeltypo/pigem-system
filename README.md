@@ -57,3 +57,13 @@ The private record controls paid screening access. Set its active flag to false
 to revoke access. The two-hour screening session is replaced by the next login
 and revoked on normal logout. Customer login and the existing staff portal
 access rules are separate from this screening permission.
+
+
+### Automatic screening enrollment
+
+For an existing database that already has the private screening tables, run
+schema-admin-enrollment.sql. A database owner runs enable-screening-admin.sql
+once for the existing Admin username and gives the generated password privately
+to that Admin. Create Agent / Manager then creates the portal account and its
+screening credentials in one transaction. Staff use the username and password
+entered on that form. Previously enrolled staff can keep their credentials.
