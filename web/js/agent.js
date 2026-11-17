@@ -1218,6 +1218,17 @@ async function collectAgentIdFindings(sources, expected, job) {
       duplicatePhotos: duplicatePhotos,
       photoIssues: photoIssues,
       detectedOtherType: detectedOtherType,
+      stages: {
+        checkId: screenData.check_id || "",
+        photoPreparation: screenData.quality?.preprocessed || null,
+        extraction: {
+          provider: ocr.provider || "",
+          frontReadable: ocr.front_readable === true,
+          backReadable: backUpload ? ocr.back_readable === true : null
+        },
+        validation: "completed",
+        messageDraft: aiObj.available === true ? "generated" : "standard"
+      },
       nlpValidation: nlpObj,
       aiRecommendation: aiObj.recommendation || "",
       aiFindings: Array.isArray(aiObj.findings) ? aiObj.findings : [],
@@ -1316,10 +1327,20 @@ function summarizeAgentIdFindings(result) {
   if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
   if (result.failed) return "The IDP screening service could not finish. Refresh and reopen the application, or check the original photos.";
   var notes = [];
-  if (result.aiRecommendation) {
-    var recLabel = result.aiRecommendation === "approve" ? "APPROVE"
-      : (result.aiRecommendation === "reject" ? "REJECT" : "MANUAL REVIEW");
-    notes.push("Recommendation: " + recLabel + ".");
+  var unclear = result.unclearSides || [];
+  var differences = result.fields.filter(function (field) { return field.status === "difference"; });
+  var labels = differences.map(function (field) { return field.label.toLowerCase(); }).join(", ");
+  if (result.nlpValidation?.age_eligible === false) {
+    notes.push("Applicant does not meet the age requirement. Confirm before deciding.");
+  } else if (unclear.length && differences.length) {
+    notes.push("Some ID text is unreadable. Review the readable differences (" + labels + ") and request a clearer photo first.");
+  } else if (unclear.length) {
+    notes.push("ID text is unreadable. Check the marked photo before comparing details.");
+  } else if (differences.length) {
+    notes.push("Details to review: " + labels + ".");
+  } else if (result.duplicatePhotos || result.detectedOtherType || result.nlpValidation?.is_expired ||
+             result.nlpValidation?.id_format_valid === false || result.tamperingFlags?.length) {
+    notes.push("ID needs review. See the findings below.");
   }
   if (result.duplicatePhotos) notes.push("Front and back contain the same photo. Check the back upload.");
   if (result.detectedOtherType) notes.push("The photo appears to show a " + result.detectedOtherType + ". Check the selected ID type.");
@@ -1334,16 +1355,15 @@ function summarizeAgentIdFindings(result) {
   if (result.unclearSides.length) notes.push(result.unclearSides.join(" and ") + " ID photo" + (result.unclearSides.length > 1 ? "s: Printed text could not be read. Check the photos." : ": Printed text could not be read. Check the photo."));
   if (result.unavailableSides.length) notes.push(result.unavailableSides.join(" and ") + " photo could not be opened.");
   if (result.photoIssues && result.photoIssues.length) notes.push(result.photoIssues.join(" "));
-  var differences = result.fields.filter(function (field) { return field.status === "difference"; });
-  if (differences.length) notes.push("Check " + differences.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ".");
-  if (notes.length > 1 || (notes.length === 1 && !notes[0].startsWith("Recommendation: APPROVE"))) {
+
+  if (notes.length) {
     if (result.fields.some(function (field) { return field.key === "birth_date" && field.status === "unreadable"; })) {
       notes.push("Birth date could not be verified. Check the original ID; if no date is printed, ask for an ID that shows it.");
     }
     return notes.join(" ");
   }
   if (result.fields.length === 3 && result.fields.every(function (field) { return field.status === "match"; })) {
-    return (notes[0] ? notes[0] + " " : "") + "Name, birth date, and ID number match.";
+    return "Name, birth date, and ID number match. Ready for Agent review.";
   }
   var unreadable = result.fields.filter(function (field) { return field.status === "unreadable"; });
   if (unreadable.length === 1 && unreadable[0].key === "birth_date") {
@@ -1395,6 +1415,7 @@ function buildSavedAgentFindings(result) {
     duplicatePhotos: Boolean(result.duplicatePhotos),
     detectedOtherType: result.detectedOtherType || "",
     photoIssues: result.photoIssues || [],
+    stages: result.stages || null,
     nlpValidation: result.nlpValidation || null,
     aiRecommendation: result.aiRecommendation || "",
     aiFindings: result.aiFindings || [],
@@ -1519,22 +1540,23 @@ function getFindingCorrectionDraft(result) {
     return { fields: ["id_photo"], message: "Hello! Please sign in and upload a clear photo of the ID type selected on your application." };
   }
   if (result.nlpValidation && result.nlpValidation.is_expired) {
-    return { fields: ["id_photo"], message: result.suggestedPoliteRemark || "Hello! Your uploaded ID appears to be expired. Please sign in and upload a valid, unexpired government ID." };
+    return { fields: ["id_photo"], message: "Hello! Your uploaded ID appears to be expired. Please sign in and upload a valid, unexpired government ID." };
   }
-  var differences = result.fields.filter(function (field) { return field.status === "difference"; });
-  if (differences.length === 1) {
-    var field = differences[0];
-    var preset = VALIDATOR_PRESETS.find(function (item) { return item.field === field.key; });
-    if (preset) return { fields: [field.key], message: preset.msg };
-  }
-  if (differences.length > 1) return null;
-
   var poorPhotos = result.unclearSides.filter(function (side) {
     return (result.photoIssues || []).some(function (issue) {
       return issue.startsWith(side + " photo:") && /looks blurry|too dark|washed out/i.test(issue);
     });
   });
-  if (!poorPhotos.length) return null;
+  if (!poorPhotos.length) {
+    if (result.unclearSides.length) return null;
+    var differences = result.fields.filter(function (field) { return field.status === "difference"; });
+    if (differences.length === 1) {
+      var field = differences[0];
+      var preset = VALIDATOR_PRESETS.find(function (item) { return item.field === field.key; });
+      if (preset) return { fields: [field.key], message: preset.msg };
+    }
+    return null;
+  }
   var sides = poorPhotos.join(" and ").toLowerCase();
   return { fields: ["id_photo"], sides: poorPhotos.map(function (side) { return side.toLowerCase(); }), message: "Hello! Please upload a clearer photo of the " + sides +
     " of your ID in your account. Make sure the printed details are readable." };

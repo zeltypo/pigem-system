@@ -23,3 +23,21 @@ Configure the following in Vercel Project Settings → Environment Variables:
 - `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-5.4`, `OPENAI_REASONING_EFFORT=low`
 - `RECAPTCHA_SECRET_KEY`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_NAME`, `SMTP_FROM_EMAIL`
+
+
+### Screening results and storage
+
+Each check is independent for the current application revision. The Agent summary
+starts with the issue that needs attention: an incomplete check, unreadable photo,
+readable differences, an ID rule warning, or matching details. Several of these
+can occur in the same application. Unreadable text cannot prove a mismatch.
+OpenCV prepares the image; Azure extracts fields; local validation compares
+evidence and evaluates supported rules; GPT can draft wording.
+
+Supabase stores the original photo links on the application and the completed
+screening record in `applications.screening.browser_check`. New results include
+per-side photo preparation and extraction status, field comparison statuses,
+validation findings, and message source. The browser does not persist the full
+Azure payload, raw OCR lines, or another copy of the ID number. Reopening a
+completed revision reuses its saved findings. A customer resubmission creates
+a new revision for checking. No database reset is needed for this update.
