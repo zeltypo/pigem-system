@@ -54,7 +54,7 @@ function showGoogleCaptchaPopup() {
 function renderHomeCaptchaBox() {
   var siteKey = (typeof CONFIG !== "undefined" && CONFIG.RECAPTCHA_SITE_KEY)
     ? CONFIG.RECAPTCHA_SITE_KEY
-    : "6LeOtSQuAAAAAMk2Yc80Gh48x7TPBIFZoLxIN1S7";
+    : "6LcL1yQuAAAAAF0fxh-KKPB2_GP5R2dRwcr-8ZAt";
 
   function doRender() {
     var box = document.getElementById("home-captcha-box");

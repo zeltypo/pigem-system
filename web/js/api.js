@@ -1,5 +1,5 @@
 function _getPortalBaseUrl() {
-  var origin = "https://pigem-system-web.vercel.app";
+  var origin = "https://pigem-seven.vercel.app";
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
     origin = window.location.origin;
   } else if (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) {

@@ -5,14 +5,16 @@ var CONFIG = {
   SUPABASE_URL: "https://wuunqfxyejxwrawtjdrf.supabase.co",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g",
 
-  PUBLIC_URL: "https://pigem-system-web.vercel.app",
+  PUBLIC_URL: (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0)
+    ? window.location.origin
+    : "https://pigem-seven.vercel.app",
   API_URL: "/api",
 
   ASSET_SOURCE: "supabase",
 
   LOCATIONIQ_API_KEY: "pk.3597a6e1a756561513401f40ea9ee840",
 
-  RECAPTCHA_SITE_KEY: "6LeOtSQuAAAAAMk2Yc80Gh48x7TPBIFZoLxIN1S7",
+  RECAPTCHA_SITE_KEY: "6LcL1yQuAAAAAF0fxh-KKPB2_GP5R2dRwcr-8ZAt",
 
   PLANS: [
     { id: "1000", name: "Plan 1000", speed: 100, price: 1000, tag: "Fiber for your home", featured: false },
