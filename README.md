@@ -67,3 +67,21 @@ once for the existing Admin username and gives the generated password privately
 to that Admin. Create Agent / Manager then creates the portal account and its
 screening credentials in one transaction. Staff use the username and password
 entered on that form. Previously enrolled staff can keep their credentials.
+
+
+### Background screening
+
+The worker handles newly submitted applications with a verified, one-use CAPTCHA
+ticket. It keeps a private queue with a 50-admissions-per-day budget and one
+active job. Saved results contain comparison and preparation statuses, not raw
+OCR text. Staff can see queued, checking, completed and failed states. Legacy
+records and later customer corrections require separate intake before they can
+run through this worker.
+
+1. Install schema-background-screening.sql on an existing database.
+2. Set SUPABASE_SERVICE_ROLE_KEY and a long random SCREENING_WORKER_SECRET as
+   sensitive Vercel Production variables. Keep both out of browser code.
+3. Put the same worker secret in Supabase Vault as pigem_screening_worker_secret,
+   then run schedule-background-screening.sql.
+4. Set SCREENING_BACKGROUND_ENABLED=true in Vercel and deploy. Submit one
+   fictional application and confirm the job completes with all portals closed.

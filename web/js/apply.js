@@ -426,7 +426,7 @@ async function onApplyCaptchaVerified(token) {
   var status = document.getElementById("apply-captcha-status");
   if (!token || !status || applyCaptchaVerified) return;
   status.textContent = "Verifying…";
-  var result = await apiVerifyCaptcha(token);
+  var result = await apiVerifyCaptcha(token, true);
   if (!status.isConnected) return;
   if (!result?.verified) {
     status.textContent = "Verification failed. Please try the checkbox again.";
@@ -434,6 +434,7 @@ async function onApplyCaptchaVerified(token) {
     return;
   }
   applyCaptchaVerified = true;
+  applicationScreeningTicket = result.screeningTicket || "";
   document.querySelector("main")?.removeAttribute("inert");
   closePopup();
 }
@@ -471,6 +472,7 @@ function pickPlan(planId) {
 }
 
 var applyCaptchaVerified = false;
+var applicationScreeningTicket = "";
 var applyCaptchaWidget;
 
 async function applyQrRemoteFile(side, url) {
@@ -1427,6 +1429,12 @@ function advanceLoadingStep(stepNum) {
 }
 
 function resetApplyWizardToStep1() {
+  if (applicationScreeningTicket) {
+    applyCaptchaVerified = false;
+    applicationScreeningTicket = "";
+    document.querySelector("main")?.setAttribute("inert", "");
+    showApplySecurityCaptchaModal();
+  }
   try { sessionStorage.removeItem(APPLY_DRAFT_KEY); } catch (e) {}
   selectedIdChecks = { front: null, back: null };
   var loadingScreen = document.getElementById("panel-loading");
@@ -1666,6 +1674,20 @@ async function performApplicationSubmission() {
     }
     var saved = await dbCreateApplication(baseAppPayload);
     savedApplication = saved;
+    if (applicationScreeningTicket) {
+      try {
+        var queueResponse = await fetch(_apiEndpoint("/screen/queue"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ application_id: saved.id, ticket: applicationScreeningTicket })
+        });
+        if (!queueResponse.ok || !(await queueResponse.json()).queued) {
+          console.warn("Application saved without an automatic document check.");
+        }
+      } catch (error) {
+        console.warn("Application saved without an automatic document check.");
+      }
+    }
 
 
     await new Promise(function (r) { setTimeout(r, 300); });

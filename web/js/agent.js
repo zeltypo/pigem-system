@@ -32,6 +32,7 @@ var pendingProofDataUrl = "";
 var pendingProofFile = null;
 var lastDetectedFields = null;
 var isScreeningServiceOnline = false;
+var backgroundScreeningEnabled = false;
 var lastScreeningAvailability = false;
 var visualScreeningRunningAppId = null;
 var visualScreeningStage = 0;
@@ -55,6 +56,7 @@ function agentScreeningAvailable() {
 async function checkAgentScreeningService() {
   var health = navigator.onLine !== false && isAiEnabled() ? await apiCheckHealth() : null;
   isScreeningServiceOnline = Boolean(health?.idp && health?.openai);
+  if (health) backgroundScreeningEnabled = health.background_screening === true;
   if (!agentScreeningAvailable()) activeScreeningJob?.cancel();
   var available = agentScreeningAvailable();
   if (lastScreeningAvailability !== available) {
@@ -467,6 +469,15 @@ function stripFalseReuploadMsg(str, dup) {
   return cleanScreeningText(s);
 }
 
+function agentBackgroundStatus(app) {
+  var states = {
+    queued: "Waiting for document check.",
+    running: "Checking ID photos in the background.",
+    failed: "Document check could not finish. Review the original photos."
+  };
+  return states[app?.screening?.background_state] || "No background result yet. Review the original photos if needed.";
+}
+
 function getScreeningQuickSummary(app) {
   if (!agentScreeningAvailable()) return "Offline";
   var duplicate = detectClientSideDuplicateId(app);
@@ -474,6 +485,7 @@ function getScreeningQuickSummary(app) {
   var check = getAgentAppIdCheck(app, true);
   if (check && check.result) return escapeHtml(summarizeAgentIdFindings(check.result));
   if (check) return "Checking ID photos…";
+  if (backgroundScreeningEnabled) return agentBackgroundStatus(app);
   return app.id_image_url || app.id_front_path ? "Document check has not run yet." : "No front ID photo is available.";
 }
 
@@ -1422,6 +1434,7 @@ function agentScreeningRevision(app) {
 
 function getSavedAgentFindings(app) {
   var stored = app.screening && app.screening.browser_check;
+  if (app.screening?.background_state === "completed" && app.screening.background_findings) return app.screening.background_findings;
   return stored && stored.reader_version === 5 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
 }
 
@@ -1508,6 +1521,7 @@ function getAgentAppIdCheck(app, existingOnly) {
   if (!agentScreeningAvailable() || !app) return null;
   var saved = getSavedAgentFindings(app);
   if (saved) return { result: saved, pending: Promise.resolve(saved) };
+  if (backgroundScreeningEnabled) return null;
   return getAgentIdCheck(app.id_image_url || app.id_front_path || "", app.id_back_image_url || app.id_back_path || "", {
     name: app.full_name || "", birth: app.birth_date || "", number: app.id_number || "", type: app.id_type || ""
   }, existingOnly, app.id + "|" + agentScreeningRevision(app));
@@ -1516,8 +1530,11 @@ function getAgentAppIdCheck(app, existingOnly) {
 async function showAgentIdFindings(panel, app) {
   if (!panel) return;
   var expected = { name: panel.dataset.name, birth: panel.dataset.birth, number: panel.dataset.number, type: panel.dataset.type || "" };
-  var check = app ? getAgentAppIdCheck(app) : getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected);
-  if (!check) return;
+  var check = app ? getAgentAppIdCheck(app) : backgroundScreeningEnabled ? null : getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected);
+  if (!check) {
+    if (backgroundScreeningEnabled) panel.textContent = agentBackgroundStatus(app);
+    return;
+  }
   var result = await check.pending;
   if (app) saveAgentFindings(app, result);
   if (!agentScreeningAvailable() || panel.isConnected === false) return;

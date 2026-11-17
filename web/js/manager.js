@@ -53,8 +53,9 @@ function formatMgrEta(seconds) {
 function getMgrScreeningBadge(app) {
   var scr = app.screening || {};
   var state = scr.state || "";
-  if (scr.browser_check && scr.browser_check.findings) {
-    var fnd = scr.browser_check.findings;
+  var savedFindings = scr.background_findings || scr.browser_check?.findings;
+  if (savedFindings) {
+    var fnd = savedFindings;
     if (fnd.aiRecommendation === "approve" || (!fnd.aiRecommendation && Array.isArray(fnd.fields) && fnd.fields.length === 3 && fnd.fields.every(function (f) { return f.status === "match"; }))) {
       return '<span class="badge badge-green">Screening Passed</span>';
     }

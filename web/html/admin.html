@@ -145,14 +145,15 @@
           <p class="muted" style="font-size:13px; margin-bottom:16px">Agents and Managers can open the original photos from each application.</p>
           <div style="display:flex; align-items:center; justify-content:space-between; padding:16px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">
             <div>
-              <b>Browser-based ID checking</b>
-              <div id="ai-status-label" class="muted" style="font-size:13px">Tesseract.js reads photos locally in the Agent portal.</div>
+              <b>Background screening queue</b>
+              <div id="ai-status-label" class="muted" style="font-size:13px">Waiting for screening status.</div>
             </div>
           </div>
         </div>
 
         <div class="card">
           <h3 style="margin-bottom:12px">Recent AI Screening and Verification Activity</h3>
+          <div id="admin-screening-queue" class="chat-log"></div>
           <div id="admin-ai-log-list" class="chat-log"></div>
         </div>
       </section>

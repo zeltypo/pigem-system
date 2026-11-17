@@ -1,3 +1,4 @@
+from hmac import compare_digest
 from uuid import uuid4
 from os import getenv
 from pathlib import Path
@@ -19,6 +20,7 @@ import _idp
 import _mailer
 import _openai_client
 import _preprocess
+import _screening_queue
 
 app = FastAPI(title="PIGEM Cloud IDP Screening & Notification API")
 
@@ -33,6 +35,12 @@ app.add_middleware(
 
 class CaptchaVerifyRequest(BaseModel):
     token: str
+    application_intake: bool = False
+
+
+class ScreeningIntake(BaseModel):
+    application_id: str
+    ticket: str
 
 
 class EmailRequest(BaseModel):
@@ -72,6 +80,7 @@ def health():
         "recaptcha_site_key": (getenv("RECAPTCHA_SITE_KEY") or "").strip(),
         "smtp": smtp_ok,
         "supabase_check": _auth.is_configured(),
+        "background_screening": _screening_queue.enabled(),
         "active_screenings": 0,
     }
 
@@ -80,7 +89,32 @@ def health():
 @app.post("/verify-captcha")
 def verify_captcha(data: CaptchaVerifyRequest, request: Request):
     client_ip = request.client.host if request.client else ""
-    return _auth.verify_recaptcha(data.token, client_ip)
+    result = _auth.verify_recaptcha(data.token, client_ip)
+    if result.get("verified") is True and data.application_intake:
+        result["screening_ticket"] = _screening_queue.intake_ticket()
+    return result
+
+
+@app.post("/api/screen/queue")
+def enqueue_screening(data: ScreeningIntake):
+    if not _screening_queue.enabled():
+        raise HTTPException(status_code=503, detail="Background screening is not configured.")
+    if len(data.ticket) > 150 or not _screening_queue.valid_ticket(data.ticket):
+        raise HTTPException(status_code=403, detail="Application verification expired.")
+    queued = _screening_queue.rpc("pigem_enqueue_screening", {
+        "app_id": data.application_id, "intake_ticket": data.ticket.split(".")[1]
+    })
+    return {"queued": bool(queued)}
+
+
+@app.post("/api/screen/worker")
+def run_screening_worker(request: Request):
+    if not _screening_queue.enabled():
+        raise HTTPException(status_code=503, detail="Background screening is not configured.")
+    expected = "Bearer " + getenv("SCREENING_WORKER_SECRET", "")
+    if not compare_digest(request.headers.get("authorization", "").encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Worker authorization required.")
+    return {"processed": _screening_queue.run_one()}
 
 
 @app.get("/api/screen/session")

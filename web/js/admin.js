@@ -159,6 +159,15 @@ async function renderAiState() {
   var lbl = document.getElementById("ai-status-label");
   if (lbl) lbl.textContent = "Step 1 OpenCV (crop/deskew/contrast) → Step 2 Azure Document Intelligence IDP → Step 3 NLP Validation → Step 4 GPT-5.4 Reasoning."
 
+  var queue = document.getElementById("admin-screening-queue");
+  if (queue) {
+    var queueApps = adminApps.filter(function (app) { return app.screening?.background_state; });
+    queue.innerHTML = queueApps.length ? queueApps.map(function (app) {
+      return '<p><b>' + escapeHtml(app.reference_no || app.ref_no) + '</b> · ' +
+        escapeHtml({queued:"Queued", running:"Checking", completed:"Completed", failed:"Failed"}[app.screening.background_state] || "Unknown") + '</p>';
+    }).join("") : '<p class="muted">No background checks yet.</p>';
+  }
+
   var aiList = await dbListAiLogs();
   var box = document.getElementById("admin-ai-log-list");
   if (!box) return;

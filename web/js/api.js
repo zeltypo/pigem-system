@@ -26,7 +26,7 @@ function generateOtpRefTag() {
   return tag;
 }
 
-async function apiVerifyCaptcha(token) {
+async function apiVerifyCaptcha(token, applicationIntake) {
   var clean = String(token || "").trim();
   if (!clean) return { verified: false };
 
@@ -34,11 +34,11 @@ async function apiVerifyCaptcha(token) {
     var res = await fetch(_apiEndpoint("/verify-captcha"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: clean })
+      body: JSON.stringify({ token: clean, application_intake: applicationIntake === true })
     });
     if (!res.ok) return { verified: false };
     var data = await res.json();
-    return { verified: data.verified === true };
+    return { verified: data.verified === true, screeningTicket: data.screening_ticket || "" };
   } catch (err) {
     return { verified: false, fallback: true };
   }
