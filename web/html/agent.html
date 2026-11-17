@@ -156,7 +156,10 @@
         <div class="card" style="margin-bottom:16px">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
             <div>
-              <h2 id="apps-heading" style="font-size:20px">Application Queue</h2>
+              <div class="row" style="align-items:center;gap:8px">
+<h2 id="apps-heading" style="font-size:20px">Application Queue</h2>
+<button type="button" class="btn btn-outline btn-sm" aria-label="Explain queue colors and statuses" onclick="showAlert('Queue guide', 'Green: ID details match. Yellow: findings need review. Red: correction needed or rejected. Gray: not checked. Encoding: forwarded to the provider. Approved or Rejected: recorded provider decision.')">?</button>
+</div>
               <p id="apps-subtitle" class="muted" style="font-size:13px">Unclaimed applications are available to all Agents. Applications you claim appear in Claimed by Me.</p>
             </div>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">

@@ -546,10 +546,7 @@ function renderAgentCards() {
         '</div>' +
       '</div></div>';
   }).join("");
-  var guideOpen = box.querySelector?.(".queue-color-help")?.open;
-  box.innerHTML = '<details class="queue-color-help"' + (guideOpen ? ' open' : '') + '><summary aria-label="What do the colors mean?">? Color guide</summary>' +
-    '<p>Green: ID details match. Yellow: check the ID findings. Red: action needed or rejected. Gray: not checked yet.</p>' +
-    '<p>Status badges show the application stage, such as Encoding or Needs Correction.</p></details>' + html;
+  box.innerHTML = html;
 
 }
 
@@ -1119,10 +1116,10 @@ async function collectAgentIdFindings(sources, expected, job) {
   var photos = sources.map(async function (side) {
     try {
       var options = { referrerPolicy: "no-referrer" };
-      if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) options.signal = AbortSignal.timeout(12000);
-      var response = await withAgentReadTimeout(fetch(side.url, options), 12000);
+      if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) options.signal = AbortSignal.timeout(30000);
+      var response = await withAgentReadTimeout(fetch(side.url, options), 30000);
       if (!response.ok) return null;
-      return await withAgentReadTimeout(response.blob(), 12000);
+      return await withAgentReadTimeout(response.blob(), 30000);
     } catch (error) {
       return null;
     }
@@ -1178,7 +1175,15 @@ async function collectAgentIdFindings(sources, expected, job) {
   }
 }
 
+var agentScreeningQueue = Promise.resolve();
+
 function runAgentIdCheck(sources, expected) {
+  var next = agentScreeningQueue.then(function () { return runAgentIdCheckNow(sources, expected); });
+  agentScreeningQueue = next.catch(function () {});
+  return next;
+}
+
+function runAgentIdCheckNow(sources, expected) {
   var job = { expired: false, worker: null, terminated: false };
   return withAgentReadTimeout(collectAgentIdFindings(sources, expected, job), 60000).catch(function () {
     job.expired = true;
@@ -1191,6 +1196,9 @@ function runAgentIdCheck(sources, expected) {
 }
 
 function summarizeAgentIdFindings(result) {
+  if (result.unavailableSides?.length || result.failedReads?.length) {
+    return "Document check incomplete. Some photos could not be downloaded or read. Check your connection and reopen the application. No correction is recommended from this incomplete check.";
+  }
   if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
   if (result.failed) return "The photo reader could not start. Refresh and reopen the application, or check the original photos.";
   var notes = [];
@@ -1325,7 +1333,7 @@ function getCurrentCorrectionFindings() {
 }
 
 function getFindingCorrectionDraft(result) {
-  if (!result || result.failed) return null;
+  if (!result || result.failed || result.unavailableSides?.length || result.failedReads?.length) return null;
   if (result.duplicatePhotos) {
     return { fields: ["id_photo"], sides: ["back"], message: "Hello! The front and back uploads show the same photo. Please sign in and upload a separate photo of the back of your ID." };
   }
