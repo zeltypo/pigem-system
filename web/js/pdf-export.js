@@ -24,7 +24,7 @@ function loadPigemPdfLogo() {
 }
 
 async function exportPigemPdf(report, filename, print) {
-  // Open the tab while the click still counts as a user action.
+
   var preview = print ? window.open("", "_blank") : null;
   if (preview) preview.opener = null;
   var blob;

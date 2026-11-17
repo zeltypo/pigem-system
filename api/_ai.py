@@ -1238,7 +1238,7 @@ class OpenAIScreeningService(BaseLanguageClient):
 
         except Exception:
 
-            # Malformed output is unknown, never a valid credential or OCR evidence.
+
             return {"available": False, "lines": [], "confidence": "low",
                     "extracted_name": "", "extracted_birth_date": "", "extracted_id_number": "",
                     "note": "Document reading was inconclusive. Agent review required."}
@@ -1300,7 +1300,7 @@ class OpenAIScreeningService(BaseLanguageClient):
         return {"findings": findings[:4], "guidance": guidance[:4]}
 
     def write_guidance(self, quality: dict, comparisons: list) -> dict:
-        # Python explains the measured checks; a second AI call cannot change them.
+
         return {"available": self.is_available(), **self._build_rule_guidance(quality, comparisons)}
 
     def write_polite_remark(self, raw_remark: str, chosen_field: str = "") -> dict:
@@ -1466,8 +1466,8 @@ def extract_id_text_with_fallback(
     id_type: str = "",
 ) -> dict:
 
-    # Original images retain edges and small text that automatic cropping may remove.
-    # One request keeps costs predictable and leaves time to save results on Vercel.
+
+
     return _ai_service.extract_id_text(raw_front or primary_front,
         back_bytes=raw_back or primary_back, id_type=id_type)
 

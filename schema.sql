@@ -1,10 +1,34 @@
--- Fresh Supabase installation for isolated demos using fictional records.
--- CREATE TABLE deliberately fails on an existing PIGEM database.
--- The transaction rolls back on any error and never deletes existing records.
--- Legacy portal access still uses public policies. See the release blockers in
--- THIRD_TEST_NOTES.md before collecting real applicant data.
+
+
+
+
+
+
 
 BEGIN;
+
+SET LOCAL pigem.reset_demo = 'off';
+
+DO $reset$
+BEGIN
+  IF current_setting('pigem.reset_demo') = 'on' THEN
+    DROP TABLE IF EXISTS
+      public.screenings,
+      public.documents,
+      public.corrections,
+      public.provider_updates,
+      public.applications,
+      public.agent_links,
+      public.notifications,
+      public.login_history,
+      public.system_logs,
+      public.system_settings,
+      public.website_content,
+      public.plans,
+      public.users;
+  END IF;
+END
+$reset$;
 
 CREATE TABLE public.users (
   id TEXT PRIMARY KEY,
@@ -113,8 +137,8 @@ CREATE TABLE public.applications (
   id_image_url TEXT,
   id_back_image_url TEXT,
   cropped_id_path TEXT,
-  id_cropped_url TEXT,
-  id_back_cropped_url TEXT,
+  id_cropped_url TEXT DEFAULT '',
+  id_back_cropped_url TEXT DEFAULT '',
   cropped_id_url TEXT,
   cropped_back_url TEXT,
   remarks TEXT,
@@ -239,9 +263,6 @@ CREATE TABLE public.system_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
-
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
@@ -291,70 +312,28 @@ CREATE POLICY "Allow access to documents"
 INSERT INTO public.plans (id, name, speed, price, tag, featured, active) VALUES
   ('1000', 'Plan 1000', 100, 1000.00, 'Fiber for your home', false, true),
   ('1400', 'Plan 1400', 300, 1400.00, 'Most Chosen', true, true),
-  ('1900', 'Plan 1900', 500, 1900.00, 'Fiber for your home', false, true)
-ON CONFLICT (id) DO UPDATE SET
-  name = EXCLUDED.name,
-  speed = EXCLUDED.speed,
-  price = EXCLUDED.price,
-  tag = EXCLUDED.tag,
-  featured = EXCLUDED.featured,
-  active = EXCLUDED.active;
+  ('1900', 'Plan 1900', 500, 1900.00, 'Fiber for your home', false, true);
 
 INSERT INTO public.system_settings (id, ai_enabled, maintenance_mode, maintenance_message)
-VALUES ('main', true, false, '')
-ON CONFLICT (id) DO UPDATE SET
-  ai_enabled = EXCLUDED.ai_enabled,
-  maintenance_mode = EXCLUDED.maintenance_mode;
+VALUES ('main', true, false, '');
 
 INSERT INTO public.website_content (id, data) VALUES (
   'main',
   '{"logo_image": "black-logo-white-mode.png", "dark_logo_image": "white-logo-dark-mode.png", "hero_slide_count": 3, "hero_slides": [], "about_slides": [], "client_images": ["Clients/client-infus8.png", "Clients/client-radius.png", "Clients/client-maxcyc.png"], "announcement": {"active": false, "headline": "", "body": ""}}'::jsonb
-)
-ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
-
--- ============================================================
--- 10. STANDALONE QA TESTER CLOUD SYNC TABLE (ISOLATED FROM MAIN SYSTEM)
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.qa_tester_sync (
-  id TEXT PRIMARY KEY DEFAULT 'master_v3',
-  state JSONB NOT NULL DEFAULT '{}'::jsonb,
-  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-ALTER TABLE public.qa_tester_sync
-  ADD COLUMN IF NOT EXISTS state JSONB NOT NULL DEFAULT '{}'::jsonb,
-  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
-
-ALTER TABLE public.qa_tester_sync ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Public Full Access QA Tester Sync"
-  ON public.qa_tester_sync
-  FOR ALL
-  USING (true)
-  WITH CHECK (true);
-
-INSERT INTO public.qa_tester_sync (id, state)
-VALUES ('master_v3', '{}'::jsonb)
-ON CONFLICT (id) DO NOTHING;
-
--- Ensure cropped Front & Back ID columns exist on applications
-ALTER TABLE public.applications
-  ADD COLUMN IF NOT EXISTS id_cropped_url TEXT DEFAULT '',
-  ADD COLUMN IF NOT EXISTS id_back_cropped_url TEXT DEFAULT '';
 
 
--- Fresh projects can disable automatic public-schema grants. Legacy demo
--- portals still require explicit Data API permissions on their own tables.
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.users, public.plans, public.system_settings, public.website_content,
   public.agent_links, public.applications, public.documents, public.screenings,
   public.corrections, public.provider_updates, public.notifications,
-  public.login_history, public.system_logs, public.qa_tester_sync
-TO anon, authenticated;
+  public.login_history, public.system_logs
+TO anon, authenticated, service_role;
 GRANT USAGE, SELECT ON SEQUENCE
   public.agent_links_id_seq, public.documents_id_seq, public.screenings_id_seq,
   public.corrections_id_seq, public.provider_updates_id_seq,
   public.notifications_id_seq, public.login_history_id_seq, public.system_logs_id_seq
-TO anon, authenticated;
+TO anon, authenticated, service_role;
 
 COMMIT;

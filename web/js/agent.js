@@ -257,8 +257,8 @@ window.addEventListener("DOMContentLoaded", async function () {
     if (anyRunning || !isTyping) {
       await refreshAgentData(true);
       var modal = document.getElementById("app-detail-modal");
-      // Do not rebuild an open review form: it would erase notes, uploads and expanded sections.
-      // Explicit screening/status actions refresh it after they finish.
+
+
     }
   }, 4500);
 });
@@ -646,14 +646,14 @@ function switchIdImgMode(mode) {
 function renderVisualScreeningProgressBox(app) {
   if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id)) return "";
   if (!["pending_agent", "queued", "checking"].includes((app.screening || {}).state)) return "";
-  // The endpoint returns one result, not live stage events. Do not invent progress percentages.
+
   return '<div class="screening-live-box" role="status" aria-live="polite" style="margin-bottom:14px">' +
     '<span class="inline-spinner"></span> <b>' +
     ((app.screening || {}).state === "checking" ? "Checking documents..." : "Waiting for the document check...") + '</b>' +
     '<div class="small muted">Reading both ID photos and comparing the application details. Please wait for the saved result.</div></div>';
 }
 
-// Use printed labels as evidence. Unclear dates and conflicting values need review.
+
 function normalizeAgentBirthDate(value) {
   var months = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
   function monthNumber(name) {
@@ -701,7 +701,7 @@ function readAgentIdLabelValues(lines, key) {
     var match = line.match(pattern);
     if (!match) return values;
     var candidate = (match[1] || match[2] || "").trim();
-    // A longer label can start with the same word. Its remaining text is not a value.
+
     if (!candidate && lines[index + 1] && !agentIdLabelLine.test(lines[index + 1])) candidate = lines[index + 1];
     if (candidate) values.push(candidate);
     return values;
@@ -853,7 +853,7 @@ function findAgentIdCorners(gray, cv) {
         try {
           var area = cv.contourArea(contour);
           if (area < frameArea * 0.08 || area > frameArea * 0.96) continue;
-          // Rounded or lightly broken edges need more than one approximation.
+
           var perimeter = cv.arcLength(contour, true);
           for (var tolerance of [0.015, 0.022, 0.035, 0.05]) {
             cv.approxPolyDP(contour, polygon, tolerance * perimeter, true);
@@ -888,7 +888,7 @@ function findAgentIdCorners(gray, cv) {
   }
 
   try {
-    // Local contrast reveals edges in darker areas without brightening the entire image.
+
     clahe.apply(gray, enhanced);
     cv.GaussianBlur(enhanced, blurred, new cv.Size(5, 5), 0);
     cv.Canny(blurred, mask, 20, 65);
@@ -955,7 +955,7 @@ async function enhanceAgentIdPhoto(photo, cv) {
     var adjustedLight = meanLight < 105 || meanLight > 205;
     if (adjustedLight) {
       var levels = Array.from({ length: 256 }, function (_, value) {
-        // Tone correction helps exposure; it cannot recover blown-out text.
+
         return Math.round(255 * Math.pow(value / 255, meanLight < 105 ? 0.75 : 1.2));
       });
       var lut = cv.matFromArray(1, 256, cv.CV_8U, levels);
@@ -991,7 +991,7 @@ function getAgentReadText(read) {
   if (!Array.isArray(data.blocks) || !data.blocks.length) {
     return data.confidence >= 60 ? String(data.text || "") : "";
   }
-  // Keep complete confident lines. Dropping one uncertain digit could invent a different ID number.
+
   var lines = [];
   data.blocks.forEach(function (block) {
     (block.paragraphs || []).forEach(function (paragraph) {
@@ -1042,7 +1042,7 @@ async function showAgentPreparedPhoto(container) {
   if (!image || !status || !url) return;
   status.textContent = "Preparing photo…";
   var prepared = await prepareAgentIdPhoto(url);
-  // Switching submissions may finish while the old image is still processing.
+
   if (!container.isConnected) return;
   if (!prepared) {
     status.textContent = "Original photo shown. Photo preparation is unavailable.";
@@ -1070,7 +1070,7 @@ async function readAgentIdPhoto(worker, photo, expected, url) {
       return original;
     }
   } catch (error) {
-    // Retain evidence from the initial read if the second read cannot finish.
+
   }
   return firstRead;
 }
@@ -1112,11 +1112,11 @@ async function collectAgentIdFindings(sources, expected, job) {
   var failedReads = [];
   var photoIssues = [];
 
-  // Fetch both photos while the reader starts. The checks still read one side at a time.
+
   var photos = sources.map(async function (side) {
     try {
       var options = { referrerPolicy: "no-referrer" };
-      if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) options.signal = AbortSignal.timeout(30000);
+      options.signal = job.controller.signal;
       var response = await withAgentReadTimeout(fetch(side.url, options), 30000);
       if (!response.ok) return null;
       return await withAgentReadTimeout(response.blob(), 30000);
@@ -1133,6 +1133,7 @@ async function collectAgentIdFindings(sources, expected, job) {
       throw error;
     }
     if (job) job.worker = worker;
+    if (job.expired || job.controller.signal.aborted) throw new Error("Document check cancelled");
     var duplicatePhotos = sources.length === 2 && await areSameAgentPhotos(await photos[0], await photos[1]);
 
     for (var i = 0; i < sources.length && !(job && job.expired); i++) {
@@ -1156,7 +1157,7 @@ async function collectAgentIdFindings(sources, expected, job) {
           }
         }
       } catch (error) {
-        // A timed-out recognition still occupies its worker. Stop instead of queuing another photo.
+
         if (String(error.message).includes("timed out")) throw error;
         failedReads.push(side.label);
       }
@@ -1178,6 +1179,39 @@ async function collectAgentIdFindings(sources, expected, job) {
 }
 
 var agentScreeningQueue = Promise.resolve();
+var activeScreeningJob = null;
+
+function showScreeningConnection(message) {
+  var notice = document.getElementById("screening-connection");
+  if (!notice) {
+    notice = document.createElement("div");
+    notice.id = "screening-connection";
+    notice.className = "notice warn";
+    notice.setAttribute("role", "status");
+    document.getElementById("agent-cards-box")?.before(notice);
+  }
+  notice.textContent = message;
+}
+
+window.addEventListener("offline", function () {
+  showScreeningConnection("Connection lost. Document checking is paused.");
+  activeScreeningJob?.cancel();
+});
+
+window.addEventListener("online", function () {
+  showScreeningConnection("Connection restored. Retrying open document checks.");
+  agentDocumentChecks.forEach(function (check, key) {
+    if (check.result?.failed || check.result?.unavailableSides?.length || check.result?.failedReads?.length) {
+      agentDocumentChecks.delete(key);
+    }
+  });
+  Object.keys(expandedSummaryCards).forEach(function (id) {
+    if (expandedSummaryCards[id]) checkAgentQueueDocument(id);
+  });
+  if (activeDetailAppId && !document.getElementById("app-detail-modal")?.classList.contains("hidden")) {
+    renderDetailModalContent(true);
+  }
+});
 
 function runAgentIdCheck(sources, expected) {
   var next = agentScreeningQueue.then(function () { return runAgentIdCheckNow(sources, expected); });
@@ -1185,19 +1219,33 @@ function runAgentIdCheck(sources, expected) {
   return next;
 }
 
-function runAgentIdCheckNow(sources, expected) {
-  var job = { expired: false, worker: null, terminated: false };
-  return withAgentReadTimeout(collectAgentIdFindings(sources, expected, job), 60000).catch(function () {
+async function runAgentIdCheckNow(sources, expected) {
+  if (navigator.onLine === false) {
+    return { fields: [], unclearSides: [], unavailableSides: [], failedReads: [], failed: true, offline: true };
+  }
+  var job = { expired: false, worker: null, terminated: false, controller: new AbortController() };
+  var cancelled = new Promise(function (_, reject) {
+    job.cancel = function () { reject(new Error("Connection lost")); };
+  });
+  activeScreeningJob = job;
+  try {
+    return await withAgentReadTimeout(Promise.race([collectAgentIdFindings(sources, expected, job), cancelled]), 60000);
+  } catch (error) {
     job.expired = true;
+    return { fields: [], unclearSides: [], unavailableSides: [], failedReads: [], failed: true,
+      offline: navigator.onLine === false, timedOut: navigator.onLine !== false };
+  } finally {
+    job.controller.abort();
     if (job.worker && !job.terminated) {
       job.terminated = true;
-      Promise.resolve().then(function () { return job.worker.terminate(); }).catch(function () {});
+      Promise.resolve(job.worker.terminate()).catch(function () {});
     }
-    return { fields: [], unclearSides: [], unavailableSides: [], failed: true, timedOut: true };
-  });
+    if (activeScreeningJob === job) activeScreeningJob = null;
+  }
 }
 
 function summarizeAgentIdFindings(result) {
+  if (result.offline) return "Connection lost. Document checking will resume when you are online.";
   if (result.unavailableSides?.length || result.failedReads?.length) {
     return "Document check incomplete. Some photos could not be downloaded or read. Check your connection and reopen the application. No correction is recommended from this incomplete check.";
   }
@@ -1234,7 +1282,7 @@ function getAgentIdCheck(front, back, expected, existingOnly) {
   if (existingOnly) return existing;
   if (!existing || (existing.retryAt && existing.retryAt <= Date.now())) {
     var check = { result: null };
-    // Reuse an in-progress or completed check for these exact photos and form values.
+
     check.pending = runAgentIdCheck(sources, expected).then(function (result) {
       if (result.failed || result.unavailableSides.length || (result.failedReads || []).length) check.retryAt = Date.now() + 15000;
       check.result = result;
@@ -1288,7 +1336,7 @@ async function saveAgentFindings(app, result) {
       app.updated_at = saved.updated_at;
     }
   } catch (error) {
-    // An older tab must not overwrite a newer submission or status update.
+
   } finally {
     agentScreeningWrites.delete(key);
   }
@@ -1349,7 +1397,7 @@ function getFindingCorrectionDraft(result) {
     if (preset) return { fields: [field.key], message: preset.msg };
   }
   if (differences.length > 1) return null;
-  // Unreadable text alone can be caused by the reader or the ID layout.
+
   var poorPhotos = result.unclearSides.filter(function (side) {
     return (result.photoIssues || []).some(function (issue) {
       return issue.startsWith(side + " photo:") && /looks blurry|too dark|washed out/i.test(issue);

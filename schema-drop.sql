@@ -1,7 +1,7 @@
--- DANGER: permanently deletes ALL PIGEM tables, rows, accounts and policies.
--- Run in Supabase > SQL Editor, then run schema.sql for a brand-new empty system.
--- Storage buckets/files are kept (Supabase blocks deleting them via SQL);
--- empty them from Storage in the dashboard if you also want files gone.
+
+
+
+
 BEGIN;
 
 DROP TABLE IF EXISTS

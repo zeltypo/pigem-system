@@ -256,7 +256,7 @@ def _download_image_bytes(url_or_data: str) -> Optional[bytes]:
             return None
 
     if raw.startswith("http://") or raw.startswith("https://"):
-        # Only download documents from this project's storage, never arbitrary URLs.
+
         parsed = urllib.parse.urlparse(raw)
         allowed = urllib.parse.urlparse(_supabase_url())
         if parsed.scheme != "https" or parsed.netloc != allowed.netloc or not parsed.path.startswith("/storage/v1/object/"):
@@ -603,7 +603,7 @@ def run_application_screening(application_id: str) -> Dict[str, Any]:
         and isinstance(previous_ocr, dict)
         and previous_ocr.get("available") is True
     ):
-        # Reuse the transcription. Compare it against the current form below.
+
         ocr_result = previous_ocr
     else:
         ocr_result = _ai.extract_id_text_with_fallback(
@@ -914,7 +914,7 @@ def run_automatic_screening(application_id: str) -> Dict[str, Any]:
                 return {"screened": False, "queued": True}
         except (KeyError, ValueError, TypeError):
             pass
-    # Enforce a shared retry budget even when another portal reloads.
+
     attempt_count = int(previous.get("attempt_count") or 0)
     if previous.get("state") == "unavailable":
         if attempt_count >= 3:

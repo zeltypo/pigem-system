@@ -8,7 +8,7 @@ var SYSTEM_ROLES = {
 
 var SESSION_KEY = "pigem_session_" + SYSTEM;
 var SESSION_TOKEN_KEY = SESSION_KEY + "_tok";
-// Manager and Agent share a login page, but their dashboard and Auth stay in the signed-in tab.
+
 var sessionStore = SYSTEM === "staff" ? sessionStorage : localStorage;
 
 var IS_DEMO_MODE = (CONFIG.SUPABASE_URL === "" || CONFIG.SUPABASE_ANON_KEY === "");
@@ -91,7 +91,7 @@ function getActiveSessionPair(allowedRoles) {
     if (tabId && tabTok && SYSTEM_ROLES.staff.includes(tabRole) && (!roles || roles.includes(tabRole))) {
       return { id: tabId, tok: tabTok };
     }
-    // Restore only the staff role belonging to this dashboard. The shared sign-in page stays neutral.
+
     if (!roles || roles.length !== 1 || !SYSTEM_ROLES.staff.includes(roles[0])) return { id: "", tok: "" };
     var staffKey = getRoleSessionKey(roles[0]);
     var savedId = localStorage.getItem(staffKey);
@@ -380,7 +380,7 @@ async function dbGetCurrentUser(allowCustomerAuth, signingOut) {
   var pair = getActiveSessionPair(window.PORTAL_ALLOWED_ROLES || null);
   var currentId = pair.id;
   var allowedForSystem = SYSTEM_ROLES[SYSTEM] || null;
-  // A tab or profile cache can outlive sign-out elsewhere in this browser.
+
   if (SYSTEM === "customer" && currentId && !signingOut) {
     var browserKey = getRoleSessionKey("customer");
     if (localStorage.getItem(browserKey) !== currentId || localStorage.getItem(browserKey + "_tok") !== pair.tok) currentId = "";
@@ -533,12 +533,12 @@ async function dbSignIn(identifier, password) {
 
     if (staffUser.email && !IS_DEMO_MODE && supabaseClient &&
         (!passMatched || SYSTEM_ROLES.staff.indexOf(staffUser.role) !== -1)) {
-      // A separately provisioned Supabase Auth account can authorize screening.
+
       var legacyAuth = await supabaseClient.auth.signInWithPassword({ email: staffUser.email, password: password });
       if (!legacyAuth.error) {
         passMatched = true;
       } else if (passMatched && SYSTEM_ROLES.staff.indexOf(staffUser.role) !== -1) {
-        // A previous staff Auth session must not supply a different user's token.
+
         await supabaseClient.auth.signOut({ scope: "local" });
       }
     }
@@ -1772,7 +1772,7 @@ function normalizeAppRecord(a) {
         idFound = foundTxt;
       }
     }
-    if (a.screening) { // Latest saved screening is authoritative, not stale cached badges.
+    if (a.screening) {
       var findingsList = a.screening.findings || (ai.findings && ai.findings.length ? ai.findings : (q.issues || []));
       var anyFieldIssue = (nMatch !== true || bMatch !== true || idMatch !== true || idTypeMatch === false);
       a.ai_result = Object.assign({}, a.ai_result || {}, {
@@ -2268,7 +2268,7 @@ async function dbListApplicationsForCustomer(customerOrEmail) {
     }
   }
 
-  // First include any matching local mirror rows so newly submitted apps on the same device show up immediately
+
   var localApps = readSaved("pigem_applications", []) || [];
   for (var li = 0; li < localApps.length; li++) {
     var la = localApps[li];
@@ -2290,7 +2290,7 @@ async function dbListApplicationsForCustomer(customerOrEmail) {
       }
     }
   } else if (supabaseClient) {
-    // Query directly for this customer's applications instead of downloading every application in the database
+
     if (cleanEmail) {
       try {
         var byEmail = await supabaseClient

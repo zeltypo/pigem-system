@@ -447,7 +447,7 @@ async function toggleNotifModal() {
   if (!m) return;
   var wasHidden = m.classList.contains("hidden");
   m.classList.toggle("hidden");
-  // Opening the list is not the same as reading every notification.
+
   if (wasHidden && dashCurrentUser) await refreshNotifBell(dashCurrentUser);
 }
 

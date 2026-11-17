@@ -1949,7 +1949,7 @@ textarea.input-invalid {
   padding: 16px 18px;
 }
 
-/* Screening cards wrap long findings without pushing adjacent content off screen. */
+
 .check-pill { min-width: 0; align-items: flex-start; flex-wrap: wrap; }
 .check-pill > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .check-pill .badge { white-space: normal; text-align: left; }

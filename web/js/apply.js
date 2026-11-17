@@ -1513,7 +1513,20 @@ function resetApplyWizardToStep1() {
   showPanel(0);
 }
 
+var applicationSubmissionRunning = false;
+
 async function submitRegistration() {
+  if (applicationSubmissionRunning) return;
+  applicationSubmissionRunning = true;
+  try {
+    return await performApplicationSubmission();
+  } finally {
+    applicationSubmissionRunning = false;
+  }
+}
+
+async function performApplicationSubmission() {
+  var savedApplication = null;
   if (await enforceLiveMaintenanceOnStep()) return;
   if (!validateCurrentPanel()) return;
   if (currentPanel === 4 && !(await validateSelectedIdQuality())) return;
@@ -1696,6 +1709,7 @@ async function submitRegistration() {
       });
     }
     var saved = await dbCreateApplication(baseAppPayload);
+    savedApplication = saved;
 
 
     await new Promise(function (r) { setTimeout(r, 300); });
@@ -1714,7 +1728,7 @@ async function submitRegistration() {
     await dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")", target_tab: "tab-queue", target_id: saved.id });
     await apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);
     if (photoRequest) {
-      // The request is already saved on the application even if email delivery fails.
+
       try {
         var photoEmail = await apiSendStatusEmail(email, fullName, saved.ref_no, "Needs Correction", photoRequest, "Valid ID photos");
         photoEmailSent = Boolean(photoEmail && photoEmail.sent);
@@ -1753,6 +1767,14 @@ async function submitRegistration() {
     );
   } catch (err) {
     if (loadingScreen) loadingScreen.hidden = true;
+    if (savedApplication) {
+      openPopup('<h3>Application saved</h3><p>Your reference is <b>' +
+        escapeHtml(savedApplication.ref_no || savedApplication.reference_no) +
+        '</b>.</p><p>A confirmation message could not be completed. Check your account for the application status.</p>' +
+        '<a class="btn btn-red" href="customer.html">Open my applications</a>',
+        { showCloseX: true, onClose: resetApplyWizardToStep1 });
+      return;
+    }
     showPanel(5);
     var brand = '<span class="row" style="align-items:center;gap:10px"><img src="' +
       escapeHtml(getImageUrl("black-logo-white-mode.png")) +

@@ -1,40 +1,31 @@
 # PIGEM Internet Service Application System
 
-Plain HTML, CSS and JavaScript frontend; Python FastAPI backend on Vercel; Supabase database/storage; manual document review.
+Public application website and Customer, Agent, Manager, and Admin portals.
 
-Read [THIRD_TEST_NOTES.md](THIRD_TEST_NOTES.md) for changes, checks and deployment blockers. This is a third-test candidate, not a production certification.
+## Project
+- web/html contains the pages and portals.
+- web/js contains forms, document checks, sessions, reports, and data access.
+- web/style.css contains shared styles.
+- api contains FastAPI routes, access checks, email, and OpenAI integration.
+- pigem-system-duplicate contains a reference source copy with comments, excluded from deployment.
+- schema.sql contains the complete fresh database setup.
+- schema-drop.sql removes the PIGEM tables when explicitly run.
 
-## Project layout
+## Screening
+The Agent browser uses OpenCV and Tesseract to prepare and read each application's photos. OpenAI helps rewrite staff correction messages. Incomplete checks require a retry. Offline events stop active checks. Online events retry open applications. Browser connection indicators cannot guarantee that a remote service is reachable.
 
-- `web/html/`: public pages, Customer, Agent, Manager and Admin portals.
-- `web/js/`: page behavior, shared dashboard controls, API calls and database access.
-- `web/style.css`: shared responsive styles.
-- `api/index.py`: application API routes.
-- `api/_quality.py`: image-quality checks and preview crops.
-- `api/_openai_client.py`: one bounded OpenAI image/text request.
-- `api/_ai.py`: OCR schema, field comparisons and screening guidance.
-- `api/_screening.py`: document retrieval and saved screening results.
-- `api/_auth.py`, `api/_mailer.py`: existing authentication helper and notifications; see release blockers.
-- `tests/`: offline regression tests, excluded from deployment.
+## Setup
+Use the Vercel routes in vercel.json. Python dependencies are in api/requirements.txt.
+Configure Supabase, SMTP, reCAPTCHA, APP_BASE_URL, and OpenAI variables in hosting settings. Keep secret keys out of frontend files.
 
-## OpenAI configuration
+## Database
+Run schema.sql for a fresh setup. For an intentional reset, change pigem.reset_demo from off to on and run the full file once. This deletes PIGEM records. Auth users and Storage files are managed separately.
+The schema uses broad demo access policies and is intended for fictional evaluation data.
 
-The browser checks photo quality during uploads. When an Agent opens an application, Tesseract.js reads the photos locally and compares the labeled fields with the form. The Agent can also check documents from the shared queue. OpenCV.js enhances hard-to-read photos locally before a second read. Results stay in the browser. Staff confirm findings before sending a targeted correction request. OpenAI GPT-6 Luna is used only to help rewrite staff correction messages.
+## Deployment
+Production uses zeltypo/pigem-system, main. The backup and backup-2026-11-17-before-cleanup branches preserve main before cleanup. Update backup only when requested.
 
-Keep the existing Supabase, SMTP, reCAPTCHA and `APP_BASE_URL` settings. Never put an OpenAI key or Supabase service-role key in browser code. Do not enable paid calls on an unrestricted public deployment before fixing authorization and abuse controls.
-
-## Validation commands
-
-```text
-python -m unittest discover -s tests -v
-node tests/frontend-regression.cjs
-python -m compileall -q api
-```
-
-These checks do not establish live OCR accuracy, browser rendering, cross-device synchronization, email delivery or production security.
-
-## Database setup
-
-- `schema.sql` is the fresh-install baseline for a dedicated fictional-data demo project. It stops at the first existing PIGEM table and rolls back on error.
-- `schema-upgrade.sql` is the additive upgrade for an existing database. It adds the cropped-image columns and enforces the single-Admin rule if the index is missing.
-- The portal's legacy database permissions still require replacement before real customer use. Neither SQL file was executed against a cloud database.
+## Verification limits
+Actual ID accuracy and weak-network behavior still require live checks.
+Public-submission email needs a verified authentication path.
+A saved application remains saved if a later notification fails.

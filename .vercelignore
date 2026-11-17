@@ -1,9 +1,10 @@
 .env
 .env.*
+.venv/
 __pycache__/
 *.pyc
-schema.sql
-
-tests/
-
 /tmp/
+pigem-system/
+pigem-system-duplicate/
+*.sql
+*.md

@@ -234,7 +234,7 @@ async function analyzeClientIdQuality(fileObj) {
         if (w < 260 || h < 160) {
           issues.push("This photo is too small. Please choose the original, full-size photo.");
         }
-        // Background edges can hide blur in a centered ID photo.
+
         var centerBlur = centerCount ? centerLapSq / centerCount : lapVar;
         if (lapVar < 32 || (centerBlur < 12 && lapVar < 180)) {
           issues.push("The photo looks blurry. Hold the camera steady and take a sharper photo.");
@@ -493,7 +493,7 @@ async function apiGeneratePoliteRemark(rawRemark, chosenField) {
   };
 }
 
-// One request at a time per portal. The server also claims each record atomically.
+
 var automaticDocumentChecksRunning = false;
 var automaticDocumentAttempts = {};
 var automaticDocumentFailures = {};

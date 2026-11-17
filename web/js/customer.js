@@ -26,14 +26,14 @@ window.addEventListener("DOMContentLoaded", async function () {
   var custNameEl = document.getElementById("cust-name");
   if (custNameEl) custNameEl.textContent = currentCustomer.full_name || currentCustomer.username || currentCustomer.email || "Customer";
 
-  // Initialize Account Drawer (Edit Profile, Avatar Upload, Change Password, Theme, Sign Out) immediately
+
   initDashUI(currentCustomer, myApps, function (id) { selectMyApp(id, true); });
 
   await loadMyApplications();
 
   setInterval(async function () {
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
-    // Replacing the correction form clears the browser's selected files.
+
     if (document.getElementById("fix-file")?.files?.length ||
         document.getElementById("fix-file-back")?.files?.length ||
         document.getElementById("btn-fix")?.disabled) return;
@@ -161,7 +161,7 @@ async function loadMyApplications(backgroundRefresh) {
   }
 
   renderAppList();
-  // Keep the actual file inputs alive during polling. Browsers cannot restore selected files.
+
   if (!backgroundRefresh || !document.getElementById("btn-fix")) renderSelectedApp();
 }
 
@@ -526,7 +526,7 @@ async function submitCustomerCorrection(appId) {
       if (item.input.files[0] !== item.file) return;
     }
 
-    // Confirm both selections still match after the asynchronous checks finish.
+
     if (fileInput?.files?.[0] !== file || fileBackInput?.files?.[0] !== fileBack) return;
 
     var changedList = [];

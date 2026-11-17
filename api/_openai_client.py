@@ -33,13 +33,13 @@ def strict_schema(schema):
 def complete(parts, expect_json=True, max_tokens=2048, response_schema=None, system_instruction="", effort_override=""):
     if not is_configured():
         return ""
-    # This client is for correction notes. Refuse image input before making a request.
+
     if any("inline_data" in part or "text" not in part for part in parts):
         return ""
     content = [{"type": "text", "text": part["text"]} for part in parts]
     model = configured_model()
     effort = os.getenv("OPENAI_REASONING_EFFORT", "").strip().lower()
-    # Short correction messages can use the lowest reasoning setting.
+
     default_effort = "none" if model.lower().startswith(("gpt-6-luna", "gpt-5.4-mini")) else "medium"
     reasoning = bool(effort) or model.lower().startswith(("gpt-5", "gpt-6", "o1", "o3", "o4"))
     body = {
@@ -77,7 +77,7 @@ def complete(parts, expect_json=True, max_tokens=2048, response_schema=None, sys
     try:
         choice = _post(body)
         message = choice["message"]
-        # A refusal, timeout, quota error or truncated answer is NOT a mismatch.
+
         if choice.get("finish_reason") != "stop" or message.get("refusal"):
             return ""
         text = message.get("content") or ""
@@ -85,5 +85,5 @@ def complete(parts, expect_json=True, max_tokens=2048, response_schema=None, sys
             return ""
         return text
     except (urllib.error.URLError, OSError, ValueError, KeyError, IndexError, TypeError):
-        # Never return provider response bodies, API keys, or ID text in errors.
+
         return ""

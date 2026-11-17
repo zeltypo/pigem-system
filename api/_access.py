@@ -35,7 +35,7 @@ def verify_screening_staff(authorization):
     if not isinstance(user, dict) or not user.get("id"):
         raise AccessError(401, "Invalid staff sign-in.")
     metadata = user.get("app_metadata") or {}
-    # Only server-managed app_metadata may grant roles. users.role is still publicly writable.
+
     if not isinstance(metadata, dict) or metadata.get("role") not in ("agent", "manager"):
         raise AccessError(403, "Only authorized Agents and Managers can run AI screening.")
     if user.get("is_anonymous") or metadata.get("disabled") is True:
