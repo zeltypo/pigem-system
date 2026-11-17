@@ -75,14 +75,20 @@ function apiStartBackgroundScreening(applicationId) {
   })();
 }
 
+var screeningSessionDenial = null;
+
 async function apiCheckScreeningSession(signal) {
   try {
     var token = await dbGetScreeningToken();
+    if (screeningSessionDenial?.token === token) return screeningSessionDenial.status;
     var response = await fetch(_apiEndpoint("/screen/session"), {
       headers: token ? { Authorization: "Bearer " + token } : {},
       cache: "no-store",
       signal: signal
     });
+    if (response.status === 401 || response.status === 403) {
+      screeningSessionDenial = { token: token, status: response.status };
+    }
     return response.status;
   } catch (error) {
     return 0;

@@ -30,22 +30,23 @@ DECLARE
   staff pigem_private.screening_staff%ROWTYPE;
   token text;
 BEGIN
-  IF login_username IS NULL OR login_password IS NULL OR
-     length(login_username) NOT BETWEEN 3 AND 30 OR octet_length(login_password) NOT BETWEEN 1 AND 72 THEN
+  IF login_username IS NULL OR length(login_username) NOT BETWEEN 3 AND 30 THEN
     RETURN NULL;
   END IF;
   SELECT * INTO staff FROM pigem_private.screening_staff
-    WHERE username = lower(login_username) AND active FOR UPDATE;
+    WHERE username = lower(login_username) FOR UPDATE;
   IF NOT FOUND THEN RETURN NULL; END IF;
+  IF NOT staff.active THEN RETURN jsonb_build_object('enrolled', true, 'reason', 'disabled'); END IF;
   IF staff.attempt_window < now() - interval '5 minutes' THEN
     staff.attempt_window := now();
     staff.attempts := 0;
   END IF;
-  IF staff.attempts >= 5 THEN RETURN NULL; END IF;
-  IF extensions.crypt(login_password, staff.password_hash) IS DISTINCT FROM staff.password_hash THEN
+  IF staff.attempts >= 5 THEN RETURN jsonb_build_object('enrolled', true, 'reason', 'locked'); END IF;
+  IF login_password IS NULL OR octet_length(login_password) NOT BETWEEN 1 AND 72 OR
+     extensions.crypt(login_password, staff.password_hash) IS DISTINCT FROM staff.password_hash THEN
     UPDATE pigem_private.screening_staff SET attempts = staff.attempts + 1,
       attempt_window = staff.attempt_window WHERE username = staff.username;
-    RETURN NULL;
+    RETURN jsonb_build_object('enrolled', true, 'reason', 'wrong_password');
   END IF;
   token := 'pigem_staff_' || encode(extensions.gen_random_bytes(32), 'hex');
   UPDATE pigem_private.screening_staff SET attempts = 0, attempt_window = now(),

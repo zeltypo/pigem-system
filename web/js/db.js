@@ -533,18 +533,25 @@ async function dbSignIn(identifier, password) {
 
     if (!IS_DEMO_MODE && supabaseClient) {
       sessionStorage.removeItem("pigem_verified_screening_token");
-      try {
-        var verified = await supabaseClient.rpc("pigem_screening_sign_in", {
-          login_username: cleanStaffUser, login_password: password
-        });
-        if (verified.data?.token && verified.data.staff_id === staffUser.id && verified.data.role === staffUser.role) {
-          sessionStorage.setItem("pigem_verified_screening_token", verified.data.token);
-          passMatched = true;
+      var verified = await supabaseClient.rpc("pigem_screening_sign_in", {
+        login_username: cleanStaffUser, login_password: password
+      });
+      if (verified.error) throw new Error("Internal sign-in is temporarily unavailable. Please try again.");
+      if (verified.data?.enrolled) {
+        if (verified.data.reason === "locked") throw new Error("Too many attempts. Try your screening password again in five minutes.");
+        if (verified.data.reason === "disabled") throw new Error("Your screening account is disabled. Contact the administrator.");
+        throw new Error("Use the password issued when your username was enrolled for screening.");
+      }
+      if (verified.data?.token) {
+        if (verified.data.staff_id !== staffUser.id || verified.data.role !== staffUser.role) {
+          throw new Error("Your screening account does not match your staff profile. Contact the administrator.");
         }
-      } catch (error) {}
+        sessionStorage.setItem("pigem_verified_screening_token", verified.data.token);
+        passMatched = true;
+      }
     }
 
-    if (staffUser.email && !IS_DEMO_MODE && supabaseClient &&
+    if (!verified?.data?.token && staffUser.email && !IS_DEMO_MODE && supabaseClient &&
         (!passMatched || SYSTEM_ROLES.staff.indexOf(staffUser.role) !== -1)) {
 
       var legacyAuth = await supabaseClient.auth.signInWithPassword({ email: staffUser.email, password: password });
