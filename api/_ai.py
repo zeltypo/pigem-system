@@ -920,22 +920,28 @@ def is_idp_available() -> bool:
 
 
 def run_idp_screening_pipeline(
-    front_bytes: bytes, back_bytes: Optional[bytes], entered: Dict[str, Any]
+    front_bytes: bytes, back_bytes: Optional[bytes], entered: Dict[str, Any], check_id: str = ""
 ) -> Dict[str, Any]:
     """Execute Steps 2 (IDP Extraction), 3 (NLP Validation), and 4 (GPT-5.4 Reasoning)."""
     # Step 2: IDP Extraction (Azure AI Document Intelligence / Nanonets)
+    print(f"screening check={check_id} stage=idp started", flush=True)
     ocr_payload = _idp.extract_id_document(
         front_bytes,
         back_bytes=back_bytes,
         declared_id_type=str(entered.get("id_type") or ""),
     )
+    print(f"screening check={check_id} stage=idp available={bool(ocr_payload.get('available'))}", flush=True)
     # Step 3: Lightweight Regex / NLP Validation (Field comparisons + Checksum, Age 18+, Expiration)
     comparisons = _matcher.compare(entered, ocr_payload)
     nlp_rules = _matcher.validate_nlp_rules(entered, ocr_payload)
+    print(f"screening check={check_id} stage=validation complete", flush=True)
     # Step 4: LLM Reasoning (GPT-5.4 over masked JSON)
+    if ocr_payload.get("available"):
+        print(f"screening check={check_id} stage=llm checking", flush=True)
     ai_reasoning = (_ai_service.reason_over_validated_json(
         entered, comparisons, nlp_rules, ocr_payload
     ) if ocr_payload.get("available") else {})
+    print(f"screening check={check_id} stage=llm completed={bool(ai_reasoning.get('available'))}", flush=True)
     return {
         "ocr": ocr_payload,
         "comparisons": comparisons,

@@ -126,14 +126,17 @@ def complete(
             },
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            print(f"openai endpoint=responses status={resp.status}", flush=True)
             resp_data = json.load(resp)
             out_text = _extract_responses_output_text(resp_data)
             if out_text:
                 if expect_json and not isinstance(json.loads(out_text), dict):
                     return ""
                 return out_text
-    except Exception:
-        pass
+    except urllib.error.HTTPError as error:
+        print(f"openai endpoint=responses status={error.code}", flush=True)
+    except Exception as error:
+        print(f"openai endpoint=responses error={type(error).__name__}", flush=True)
 
     # 2. Fallback: /v1/chat/completions
     chat_body = {
@@ -168,6 +171,7 @@ def complete(
             },
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            print(f"openai endpoint=chat_completions status={resp.status}", flush=True)
             choice = json.load(resp)["choices"][0]
             message = choice["message"]
             if message.get("refusal"):

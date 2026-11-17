@@ -1095,6 +1095,12 @@ async function collectAgentIdFindings(sources, expected, job) {
   var failedReads = [];
   var photoIssues = [];
 
+  var sessionStatus = await apiCheckScreeningSession(job.controller.signal);
+  if (sessionStatus !== 200) {
+    return { fields: [], unclearSides: [], unavailableSides: [], failedReads: ["Staff session"],
+      accessDenied: sessionStatus === 401 || sessionStatus === 403 };
+  }
+
   var photos = sources.map(async function (side) {
     try {
       var options = { referrerPolicy: "no-referrer", signal: job.controller.signal };
@@ -1302,10 +1308,10 @@ async function runAgentIdCheckNow(sources, expected) {
 
 function summarizeAgentIdFindings(result) {
   if (result.uploadTooLarge) return "The ID photos are too large to send for checking. Try smaller clear copies.";
-  if (result.accessDenied) return "Document check unavailable. Sign in again with a verified Agent account.";
+  if (result.accessDenied) return "Document check requires a verified screening account. Sign in with your authorized Agent or Manager account.";
   if (result.offline) return "Connection lost. Document checking will resume when you are online.";
   if (result.unavailableSides?.length || result.failedReads?.length) {
-    return "Document check incomplete. Configure AZURE_DI_ENDPOINT and AZURE_DI_KEY (or check connection) and reopen the application. No correction is recommended from this incomplete check.";
+    return "Document check incomplete. The photo could not be downloaded or read. Reopen the application to retry.";
   }
   if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
   if (result.failed) return "The IDP screening service could not finish. Refresh and reopen the application, or check the original photos.";

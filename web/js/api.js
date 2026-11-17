@@ -75,6 +75,20 @@ function apiStartBackgroundScreening(applicationId) {
   })();
 }
 
+async function apiCheckScreeningSession(signal) {
+  try {
+    var token = await dbGetToken();
+    var response = await fetch(_apiEndpoint("/screen/session"), {
+      headers: token ? { Authorization: "Bearer " + token } : {},
+      cache: "no-store",
+      signal: signal
+    });
+    return response.status;
+  } catch (error) {
+    return 0;
+  }
+}
+
 async function apiRunScreening(idFrontFile, customerDetails, idBackFile, signal) {
   var offlineResult = {
     preliminary: true,

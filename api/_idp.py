@@ -167,6 +167,7 @@ def _analyze_bytes_azure(image_bytes: bytes, model="prebuilt-idDocument") -> Opt
         for url, payload in api_paths:
             try:
                 resp = client.post(url, headers=headers, json=payload)
+                print(f"azure_idp model={model} status={resp.status_code}", flush=True)
                 if resp.status_code in (200, 202):
                     if resp.status_code == 200:
                         return resp.json()

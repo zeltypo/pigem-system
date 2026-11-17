@@ -1,3 +1,4 @@
+from uuid import uuid4
 from os import getenv
 from pathlib import Path
 import sys
@@ -82,6 +83,17 @@ def verify_captcha(data: CaptchaVerifyRequest, request: Request):
     return _auth.verify_recaptcha(data.token, client_ip)
 
 
+@app.get("/api/screen/session")
+def screening_session(request: Request):
+    try:
+        _auth.require_screening_staff(request.headers.get("authorization", ""))
+    except HTTPException as error:
+        print(f"screening stage=session status={error.status_code}", flush=True)
+        raise
+    print("screening stage=session status=verified", flush=True)
+    return {"verified": True}
+
+
 @app.post("/api/screen")
 @app.post("/screen")
 async def screen_document(
@@ -111,6 +123,9 @@ async def screen_document(
         "id_type": id_type,
         "id_number": id_number,
     }
+    check_id = uuid4().hex
+    print(f"screening check={check_id} stage=upload accepted", flush=True)
+
     def run_check():
         preparation = {}
         try:
@@ -126,7 +141,9 @@ async def screen_document(
                 )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from None
-        result = _ai.run_idp_screening_pipeline(cleaned_front, cleaned_back, entered)
+        print(f"screening check={check_id} stage=opencv complete", flush=True)
+        result = _ai.run_idp_screening_pipeline(cleaned_front, cleaned_back, entered, check_id=check_id)
+        result["check_id"] = check_id
         result["quality"]["preprocessed"] = preparation
         return result
 
