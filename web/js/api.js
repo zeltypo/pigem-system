@@ -1,5 +1,5 @@
 function _getPortalBaseUrl() {
-  var origin = "https://pigem-seven.vercel.app";
+  var origin = "https://pigem-system-web.vercel.app";
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
     origin = window.location.origin;
   } else if (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) {
@@ -26,41 +26,6 @@ function generateOtpRefTag() {
   return tag;
 }
 
-function ensureGoogleRecaptcha(callback) {
-  if (typeof callback !== "function") return;
-
-  function tryTrigger() {
-    if (typeof grecaptcha !== "undefined" && typeof grecaptcha.render === "function") {
-      try {
-        grecaptcha.ready(callback);
-        return true;
-      } catch (e) {
-        callback();
-        return true;
-      }
-    }
-    return false;
-  }
-
-  if (tryTrigger()) return;
-
-  if (typeof document !== "undefined" && !document.querySelector('script[src*="google.com/recaptcha/api.js"]')) {
-    var sc = document.createElement("script");
-    sc.src = "https://www.google.com/recaptcha/api.js";
-    sc.async = true;
-    sc.defer = true;
-    document.head.appendChild(sc);
-  }
-
-  var attempts = 0;
-  var timer = setInterval(function () {
-    attempts++;
-    if (tryTrigger() || attempts > 50) {
-      clearInterval(timer);
-    }
-  }, 150);
-}
-
 async function apiVerifyCaptcha(token) {
   var clean = String(token || "").trim();
   if (!clean) return { verified: false };
@@ -71,14 +36,10 @@ async function apiVerifyCaptcha(token) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: clean })
     });
-    if (!res.ok) {
-      if (clean.length > 20) return { verified: true, fallback: true };
-      return { verified: false };
-    }
+    if (!res.ok) return { verified: false };
     var data = await res.json();
     return { verified: data.verified === true };
   } catch (err) {
-    if (clean.length > 20) return { verified: true, fallback: true };
     return { verified: false, fallback: true };
   }
 }
@@ -158,17 +119,7 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
       body: formData
     });
 
-    if (!response.ok) {
-      var errDetail = "";
-      try {
-        var errJson = await response.json();
-        errDetail = errJson.detail || errJson.reason || "";
-      } catch (e) {}
-      return Object.assign({}, offlineResult, {
-        api_error: errDetail || ("HTTP " + response.status),
-        status_code: response.status
-      });
-    }
+    if (!response.ok) return offlineResult;
     var data = await response.json();
     var q = data.quality || {};
     var notes = data.ai || {};
@@ -550,10 +501,27 @@ function documentCheckUnavailable(id) {
   return automaticDocumentFailures[id] === true;
 }
 async function checkPendingDocuments(applications, onComplete) {
-  // Screening now runs live on demand via browser OpenCV + POST /api/screen
-  // when an Agent opens or inspects an application. Avoid calling /api/screen-async
-  // in a background loop, which previously flagged pending apps as failed.
-  return;
+  if (automaticDocumentChecksRunning || !isAiEnabled()) return;
+  automaticDocumentChecksRunning = true;
+  try {
+    for (var application of applications) {
+      var state = (application.screening || {}).state;
+      if (!["Pending Review", "Under Agent Review"].includes(application.status)) continue;
+      if (!["pending_agent", "queued", "checking", "unavailable", "paused", undefined].includes(state)) continue;
+      var key = application.id + "|" + (application.updated_at || application.created_at || "");
+      var attempt = automaticDocumentAttempts[key] || { count: 0, next: 0 };
+      if (attempt.count >= 3 || Date.now() < attempt.next) continue;
+      attempt.count++;
+      attempt.next = Date.now() + 60000;
+      automaticDocumentAttempts[key] = attempt;
+      var result = await apiStartBackgroundScreening(application.id);
+      automaticDocumentFailures[application.id] = !result || (!result.screened && !result.queued);
+      if (result && result.screened || automaticDocumentFailures[application.id]) await onComplete(application.id);
+      if (result && (result.status === 401 || result.status === 403)) break;
+    }
+  } finally {
+    automaticDocumentChecksRunning = false;
+  }
 }
 
 async function showSelectedPhotoQuality(input) {

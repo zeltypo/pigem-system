@@ -29,21 +29,16 @@ function openApplyWithCaptcha(planId) {
   showGoogleCaptchaPopup();
 }
 
-var homeCaptchaWidgetId = null;
-
 function showGoogleCaptchaPopup() {
-  homeCaptchaWidgetId = null;
   openPopup(
-    '<div class="center" style="padding:16px 8px 8px;">' +
-      '<div style="width:48px;height:48px;border-radius:50%;background:#fee2e2;color:#c8102e;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">' +
-        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>' +
+    '<div class="center" style="padding:14px 4px 6px;">' +
+      '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">' +
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>' +
       '</div>' +
-      '<h3 style="font-size:18px;margin-bottom:6px;">Security Verification</h3>' +
-      '<p class="small muted" style="margin-bottom:18px;">Please check the box below to proceed with your application.</p>' +
-      '<div style="display:flex;justify-content:center;align-items:center;margin:8px 0 12px;min-height:78px;">' +
-        '<div id="home-captcha-box" style="min-width:304px;min-height:78px;display:flex;align-items:center;justify-content:center;">' +
-          '<span class="small muted">Loading security check...</span>' +
-        '</div>' +
+      '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
+      '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
+      '<div style="display:flex;justify-content:center;margin:8px 0;min-height:78px;">' +
+        '<div id="home-captcha-box" style="min-width:304px;min-height:78px;"></div>' +
       '</div>' +
     '</div>',
     { showCloseX: true, closeOnBackdrop: true }
@@ -51,49 +46,54 @@ function showGoogleCaptchaPopup() {
   renderHomeCaptchaBox();
 }
 
-function renderHomeCaptchaBox() {
-  var siteKey = (typeof CONFIG !== "undefined" && CONFIG.RECAPTCHA_SITE_KEY)
-    ? CONFIG.RECAPTCHA_SITE_KEY
-    : "6Lcj2iQuAAAAAOBQYN7bVm4ks-_V_a0aSYlge11B";
+async function renderHomeCaptchaBox() {
+  var box = document.getElementById("home-captcha-box");
+  if (!box) return;
+  var health = await apiCheckHealth();
+  if (!box.isConnected) return;
+  var siteKey = health?.recaptcha_site_key || CONFIG.RECAPTCHA_SITE_KEY;
+  box.innerHTML = '<div id="g-home-recaptcha"></div>';
 
-  function doRender() {
-    var box = document.getElementById("home-captcha-box");
-    if (!box) return;
-    box.innerHTML = "";
-    try {
-      homeCaptchaWidgetId = grecaptcha.render(box, {
-        sitekey: siteKey,
-        callback: onGoogleCaptchaPassed
-      });
-    } catch (err) {
-      console.warn("Home reCAPTCHA render notice:", err);
+  function tryRenderGoogle() {
+    if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
+      try {
+        grecaptcha.render("g-home-recaptcha", {
+          sitekey: siteKey,
+          callback: onGoogleCaptchaPassed,
+          "error-callback": function () { renderHomeCaptchaFallback(box); }
+        });
+        return true;
+      } catch (err) {
+        return false;
+      }
     }
+    return false;
   }
 
-  if (typeof ensureGoogleRecaptcha === "function") {
-    ensureGoogleRecaptcha(doRender);
-  } else if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
-    doRender();
-  } else {
-    var count = 0;
-    var t = setInterval(function () {
-      count++;
-      if ((typeof grecaptcha !== "undefined" && grecaptcha.render) || count > 40) {
-        clearInterval(t);
-        if (typeof grecaptcha !== "undefined" && grecaptcha.render) doRender();
+  if (!tryRenderGoogle()) {
+    var attempts = 0;
+    var timer = setInterval(function () {
+      attempts++;
+      if (tryRenderGoogle() || attempts > 15) {
+        clearInterval(timer);
+        if (attempts > 15 && !box.querySelector("iframe")) {
+          renderHomeCaptchaFallback(box);
+        }
       }
-    }, 150);
+    }, 250);
   }
 }
 
+function renderHomeCaptchaFallback(box) {
+  box.textContent = "The security check could not load. Refresh the page and try again.";
+}
+
 async function onGoogleCaptchaPassed(token) {
+  if (!token) return;
   if (token && typeof apiVerifyCaptcha === "function") {
     var checkRes = await apiVerifyCaptcha(token);
     if (!checkRes || checkRes.verified === false) {
       showAlert("Security Verification", "Could not verify security token. Please check the box again.", "warn");
-      if (typeof grecaptcha !== "undefined" && grecaptcha.reset && homeCaptchaWidgetId !== null) {
-        try { grecaptcha.reset(homeCaptchaWidgetId); } catch (e) {}
-      }
       return;
     }
   }

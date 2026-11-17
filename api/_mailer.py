@@ -1,28 +1,17 @@
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 import html
-import json
 import os
 import random
-import smtplib
-import socket
-import ssl
 import string
-from typing import Any, Dict, List, Optional
-import urllib.error
-import urllib.request
-
-def _clean_env(name: str, default: str = "") -> str:
-    raw = (os.getenv(name) or default).strip()
-    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
-        raw = raw[1:-1].strip()
-    return raw
+import smtplib
+from typing import Any, Dict, Optional
 
 def _get_smtp_host() -> str:
-    return _clean_env("SMTP_HOST", "smtp.gmail.com") or "smtp.gmail.com"
+    return (os.getenv("SMTP_HOST") or "smtp.gmail.com").strip()
 
 def _get_smtp_port() -> int:
-    raw = _clean_env("SMTP_PORT", "465")
+    raw = (os.getenv("SMTP_PORT") or "465").strip()
     try:
         return int(raw)
     except ValueError:
@@ -30,28 +19,29 @@ def _get_smtp_port() -> int:
 
 def _get_smtp_user() -> str:
     return (
-        _clean_env("SMTP_USER")
-        or _clean_env("GMAIL_USER")
-        or _clean_env("EMAIL_USER")
-    )
+        os.getenv("SMTP_USER")
+        or os.getenv("GMAIL_USER")
+        or os.getenv("EMAIL_USER")
+        or ""
+    ).strip()
 
 def _get_smtp_password() -> str:
     raw = (
-        _clean_env("SMTP_PASSWORD")
-        or _clean_env("SMTP_PASS")
-        or _clean_env("GMAIL_APP_PASSWORD")
-        or _clean_env("EMAIL_PASSWORD")
+        os.getenv("SMTP_PASSWORD")
+        or os.getenv("GMAIL_APP_PASSWORD")
+        or os.getenv("EMAIL_PASSWORD")
+        or ""
     )
     return "".join(raw.split())
 
-def _get_resend_key() -> str:
-    return _clean_env("RESEND_API_KEY")
-
 def _get_sender_name() -> str:
-    return _clean_env("SMTP_FROM_NAME", "PIGEM Combined Facilities Support Services") or "PIGEM Combined Facilities Support Services"
+    return (
+        os.getenv("SMTP_FROM_NAME")
+        or "PIGEM Combined Facilities Support Services"
+    ).strip()
 
 def _get_sender_email(smtp_user: str = "") -> str:
-    explicit = _clean_env("SMTP_FROM_EMAIL")
+    explicit = (os.getenv("SMTP_FROM_EMAIL") or "").strip()
     if explicit and smtp_user:
         exp_domain = explicit.split("@")[-1].lower()
         usr_domain = smtp_user.split("@")[-1].lower()
@@ -60,26 +50,31 @@ def _get_sender_email(smtp_user: str = "") -> str:
         return smtp_user
     if smtp_user:
         return smtp_user
-    return explicit
+    return ""
 
 def _get_app_base_url() -> str:
-    prod_domain = _clean_env("VERCEL_PROJECT_PRODUCTION_URL")
+    prod_domain = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or "").strip()
     if prod_domain:
         return f"https://{prod_domain}"
-    return (_clean_env("APP_BASE_URL", "https://pigem-seven.vercel.app") or "https://pigem-seven.vercel.app").rstrip("/")
+    return (os.getenv("APP_BASE_URL") or "https://pigem-system-web.vercel.app").strip().rstrip("/")
 
 def _get_supabase_logo_url() -> str:
-    base = (_clean_env("SUPABASE_URL", "https://wuunqfxyejxwrawtjdrf.supabase.co") or "https://wuunqfxyejxwrawtjdrf.supabase.co").rstrip("/")
+    base = (os.getenv("SUPABASE_URL") or "https://wuunqfxyejxwrawtjdrf.supabase.co").strip().rstrip("/")
     return f"{base}/storage/v1/object/public/website-assets/black-logo-white-mode.png"
 
 def _generate_ref_tag(existing_tag: str = "") -> str:
+
     cleaned = "".join(ch for ch in str(existing_tag or "").upper() if ch.isalpha())
+
     if len(cleaned) >= 4:
+
         return cleaned[:4]
+
     return "".join(random.choices(string.ascii_uppercase, k=4))
 
 def is_configured() -> bool:
-    return bool((_get_smtp_user() and _get_smtp_password()) or _get_resend_key())
+
+    return bool(_get_smtp_user() and _get_smtp_password())
 
 def is_Allowed_customer_gmail(email_addr: str) -> bool:
 
@@ -458,33 +453,6 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
 
         )
 
-class _IPv4SMTP_SSL(smtplib.SMTP_SSL):
-    def _get_socket(self, h, p, timeout):
-        infos = socket.getaddrinfo(h, p, socket.AF_INET, socket.SOCK_STREAM)
-        sock = socket.create_connection(infos[0][4][:2], timeout, self.source_address)
-        return self.context.wrap_socket(sock, server_hostname=h)
-
-
-class _IPv4SMTP(smtplib.SMTP):
-    def _get_socket(self, h, p, timeout):
-        infos = socket.getaddrinfo(h, p, socket.AF_INET, socket.SOCK_STREAM)
-        return socket.create_connection(infos[0][4][:2], timeout, self.source_address)
-
-
-def _open_smtp_connection(host: str, port: int, use_ipv4: bool, ssl_ctx: ssl.SSLContext, ehlo_host: str):
-    if port == 465:
-        cls = _IPv4SMTP_SSL if use_ipv4 else smtplib.SMTP_SSL
-        server = cls(host, port, timeout=6, context=ssl_ctx, local_hostname=ehlo_host)
-        server.ehlo(ehlo_host)
-        return server
-    cls = _IPv4SMTP if use_ipv4 else smtplib.SMTP
-    server = cls(host, port, timeout=6, local_hostname=ehlo_host)
-    server.ehlo(ehlo_host)
-    server.starttls(context=ssl_ctx)
-    server.ehlo(ehlo_host)
-    return server
-
-
 def send(
 
     to: str,
@@ -520,13 +488,17 @@ def send(
         }
 
     smtp_user = _get_smtp_user()
-    smtp_password = _get_smtp_password()
-    resend_key = _get_resend_key()
 
-    if (not smtp_user or not smtp_password) and not resend_key:
+    smtp_password = _get_smtp_password()
+
+    if not smtp_user or not smtp_password:
+
         return {
+
             "sent": False,
-            "error": "Email delivery is not configured. Set SMTP_USER and SMTP_PASSWORD (or RESEND_API_KEY) in Vercel Environment Variables.",
+
+            "error": "Gmail SMTP is not configured. Set SMTP_USER and SMTP_PASSWORD in Vercel Environment Variables.",
+
         }
 
     sender_name = _get_sender_name()
@@ -562,116 +534,61 @@ def send(
 
     msg = EmailMessage()
     msg["Subject"] = subject or "PIGEM Notification"
-    msg["From"] = formataddr((sender_name, sender_email or "noreply@pigem.ph"))
-    if smtp_user:
-        msg["Reply-To"] = formataddr((sender_name, smtp_user))
+    msg["From"] = formataddr((sender_name, sender_email))
+    msg["Reply-To"] = formataddr((sender_name, smtp_user))
     msg["To"] = recipient
     msg["Date"] = formatdate(localtime=True)
-    domain_part = (sender_email.split("@")[-1] if "@" in sender_email else "") or "gmail.com"
+    domain_part = sender_email.split("@")[-1] if "@" in sender_email else "gmail.com"
     msg["Message-ID"] = make_msgid(domain=domain_part)
     msg.set_content(plain_fallback)
     msg.add_alternative(final_html, subtype="html")
 
-    smtp_errors: List[str] = []
-    if smtp_user and smtp_password:
-        host = _get_smtp_host()
-        primary_port = _get_smtp_port()
-        alt_port = 587 if primary_port == 465 else 465
-        ssl_ctx = ssl.create_default_context()
-        ehlo_host = "pigem-seven.vercel.app"
+    host = _get_smtp_host()
 
-        attempts = [
-            (primary_port, True),
-            (alt_port, True),
-            (primary_port, False),
-            (alt_port, False),
-        ]
-        for try_port, use_ipv4 in attempts:
-            server = None
-            delivered = False
-            try:
-                server = _open_smtp_connection(host, try_port, use_ipv4, ssl_ctx, ehlo_host)
+    port = _get_smtp_port()
+
+    try:
+
+        if port == 465:
+
+            with smtplib.SMTP_SSL(host, port, timeout=15) as server:
+
                 server.login(smtp_user, smtp_password)
+
                 server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient])
-                delivered = True
-                return {
-                    "sent": True,
-                    "provider": "gmail_smtp",
-                    "port": try_port,
-                    "recipient": recipient,
-                }
-            except smtplib.SMTPAuthenticationError as auth_exc:
-                err_text = (
-                    "Gmail SMTP authentication failed: verify SMTP_USER and ensure SMTP_PASSWORD "
-                    f"is a valid 16-character Google App Password ({str(auth_exc)[:120]})."
-                )
-                smtp_errors.append(f"port {try_port}: {err_text}")
-                break
-            except Exception as exc:
-                if delivered:
-                    return {
-                        "sent": True,
-                        "provider": "gmail_smtp",
-                        "port": try_port,
-                        "recipient": recipient,
-                    }
-                mode_lbl = "IPv4" if use_ipv4 else "default"
-                smtp_errors.append(f"port {try_port} ({mode_lbl}): {str(exc)[:140]}")
-            finally:
-                if server is not None:
-                    try:
-                        server.quit()
-                    except Exception:
-                        try:
-                            server.close()
-                        except Exception:
-                            pass
 
-        if smtp_errors and "gmail.com" in host.lower() and len(smtp_password) != 16:
-            smtp_errors.insert(
-                0,
-                f"Notice: SMTP_PASSWORD has {len(smtp_password)} characters (expected 16-character Google App Password).",
-            )
+        else:
 
-    if resend_key:
-        try:
-            resend_from = _clean_env("RESEND_FROM_EMAIL") or "onboarding@resend.dev"
-            req_body = json.dumps({
-                "from": f"{sender_name} <{resend_from}>",
-                "to": [recipient],
-                "subject": subject or "PIGEM Notification",
-                "html": final_html,
-                "text": plain_fallback,
-            }).encode("utf-8")
-            req = urllib.request.Request(
-                "https://api.resend.com/emails",
-                data=req_body,
-                method="POST",
-                headers={
-                    "Authorization": f"Bearer {resend_key}",
-                    "Content-Type": "application/json",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=12.0) as reply:
-                body = json.loads(reply.read().decode("utf-8") or "{}")
-                return {
-                    "sent": True,
-                    "provider": "resend_http",
-                    "id": body.get("id"),
-                    "recipient": recipient,
-                }
-        except urllib.error.HTTPError as r_http:
-            err_body = ""
-            try:
-                err_body = r_http.read().decode("utf-8", errors="ignore")[:140]
-            except Exception:
-                pass
-            smtp_errors.append(f"resend ({r_http.code}): {err_body}")
-        except Exception as r_exc:
-            smtp_errors.append(f"resend: {str(r_exc)[:120]}")
+            with smtplib.SMTP(host, port, timeout=15) as server:
 
-    return {
-        "sent": False,
-        "provider": "gmail_smtp",
-        "error": " | ".join(smtp_errors)[:260] if smtp_errors else "Email delivery failed.",
-    }
+                server.ehlo()
+
+                server.starttls()
+
+                server.ehlo()
+
+                server.login(smtp_user, smtp_password)
+
+                server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient])
+
+        return {
+
+            "sent": True,
+
+            "provider": "gmail_smtp",
+
+            "recipient": recipient,
+
+        }
+
+    except Exception as exc:
+
+        return {
+
+            "sent": False,
+
+            "provider": "gmail_smtp",
+
+            "error": str(exc)[:220],
+
+        }

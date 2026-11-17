@@ -12,18 +12,12 @@ var _recoveryState = {
   remainingSec: 300
 };
 
-var _loginCaptchaWidgetId = null;
-
 window.onLoginCaptchaVerified = async function (token) {
   var version = ++loginCaptchaVersion;
-  loginCaptchaVerified = Boolean(token);
+  loginCaptchaVerified = false;
   if (!token || typeof apiVerifyCaptcha !== "function") return;
   var result = await apiVerifyCaptcha(token);
-  if (version === loginCaptchaVersion) {
-    if (result && result.verified === true) {
-      loginCaptchaVerified = true;
-    }
-  }
+  if (version === loginCaptchaVersion) loginCaptchaVerified = Boolean(result && result.verified === true);
 };
 
 window.onLoginCaptchaExpired = function () {
@@ -31,54 +25,51 @@ window.onLoginCaptchaExpired = function () {
   loginCaptchaVerified = false;
 };
 
-function renderLoginCaptchaBox() {
+async function renderLoginCaptchaBox() {
   var box = document.getElementById("login-captcha-box");
   if (!box) return;
   loginCaptchaVerified = false;
+  var health = await apiCheckHealth();
+  if (!box.isConnected) return;
+  var siteKey = health?.recaptcha_site_key || CONFIG.RECAPTCHA_SITE_KEY;
+  box.innerHTML = '<div id="g-login-recaptcha" class="g-recaptcha" data-sitekey="' + siteKey + '" data-callback="onLoginCaptchaVerified" data-expired-callback="onLoginCaptchaExpired"></div>';
 
-  var siteKey = (typeof CONFIG !== "undefined" && CONFIG.RECAPTCHA_SITE_KEY)
-    ? CONFIG.RECAPTCHA_SITE_KEY
-    : "6Lcj2iQuAAAAAOBQYN7bVm4ks-_V_a0aSYlge11B";
-
-  function doRender() {
-    var currentBox = document.getElementById("login-captcha-box");
-    if (!currentBox) return;
-
-    if (_loginCaptchaWidgetId !== null) {
+  function tryRenderGoogle() {
+    if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
       try {
-        grecaptcha.reset(_loginCaptchaWidgetId);
-        return;
-      } catch (e) {
-        _loginCaptchaWidgetId = null;
+        grecaptcha.render("g-login-recaptcha", {
+          sitekey: siteKey,
+          callback: onLoginCaptchaVerified,
+          "expired-callback": onLoginCaptchaExpired,
+          "error-callback": function () {
+            renderLoginCaptchaFallback(box);
+          }
+        });
+        return true;
+      } catch (err) {
+        return false;
       }
     }
-
-    currentBox.innerHTML = "";
-    try {
-      _loginCaptchaWidgetId = grecaptcha.render(currentBox, {
-        sitekey: siteKey,
-        callback: onLoginCaptchaVerified,
-        "expired-callback": onLoginCaptchaExpired
-      });
-    } catch (err) {
-      console.warn("Login reCAPTCHA render notice:", err);
-    }
+    return false;
   }
 
-  if (typeof ensureGoogleRecaptcha === "function") {
-    ensureGoogleRecaptcha(doRender);
-  } else if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
-    doRender();
-  } else {
-    var count = 0;
-    var t = setInterval(function () {
-      count++;
-      if ((typeof grecaptcha !== "undefined" && grecaptcha.render) || count > 40) {
-        clearInterval(t);
-        if (typeof grecaptcha !== "undefined" && grecaptcha.render) doRender();
+  if (!tryRenderGoogle()) {
+    var attempts = 0;
+    var timer = setInterval(function () {
+      attempts++;
+      if (tryRenderGoogle() || attempts > 15) {
+        clearInterval(timer);
+        if (attempts > 15 && !box.querySelector("iframe")) {
+          renderLoginCaptchaFallback(box);
+        }
       }
-    }, 150);
+    }, 250);
   }
+}
+
+function renderLoginCaptchaFallback(box) {
+  if (!box) return;
+  box.textContent = "The security check could not load. Refresh the page and try again.";
 }
 
 function resetLoginFieldsAndCaptcha() {
@@ -87,11 +78,7 @@ function resetLoginFieldsAndCaptcha() {
   window.onLoginCaptchaExpired();
   if (typeof grecaptcha !== "undefined" && grecaptcha.reset) {
     try {
-      if (_loginCaptchaWidgetId !== null) {
-        grecaptcha.reset(_loginCaptchaWidgetId);
-      } else {
-        grecaptcha.reset();
-      }
+      grecaptcha.reset();
       return;
     } catch (e) {}
   }
@@ -278,24 +265,10 @@ async function handleLogin(event) {
   if (login.error || !password) return;
 
   if (!loginCaptchaVerified) {
-    if (typeof grecaptcha !== "undefined" && grecaptcha.getResponse) {
-      try {
-        var resp = (_loginCaptchaWidgetId !== null)
-          ? grecaptcha.getResponse(_loginCaptchaWidgetId)
-          : grecaptcha.getResponse();
-        if (resp && resp.length > 20) {
-          loginCaptchaVerified = true;
-        }
-      } catch (e) {}
-    }
-  }
-
-  if (!loginCaptchaVerified) {
-    var card = document.getElementById("login-recaptcha-wrap");
+    var card = document.getElementById("login-captcha-card") || document.getElementById("login-recaptcha-wrap");
     if (card) {
-      card.style.outline = "2px solid #c8102e";
-      card.style.outlineOffset = "4px";
-      setTimeout(function () { card.style.outline = "none"; }, 1500);
+      card.style.borderColor = "#c8102e";
+      setTimeout(function () { card.style.borderColor = "#cbd5e1"; }, 1500);
     }
     var bannerCap = document.getElementById("login-attempt-banner");
     if (bannerCap) {
@@ -444,16 +417,13 @@ async function startRecoveryVerification() {
     _recoveryState.channel = "email";
     _recoveryState.remainingSec = 300;
 
-    var mailRes = await apiSendOtpEmail(
+    await apiSendOtpEmail(
       info.email,
       info.code,
       "recover your " + _recoveryState.tab,
       info.fullName,
       info.refTag
     );
-    if (!mailRes || mailRes.sent !== true) {
-      throw new Error((mailRes && mailRes.reason) || "Verification email could not be sent right now.");
-    }
     renderRecoveryOtpPinModal();
   } catch (err) {
     if (btn) {
@@ -564,21 +534,17 @@ async function resendRecoveryOtpCode() {
     var info = await dbFindAccountForRecovery(_recoveryState.account.email, _recoveryState.tab);
     _recoveryState.account = info;
     _recoveryState.remainingSec = 300;
-    var mailRes = await apiSendOtpEmail(
+    await apiSendOtpEmail(
       info.email,
       info.code,
       "recover your " + _recoveryState.tab,
       info.fullName,
       info.refTag
     );
-    if (!mailRes || mailRes.sent !== true) {
-      throw new Error((mailRes && mailRes.reason) || "Verification email could not be sent right now.");
-    }
     renderRecoveryOtpPinModal();
   } catch (err) {
     if (box) {
-      box.innerHTML = '<div class="field-error" style="text-align:center;margin-bottom:4px;">' + escapeHtml(err.message || "Could not resend verification code.") + '</div>' +
-        '<a href="#" class="resend-otp-link" onclick="resendRecoveryOtpCode(); return false;">Resend OTP</a>';
+      box.innerHTML = '<a href="#" class="resend-otp-link" onclick="resendRecoveryOtpCode(); return false;">Resend OTP</a>';
     }
   }
 }

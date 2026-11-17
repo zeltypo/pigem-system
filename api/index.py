@@ -1,3 +1,4 @@
+from os import getenv
 from pathlib import Path
 import sys
 from typing import Any, Dict, Optional
@@ -65,6 +66,7 @@ def health():
         "ocr": idp_ok,
         "auto_screening_ready": idp_ok,
         "recaptcha": recaptcha_ok,
+        "recaptcha_site_key": (getenv("RECAPTCHA_SITE_KEY") or "").strip(),
         "smtp": smtp_ok,
         "supabase_check": _auth.is_configured(),
         "active_screenings": 0,

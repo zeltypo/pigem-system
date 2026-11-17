@@ -32,6 +32,7 @@ var pendingProofDataUrl = "";
 var pendingProofFile = null;
 var lastDetectedFields = null;
 var isScreeningServiceOnline = false;
+var lastScreeningAvailability = false;
 var visualScreeningRunningAppId = null;
 var visualScreeningStage = 0;
 
@@ -47,24 +48,27 @@ var FIELD_SUMMARY_LABELS = {
   address: "Complete Installation Address / Landmark"
 };
 
+function agentScreeningAvailable() {
+  return navigator.onLine !== false && isAiEnabled() && isScreeningServiceOnline;
+}
+
 async function checkAgentScreeningService() {
-  var banner = document.getElementById("agent-screening-banner");
-  if (typeof isAiEnabled === "function" && !isAiEnabled()) {
-    isScreeningServiceOnline = false;
-    if (banner) banner.classList.remove("hidden");
-    return false;
-  }
-  if (typeof apiCheckHealth === "function") {
-    var health = await apiCheckHealth();
-    if (!health || health.status !== "ok" || health.auto_screening_ready === false) {
-      isScreeningServiceOnline = false;
-      if (banner) banner.classList.remove("hidden");
-      return false;
+  var health = navigator.onLine !== false && isAiEnabled() ? await apiCheckHealth() : null;
+  isScreeningServiceOnline = Boolean(health?.idp && health?.openai);
+  if (!agentScreeningAvailable()) activeScreeningJob?.cancel();
+  var available = agentScreeningAvailable();
+  if (lastScreeningAvailability !== available) {
+    lastScreeningAvailability = available;
+    refreshScreeningVisibility();
+    if (available) {
+      Object.keys(expandedSummaryCards).forEach(function (id) {
+        if (expandedSummaryCards[id]) checkAgentQueueDocument(id);
+      });
     }
   }
-  isScreeningServiceOnline = true;
-  if (banner) banner.classList.add("hidden");
-  return true;
+  var banner = document.getElementById("agent-screening-banner");
+  if (banner) banner.classList.remove("hidden");
+  return agentScreeningAvailable();
 }
 
 var VALIDATOR_PRESETS = [
@@ -464,6 +468,7 @@ function stripFalseReuploadMsg(str, dup) {
 }
 
 function getScreeningQuickSummary(app) {
+  if (!agentScreeningAvailable()) return "Offline";
   var duplicate = detectClientSideDuplicateId(app);
   if (duplicate.isDup) return escapeHtml(duplicate.reason);
   var check = getAgentAppIdCheck(app, true);
@@ -551,7 +556,7 @@ function renderAgentCards() {
       '<summary aria-controls="queue-details-' + id + '"><strong>' + escapeHtml(app.full_name) + '</strong><span>' + escapeHtml(app.reference_no) + '</span></summary></details>' +
       '<div class="agent-queue-header-action">' + control + '</div></div>' +
       '<div class="agent-queue-details" id="queue-details-' + id + '">' +
-        '<div class="agent-screening-note"><b>Screening recommendation</b><div class="small muted">Review the findings before sending a correction request.</div><div role="status" id="check-note-' + id + '">' + getScreeningQuickSummary(app) + '</div></div>' +
+        (agentScreeningAvailable() ? '<div class="agent-screening-note"><b>Screening recommendation</b><div role="status" id="check-note-' + id + '">' + getScreeningQuickSummary(app) + '</div></div>' : '<p role="status">Offline</p>') +
         '<p class="small muted">' + escapeHtml(app.plan_name || "Red Fiber Plan") + (place ? ' &bull; ' + escapeHtml(place) : '') +
           ' &bull; Submitted ' + escapeHtml(formatDate(app.created_at)) + '</p>' +
         '<div class="agent-queue-controls">' + statusBadge(app.status) +
@@ -621,7 +626,7 @@ async function openAppDetail(appId, mode, requestedStatus) {
   if (!record) return;
   agentDetailMode = ["status", "correction"].includes(mode) && isAssignedToStaff(record.assigned_agent, currentAgent) ? mode : "documents";
   var exports = document.getElementById("det-export-actions");
-  if (exports) exports.hidden = agentDetailMode !== "documents";
+  if (exports) exports.hidden = !agentScreeningAvailable() || agentDetailMode !== "documents";
   lastDetectedFields = null;
   activeDetailAppId = appId;
   activeCopyMode = "latest";
@@ -1140,7 +1145,7 @@ async function collectAgentIdFindings(sources, expected, job) {
         id_number: expected.number || "",
         id_back: backUpload
       }, backUpload),
-      65000
+      45000
     );
 
     if (!screenData || screenData.status === "offline" || !(screenData.ocr && screenData.ocr.available)) {
@@ -1153,7 +1158,6 @@ async function collectAgentIdFindings(sources, expected, job) {
         unclearSides: unclearSides,
         unavailableSides: unavailableSides,
         failedReads: ["IDP service"],
-        apiError: (screenData && screenData.api_error) || "",
         duplicatePhotos: duplicatePhotos,
         photoIssues: photoIssues
       };
@@ -1226,12 +1230,23 @@ function showScreeningConnection(message) {
   notice.textContent = message;
 }
 
+function refreshScreeningVisibility() {
+  renderAgentCards();
+  if (activeDetailAppId && !document.getElementById("app-detail-modal")?.classList.contains("hidden")) {
+    renderDetailModalContent(true);
+  }
+}
+
 window.addEventListener("offline", function () {
+  lastScreeningAvailability = false;
+  refreshScreeningVisibility();
   showScreeningConnection("Connection lost. Document checking is paused.");
   activeScreeningJob?.cancel();
 });
 
-window.addEventListener("online", function () {
+window.addEventListener("online", async function () {
+  await checkAgentScreeningService();
+  if (!agentScreeningAvailable()) return;
   showScreeningConnection("Connection restored. Retrying open document checks.");
   agentDocumentChecks.forEach(function (check, key) {
     if (check.result?.failed || check.result?.unavailableSides?.length || check.result?.failedReads?.length) {
@@ -1253,7 +1268,7 @@ function runAgentIdCheck(sources, expected) {
 }
 
 async function runAgentIdCheckNow(sources, expected) {
-  if (navigator.onLine === false) {
+  if (!agentScreeningAvailable()) {
     return { fields: [], unclearSides: [], unavailableSides: [], failedReads: [], failed: true, offline: true };
   }
   var job = { expired: false, worker: null, terminated: false, controller: new AbortController() };
@@ -1280,9 +1295,6 @@ async function runAgentIdCheckNow(sources, expected) {
 function summarizeAgentIdFindings(result) {
   if (result.offline) return "Connection lost. Document checking will resume when you are online.";
   if (result.unavailableSides?.length || result.failedReads?.length) {
-    if (result.apiError) {
-      return "Document check service error (" + result.apiError + "). Original photos remain ready for manual verification.";
-    }
     return "Document check incomplete. Configure AZURE_DI_ENDPOINT and AZURE_DI_KEY (or check connection) and reopen the application. No correction is recommended from this incomplete check.";
   }
   if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
@@ -1325,6 +1337,7 @@ function summarizeAgentIdFindings(result) {
 }
 
 function getAgentIdCheck(front, back, expected, existingOnly) {
+  if (!agentScreeningAvailable()) return null;
   var sources = [{ label: "Front", url: front }, { label: "Back", url: back }].filter(function (side) { return side.url; });
   if (!sources.length) return null;
   var key = JSON.stringify([sources, expected]);
@@ -1375,7 +1388,7 @@ function buildSavedAgentFindings(result) {
 }
 
 async function saveAgentFindings(app, result) {
-  if (!currentAgent || !app.updated_at || !agentScreeningRevision(app) || getSavedAgentFindings(app) ||
+  if (!agentScreeningAvailable() || !currentAgent || !app.updated_at || !agentScreeningRevision(app) || getSavedAgentFindings(app) ||
       result.failed || result.unavailableSides.length || (result.failedReads && result.failedReads.length)) return;
   var version = agentScreeningRevision(app);
   var key = app.id + "|" + version;
@@ -1387,7 +1400,6 @@ async function saveAgentFindings(app, result) {
     var reviewRec = result.aiRecommendation ? (result.aiRecommendation !== "approve") : !allMatched;
     var screening = Object.assign({}, app.screening, {
       state: "completed",
-      fallback_original_only: false,
       summary: summaryText,
       review_recommended: reviewRec,
       Suggested_remark: result.suggestedPoliteRemark || "",
@@ -1425,7 +1437,7 @@ async function saveAgentFindings(app, result) {
 }
 
 function getAgentAppIdCheck(app, existingOnly) {
-  if (!app) return null;
+  if (!agentScreeningAvailable() || !app) return null;
   var saved = getSavedAgentFindings(app);
   if (saved) return { result: saved, pending: Promise.resolve(saved) };
   return getAgentIdCheck(app.id_image_url || app.id_front_path || "", app.id_back_image_url || app.id_back_path || "", {
@@ -1440,7 +1452,7 @@ async function showAgentIdFindings(panel, app) {
   if (!check) return;
   var result = await check.pending;
   if (app) saveAgentFindings(app, result);
-  if (panel.isConnected === false) return;
+  if (!agentScreeningAvailable() || panel.isConnected === false) return;
   panel._documentFindings = result;
   panel.textContent = summarizeAgentIdFindings(result);
   if (!result.failed && !result.unavailableSides?.length && !result.failedReads?.length && result.fields.some(function (field) { return field.status !== "unreadable"; })) {
@@ -1628,6 +1640,9 @@ async function renderDetailModalContent(updateResultsOnly) {
 
   if (dupCheck.isDup) recommendation += '<p class="notice warn">' + escapeHtml(dupCheck.reason) + '</p>';
   recommendation += "</section>";
+  if (!agentScreeningAvailable()) recommendation = '<section id="document-check-results" role="status">Offline</section>';
+  var exportActions = document.getElementById("det-export-actions");
+  if (exportActions) exportActions.hidden = !agentScreeningAvailable() || agentDetailMode !== "documents";
   var statusSection =
     '<div class="section-card">' +
       '<div class="section-head">' +
@@ -1747,7 +1762,7 @@ async function renderDetailModalContent(updateResultsOnly) {
   }
   var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
   if (findings) showAgentIdFindings(findings, activeCopyMode === "latest" ? app : null);
-  if (!updateResultsOnly && activeCopyMode !== "original" && document.querySelectorAll) {
+  if (agentScreeningAvailable() && !updateResultsOnly && activeCopyMode !== "original" && document.querySelectorAll) {
     document.querySelectorAll("#det-body [data-photo-container]").forEach(showAgentPreparedPhoto);
   }
 
@@ -1760,6 +1775,7 @@ function saveSelectedStatus() {
 }
 
 async function convertValidatorToPoliteRemark() {
+  if (!agentScreeningAvailable()) return;
   var rawEl = document.getElementById("det-validator-raw");
   var corrEl = document.getElementById("det-correction-message");
   var fieldEl = document.getElementById("det-correction-field");
@@ -2018,6 +2034,7 @@ function downloadApplicantCopy() {
 }
 
 function exportApplicantCopy(print) {
+  if (!agentScreeningAvailable()) return;
   var app = findAppById(activeDetailAppId);
   if (!app) return;
   var copy = getAgentPreviewCopy(app);

@@ -21,41 +21,38 @@ class BaseTokenVerifier:
 class SupabaseTokenVerifier(BaseTokenVerifier):
 
     _BEARER_REGEX = re.compile(r"^Bearer\s+([A-Za-z0-9._\-]+)$", re.IGNORECASE)
-    _STAFF_REGEX = re.compile(r"^Bearer\s+staff:([A-Za-z0-9._\-]+):([A-Za-z0-9._\-]+)$", re.IGNORECASE)
-
-    def _clean_env(self, name: str, default: str = "") -> str:
-        raw = (getenv(name) or default).strip()
-        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
-            raw = raw[1:-1].strip()
-        return raw
 
     def _get_credentials(self) -> tuple:
-        url = self._clean_env("SUPABASE_URL").rstrip("/")
-        key = self._clean_env("SUPABASE_ANON_KEY")
+
+        url = (getenv("SUPABASE_URL") or "").strip().rstrip("/")
+
+        key = (getenv("SUPABASE_ANON_KEY") or "").strip()
+
         return url, key
 
     def is_configured(self) -> bool:
+
         url, key = self._get_credentials()
+
         return bool(url and key)
 
     def is_recaptcha_configured(self) -> bool:
-        secret = self._clean_env("RECAPTCHA_SECRET_KEY", "6Lcj2iQuAAAAAM4POqrE5vg0KYT3YISUBM2RXomY")
+
+        secret = (getenv("RECAPTCHA_SECRET_KEY") or "").strip()
+
         return bool(secret)
 
     def verify_header(self, authorization: str) -> dict:
-        if not self.is_configured():
-            return {"demo": True}
-        header_text = (authorization or "").strip()
-        if not header_text:
-            return {"public": True}
 
-        staff_match = self._STAFF_REGEX.match(header_text)
-        if staff_match:
-            url, key = self._get_credentials()
-            try:
-                return _access._verify_staff_db_session(url, key, staff_match.group(1), staff_match.group(2))
-            except Exception:
-                return {"public": True}
+        if not self.is_configured():
+
+            return {"demo": True}
+
+        header_text = (authorization or "").strip()
+
+        if not header_text:
+
+            return {"public": True}
 
         match = self._BEARER_REGEX.match(header_text)
 
@@ -92,44 +89,54 @@ class SupabaseTokenVerifier(BaseTokenVerifier):
         return {"public": True}
 
     def verify_recaptcha_token(self, response_token: str, remote_ip: str = "") -> dict:
+
         clean_token = (response_token or "").strip()
+
         if not clean_token:
+
             return {"verified": False, "reason": "Missing CAPTCHA verification token."}
 
-        secret = self._clean_env("RECAPTCHA_SECRET_KEY", "6Lcj2iQuAAAAAM4POqrE5vg0KYT3YISUBM2RXomY")
+        secret = (getenv("RECAPTCHA_SECRET_KEY") or "").strip()
+
         if not secret:
-            return {"verified": True, "warning": "RECAPTCHA_SECRET_KEY is not configured on server."}
+
+            return {"verified": False, "reason": "CAPTCHA verification is not configured."}
 
         payload = {"secret": secret, "response": clean_token}
 
+        if remote_ip:
+
+            payload["remoteip"] = remote_ip
+
         try:
+
             reply = httpx.post(
+
                 "https://www.google.com/recaptcha/api/siteverify",
+
                 data=payload,
+
                 timeout=10,
+
             )
+
             if reply.status_code == 200:
+
                 body = reply.json()
-                success = bool(body.get("success"))
-                error_codes = body.get("error-codes") or []
-                if success:
-                    return {
-                        "verified": True,
-                        "hostname": body.get("hostname") or "",
-                    }
-                if any(err in ("invalid-domain-for-site-key", "invalid-input-secret") for err in error_codes):
-                    return {
-                        "verified": True,
-                        "hostname": body.get("hostname") or "",
-                        "warning": f"reCAPTCHA configuration notice: {error_codes}",
-                    }
+
                 return {
-                    "verified": False,
+
+                    "verified": bool(body.get("success")),
+
                     "hostname": body.get("hostname") or "",
-                    "error_codes": error_codes,
+
+                    "error_codes": body.get("error-codes") or [],
+
                 }
+
         except Exception as err:
-            return {"verified": True, "warning": f"reCAPTCHA verification service unreachable: {err}"}
+
+            return {"verified": False, "reason": str(err)}
 
         return {"verified": False, "reason": "CAPTCHA verification service returned an error."}
 
