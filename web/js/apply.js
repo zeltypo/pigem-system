@@ -388,7 +388,7 @@ function showApplySecurityCaptchaModal() {
 function renderApplyCaptchaBox() {
   var siteKey = (typeof CONFIG !== "undefined" && CONFIG.RECAPTCHA_SITE_KEY)
     ? CONFIG.RECAPTCHA_SITE_KEY
-    : "6LcL1yQuAAAAAF0fxh-KKPB2_GP5R2dRwcr-8ZAt";
+    : "6Lcj2iQuAAAAAOBQYN7bVm4ks-_V_a0aSYlge11B";
 
   function doRender() {
     var box = document.getElementById("apply-captcha-box");

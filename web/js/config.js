@@ -14,7 +14,7 @@ var CONFIG = {
 
   LOCATIONIQ_API_KEY: "pk.3597a6e1a756561513401f40ea9ee840",
 
-  RECAPTCHA_SITE_KEY: "6LcL1yQuAAAAAF0fxh-KKPB2_GP5R2dRwcr-8ZAt",
+  RECAPTCHA_SITE_KEY: "6Lcj2iQuAAAAAOBQYN7bVm4ks-_V_a0aSYlge11B",
 
   PLANS: [
     { id: "1000", name: "Plan 1000", speed: 100, price: 1000, tag: "Fiber for your home", featured: false },

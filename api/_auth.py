@@ -37,7 +37,7 @@ class SupabaseTokenVerifier(BaseTokenVerifier):
         return bool(url and key)
 
     def is_recaptcha_configured(self) -> bool:
-        secret = (getenv("RECAPTCHA_SECRET_KEY") or "6LcL1yQuAAAAADtg_PY0gGkGLIxOJ0cSUiFtJRDa").strip()
+        secret = (getenv("RECAPTCHA_SECRET_KEY") or "6Lcj2iQuAAAAAM4POqrE5vg0KYT3YISUBM2RXomY").strip()
         return bool(secret)
 
     def verify_header(self, authorization: str) -> dict:
@@ -91,7 +91,7 @@ class SupabaseTokenVerifier(BaseTokenVerifier):
         if not clean_token:
             return {"verified": False, "reason": "Missing CAPTCHA verification token."}
 
-        secret = (getenv("RECAPTCHA_SECRET_KEY") or "6LcL1yQuAAAAADtg_PY0gGkGLIxOJ0cSUiFtJRDa").strip()
+        secret = (getenv("RECAPTCHA_SECRET_KEY") or "6Lcj2iQuAAAAAM4POqrE5vg0KYT3YISUBM2RXomY").strip()
         if not secret:
             return {"verified": True, "warning": "RECAPTCHA_SECRET_KEY is not configured on server."}
 
