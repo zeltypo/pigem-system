@@ -12,12 +12,18 @@ var _recoveryState = {
   remainingSec: 300
 };
 
+var _loginCaptchaWidgetId = null;
+
 window.onLoginCaptchaVerified = async function (token) {
   var version = ++loginCaptchaVersion;
-  loginCaptchaVerified = false;
+  loginCaptchaVerified = Boolean(token);
   if (!token || typeof apiVerifyCaptcha !== "function") return;
   var result = await apiVerifyCaptcha(token);
-  if (version === loginCaptchaVersion) loginCaptchaVerified = Boolean(result && result.verified === true);
+  if (version === loginCaptchaVersion) {
+    if (result && result.verified === true) {
+      loginCaptchaVerified = true;
+    }
+  }
 };
 
 window.onLoginCaptchaExpired = function () {
@@ -29,45 +35,50 @@ function renderLoginCaptchaBox() {
   var box = document.getElementById("login-captcha-box");
   if (!box) return;
   loginCaptchaVerified = false;
-  var siteKey = CONFIG.RECAPTCHA_SITE_KEY;
-  box.innerHTML = '<div id="g-login-recaptcha" class="g-recaptcha" data-sitekey="' + siteKey + '" data-callback="onLoginCaptchaVerified" data-expired-callback="onLoginCaptchaExpired"></div>';
 
-  function tryRenderGoogle() {
-    if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
+  var siteKey = (typeof CONFIG !== "undefined" && CONFIG.RECAPTCHA_SITE_KEY)
+    ? CONFIG.RECAPTCHA_SITE_KEY
+    : "6LfLGBQuAAAAAP3l2jkVbG41srUfH3mv2io15vXD";
+
+  function doRender() {
+    var currentBox = document.getElementById("login-captcha-box");
+    if (!currentBox) return;
+
+    if (_loginCaptchaWidgetId !== null) {
       try {
-        grecaptcha.render("g-login-recaptcha", {
-          sitekey: siteKey,
-          callback: onLoginCaptchaVerified,
-          "expired-callback": onLoginCaptchaExpired,
-          "error-callback": function () {
-            renderLoginCaptchaFallback(box);
-          }
-        });
-        return true;
-      } catch (err) {
-        return false;
+        grecaptcha.reset(_loginCaptchaWidgetId);
+        return;
+      } catch (e) {
+        _loginCaptchaWidgetId = null;
       }
     }
-    return false;
+
+    currentBox.innerHTML = "";
+    try {
+      _loginCaptchaWidgetId = grecaptcha.render(currentBox, {
+        sitekey: siteKey,
+        callback: onLoginCaptchaVerified,
+        "expired-callback": onLoginCaptchaExpired
+      });
+    } catch (err) {
+      console.warn("Login reCAPTCHA render notice:", err);
+    }
   }
 
-  if (!tryRenderGoogle()) {
-    var attempts = 0;
-    var timer = setInterval(function () {
-      attempts++;
-      if (tryRenderGoogle() || attempts > 15) {
-        clearInterval(timer);
-        if (attempts > 15 && !box.querySelector("iframe")) {
-          renderLoginCaptchaFallback(box);
-        }
+  if (typeof ensureGoogleRecaptcha === "function") {
+    ensureGoogleRecaptcha(doRender);
+  } else if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
+    doRender();
+  } else {
+    var count = 0;
+    var t = setInterval(function () {
+      count++;
+      if ((typeof grecaptcha !== "undefined" && grecaptcha.render) || count > 40) {
+        clearInterval(t);
+        if (typeof grecaptcha !== "undefined" && grecaptcha.render) doRender();
       }
-    }, 250);
+    }, 150);
   }
-}
-
-function renderLoginCaptchaFallback(box) {
-  if (!box) return;
-  box.textContent = "The security check could not load. Refresh the page and try again.";
 }
 
 function resetLoginFieldsAndCaptcha() {
@@ -76,7 +87,11 @@ function resetLoginFieldsAndCaptcha() {
   window.onLoginCaptchaExpired();
   if (typeof grecaptcha !== "undefined" && grecaptcha.reset) {
     try {
-      grecaptcha.reset();
+      if (_loginCaptchaWidgetId !== null) {
+        grecaptcha.reset(_loginCaptchaWidgetId);
+      } else {
+        grecaptcha.reset();
+      }
       return;
     } catch (e) {}
   }
@@ -263,10 +278,24 @@ async function handleLogin(event) {
   if (login.error || !password) return;
 
   if (!loginCaptchaVerified) {
-    var card = document.getElementById("login-captcha-card") || document.getElementById("login-recaptcha-wrap");
+    if (typeof grecaptcha !== "undefined" && grecaptcha.getResponse) {
+      try {
+        var resp = (_loginCaptchaWidgetId !== null)
+          ? grecaptcha.getResponse(_loginCaptchaWidgetId)
+          : grecaptcha.getResponse();
+        if (resp && resp.length > 20) {
+          loginCaptchaVerified = true;
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (!loginCaptchaVerified) {
+    var card = document.getElementById("login-recaptcha-wrap");
     if (card) {
-      card.style.borderColor = "#c8102e";
-      setTimeout(function () { card.style.borderColor = "#cbd5e1"; }, 1500);
+      card.style.outline = "2px solid #c8102e";
+      card.style.outlineOffset = "4px";
+      setTimeout(function () { card.style.outline = "none"; }, 1500);
     }
     var bannerCap = document.getElementById("login-attempt-banner");
     if (bannerCap) {

@@ -29,16 +29,21 @@ function openApplyWithCaptcha(planId) {
   showGoogleCaptchaPopup();
 }
 
+var homeCaptchaWidgetId = null;
+
 function showGoogleCaptchaPopup() {
+  homeCaptchaWidgetId = null;
   openPopup(
-    '<div class="center" style="padding:14px 4px 6px;">' +
-      '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">' +
-        '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>' +
+    '<div class="center" style="padding:16px 8px 8px;">' +
+      '<div style="width:48px;height:48px;border-radius:50%;background:#fee2e2;color:#c8102e;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">' +
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>' +
       '</div>' +
-      '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
-      '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
-      '<div style="display:flex;justify-content:center;margin:8px 0;min-height:78px;">' +
-        '<div id="home-captcha-box" style="min-width:304px;min-height:78px;"></div>' +
+      '<h3 style="font-size:18px;margin-bottom:6px;">Security Verification</h3>' +
+      '<p class="small muted" style="margin-bottom:18px;">Please check the box below to proceed with your application.</p>' +
+      '<div style="display:flex;justify-content:center;align-items:center;margin:8px 0 12px;min-height:78px;">' +
+        '<div id="home-captcha-box" style="min-width:304px;min-height:78px;display:flex;align-items:center;justify-content:center;">' +
+          '<span class="small muted">Loading security check...</span>' +
+        '</div>' +
       '</div>' +
     '</div>',
     { showCloseX: true, closeOnBackdrop: true }
@@ -47,53 +52,38 @@ function showGoogleCaptchaPopup() {
 }
 
 function renderHomeCaptchaBox() {
-  var box = document.getElementById("home-captcha-box");
-  if (!box) return;
-  var siteKey = CONFIG.RECAPTCHA_SITE_KEY;
-  box.innerHTML = '<div id="g-home-recaptcha"></div>';
+  var siteKey = (typeof CONFIG !== "undefined" && CONFIG.RECAPTCHA_SITE_KEY)
+    ? CONFIG.RECAPTCHA_SITE_KEY
+    : "6LfLGBQuAAAAAP3l2jkVbG41srUfH3mv2io15vXD";
 
-  function tryRenderGoogle() {
-    if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
-      try {
-        grecaptcha.render("g-home-recaptcha", {
-          sitekey: siteKey,
-          callback: onGoogleCaptchaPassed,
-          "error-callback": function () { renderHomeCaptchaFallback(box); }
-        });
-        return true;
-      } catch (err) {
-        return false;
-      }
+  function doRender() {
+    var box = document.getElementById("home-captcha-box");
+    if (!box) return;
+    box.innerHTML = "";
+    try {
+      homeCaptchaWidgetId = grecaptcha.render(box, {
+        sitekey: siteKey,
+        callback: onGoogleCaptchaPassed
+      });
+    } catch (err) {
+      console.warn("Home reCAPTCHA render notice:", err);
     }
-    return false;
   }
 
-  if (!tryRenderGoogle()) {
-    var attempts = 0;
-    var timer = setInterval(function () {
-      attempts++;
-      if (tryRenderGoogle() || attempts > 15) {
-        clearInterval(timer);
-        if (attempts > 15 && !box.querySelector("iframe")) {
-          renderHomeCaptchaFallback(box);
-        }
+  if (typeof ensureGoogleRecaptcha === "function") {
+    ensureGoogleRecaptcha(doRender);
+  } else if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
+    doRender();
+  } else {
+    var count = 0;
+    var t = setInterval(function () {
+      count++;
+      if ((typeof grecaptcha !== "undefined" && grecaptcha.render) || count > 40) {
+        clearInterval(t);
+        if (typeof grecaptcha !== "undefined" && grecaptcha.render) doRender();
       }
-    }, 250);
+    }, 150);
   }
-}
-
-function renderHomeCaptchaFallback(box) {
-  box.innerHTML =
-    '<div id="home-captcha-card" class="captcha-container" role="button" tabindex="0" aria-label="Verify I am not a robot" onclick="triggerHomeCaptcha()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();triggerHomeCaptcha();}">' +
-      '<div style="display:flex;align-items:center;gap:12px;">' +
-        '<div id="home-captcha-check" class="captcha-box-inner"></div>' +
-        '<span id="home-captcha-text" style="font-weight:600;font-size:14px;color:var(--text);">I\'m not a robot</span>' +
-      '</div>' +
-      '<div style="text-align:right;line-height:1.2;">' +
-        '<div style="font-size:11px;font-weight:800;color:var(--muted);">reCAPTCHA</div>' +
-        '<div style="font-size:10px;color:var(--muted);">Security Check</div>' +
-      '</div>' +
-    '</div>';
 }
 
 async function onGoogleCaptchaPassed(token) {
@@ -101,6 +91,9 @@ async function onGoogleCaptchaPassed(token) {
     var checkRes = await apiVerifyCaptcha(token);
     if (!checkRes || checkRes.verified === false) {
       showAlert("Security Verification", "Could not verify security token. Please check the box again.", "warn");
+      if (typeof grecaptcha !== "undefined" && grecaptcha.reset && homeCaptchaWidgetId !== null) {
+        try { grecaptcha.reset(homeCaptchaWidgetId); } catch (e) {}
+      }
       return;
     }
   }
@@ -117,25 +110,6 @@ async function onGoogleCaptchaPassed(token) {
   closePopup();
   var targetUrl = "apply.html" + (pendingApplyPlanId ? "?plan=" + encodeURIComponent(pendingApplyPlanId) : "");
   window.location.href = targetUrl;
-}
-
-function triggerHomeCaptcha() {
-  var check = document.getElementById("home-captcha-check");
-  var card = document.getElementById("home-captcha-card");
-  var text = document.getElementById("home-captcha-text");
-  if (!check || !card) return;
-
-  check.innerHTML = '<div class="captcha-spinner"></div>';
-  if (text) text.textContent = "Verifying security credentials...";
-
-  setTimeout(function () {
-    check.innerHTML = "&#10003;";
-    card.classList.add("verified");
-    if (text) text.textContent = "I'm not a robot";
-    setTimeout(function () {
-      onGoogleCaptchaPassed();
-    }, 400);
-  }, 600);
 }
 
 function buildPlanCard(plan) {
