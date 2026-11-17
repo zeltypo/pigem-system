@@ -474,11 +474,11 @@ class _IPv4SMTP(smtplib.SMTP):
 def _open_smtp_connection(host: str, port: int, use_ipv4: bool, ssl_ctx: ssl.SSLContext, ehlo_host: str):
     if port == 465:
         cls = _IPv4SMTP_SSL if use_ipv4 else smtplib.SMTP_SSL
-        server = cls(host, port, timeout=12, context=ssl_ctx, local_hostname=ehlo_host)
+        server = cls(host, port, timeout=6, context=ssl_ctx, local_hostname=ehlo_host)
         server.ehlo(ehlo_host)
         return server
     cls = _IPv4SMTP if use_ipv4 else smtplib.SMTP
-    server = cls(host, port, timeout=12, local_hostname=ehlo_host)
+    server = cls(host, port, timeout=6, local_hostname=ehlo_host)
     server.ehlo(ehlo_host)
     server.starttls(context=ssl_ctx)
     server.ehlo(ehlo_host)
@@ -581,9 +581,9 @@ def send(
         ehlo_host = "pigem-seven.vercel.app"
 
         attempts = [
-            (primary_port, False),
             (primary_port, True),
             (alt_port, True),
+            (primary_port, False),
             (alt_port, False),
         ]
         for try_port, use_ipv4 in attempts:
@@ -626,6 +626,12 @@ def send(
                             server.close()
                         except Exception:
                             pass
+
+        if smtp_errors and "gmail.com" in host.lower() and len(smtp_password) != 16:
+            smtp_errors.insert(
+                0,
+                f"Notice: SMTP_PASSWORD has {len(smtp_password)} characters (expected 16-character Google App Password).",
+            )
 
     if resend_key:
         try:
