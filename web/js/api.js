@@ -77,7 +77,7 @@ function apiStartBackgroundScreening(applicationId) {
 
 async function apiCheckScreeningSession(signal) {
   try {
-    var token = await dbGetToken();
+    var token = await dbGetScreeningToken();
     var response = await fetch(_apiEndpoint("/screen/session"), {
       headers: token ? { Authorization: "Bearer " + token } : {},
       cache: "no-store",
@@ -124,8 +124,8 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile, signal)
     formData.append("id_number", details.id_number || "");
 
     var headers = {};
-    if (typeof dbGetToken === "function") {
-      var token = await dbGetToken();
+    if (typeof dbGetScreeningToken === "function") {
+      var token = await dbGetScreeningToken();
       if (token) headers["Authorization"] = "Bearer " + token;
     }
 
@@ -490,8 +490,8 @@ async function apiGeneratePoliteRemark(rawRemark, chosenField) {
 
   var headers = { "Content-Type": "application/json" };
   try {
-    if (typeof dbGetToken === "function") {
-      var token = await dbGetToken();
+    if (typeof dbGetScreeningToken === "function") {
+      var token = await dbGetScreeningToken();
       if (token) headers["Authorization"] = "Bearer " + token;
     }
   } catch (e) {}

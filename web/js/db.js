@@ -531,6 +531,19 @@ async function dbSignIn(identifier, password) {
       ))
     );
 
+    if (SYSTEM === "staff" && !IS_DEMO_MODE && supabaseClient) {
+      sessionStorage.removeItem("pigem_verified_screening_token");
+      try {
+        var verified = await supabaseClient.rpc("pigem_screening_sign_in", {
+          login_username: cleanStaffUser, login_password: password
+        });
+        if (verified.data?.token && verified.data.staff_id === staffUser.id && verified.data.role === staffUser.role) {
+          sessionStorage.setItem("pigem_verified_screening_token", verified.data.token);
+          passMatched = true;
+        }
+      } catch (error) {}
+    }
+
     if (staffUser.email && !IS_DEMO_MODE && supabaseClient &&
         (!passMatched || SYSTEM_ROLES.staff.indexOf(staffUser.role) !== -1)) {
 
@@ -675,6 +688,13 @@ async function dbSignOut(clearServerToken) {
     sessionStore.removeItem(SESSION_TOKEN_KEY);
   }
   sessionStorage.removeItem(SESSION_KEY);
+  var screeningToken = sessionStorage.getItem("pigem_verified_screening_token");
+  sessionStorage.removeItem("pigem_verified_screening_token");
+  if (screeningToken && supabaseClient) {
+    try {
+      await supabaseClient.rpc("pigem_screening_session", { session_token: screeningToken, revoke_session: true });
+    } catch (error) {}
+  }
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_KEY + "_role");
   sessionStorage.removeItem("pigem_user_cache");
@@ -706,6 +726,10 @@ async function dbResetPassword(email) {
   if (IS_DEMO_MODE) return;
   var res = await supabaseClient.auth.resetPasswordForEmail(email.trim().toLowerCase());
   if (res.error) throw new Error(res.error.message);
+}
+
+async function dbGetScreeningToken() {
+  return sessionStorage.getItem("pigem_verified_screening_token") || await dbGetToken();
 }
 
 async function dbGetToken() {

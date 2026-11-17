@@ -41,3 +41,20 @@ validation findings, and message source. The browser does not persist the full
 Azure payload, raw OCR lines, or another copy of the ID number. Reopening a
 completed revision reuses its saved findings. A customer resubmission creates
 a new revision for checking. No database reset is needed for this update.
+
+
+### Username-only staff screening
+
+Run schema-staff-screening.sql on an existing database. Fresh installations
+include the same private table and functions in schema.sql. A database
+administrator enrolls each authorized Agent or Manager using enroll-screening-staff.sql.
+and username and setting a new password in the private table. Generate the
+password locally, use a new password that has never been placed in public.users,
+and deliver it privately. An enrolled staff member signs in using their
+existing username and the new password. No mailbox is needed.
+
+The private record controls paid screening access. Set its active flag to false
+to revoke access. The two-hour screening session is replaced by the next login
+and revoked on normal logout. Customer login and the existing staff portal
+access rules are separate from this screening permission.
+

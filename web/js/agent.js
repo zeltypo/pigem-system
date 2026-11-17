@@ -1319,7 +1319,7 @@ async function runAgentIdCheckNow(sources, expected) {
 
 function summarizeAgentIdFindings(result) {
   if (result.uploadTooLarge) return "The ID photos are too large to send for checking. Try smaller clear copies.";
-  if (result.accessDenied) return "Document check requires a verified screening account. Sign in with your authorized Agent or Manager account.";
+  if (result.accessDenied) return "Screening access is missing or expired. Sign in again with your screening-enabled username or ask your administrator to enable it.";
   if (result.offline) return "Connection lost. Document checking will resume when you are online.";
   if (result.unavailableSides?.length || result.failedReads?.length) {
     return "Document check incomplete. The photo could not be downloaded or read. Reopen the application to retry.";

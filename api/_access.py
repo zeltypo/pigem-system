@@ -20,6 +20,21 @@ def verify_screening_staff(authorization):
     key = os.getenv("SUPABASE_ANON_KEY", "").strip()
     if not url or not key:
         raise AccessError(503, "Staff authentication is not configured.")
+    token = match.group(1)
+    if re.fullmatch(r"pigem_staff_[0-9a-f]{64}", token):
+        request = urllib.request.Request(
+            url + "/rest/v1/rpc/pigem_screening_session",
+            data=json.dumps({"session_token": token}).encode(),
+            headers={"apikey": key, "Authorization": "Bearer " + key, "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                staff = json.load(response)
+        except (OSError, ValueError):
+            raise AccessError(503, "Staff authentication is temporarily unavailable.") from None
+        if not isinstance(staff, dict) or not staff.get("id") or staff.get("role") not in ("agent", "manager"):
+            raise AccessError(401, "Staff screening session expired or was revoked.")
+        return staff
     request = urllib.request.Request(url + "/auth/v1/user", headers={
         "apikey": key, "Authorization": "Bearer " + match.group(1)
     })
