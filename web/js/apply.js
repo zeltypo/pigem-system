@@ -1658,7 +1658,6 @@ async function performApplicationSubmission() {
 
 
     var photoRequest = "";
-    var photoEmailSent = false;
     if (photoCheck.severe.length) {
       photoRequest = "Please upload a clearer " + photoCheck.severe.join(" and ") + " ID photo in your account. Make sure the printed details are visible.";
       Object.assign(screening, {
@@ -1674,23 +1673,37 @@ async function performApplicationSubmission() {
     }
     var saved = await dbCreateApplication(baseAppPayload);
     savedApplication = saved;
+    if (loadingScreen) loadingScreen.hidden = true;
+    var isAlreadyActive = accountInfo.status === "active";
+    openPopup(
+      '<div class="center">' +
+        '<h3>Application Submitted!</h3>' +
+        '<p class="small muted mt">Your Application Reference Number is:</p>' +
+        '<div class="big-ref">' + escapeHtml(saved.ref_no) + '</div>' +
+        (photoRequest ? '<p class="notice warn mt">' + escapeHtml(photoRequest) + '</p>' : '') +
+        '<p class="small muted mt">' +
+          (isAlreadyActive
+            ? 'Sign in to your account to track your application.'
+            : 'Check your inbox for your account activation instructions.') +
+        '</p>' +
+      '</div>',
+      { showCloseX: true, closeOnBackdrop: true, onClose: resetApplyWizardToStep1 }
+    );
+
     if (applicationScreeningTicket) {
-      try {
-        var queueResponse = await fetch(_apiEndpoint("/screen/queue"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ application_id: saved.id, ticket: applicationScreeningTicket })
-        });
-        if (!queueResponse.ok || !(await queueResponse.json()).queued) {
+      fetch(_apiEndpoint("/screen/queue"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: saved.id, ticket: applicationScreeningTicket }),
+        keepalive: true
+      }).then(async function (response) {
+        if (!response.ok || !(await response.json()).queued) {
           console.warn("Application saved without an automatic document check.");
         }
-      } catch (error) {
+      }).catch(function () {
         console.warn("Application saved without an automatic document check.");
-      }
+      });
     }
-
-
-    await new Promise(function (r) { setTimeout(r, 300); });
 
     var subject = "PIGEM Application Confirmation - Reference No. " + saved.ref_no;
     var body =
@@ -1701,48 +1714,17 @@ async function performApplicationSubmission() {
       (photoRequest ? "Status: Needs Correction\n" + photoRequest + "\n\n" : "Status: Processing\n\n") +
       "Please check your email notification for your 6-digit Activation OTP Code and Account Activation link.";
 
-    await dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body, target_tab: "tab-apps", target_id: saved.id });
-    await dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no, target_tab: "tab-queue", target_id: saved.id });
-    await dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")", target_tab: "tab-queue", target_id: saved.id });
-    await apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);
+    var followUp = [
+      dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body, target_tab: "tab-apps", target_id: saved.id }),
+      dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no, target_tab: "tab-queue", target_id: saved.id }),
+      dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")", target_tab: "tab-queue", target_id: saved.id }),
+      apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo),
+      dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")")
+    ];
     if (photoRequest) {
-
-      try {
-        var photoEmail = await apiSendStatusEmail(email, fullName, saved.ref_no, "Needs Correction", photoRequest, "Valid ID photos");
-        photoEmailSent = Boolean(photoEmail && photoEmail.sent);
-      } catch (error) {
-        console.warn("Photo correction email could not be sent.");
-      }
+      followUp.push(apiSendStatusEmail(email, fullName, saved.ref_no, "Needs Correction", photoRequest, "Valid ID photos"));
     }
-    await dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")");
-
-    for (var k = 1; k <= 3; k++) {
-      var item = document.getElementById("step-ld-" + k);
-      if (item) {
-        item.className = "reg-step-item done";
-        item.querySelector(".reg-step-icon").innerHTML = "&#10003;";
-      }
-    }
-
-    var isAlreadyActive = accountInfo.status === "active";
-
-    openPopup(
-      '<div class="center">' +
-        '<h3>Application Submitted!</h3>' +
-        '<p class="small muted mt">Your Application Reference Number is:</p>' +
-        '<div class="big-ref">' + escapeHtml(saved.ref_no) + '</div>' +
-        (photoRequest ? '<p class="notice warn mt">' + escapeHtml(photoRequest) + (photoEmailSent ? ' We also sent an email.' : ' The request is available in your account.') + '</p>' : '') +
-        '<div class="notice mt" style="text-align:left;line-height:1.6;">' +
-          '<b>Account Summary:</b><br>' +
-          'Customer Email: <b>' + escapeHtml(email) + '</b><br>' +
-          (isAlreadyActive
-            ? 'Your Customer Account is already active. You may sign in anytime to track your application.'
-            : 'We emailed your one-time activation link to <b>' + escapeHtml(email) + '</b>. Please check your Gmail inbox to create your own username and password and activate your Customer Account.') +
-        '</div>' +
-        '<p class="small muted mt">Click outside or press X to return to Step 1.</p>' +
-      '</div>',
-      { showCloseX: true, closeOnBackdrop: true, onClose: resetApplyWizardToStep1 }
-    );
+    void Promise.allSettled(followUp);
   } catch (err) {
     if (loadingScreen) loadingScreen.hidden = true;
     if (savedApplication) {
