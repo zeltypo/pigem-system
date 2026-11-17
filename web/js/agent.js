@@ -1062,7 +1062,7 @@ async function readAgentIdPhoto(worker, photo, expected, url) {
   }
   var prepared = await prepareAgentIdPhoto(url, photo);
   var firstRead = await withAgentReadTimeout(worker.recognize(prepared ? prepared.canvas : photo, {}, { text: true, blocks: true }), 18000);
-  if (!prepared || (isReadableIdText(firstRead) && fieldsFound(firstRead) >= 2)) return firstRead;
+  if (!prepared || (isReadableIdText(firstRead) && fieldsFound(firstRead) >= 1)) return firstRead;
 
   try {
     var original = await withAgentReadTimeout(worker.recognize(photo, {}, { text: true, blocks: true }), 18000);
@@ -1156,6 +1156,8 @@ async function collectAgentIdFindings(sources, expected, job) {
           }
         }
       } catch (error) {
+        // A timed-out recognition still occupies its worker. Stop instead of queuing another photo.
+        if (String(error.message).includes("timed out")) throw error;
         failedReads.push(side.label);
       }
     }
@@ -1216,7 +1218,7 @@ function summarizeAgentIdFindings(result) {
     }
     return notes.join(" ");
   }
-  if (result.fields.every(function (field) { return field.status === "match"; })) return "Name, birth date, and ID number match.";
+  if (result.fields.length === 3 && result.fields.every(function (field) { return field.status === "match"; })) return "Name, birth date, and ID number match.";
   var unreadable = result.fields.filter(function (field) { return field.status === "unreadable"; });
   if (unreadable.length === 1 && unreadable[0].key === "birth_date") {
     return "Birth date could not be verified. Check the original ID; if no date is printed, ask for an ID that shows it.";
@@ -1234,7 +1236,7 @@ function getAgentIdCheck(front, back, expected, existingOnly) {
     var check = { result: null };
     // Reuse an in-progress or completed check for these exact photos and form values.
     check.pending = runAgentIdCheck(sources, expected).then(function (result) {
-      if (result.failed || result.unavailableSides.length || result.failedReads.length) check.retryAt = Date.now() + 15000;
+      if (result.failed || result.unavailableSides.length || (result.failedReads || []).length) check.retryAt = Date.now() + 15000;
       check.result = result;
       return result;
     });
@@ -1311,7 +1313,7 @@ async function showAgentIdFindings(panel, app) {
   if (panel.isConnected === false) return;
   panel._documentFindings = result;
   panel.textContent = summarizeAgentIdFindings(result);
-  if (!result.failed && result.fields.some(function (field) { return field.status !== "unreadable"; })) {
+  if (!result.failed && !result.unavailableSides?.length && !result.failedReads?.length && result.fields.some(function (field) { return field.status !== "unreadable"; })) {
     panel.textContent += "\n" + result.fields.filter(function (field) {
       return field.status !== "unreadable";
     }).map(describeAgentIdField).join("\n");
