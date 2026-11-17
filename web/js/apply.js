@@ -187,11 +187,8 @@ async function initApplyPage() {
   });
   window.addEventListener("resize", setupDeviceUploadUI);
 
-  if (sessionStorage.getItem("pigem_captcha_verified") !== "true") {
-    setTimeout(showApplySecurityCaptchaModal, 100);
-  } else {
-    applyCaptchaVerified = true;
-  }
+  document.querySelector("main")?.setAttribute("inert", "");
+  showApplySecurityCaptchaModal();
 
   try {
     if (typeof dbSyncLiveSettingsAndContent === "function") {
@@ -365,16 +362,19 @@ async function handleMobileQrUpload(side, inputEl) {
 }
 
 function showApplySecurityCaptchaModal() {
+  if (applyCaptchaVerified || document.getElementById("apply-captcha-box")) return;
   openPopup(
     '<div class="center" style="padding:10px 4px;">' +
       '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>' +
       '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
       '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
       '<div style="display:flex;justify-content:center;margin:8px 0;min-height:78px;">' +
-        '<div id="apply-captcha-box" style="min-width:304px;min-height:78px;"></div>' +
+        '<div id="apply-captcha-box" style="min-height:78px;"></div>' +
+        '<p id="apply-captcha-status" role="status" class="small muted"></p>' +
       '</div>' +
     '</div>',
-    { showCloseX: true, closeOnBackdrop: true }
+    { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true,
+      onClose: function () { window.location.replace("index.html"); } }
   );
   renderApplyCaptchaBox();
 }
@@ -390,8 +390,9 @@ async function renderApplyCaptchaBox() {
   function tryRenderGoogle() {
     if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
       try {
-        grecaptcha.render("g-apply-recaptcha", {
+        applyCaptchaWidget = grecaptcha.render("g-apply-recaptcha", {
           sitekey: siteKey,
+          size: box.clientWidth < 304 ? "compact" : "normal",
           callback: onApplyCaptchaVerified,
           "error-callback": function () { renderApplyCaptchaFallback(box); }
         });
@@ -422,23 +423,19 @@ function renderApplyCaptchaFallback(box) {
 }
 
 async function onApplyCaptchaVerified(token) {
-  if (!token) return;
-  if (token && typeof apiVerifyCaptcha === "function") {
-    var vRes = await apiVerifyCaptcha(token);
-    if (!vRes || vRes.verified === false) {
-      showAlert("Security Verification", "Could not verify security token. Please try again.", "warn");
-      return;
-    }
+  var status = document.getElementById("apply-captcha-status");
+  if (!token || !status || applyCaptchaVerified) return;
+  status.textContent = "Verifying…";
+  var result = await apiVerifyCaptcha(token);
+  if (!status.isConnected) return;
+  if (!result?.verified) {
+    status.textContent = "Verification failed. Please try the checkbox again.";
+    if (typeof grecaptcha !== "undefined") grecaptcha.reset(applyCaptchaWidget);
+    return;
   }
-  sessionStorage.setItem("pigem_captcha_verified", "true");
   applyCaptchaVerified = true;
+  document.querySelector("main")?.removeAttribute("inert");
   closePopup();
-  var cCard = document.getElementById("apply-captcha-card");
-  var cCheck = document.getElementById("apply-captcha-check");
-  if (cCard && cCheck) {
-    cCard.classList.add("verified");
-    cCheck.innerHTML = "&#10003;";
-  }
 }
 
 function renderPlanChoices() {
@@ -474,24 +471,7 @@ function pickPlan(planId) {
 }
 
 var applyCaptchaVerified = false;
-
-function triggerApplyCaptcha() {
-  if (applyCaptchaVerified) return;
-  var check = document.getElementById("apply-captcha-check");
-  var card = document.getElementById("apply-captcha-card");
-  var text = document.getElementById("apply-captcha-text");
-  if (!check || !card) return;
-
-  check.innerHTML = '<div class="captcha-spinner"></div>';
-  if (text) text.textContent = "Verifying security credentials...";
-
-  setTimeout(function () {
-    applyCaptchaVerified = true;
-    check.innerHTML = "&#10003;";
-    card.classList.add("verified");
-    if (text) text.textContent = "I'm not a robot";
-  }, 600);
-}
+var applyCaptchaWidget;
 
 async function applyQrRemoteFile(side, url) {
   if (!url || _qrLoadedUrls[side] === url) return;
@@ -1143,6 +1123,7 @@ async function enforceLiveMaintenanceOnStep() {
 }
 
 async function nextPanel() {
+  if (!applyCaptchaVerified) return showApplySecurityCaptchaModal();
   if (await enforceLiveMaintenanceOnStep()) return;
   if (currentPanel === 3) {
     var latVal = parseFloat(document.getElementById("lat").value);
@@ -1500,6 +1481,7 @@ async function submitRegistration() {
 }
 
 async function performApplicationSubmission() {
+  if (!applyCaptchaVerified) return showApplySecurityCaptchaModal();
   var savedApplication = null;
   if (await enforceLiveMaintenanceOnStep()) return;
   if (!validateCurrentPanel()) return;

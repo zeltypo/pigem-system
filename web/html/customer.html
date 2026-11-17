@@ -57,7 +57,7 @@
     </div>
   </main>
 
-  <div id="notif-modal" class="modal hidden" onclick="if(event.target===this) toggleNotifModal()">
+  <div id="notif-modal" class="modal hidden" onclick="if(!event.target.closest('.modal-box')) this.classList.add('hidden')">
     <div class="modal-box">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
         <h3>My Notifications</h3>

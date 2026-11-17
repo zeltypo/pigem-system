@@ -445,6 +445,7 @@ function openPopup(htmlContent, isWideOrOpts) {
     closePopup();
     if (typeof opts.onClose === "function") opts.onClose();
   };
+  if (opts.closeOnEscape) back.closeFromEscape = handleClose;
   var xBtn = document.getElementById("popup-close-x-btn");
   if (xBtn) xBtn.addEventListener("click", handleClose);
   if (opts.closeOnBackdrop !== false) {
@@ -996,8 +997,10 @@ window.addEventListener("DOMContentLoaded", async function () {
 });
 
 window.addEventListener("keydown", function (e) {
-  if (e.key === "Escape" && document.getElementById("popup-modal")) {
-    closePopup();
+  var popup = document.getElementById("popup-modal");
+  if (e.key === "Escape" && popup) {
+    if (popup.closeFromEscape) popup.closeFromEscape();
+    else closePopup();
   }
 });
 

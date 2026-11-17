@@ -1,6 +1,6 @@
 var pendingApplyPlanId = null;
 
-function openApplyWithCaptcha(planId) {
+function openApplyFromHome(planId) {
   pendingApplyPlanId = String(planId || "1000");
   try {
     sessionStorage.setItem("pigem_selected_plan", pendingApplyPlanId);
@@ -21,95 +21,7 @@ function openApplyWithCaptcha(planId) {
     );
     return;
   }
-  var targetUrl = "apply.html?plan=" + encodeURIComponent(pendingApplyPlanId);
-  if (sessionStorage.getItem("pigem_captcha_verified") === "true") {
-    window.location.href = targetUrl;
-    return;
-  }
-  showGoogleCaptchaPopup();
-}
-
-function showGoogleCaptchaPopup() {
-  openPopup(
-    '<div class="center" style="padding:14px 4px 6px;">' +
-      '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">' +
-        '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>' +
-      '</div>' +
-      '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
-      '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
-      '<div style="display:flex;justify-content:center;margin:8px 0;min-height:78px;">' +
-        '<div id="home-captcha-box" style="min-width:304px;min-height:78px;"></div>' +
-      '</div>' +
-    '</div>',
-    { showCloseX: true, closeOnBackdrop: true }
-  );
-  renderHomeCaptchaBox();
-}
-
-async function renderHomeCaptchaBox() {
-  var box = document.getElementById("home-captcha-box");
-  if (!box) return;
-  var health = await apiCheckHealth();
-  if (!box.isConnected) return;
-  var siteKey = health?.recaptcha_site_key || CONFIG.RECAPTCHA_SITE_KEY;
-  box.innerHTML = '<div id="g-home-recaptcha"></div>';
-
-  function tryRenderGoogle() {
-    if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
-      try {
-        grecaptcha.render("g-home-recaptcha", {
-          sitekey: siteKey,
-          callback: onGoogleCaptchaPassed,
-          "error-callback": function () { renderHomeCaptchaFallback(box); }
-        });
-        return true;
-      } catch (err) {
-        return false;
-      }
-    }
-    return false;
-  }
-
-  if (!tryRenderGoogle()) {
-    var attempts = 0;
-    var timer = setInterval(function () {
-      attempts++;
-      if (tryRenderGoogle() || attempts > 15) {
-        clearInterval(timer);
-        if (attempts > 15 && !box.querySelector("iframe")) {
-          renderHomeCaptchaFallback(box);
-        }
-      }
-    }, 250);
-  }
-}
-
-function renderHomeCaptchaFallback(box) {
-  box.textContent = "The security check could not load. Refresh the page and try again.";
-}
-
-async function onGoogleCaptchaPassed(token) {
-  if (!token) return;
-  if (token && typeof apiVerifyCaptcha === "function") {
-    var checkRes = await apiVerifyCaptcha(token);
-    if (!checkRes || checkRes.verified === false) {
-      showAlert("Security Verification", "Could not verify security token. Please check the box again.", "warn");
-      return;
-    }
-  }
-  var liveContent = (typeof getWebsiteContent === "function") ? getWebsiteContent() : window._latestWebsiteContent;
-  var mInfo = (typeof getMaintenanceBlockInfo === "function") ? getMaintenanceBlockInfo(liveContent) : null;
-  if (mInfo && mInfo.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
-    closePopup();
-    if (typeof renderMaintenanceScreenHtml === "function") {
-      renderMaintenanceScreenHtml(mInfo.title || "Website Under Maintenance", mInfo.message);
-    }
-    return;
-  }
-  sessionStorage.setItem("pigem_captcha_verified", "true");
-  closePopup();
-  var targetUrl = "apply.html" + (pendingApplyPlanId ? "?plan=" + encodeURIComponent(pendingApplyPlanId) : "");
-  window.location.href = targetUrl;
+  window.location.href = "apply.html?plan=" + encodeURIComponent(pendingApplyPlanId);
 }
 
 function buildPlanCard(plan) {
@@ -203,6 +115,6 @@ if (homePlanCards) {
     var button = event.target.closest("button");
     if (!button) return;
     var card = button.closest("[data-plan-id]");
-    if (card) openApplyWithCaptcha(card.dataset.planId);
+    if (card) openApplyFromHome(card.dataset.planId);
   });
 }
