@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 """Step 2 (IDP Extraction): Azure AI Document Intelligence, Nanonets OCR-3 / ID Analyzer, with GPT-5.4 IDP fallback."""
 import base64
 import json
@@ -145,7 +146,7 @@ def _extract_labeled_fallbacks(lines: List[str]) -> Dict[str, Any]:
     return out
 
 
-def _analyze_bytes_azure(image_bytes: bytes) -> Optional[Dict[str, Any]]:
+def _analyze_bytes_azure(image_bytes: bytes, model="prebuilt-idDocument") -> Optional[Dict[str, Any]]:
     endpoint = _azure_endpoint()
     key = _azure_key()
     if not endpoint or not key or not image_bytes:
@@ -153,8 +154,8 @@ def _analyze_bytes_azure(image_bytes: bytes) -> Optional[Dict[str, Any]]:
 
     b64_source = base64.b64encode(image_bytes).decode("ascii")
     api_paths = [
-        (f"{endpoint}/documentintelligence/documentModels/prebuilt-idDocument:analyze?api-version=2024-11-30", {"base64Source": b64_source}),
-        (f"{endpoint}/formrecognizer/documentModels/prebuilt-idDocument:analyze?api-version=2023-07-31", {"base64Source": b64_source}),
+        (f"{endpoint}/documentintelligence/documentModels/{model}:analyze?api-version=2024-11-30", {"base64Source": b64_source}),
+        (f"{endpoint}/formrecognizer/documentModels/{model}:analyze?api-version=2023-07-31", {"base64Source": b64_source}),
     ]
     headers = {
         "Ocp-Apim-Subscription-Key": key,
@@ -653,13 +654,21 @@ def extract_id_document(
     used_provider = provider_name()
 
     if _azure_endpoint() and _azure_key():
-        raw_front = _analyze_bytes_azure(front_bytes)
-        if raw_front:
-            front_parsed = _parse_azure_analyze_result(raw_front)
-        if back_bytes:
-            raw_back = _analyze_bytes_azure(back_bytes)
-            if raw_back:
-                back_parsed = _parse_azure_analyze_result(raw_back)
+        def read_azure_side(image, model):
+            raw = _analyze_bytes_azure(image, model)
+            if raw:
+                parsed = _parse_azure_analyze_result(raw)
+                if parsed.get("lines") or parsed.get("id_number") or parsed.get("full_name"):
+                    return parsed
+            if model != "prebuilt-read":
+                return read_azure_side(image, "prebuilt-read")
+            return None
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            front = executor.submit(read_azure_side, front_bytes, "prebuilt-idDocument")
+            back = executor.submit(read_azure_side, back_bytes, "prebuilt-read") if back_bytes else None
+            front_parsed = front.result()
+            back_parsed = back.result() if back else None
 
     if not front_parsed and _nanonets_key():
         front_parsed = _analyze_bytes_nanonets(front_bytes)
@@ -673,12 +682,12 @@ def extract_id_document(
         if front_parsed:
             used_provider = "id_analyzer"
 
-    if not front_parsed and _openai_client.is_configured():
+    if not front_parsed and not (_azure_endpoint() and _azure_key()) and _openai_client.is_configured():
         front_parsed = _analyze_bytes_gpt_idp(front_bytes, back_bytes, declared_id_type)
         if front_parsed:
             used_provider = "gpt-5.4-idp"
 
-    if not front_parsed and not back_parsed:
+    if not front_parsed or (back_bytes and not back_parsed and used_provider != "id_analyzer"):
         return {
             "available": False,
             "provider": used_provider,

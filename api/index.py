@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 _API_DIRECTORY = str(Path(__file__).resolve().parent)
@@ -16,6 +17,7 @@ import _auth
 import _idp
 import _mailer
 import _openai_client
+import _preprocess
 
 app = FastAPI(title="PIGEM Cloud IDP Screening & Notification API")
 
@@ -92,6 +94,8 @@ async def screen_document(
     birth_date: str = Form(default=""),
     id_type: str = Form(default=""),
     id_number: str = Form(default=""),
+    browser_prepared_front: bool = Form(default=False),
+    browser_prepared_back: bool = Form(default=False),
     user=Depends(_auth.require_screening_staff),
 ):
     front_bytes = await id_front.read()
@@ -107,7 +111,26 @@ async def screen_document(
         "id_type": id_type,
         "id_number": id_number,
     }
-    return _ai.run_idp_screening_pipeline(front_bytes, back_bytes, entered)
+    def run_check():
+        preparation = {}
+        try:
+            cleaned_front, preparation["front"] = (
+                (front_bytes, {"source": "browser"}) if browser_prepared_front
+                else _preprocess.prepare_photo(front_bytes)
+            )
+            cleaned_back = back_bytes
+            if back_bytes:
+                cleaned_back, preparation["back"] = (
+                    (back_bytes, {"source": "browser"}) if browser_prepared_back
+                    else _preprocess.prepare_photo(back_bytes)
+                )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
+        result = _ai.run_idp_screening_pipeline(cleaned_front, cleaned_back, entered)
+        result["quality"]["preprocessed"] = preparation
+        return result
+
+    return await run_in_threadpool(run_check)
 
 
 @app.post("/api/screen-async")

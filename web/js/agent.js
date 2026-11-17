@@ -784,7 +784,7 @@ function loadAgentOpenCv() {
   if (!agentOpenCv) {
     agentOpenCv = new Promise(function (resolve) {
       var script = document.createElement("script");
-      var timeout = setTimeout(function () { resolve(null); }, 8000);
+      var timeout = setTimeout(function () { script.remove(); resolve(null); }, 20000);
       script.src = "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.11.0-release.1/dist/opencv.js";
       script.integrity = "sha256-WtIp0mZvzmgDo69KVpEhvW2o0J1cFk26+w1/dYRgwl4=";
       script.crossOrigin = "anonymous";
@@ -797,7 +797,11 @@ function loadAgentOpenCv() {
       document.head.appendChild(script);
     });
   }
-  return agentOpenCv;
+  var loading = agentOpenCv;
+  loading.then(function (cv) {
+    if (!cv && agentOpenCv === loading) agentOpenCv = null;
+  });
+  return loading;
 }
 
 function getAgentCardShape(points, cols, rows) {
@@ -1143,9 +1147,11 @@ async function collectAgentIdFindings(sources, expected, job) {
         birth_date: expected.birth || "",
         id_type: expected.type || "",
         id_number: expected.number || "",
+        browserPreparedFront: Boolean(frontPrep?.blob),
+        browserPreparedBack: Boolean(backPrep?.blob),
         id_back: backUpload
       }, backUpload, job.controller.signal),
-      45000
+      100000
     );
 
     if (!screenData || screenData.status === "offline" || !(screenData.ocr && screenData.ocr.available)) {
@@ -1159,6 +1165,7 @@ async function collectAgentIdFindings(sources, expected, job) {
         unavailableSides: unavailableSides,
         failedReads: ["IDP service"],
         accessDenied: [401, 403].includes(screenData?.status_code),
+        uploadTooLarge: screenData?.status_code === 413,
         duplicatePhotos: duplicatePhotos,
         photoIssues: photoIssues
       };
@@ -1278,7 +1285,7 @@ async function runAgentIdCheckNow(sources, expected) {
   });
   activeScreeningJob = job;
   try {
-    return await withAgentReadTimeout(Promise.race([collectAgentIdFindings(sources, expected, job), cancelled]), 60000);
+    return await withAgentReadTimeout(Promise.race([collectAgentIdFindings(sources, expected, job), cancelled]), 140000);
   } catch (error) {
     job.expired = true;
     return { fields: [], unclearSides: [], unavailableSides: [], failedReads: [], failed: true,
@@ -1294,6 +1301,7 @@ async function runAgentIdCheckNow(sources, expected) {
 }
 
 function summarizeAgentIdFindings(result) {
+  if (result.uploadTooLarge) return "The ID photos are too large to send for checking. Try smaller clear copies.";
   if (result.accessDenied) return "Document check unavailable. Sign in again with a verified Agent account.";
   if (result.offline) return "Connection lost. Document checking will resume when you are online.";
   if (result.unavailableSides?.length || result.failedReads?.length) {
@@ -1367,7 +1375,7 @@ function agentScreeningRevision(app) {
 
 function getSavedAgentFindings(app) {
   var stored = app.screening && app.screening.browser_check;
-  return stored && stored.reader_version === 4 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
+  return stored && stored.reader_version === 5 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
 }
 
 function buildSavedAgentFindings(result) {
@@ -1405,7 +1413,7 @@ async function saveAgentFindings(app, result) {
       summary: summaryText,
       review_recommended: reviewRec,
       Suggested_remark: result.suggestedPoliteRemark || "",
-      browser_check: { reader_version: 4, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
+      browser_check: { reader_version: 5, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
     });
     var aiResult = Object.assign({}, app.ai_result, {
       overall_status: reviewRec ? "Needs Review" : "Verified",

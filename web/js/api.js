@@ -99,6 +99,8 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile, signal)
       formData.append("id_back", backBlob);
     }
 
+    formData.append("browser_prepared_front", String(Boolean(details.browserPreparedFront)));
+    formData.append("browser_prepared_back", String(Boolean(details.browserPreparedBack)));
     formData.append("full_name", details.full_name || "");
     formData.append("first_name", details.first_name || "");
     formData.append("middle_name", details.middle_name || "");
@@ -114,6 +116,9 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile, signal)
     }
 
     if (!headers.Authorization) return Object.assign({}, offlineResult, { status_code: 401 });
+    if (idFrontFile.size + (backBlob?.size || 0) > 4200000) {
+      return Object.assign({}, offlineResult, { status_code: 413 });
+    }
     var response = await fetch(_apiEndpoint("/screen"), {
       method: "POST",
       headers: headers,
