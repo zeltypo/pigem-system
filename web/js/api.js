@@ -75,7 +75,7 @@ function apiStartBackgroundScreening(applicationId) {
   })();
 }
 
-async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
+async function apiRunScreening(idFrontFile, customerDetails, idBackFile, signal) {
   var offlineResult = {
     preliminary: true,
     status: "offline",
@@ -113,13 +113,15 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile) {
       if (token) headers["Authorization"] = "Bearer " + token;
     }
 
+    if (!headers.Authorization) return Object.assign({}, offlineResult, { status_code: 401 });
     var response = await fetch(_apiEndpoint("/screen"), {
       method: "POST",
       headers: headers,
-      body: formData
+      body: formData,
+      signal: signal
     });
 
-    if (!response.ok) return offlineResult;
+    if (!response.ok) return Object.assign({}, offlineResult, { status_code: response.status });
     var data = await response.json();
     var q = data.quality || {};
     var notes = data.ai || {};

@@ -1111,7 +1111,7 @@ async function collectAgentIdFindings(sources, expected, job) {
       return { fields: [], unclearSides: [], unavailableSides: unavailableSides, failedReads: [] };
     }
     if (sources.length > 1 && !backRaw) {
-      unavailableSides.push(sources[1].label);
+      return { fields: [], unclearSides: [], unavailableSides: [sources[1].label], failedReads: [] };
     }
 
     var duplicatePhotos = sources.length === 2 && backRaw && await areSameAgentPhotos(frontRaw, backRaw);
@@ -1144,7 +1144,7 @@ async function collectAgentIdFindings(sources, expected, job) {
         id_type: expected.type || "",
         id_number: expected.number || "",
         id_back: backUpload
-      }, backUpload),
+      }, backUpload, job.controller.signal),
       45000
     );
 
@@ -1158,6 +1158,7 @@ async function collectAgentIdFindings(sources, expected, job) {
         unclearSides: unclearSides,
         unavailableSides: unavailableSides,
         failedReads: ["IDP service"],
+        accessDenied: [401, 403].includes(screenData?.status_code),
         duplicatePhotos: duplicatePhotos,
         photoIssues: photoIssues
       };
@@ -1293,6 +1294,7 @@ async function runAgentIdCheckNow(sources, expected) {
 }
 
 function summarizeAgentIdFindings(result) {
+  if (result.accessDenied) return "Document check unavailable. Sign in again with a verified Agent account.";
   if (result.offline) return "Connection lost. Document checking will resume when you are online.";
   if (result.unavailableSides?.length || result.failedReads?.length) {
     return "Document check incomplete. Configure AZURE_DI_ENDPOINT and AZURE_DI_KEY (or check connection) and reopen the application. No correction is recommended from this incomplete check.";
@@ -1365,7 +1367,7 @@ function agentScreeningRevision(app) {
 
 function getSavedAgentFindings(app) {
   var stored = app.screening && app.screening.browser_check;
-  return stored && stored.reader_version === 3 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
+  return stored && stored.reader_version === 4 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
 }
 
 function buildSavedAgentFindings(result) {
@@ -1403,7 +1405,7 @@ async function saveAgentFindings(app, result) {
       summary: summaryText,
       review_recommended: reviewRec,
       Suggested_remark: result.suggestedPoliteRemark || "",
-      browser_check: { reader_version: 3, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
+      browser_check: { reader_version: 4, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
     });
     var aiResult = Object.assign({}, app.ai_result, {
       overall_status: reviewRec ? "Needs Review" : "Verified",
@@ -1498,7 +1500,7 @@ function getFindingCorrectionDraft(result) {
   if (differences.length === 1) {
     var field = differences[0];
     var preset = VALIDATOR_PRESETS.find(function (item) { return item.field === field.key; });
-    if (preset) return { fields: [field.key], message: result.suggestedPoliteRemark || preset.msg };
+    if (preset) return { fields: [field.key], message: preset.msg };
   }
   if (differences.length > 1) return null;
 

@@ -811,23 +811,15 @@ class OpenAIScreeningService:
 
         try:
             parsed = self._parse_json_text(raw)
-            rec = str(parsed.get("recommendation") or base_guidance["recommendation"]).lower()
-            if rec not in ("approve", "reject", "manual_review"):
-                rec = base_guidance["recommendation"]
-            # Keep deterministic safety guardrails: never auto-approve if rules found a mismatch or expired/underage
-            if base_guidance["recommendation"] != "approve" and rec == "approve":
-                rec = base_guidance["recommendation"]
-            findings = [str(x).strip() for x in (parsed.get("findings") or []) if str(x).strip()] or base_guidance["findings"]
-            t_flags = [str(x).strip() for x in (parsed.get("tampering_flags") or []) if str(x).strip()] or base_guidance["tampering_flags"]
-            polite = self._sanitize_plain_text(str(parsed.get("suggested_polite_remark") or "")) or base_guidance["suggested_polite_remark"]
+            polite = self._sanitize_plain_text(str(parsed.get("suggested_polite_remark") or ""))
             return {
+                **base_guidance,
                 "available": True,
                 "model": _openai_client.configured_model(),
-                "recommendation": rec,
-                "findings": findings,
-                "tampering_flags": t_flags,
-                "notes": findings + [f for f in t_flags if f not in findings],
-                "suggested_polite_remark": polite,
+                "suggested_polite_remark": (
+                    polite or base_guidance["suggested_polite_remark"]
+                    if base_guidance["recommendation"] != "approve" else ""
+                ),
             }
         except Exception:
             return base_guidance
@@ -941,9 +933,9 @@ def run_idp_screening_pipeline(
     comparisons = _matcher.compare(entered, ocr_payload)
     nlp_rules = _matcher.validate_nlp_rules(entered, ocr_payload)
     # Step 4: LLM Reasoning (GPT-5.4 over masked JSON)
-    ai_reasoning = _ai_service.reason_over_validated_json(
+    ai_reasoning = (_ai_service.reason_over_validated_json(
         entered, comparisons, nlp_rules, ocr_payload
-    )
+    ) if ocr_payload.get("available") else {})
     return {
         "ocr": ocr_payload,
         "comparisons": comparisons,
