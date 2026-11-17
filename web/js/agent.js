@@ -1352,11 +1352,11 @@ function summarizeAgentIdFindings(result) {
   return "Could not verify " + unreadable.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ". Check the printed details on the ID.";
 }
 
-function getAgentIdCheck(front, back, expected, existingOnly) {
+function getAgentIdCheck(front, back, expected, existingOnly, revisionKey) {
   if (!agentScreeningAvailable()) return null;
   var sources = [{ label: "Front", url: front }, { label: "Back", url: back }].filter(function (side) { return side.url; });
   if (!sources.length) return null;
-  var key = JSON.stringify([sources, expected]);
+  var key = JSON.stringify([revisionKey || "", sources, expected]);
   var existing = agentDocumentChecks.get(key);
   if (existingOnly) return existing;
   if (!existing || (existing.retryAt && existing.retryAt <= Date.now())) {
@@ -1411,34 +1411,45 @@ async function saveAgentFindings(app, result) {
   if (agentScreeningWrites.has(key)) return;
   agentScreeningWrites.add(key);
   try {
-    var summaryText = summarizeAgentIdFindings(result);
-    var allMatched = result.fields.length === 3 && result.fields.every(function (f) { return f.status === "match"; });
-    var reviewRec = result.aiRecommendation ? (result.aiRecommendation !== "approve") : !allMatched;
-    var screening = Object.assign({}, app.screening, {
-      state: "completed",
-      summary: summaryText,
-      review_recommended: reviewRec,
-      Suggested_remark: result.suggestedPoliteRemark || "",
-      browser_check: { reader_version: 5, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
-    });
-    var aiResult = Object.assign({}, app.ai_result, {
-      overall_status: reviewRec ? "Needs Review" : "Verified",
-      name_match: Boolean(result.fields.find(function (f) { return f.key === "name" && f.status === "match"; })),
-      birth_date_match: Boolean(result.fields.find(function (f) { return f.key === "birth_date" && f.status === "match"; })),
-      id_number_match: Boolean(result.fields.find(function (f) { return f.key === "id_number" && f.status === "match"; })),
-      issues: (result.aiFindings || []).concat(result.tamperingFlags || [])
-    });
-    var aiLog = Array.isArray(app.ai_log) ? app.ai_log.slice() : [];
-    aiLog.push({
-      at: new Date().toISOString(),
-      who: "IDP + GPT-5.4 Screening",
-      text: summaryText
-    });
-    var saved = await dbUpdateApplication(app.id, {
-      screening: screening,
-      ai_result: aiResult,
-      ai_log: aiLog
-    }, app.updated_at);
+    async function saveForRevision(latest) {
+      if (!latest || agentScreeningRevision(latest) !== version || !latest.updated_at) return null;
+      if (getSavedAgentFindings(latest)) return latest;
+      var summaryText = summarizeAgentIdFindings(result);
+      var allMatched = result.fields.length === 3 && result.fields.every(function (f) { return f.status === "match"; });
+      var reviewRec = result.aiRecommendation ? (result.aiRecommendation !== "approve") : !allMatched;
+      var screening = Object.assign({}, latest.screening, {
+        state: "completed",
+        summary: summaryText,
+        review_recommended: reviewRec,
+        Suggested_remark: result.suggestedPoliteRemark || "",
+        browser_check: { reader_version: 5, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
+      });
+      var aiResult = Object.assign({}, latest.ai_result, {
+        overall_status: reviewRec ? "Needs Review" : "Verified",
+        name_match: Boolean(result.fields.find(function (f) { return f.key === "name" && f.status === "match"; })),
+        birth_date_match: Boolean(result.fields.find(function (f) { return f.key === "birth_date" && f.status === "match"; })),
+        id_number_match: Boolean(result.fields.find(function (f) { return f.key === "id_number" && f.status === "match"; })),
+        issues: (result.aiFindings || []).concat(result.tamperingFlags || [])
+      });
+      var aiLog = Array.isArray(latest.ai_log) ? latest.ai_log.slice() : [];
+      aiLog.push({
+        at: new Date().toISOString(),
+        who: "IDP + GPT-5.4 Screening",
+        text: summaryText
+      });
+      return await dbUpdateApplication(app.id, {
+        screening: screening,
+        ai_result: aiResult,
+        ai_log: aiLog
+      }, latest.updated_at);
+    }
+
+    var saved;
+    try {
+      saved = await saveForRevision(app);
+    } catch (error) {
+      saved = await saveForRevision(await dbGetApplication(app.id));
+    }
     if (saved) {
       app.screening = saved.screening;
       app.ai_result = saved.ai_result;
@@ -1458,7 +1469,7 @@ function getAgentAppIdCheck(app, existingOnly) {
   if (saved) return { result: saved, pending: Promise.resolve(saved) };
   return getAgentIdCheck(app.id_image_url || app.id_front_path || "", app.id_back_image_url || app.id_back_path || "", {
     name: app.full_name || "", birth: app.birth_date || "", number: app.id_number || "", type: app.id_type || ""
-  }, existingOnly);
+  }, existingOnly, app.id + "|" + agentScreeningRevision(app));
 }
 
 async function showAgentIdFindings(panel, app) {
