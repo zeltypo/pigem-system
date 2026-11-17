@@ -37,11 +37,11 @@
         </div>
 
         <div class="mt">
-          <div class="row between">
-            <label for="password" style="margin:0">Password <span class="req-mark">*</span></label>
-            <a href="#" style="font-size:13px; color:var(--red); font-weight:600;" onclick="openStaffResetRequestModal(); return false;">Haven't access? / Forgot Password?</a>
+          <label for="password">Password <span class="req-mark">*</span></label>
+          <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password">
+          <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+            <a href="#" class="small" style="color:var(--red); font-weight:600;" onclick="openStaffResetRequestModal(); return false;">Forgot Username or Password?</a>
           </div>
-          <input id="password" type="password" autocomplete="current-password" class="mt" placeholder="Enter your password">
         </div>
 
         <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">

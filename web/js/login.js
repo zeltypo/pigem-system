@@ -152,17 +152,40 @@ function showLockoutPopup() {
   );
 }
 
-function openStaffResetRequestModal() {
+var _staffRecoveryTab = "password";
+
+function switchStaffRecoveryTab(tabName) {
+  _staffRecoveryTab = (tabName === "username") ? "username" : "password";
+  openStaffResetRequestModal(_staffRecoveryTab);
+}
+
+function openStaffResetRequestModal(initialTab) {
+  var tab = (initialTab === "username") ? "username" : "password";
+  _staffRecoveryTab = tab;
+  var isPw = tab === "password";
+  var isUser = tab === "username";
+  var fieldLabel = isPw ? "Your Staff Username" : "Your Full Name (or Staff Username)";
+  var fieldPlaceholder = isPw ? "e.g. maria_santos" : "e.g. Maria Santos";
+
   openPopup(
-    '<h3 style="margin:0 0 6px;">Haven\'t Access / Reset Password</h3>' +
+    '<h3 style="margin:0 0 6px;">Account Recovery</h3>' +
+    '<p class="small muted">Recover your Internal Staff Username or Password:</p>' +
+    '<div class="recovery-tabs mt">' +
+      '<button type="button" class="recovery-tab-btn' + (isPw ? " active" : "") + '" onclick="switchStaffRecoveryTab(\'password\')">' +
+        '<b>Forgot Password</b><span>Request password reset from Admin</span>' +
+      '</button>' +
+      '<button type="button" class="recovery-tab-btn' + (isUser ? " active" : "") + '" onclick="switchStaffRecoveryTab(\'username\')">' +
+        '<b>Forgot Username</b><span>Retrieve your @username</span>' +
+      '</button>' +
+    '</div>' +
     '<div class="notice mt" style="font-size:12.5px; line-height:1.5; margin-bottom:12px;">' +
-      '<b>Internal Access Support:</b> Internal Agents and Managers sign in by Username only. Forgot your password or locked out? Contact System Admin at Tel: <b>(046) 458-0908</b> / Hotline: <b>101-733</b> or submit a reset request below.' +
+      '<b>Internal Access Support:</b> Forgot your username or password? Submit a recovery request below or contact System Admin at Tel: <b>(046) 458-0908</b> / Hotline: <b>101-733</b>.' +
     '</div>' +
     '<form class="mt" onsubmit="submitStaffResetRequest(event)" novalidate>' +
-      '<label for="staff-reset-username">Your Staff Username</label>' +
-      '<input id="staff-reset-username" type="text" placeholder="e.g. maria_santos">' +
+      '<label for="staff-reset-username">' + fieldLabel + '</label>' +
+      '<input id="staff-reset-username" type="text" placeholder="' + fieldPlaceholder + '">' +
       '<label for="staff-reset-note" class="mt">Optional Note / Contact Extension</label>' +
-      '<input id="staff-reset-note" type="text" placeholder="e.g. Forgot password - Cavite Desk">' +
+      '<input id="staff-reset-note" type="text" placeholder="e.g. Forgot ' + tab + ' - Cavite Desk">' +
       '<div id="staff-reset-feedback" class="mt"></div>' +
       '<button type="submit" id="btn-staff-reset-submit" class="btn btn-red btn-full mt-big">Send Request to System Admin</button>' +
     '</form>',
@@ -180,16 +203,21 @@ async function submitStaffResetRequest(event) {
   var uname = unameEl ? unameEl.value.trim() : "";
   var note = noteEl ? noteEl.value.trim() : "";
   if (!uname) {
-    if (typeof setFieldError === "function") setFieldError("staff-reset-username", "Please enter your staff username.");
+    if (typeof setFieldError === "function") {
+      setFieldError("staff-reset-username", _staffRecoveryTab === "username" ? "Please enter your full name or staff username." : "Please enter your staff username.");
+    }
     return;
   }
   if (fbEl) fbEl.innerHTML = "";
   btn.disabled = true;
   btn.textContent = "Sending Request...";
   try {
-    var info = await dbRequestStaffPasswordReset(uname, note);
+    var reqNote = (_staffRecoveryTab === "username" ? "[Forgot Username] " : "[Forgot Password] ") + note;
+    var info = await dbRequestStaffPasswordReset(uname, reqNote.trim());
     if (fbEl) {
-      fbEl.innerHTML = '<div class="notice ok"><b>Request Sent!</b> System Administrator has been notified to reset the password for <b>@' + escapeHtml(info.username) + '</b>. You may also reach Admin Support at Tel: <b>(046) 458-0908</b>.</div>';
+      fbEl.innerHTML = _staffRecoveryTab === "username"
+        ? '<div class="notice ok"><b>Account Found &amp; Admin Notified!</b> Your staff username is <b>@' + escapeHtml(info.username) + '</b>. System Administrator has also been notified.</div>'
+        : '<div class="notice ok"><b>Request Sent!</b> System Administrator has been notified to reset the password for <b>@' + escapeHtml(info.username) + '</b>. You may also reach Admin Support at Tel: <b>(046) 458-0908</b>.</div>';
     }
   } catch (err) {
     if (typeof setFieldError === "function") setFieldError("staff-reset-username", err.message || "Could not submit reset request.");

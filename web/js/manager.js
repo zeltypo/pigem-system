@@ -53,6 +53,13 @@ function formatMgrEta(seconds) {
 function getMgrScreeningBadge(app) {
   var scr = app.screening || {};
   var state = scr.state || "";
+  if (scr.browser_check && scr.browser_check.findings) {
+    var fnd = scr.browser_check.findings;
+    if (fnd.aiRecommendation === "approve" || (!fnd.aiRecommendation && Array.isArray(fnd.fields) && fnd.fields.length === 3 && fnd.fields.every(function (f) { return f.status === "match"; }))) {
+      return '<span class="badge badge-green">Screening Passed</span>';
+    }
+    return '<span class="badge badge-yellow">Review Recommended</span>';
+  }
   if (!isAiEnabled() || !isMgrScreeningOnline || documentCheckUnavailable(app.id) || state === "unavailable" || state === "paused" || scr.fallback_original_only) {
     return '<span class="badge badge-gray">Original ID Copy (Manual Review)</span>';
   }

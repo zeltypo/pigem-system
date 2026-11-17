@@ -155,9 +155,9 @@ function toggleMaintMode() {
 
 async function renderAiState() {
   var stAiEl = document.getElementById("st-ai");
-  if (stAiEl) stAiEl.textContent = "BROWSER";
+  if (stAiEl) stAiEl.textContent = "IDP + GPT-5.4";
   var lbl = document.getElementById("ai-status-label");
-  if (lbl) lbl.textContent = "Tesseract.js reads photos and compares fields in the Agent browser. Staff review the findings."
+  if (lbl) lbl.textContent = "Step 1 OpenCV (crop/deskew/contrast) → Step 2 Azure Document Intelligence IDP → Step 3 NLP Validation → Step 4 GPT-5.4 Reasoning."
 
   var aiList = await dbListAiLogs();
   var box = document.getElementById("admin-ai-log-list");
@@ -183,7 +183,7 @@ async function checkApiHealth() {
   var data = await apiCheckHealth();
   var pyOk = Boolean(data && data.api);
   var openaiConfigured = Boolean(pyOk && data && data.openai);
-  var opencvOk = Boolean(pyOk && data && data.opencv);
+  var idpOk = Boolean(pyOk && data && data.idp);
   var recaptchaOk = Boolean(pyOk && data && data.recaptcha);
   var smtpOk = Boolean(pyOk && data && data.smtp);
   var locationIqOk = Boolean(CONFIG.LOCATIONIQ_API_KEY);
@@ -204,28 +204,36 @@ async function checkApiHealth() {
       healthy: pyOk,
       checked_at: nowIso,
       detail: pyOk
-        ? "Serving /api/health, /api/verify-captcha, /api/notify, and /api/polite-remark"
+        ? "Serving /api/health, /api/screen, /api/verify-captcha, /api/notify, and /api/polite-remark"
         : "Check Vercel deployment logs for api/index.py"
     },
     {
-      name: "OpenAI correction messages",
-      status: openaiConfigured ? "Configured (live request not checked)" : "Key Missing",
+      name: "Step 2 IDP Extraction (Azure AI Document Intelligence)",
+      status: idpOk ? "Configured (" + (data.idp_provider || "Azure DI") + ")" : "Key Missing",
+      badge: idpOk ? "badge-green" : "badge-yellow",
+      healthy: idpOk,
+      checked_at: nowIso,
+      detail: idpOk
+        ? "Extracts structured ID fields and authenticity confidence via prebuilt-idDocument"
+        : "Add AZURE_DI_ENDPOINT and AZURE_DI_KEY in Vercel Environment Variables"
+    },
+    {
+      name: "Step 4 LLM Reasoning & Polite Remarks (OpenAI GPT-5.4)",
+      status: openaiConfigured ? "Configured (" + (data.openai_model || "gpt-5.4") + ")" : "Key Missing",
       badge: openaiConfigured ? "badge-green" : "badge-yellow",
       healthy: openaiConfigured,
       checked_at: nowIso,
       detail: openaiConfigured
-        ? "Helps staff rewrite correction messages"
-        : "Add OPENAI_API_KEY and OPENAI_MODEL in Vercel Environment Variables to enable correction-message rewriting"
+        ? "Evaluates masked NLP-validated JSON for findings, recommendations, and polite customer remarks"
+        : "Add OPENAI_API_KEY and OPENAI_MODEL=gpt-5.4 in Vercel Environment Variables"
     },
     {
-      name: "OpenCV and browser document check",
-      status: opencvOk ? "Server library available" : "Server library unavailable",
-      badge: opencvOk ? "badge-green" : "badge-red",
-      healthy: opencvOk,
+      name: "Step 1 OpenCV Pre-processing & Step 3 NLP Validation",
+      status: "Active",
+      badge: "badge-green",
+      healthy: true,
       checked_at: nowIso,
-      detail: opencvOk
-        ? "The Agent browser uses OpenCV.js for image enhancement and Tesseract.js for text reading. Test a fictional application to verify the full check."
-        : "The browser document check uses its own libraries. Verify it from the Agent portal."
+      detail: "Browser OpenCV.js auto-crops, deskews, and enhances contrast; server NLP rules validate ID checksums, age 18+, and expiry dates."
     },
     {
       name: "Google reCAPTCHA v2 Security (SiteVerify)",

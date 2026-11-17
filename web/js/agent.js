@@ -970,7 +970,14 @@ async function enhanceAgentIdPhoto(photo, cv) {
     cv.GaussianBlur(contrast, soft, new cv.Size(3, 3), 0);
     cv.addWeighted(contrast, 1.23, soft, -0.23, 0, sharpened);
     cv.imshow(canvas, sharpened);
-    return { canvas: canvas, cropped: Boolean(corners), lightingAdjusted: adjustedLight };
+    var cleanedBlob = await new Promise(function (resolve) {
+      if (typeof canvas.toBlob === "function") {
+        canvas.toBlob(function (b) { resolve(b); }, "image/jpeg", 0.92);
+      } else {
+        resolve(null);
+      }
+    });
+    return { canvas: canvas, blob: cleanedBlob, cropped: Boolean(corners), lightingAdjusted: adjustedLight };
   } finally {
     mats.forEach(function (item) { item.delete(); });
   }
@@ -984,29 +991,6 @@ function withAgentReadTimeout(work, milliseconds) {
       timer = setTimeout(function () { reject(new Error("Document check timed out")); }, milliseconds);
     })
   ]).finally(function () { clearTimeout(timer); });
-}
-
-function getAgentReadText(read) {
-  var data = read.data || {};
-  if (!Array.isArray(data.blocks) || !data.blocks.length) {
-    return data.confidence >= 60 ? String(data.text || "") : "";
-  }
-
-  var lines = [];
-  data.blocks.forEach(function (block) {
-    (block.paragraphs || []).forEach(function (paragraph) {
-      (paragraph.lines || []).forEach(function (line) {
-        var words = (line.words || []).filter(function (word) { return /[\p{L}\p{N}]/u.test(word.text || ""); });
-        var reliable = words.length && words.every(function (word) { return word.confidence >= 60; });
-        lines.push(reliable ? line.text.trim() : "[unverified]");
-      });
-    });
-  });
-  return lines.join("\n");
-}
-
-function isReadableIdText(read) {
-  return /[\p{L}\p{N}]/u.test(getAgentReadText(read).replace(/\[unverified\]/g, ""));
 }
 
 var agentPreparedPhotos = new Map();
@@ -1040,39 +1024,18 @@ async function showAgentPreparedPhoto(container) {
   var status = container.querySelector("[data-photo-status]");
   var url = container.dataset.photo;
   if (!image || !status || !url) return;
-  status.textContent = "Preparing photo…";
+  status.textContent = "Step 1: Pre-processing photo with OpenCV (auto-crop, deskew, contrast)…";
   var prepared = await prepareAgentIdPhoto(url);
 
   if (!container.isConnected) return;
   if (!prepared) {
-    status.textContent = "Original photo shown. Photo preparation is unavailable.";
+    status.textContent = "Original photo shown. OpenCV pre-processing is unavailable.";
     return;
   }
   image.src = prepared.canvas.toDataURL("image/jpeg", 0.9);
   status.textContent = prepared.cropped
-    ? "Cropped for reading. Download keeps the original upload."
-    : "Whole photo kept to protect the printed details. Download keeps the original upload.";
-}
-
-async function readAgentIdPhoto(worker, photo, expected, url) {
-  function fieldsFound(read) {
-    return compareAgentIdFields(getAgentReadText(read), expected).filter(function (field) {
-      return field.status !== "unreadable";
-    }).length;
-  }
-  var prepared = await prepareAgentIdPhoto(url, photo);
-  var firstRead = await withAgentReadTimeout(worker.recognize(prepared ? prepared.canvas : photo, {}, { text: true, blocks: true }), 18000);
-  if (!prepared || (isReadableIdText(firstRead) && fieldsFound(firstRead) >= 1)) return firstRead;
-
-  try {
-    var original = await withAgentReadTimeout(worker.recognize(photo, {}, { text: true, blocks: true }), 18000);
-    if (isReadableIdText(original) && (!isReadableIdText(firstRead) || fieldsFound(original) > fieldsFound(firstRead))) {
-      return original;
-    }
-  } catch (error) {
-
-  }
-  return firstRead;
+    ? "Step 1 OpenCV: Auto-cropped, straightened (deskewed), and contrast-enhanced."
+    : "Step 1 OpenCV: Contrast-enhanced (full frame preserved).";
 }
 
 var agentDocumentTypes = [
@@ -1105,18 +1068,14 @@ async function areSameAgentPhotos(front, back) {
 }
 
 async function collectAgentIdFindings(sources, expected, job) {
-  var worker;
-  var textBySide = [];
   var unclearSides = [];
   var unavailableSides = [];
   var failedReads = [];
   var photoIssues = [];
 
-
   var photos = sources.map(async function (side) {
     try {
-      var options = { referrerPolicy: "no-referrer" };
-      options.signal = job.controller.signal;
+      var options = { referrerPolicy: "no-referrer", signal: job.controller.signal };
       var response = await withAgentReadTimeout(fetch(side.url, options), 30000);
       if (!response.ok) return null;
       return await withAgentReadTimeout(response.blob(), 30000);
@@ -1124,57 +1083,117 @@ async function collectAgentIdFindings(sources, expected, job) {
       return null;
     }
   });
+
   try {
-    var initializing = Tesseract.createWorker("eng");
-    try {
-      worker = await withAgentReadTimeout(initializing, 15000);
-    } catch (error) {
-      initializing.then(function (lateWorker) { return lateWorker.terminate(); }).catch(function () {});
-      throw error;
-    }
-    if (job) job.worker = worker;
     if (job.expired || job.controller.signal.aborted) throw new Error("Document check cancelled");
-    var duplicatePhotos = sources.length === 2 && await areSameAgentPhotos(await photos[0], await photos[1]);
+    var frontRaw = await photos[0];
+    var backRaw = sources.length > 1 ? await photos[1] : null;
+    if (!frontRaw) {
+      unavailableSides.push(sources[0] ? sources[0].label : "Front");
+      return { fields: [], unclearSides: [], unavailableSides: unavailableSides, failedReads: [] };
+    }
+    if (sources.length > 1 && !backRaw) {
+      unavailableSides.push(sources[1].label);
+    }
 
-    for (var i = 0; i < sources.length && !(job && job.expired); i++) {
-      var side = sources[i];
-      if (duplicatePhotos && i === 1) break;
-      var photo = await photos[i];
-      if (!photo) {
-        unavailableSides.push(side.label);
-        continue;
-      }
+    var duplicatePhotos = sources.length === 2 && backRaw && await areSameAgentPhotos(frontRaw, backRaw);
+
+    // Step 1: OpenCV Pre-processing (auto-crop, deskew, contrast enhancement) + client quality check
+    var frontPrep = await prepareAgentIdPhoto(sources[0].url, frontRaw);
+    var backPrep = (!duplicatePhotos && backRaw && sources[1]) ? await prepareAgentIdPhoto(sources[1].url, backRaw) : null;
+
+    if (typeof analyzeClientIdQuality === "function") {
       try {
-        var read = await readAgentIdPhoto(worker, photo, expected, side.url);
-        if (isReadableIdText(read)) textBySide.push(getAgentReadText(read));
-        else {
-          unclearSides.push(side.label);
-          if (typeof analyzeClientIdQuality === "function") {
-            try {
-              var quality = await withAgentReadTimeout(analyzeClientIdQuality(photo), 2500);
-              if (quality.issues.length) photoIssues.push(side.label + " photo: " + quality.issues[0]);
-            } catch (error) {}
-          }
-        }
-      } catch (error) {
-
-        if (String(error.message).includes("timed out")) throw error;
-        failedReads.push(side.label);
+        var fQual = await withAgentReadTimeout(analyzeClientIdQuality(frontRaw), 2500);
+        if (fQual && fQual.issues && fQual.issues.length) photoIssues.push("Front photo: " + fQual.issues[0]);
+      } catch (e) {}
+      if (backRaw && !duplicatePhotos) {
+        try {
+          var bQual = await withAgentReadTimeout(analyzeClientIdQuality(backRaw), 2500);
+          if (bQual && bQual.issues && bQual.issues.length) photoIssues.push("Back photo: " + bQual.issues[0]);
+        } catch (e) {}
       }
     }
-    var text = textBySide.join("\n");
+
+    var frontUpload = (frontPrep && frontPrep.blob) ? frontPrep.blob : frontRaw;
+    var backUpload = (!duplicatePhotos && backRaw) ? ((backPrep && backPrep.blob) ? backPrep.blob : backRaw) : null;
+
+    // Steps 2, 3, 4: Send OpenCV-cleaned images to /api/screen (Azure DI IDP -> NLP Validation -> GPT-5.4 Reasoning)
+    var screenData = await withAgentReadTimeout(
+      apiRunScreening(frontUpload, {
+        full_name: expected.name || "",
+        birth_date: expected.birth || "",
+        id_type: expected.type || "",
+        id_number: expected.number || "",
+        id_back: backUpload
+      }, backUpload),
+      45000
+    );
+
+    if (!screenData || screenData.status === "offline" || !(screenData.ocr && screenData.ocr.available)) {
+      return {
+        fields: [
+          { key: "name", label: "Name", status: "unreadable" },
+          { key: "birth_date", label: "Birth date", status: "unreadable" },
+          { key: "id_number", label: "ID number", status: "unreadable" }
+        ],
+        unclearSides: unclearSides,
+        unavailableSides: unavailableSides,
+        failedReads: ["IDP service"],
+        duplicatePhotos: duplicatePhotos,
+        photoIssues: photoIssues
+      };
+    }
+
+    var ocr = screenData.ocr || {};
+    if (ocr.front_readable === false) unclearSides.push("Front");
+    if (backUpload && ocr.back_readable === false) unclearSides.push("Back");
+
+    var comps = Array.isArray(screenData.comparisons) ? screenData.comparisons : [];
+    function mapField(key, label) {
+      var foundComp = comps.find(function (c) { return c.key === key; });
+      if (!foundComp) return { key: key, label: label, status: "unreadable" };
+      if (foundComp.status === "match") {
+        return { key: key, label: label, status: "match", found: foundComp.found_on_id };
+      }
+      if (foundComp.status === "mismatch") {
+        return { key: key, label: label, status: "difference", found: foundComp.found_on_id };
+      }
+      return { key: key, label: label, status: "unreadable" };
+    }
+
+    var mappedFields = [
+      mapField("name", "Name"),
+      mapField("birth_date", "Birth date"),
+      mapField("id_number", "ID number")
+    ];
+
+    var detectedOtherType = "";
+    if (ocr.id_type_matches_declared === false && ocr.detected_document_type) {
+      detectedOtherType = ocr.detected_document_type;
+    } else if (ocr.lines && ocr.lines.length) {
+      detectedOtherType = compareAgentDocumentType(ocr.lines.join("\n"), expected.type);
+    }
+
+    var aiObj = screenData.ai || {};
+    var nlpObj = screenData.nlp_validation || {};
+
     return {
-      fields: compareAgentIdFields(text, expected),
-      unclearSides: unclearSides, unavailableSides: unavailableSides, failedReads: failedReads,
-      duplicatePhotos: duplicatePhotos, photoIssues: photoIssues, detectedOtherType: compareAgentDocumentType(text, expected.type)
+      fields: mappedFields,
+      unclearSides: unclearSides,
+      unavailableSides: unavailableSides,
+      failedReads: failedReads,
+      duplicatePhotos: duplicatePhotos,
+      photoIssues: photoIssues,
+      detectedOtherType: detectedOtherType,
+      nlpValidation: nlpObj,
+      aiRecommendation: aiObj.recommendation || "",
+      aiFindings: Array.isArray(aiObj.findings) ? aiObj.findings : [],
+      tamperingFlags: Array.isArray(aiObj.tampering_flags) ? aiObj.tampering_flags : [],
+      suggestedPoliteRemark: aiObj.suggested_polite_remark || ""
     };
   } catch (error) {
     return { fields: [], unclearSides: [], unavailableSides: [], failed: true };
-  } finally {
-    if (worker && !(job && job.terminated)) {
-      if (job) job.terminated = true;
-      Promise.resolve().then(function () { return worker.terminate(); }).catch(function () {});
-    }
   }
 }
 
@@ -1247,26 +1266,40 @@ async function runAgentIdCheckNow(sources, expected) {
 function summarizeAgentIdFindings(result) {
   if (result.offline) return "Connection lost. Document checking will resume when you are online.";
   if (result.unavailableSides?.length || result.failedReads?.length) {
-    return "Document check incomplete. Some photos could not be downloaded or read. Check your connection and reopen the application. No correction is recommended from this incomplete check.";
+    return "Document check incomplete. Configure AZURE_DI_ENDPOINT and AZURE_DI_KEY (or check connection) and reopen the application. No correction is recommended from this incomplete check.";
   }
   if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
-  if (result.failed) return "The photo reader could not start. Refresh and reopen the application, or check the original photos.";
+  if (result.failed) return "The IDP screening service could not finish. Refresh and reopen the application, or check the original photos.";
   var notes = [];
+  if (result.aiRecommendation) {
+    var recLabel = result.aiRecommendation === "approve" ? "APPROVE"
+      : (result.aiRecommendation === "reject" ? "REJECT" : "MANUAL REVIEW");
+    notes.push("Recommendation: " + recLabel + ".");
+  }
   if (result.duplicatePhotos) notes.push("Front and back contain the same photo. Check the back upload.");
   if (result.detectedOtherType) notes.push("The photo appears to show a " + result.detectedOtherType + ". Check the selected ID type.");
+  if (result.nlpValidation) {
+    if (result.nlpValidation.age_eligible === false && result.nlpValidation.age_note) notes.push(result.nlpValidation.age_note);
+    if (result.nlpValidation.is_expired && result.nlpValidation.expiry_note) notes.push(result.nlpValidation.expiry_note);
+    if (result.nlpValidation.id_format_valid === false && result.nlpValidation.id_format_note) notes.push(result.nlpValidation.id_format_note);
+  }
+  if (result.tamperingFlags && result.tamperingFlags.length) {
+    notes.push(result.tamperingFlags.join(" "));
+  }
   if (result.unclearSides.length) notes.push(result.unclearSides.join(" and ") + " ID photo" + (result.unclearSides.length > 1 ? "s: Printed text could not be read. Check the photos." : ": Printed text could not be read. Check the photo."));
   if (result.unavailableSides.length) notes.push(result.unavailableSides.join(" and ") + " photo could not be opened.");
-  if (result.failedReads && result.failedReads.length) notes.push("The reader could not finish checking the " + result.failedReads.join(" and ").toLowerCase() + " photo. Try reopening the application.");
   if (result.photoIssues && result.photoIssues.length) notes.push(result.photoIssues.join(" "));
   var differences = result.fields.filter(function (field) { return field.status === "difference"; });
   if (differences.length) notes.push("Check " + differences.map(function (field) { return field.label.toLowerCase(); }).join(", ") + ".");
-  if (notes.length) {
+  if (notes.length > 1 || (notes.length === 1 && !notes[0].startsWith("Recommendation: APPROVE"))) {
     if (result.fields.some(function (field) { return field.key === "birth_date" && field.status === "unreadable"; })) {
       notes.push("Birth date could not be verified. Check the original ID; if no date is printed, ask for an ID that shows it.");
     }
     return notes.join(" ");
   }
-  if (result.fields.length === 3 && result.fields.every(function (field) { return field.status === "match"; })) return "Name, birth date, and ID number match.";
+  if (result.fields.length === 3 && result.fields.every(function (field) { return field.status === "match"; })) {
+    return (notes[0] ? notes[0] + " " : "") + "Name, birth date, and ID number match.";
+  }
   var unreadable = result.fields.filter(function (field) { return field.status === "unreadable"; });
   if (unreadable.length === 1 && unreadable[0].key === "birth_date") {
     return "Birth date could not be verified. Check the original ID; if no date is printed, ask for an ID that shows it.";
@@ -1302,7 +1335,7 @@ function agentScreeningRevision(app) {
 
 function getSavedAgentFindings(app) {
   var stored = app.screening && app.screening.browser_check;
-  return stored && stored.reader_version === 2 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
+  return stored && stored.reader_version === 3 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
 }
 
 function buildSavedAgentFindings(result) {
@@ -1315,7 +1348,12 @@ function buildSavedAgentFindings(result) {
     failedReads: [],
     duplicatePhotos: Boolean(result.duplicatePhotos),
     detectedOtherType: result.detectedOtherType || "",
-    photoIssues: result.photoIssues || []
+    photoIssues: result.photoIssues || [],
+    nlpValidation: result.nlpValidation || null,
+    aiRecommendation: result.aiRecommendation || "",
+    aiFindings: result.aiFindings || [],
+    tamperingFlags: result.tamperingFlags || [],
+    suggestedPoliteRemark: result.suggestedPoliteRemark || ""
   };
 }
 
@@ -1327,12 +1365,38 @@ async function saveAgentFindings(app, result) {
   if (agentScreeningWrites.has(key)) return;
   agentScreeningWrites.add(key);
   try {
+    var summaryText = summarizeAgentIdFindings(result);
+    var allMatched = result.fields.length === 3 && result.fields.every(function (f) { return f.status === "match"; });
+    var reviewRec = result.aiRecommendation ? (result.aiRecommendation !== "approve") : !allMatched;
     var screening = Object.assign({}, app.screening, {
-      browser_check: { reader_version: 2, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
+      state: "completed",
+      summary: summaryText,
+      review_recommended: reviewRec,
+      Suggested_remark: result.suggestedPoliteRemark || "",
+      browser_check: { reader_version: 3, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
     });
-    var saved = await dbUpdateApplication(app.id, { screening: screening }, app.updated_at);
+    var aiResult = Object.assign({}, app.ai_result, {
+      overall_status: reviewRec ? "Needs Review" : "Verified",
+      name_match: Boolean(result.fields.find(function (f) { return f.key === "name" && f.status === "match"; })),
+      birth_date_match: Boolean(result.fields.find(function (f) { return f.key === "birth_date" && f.status === "match"; })),
+      id_number_match: Boolean(result.fields.find(function (f) { return f.key === "id_number" && f.status === "match"; })),
+      issues: (result.aiFindings || []).concat(result.tamperingFlags || [])
+    });
+    var aiLog = Array.isArray(app.ai_log) ? app.ai_log.slice() : [];
+    aiLog.push({
+      at: new Date().toISOString(),
+      who: "IDP + GPT-5.4 Screening",
+      text: summaryText
+    });
+    var saved = await dbUpdateApplication(app.id, {
+      screening: screening,
+      ai_result: aiResult,
+      ai_log: aiLog
+    }, app.updated_at);
     if (saved) {
       app.screening = saved.screening;
+      app.ai_result = saved.ai_result;
+      app.ai_log = saved.ai_log;
       app.updated_at = saved.updated_at;
     }
   } catch (error) {
@@ -1366,6 +1430,13 @@ async function showAgentIdFindings(panel, app) {
       return field.status !== "unreadable";
     }).map(describeAgentIdField).join("\n");
   }
+  if (!result.failed && result.nlpValidation) {
+    var nlpLines = [];
+    if (result.nlpValidation.age_note) nlpLines.push("Age check: " + result.nlpValidation.age_note);
+    if (result.nlpValidation.expiry_note) nlpLines.push("Validity: " + result.nlpValidation.expiry_note);
+    if (result.nlpValidation.id_format_note) nlpLines.push("ID format/checksum: " + result.nlpValidation.id_format_note);
+    if (nlpLines.length) panel.textContent += "\n" + nlpLines.join("\n");
+  }
 
   var field = document.getElementById("det-correction-field");
   var note = document.getElementById("det-validator-raw");
@@ -1390,11 +1461,14 @@ function getFindingCorrectionDraft(result) {
   if (result.detectedOtherType) {
     return { fields: ["id_photo"], message: "Hello! Please sign in and upload a clear photo of the ID type selected on your application." };
   }
+  if (result.nlpValidation && result.nlpValidation.is_expired) {
+    return { fields: ["id_photo"], message: result.suggestedPoliteRemark || "Hello! Your uploaded ID appears to be expired. Please sign in and upload a valid, unexpired government ID." };
+  }
   var differences = result.fields.filter(function (field) { return field.status === "difference"; });
   if (differences.length === 1) {
     var field = differences[0];
     var preset = VALIDATOR_PRESETS.find(function (item) { return item.field === field.key; });
-    if (preset) return { fields: [field.key], message: preset.msg };
+    if (preset) return { fields: [field.key], message: result.suggestedPoliteRemark || preset.msg };
   }
   if (differences.length > 1) return null;
 

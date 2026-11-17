@@ -2845,37 +2845,51 @@ async function dbChangeStaffPasswordDirect(userId, currentPassword, newPassword)
 
 async function dbRequestStaffPasswordReset(username, note) {
   var clean = String(username || "").trim().replace(/^@/, "");
-  if (!clean) throw new Error("Please enter your staff username.");
+  if (!clean) throw new Error("Please enter your staff username or full name.");
   var found = null;
   if (!IS_DEMO_MODE && supabaseClient) {
     var res = await supabaseClient.from("users").select("*").ilike("username", clean).maybeSingle();
     found = res.data || null;
+    if (!found) {
+      var resName = await supabaseClient.from("users").select("*").ilike("full_name", clean).maybeSingle();
+      found = resName.data || null;
+    }
   } else {
     found = findDemoUserByUsername(clean);
+    if (!found) {
+      var allDemo = getDemoUsers();
+      for (var i = 0; i < allDemo.length; i++) {
+        if (String(allDemo[i].full_name || "").toLowerCase() === clean.toLowerCase()) {
+          found = allDemo[i];
+          break;
+        }
+      }
+    }
   }
   if (!found) {
-    throw new Error("No staff account was found with username '@" + clean + "'.");
+    throw new Error("No staff account was found matching '" + clean + "'.");
   }
+  var resolvedUsername = found.username || clean;
   if (found.role === "admin") {
     throw new Error("System Administrator credentials cannot be reset via staff request.");
   }
   if (found.role === "customer") {
     throw new Error("Customer accounts should use the Customer Login Forgot Password option.");
   }
-  var detailMsg = "Staff user " + (found.full_name || "@" + clean) + " (@" + clean + ", " + String(found.role || "").toUpperCase() + ") requested a password reset." +
+  var detailMsg = "Staff user " + (found.full_name || "@" + resolvedUsername) + " (@" + resolvedUsername + ", " + String(found.role || "").toUpperCase() + ") requested account recovery." +
     (note ? " Note: " + note : "");
   await dbAddNotification({
     role: "admin",
-    title: "Password Reset Request: @" + clean,
+    title: "Account Recovery Request: @" + resolvedUsername,
     message: detailMsg,
     target_tab: "tab-accounts",
     target_id: found.id
   });
-  await dbAddActivity("staff_password_reset_requested", "@" + clean + (note ? " - " + note : ""));
+  await dbAddActivity("staff_password_reset_requested", "@" + resolvedUsername + (note ? " - " + note : ""));
   return {
-    username: clean,
+    username: resolvedUsername,
     role: found.role,
-    full_name: found.full_name || clean
+    full_name: found.full_name || resolvedUsername
   };
 }
 
