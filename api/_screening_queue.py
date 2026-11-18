@@ -12,10 +12,9 @@ import _preprocess
 
 
 def enabled():
-    return (os.getenv("SCREENING_BACKGROUND_ENABLED") == "true"
-            and bool(os.getenv("SCREENING_WORKER_SECRET"))
-            and bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
-            and bool(os.getenv("SUPABASE_URL")))
+    return all(os.getenv(key, "").strip() for key in (
+        "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SCREENING_WORKER_SECRET"
+    ))
 
 
 def intake_ticket():
