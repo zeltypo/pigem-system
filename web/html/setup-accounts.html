@@ -71,6 +71,10 @@
             <input id="adm-pw2" type="password" minlength="8" placeholder="Repeat password">
           </div>
 
+          <div class="mt">
+            <label for="adm-setup-code">Admin setup code <span class="req-mark">*</span></label>
+            <input id="adm-setup-code" type="password" autocomplete="off" placeholder="Code from the SQL Editor">
+          </div>
           <button type="submit" id="btn-save-admin" class="btn btn-red btn-full mt-big">
             Provision Admin Account
           </button>
@@ -154,7 +158,21 @@ window.SYSTEM = "admin";
       btn.disabled = true;
       btn.textContent = "Provisioning Admin...";
       try {
-        await dbCreateUserAccount(fullName, null, pw, "admin", username);
+        var setupCode = document.getElementById("adm-setup-code");
+        if (IS_DEMO_MODE) {
+          await dbCreateUserAccount(fullName, null, pw, "admin", username);
+        } else {
+          var result = await supabaseClient.rpc("pigem_provision_admin", {
+            setup_code: setupCode.value.trim(),
+            admin_username: username,
+            admin_name: fullName,
+            admin_password: pw
+          });
+          if (result.error) throw result.error;
+        }
+        setupCode.value = "";
+        document.getElementById("adm-pw").value = "";
+        document.getElementById("adm-pw2").value = "";
         await initProvisioningPage();
         showAlert("Admin Provisioned", "System Administrator account (@" + username + ") is ready. You can now sign in to the Admin Console.", "good");
       } catch (err) {

@@ -1,35 +1,5 @@
-
-
-
-
-
-
-
+-- Fresh PIGEM setup. Save the Admin setup code shown at the end.
 BEGIN;
-
-SET LOCAL pigem.reset_demo = 'off';
-
-DO $reset$
-BEGIN
-  IF current_setting('pigem.reset_demo') = 'on' THEN
-    DROP TABLE IF EXISTS pigem_private.screening_jobs, pigem_private.screening_intake, pigem_private.screening_staff;
-    DROP TABLE IF EXISTS
-      public.screenings,
-      public.documents,
-      public.corrections,
-      public.provider_updates,
-      public.applications,
-      public.agent_links,
-      public.notifications,
-      public.login_history,
-      public.system_logs,
-      public.system_settings,
-      public.website_content,
-      public.plans,
-      public.users;
-  END IF;
-END
-$reset$;
 
 CREATE TABLE public.users (
   id TEXT PRIMARY KEY,
@@ -561,4 +531,60 @@ REVOKE ALL ON FUNCTION public.pigem_enqueue_screening(text,text),
 GRANT EXECUTE ON FUNCTION public.pigem_enqueue_screening(text,text),
   public.pigem_claim_screening(), public.pigem_finish_screening(uuid,integer,jsonb) TO service_role;
 
+CREATE TABLE pigem_private.admin_setup (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+
+REVOKE ALL ON pigem_private.admin_setup FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.pigem_provision_admin(
+  setup_code text, admin_username text, admin_name text, admin_password text
+)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog
+AS $function$
+DECLARE
+  setup pigem_private.admin_setup%ROWTYPE;
+  new_id text;
+BEGIN
+  IF setup_code IS NULL OR setup_code !~ '^[0-9a-f]{48}$' THEN
+    RAISE EXCEPTION 'Enter the setup code returned by schema.sql.';
+  END IF;
+  IF admin_username IS NULL OR admin_username !~ '^[A-Za-z0-9_.]{3,30}$'
+     OR admin_name IS NULL OR length(trim(admin_name)) NOT BETWEEN 1 AND 200
+     OR admin_password IS NULL OR octet_length(admin_password) NOT BETWEEN 8 AND 72 THEN
+    RAISE EXCEPTION 'Check your Admin details. Password must be 8 to 72 bytes.';
+  END IF;
+  SELECT * INTO setup FROM pigem_private.admin_setup WHERE singleton FOR UPDATE;
+  IF NOT FOUND OR setup.expires_at <= now() OR
+     setup.code_hash <> encode(extensions.digest(setup_code, 'sha256'), 'hex') THEN
+    RAISE EXCEPTION 'The Admin setup code is invalid, expired, or already used.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.users WHERE role = 'admin') THEN
+    RAISE EXCEPTION 'An Admin account already exists.';
+  END IF;
+  new_id := gen_random_uuid()::text;
+  INSERT INTO public.users (id, username, full_name, role, active, activated)
+    VALUES (new_id, admin_username, trim(admin_name), 'admin', true, true);
+  INSERT INTO pigem_private.screening_staff (staff_id, username, role, password_hash)
+    VALUES (new_id, lower(admin_username), 'admin',
+      extensions.crypt(admin_password, extensions.gen_salt('bf', 12)));
+  DELETE FROM pigem_private.admin_setup WHERE singleton;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.pigem_provision_admin(text,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.pigem_provision_admin(text,text,text,text) TO anon, authenticated;
+
 COMMIT;
+
+WITH setup AS MATERIALIZED (
+  SELECT encode(extensions.gen_random_bytes(24), 'hex') AS code
+), saved AS (
+  INSERT INTO pigem_private.admin_setup (code_hash, expires_at)
+  SELECT encode(extensions.digest(code, 'sha256'), 'hex'), now() + interval '24 hours' FROM setup
+  RETURNING singleton
+)
+SELECT setup.code AS admin_setup_code FROM setup CROSS JOIN saved;

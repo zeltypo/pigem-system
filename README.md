@@ -1,87 +1,40 @@
-# PIGEM Internet Service Application System
+# PIGEM
 
-Public application website and Customer, Agent, Manager, and Admin portals.
+Public application form and Customer, Agent, Manager, and Admin portals.
 
-## Project Structure
-- `web/html`: Public pages and Customer, Agent, Manager, and Admin portals.
-- `web/js`: Frontend logic, OpenCV.js pre-processing, sessions, reports, and data access.
-- `web/style.css`: Shared styles.
-- `api`: FastAPI serverless routes (`index.py`), Azure AI Document Intelligence IDP (`_idp.py`), NLP validation & GPT-5.4 reasoning (`_ai.py`, `_openai_client.py`), authentication (`_auth.py`, `_access.py`), and SMTP notifications (`_mailer.py`).
-- `schema.sql`: Complete fresh database setup.
-- `schema-drop.sql`: Removes the PIGEM tables when explicitly run.
+## Fresh setup or reset
 
-## 4-Step IDP Screening Architecture
-1. **Step 1 (Pre-processing — Browser OpenCV.js):** Runs the uploaded ID images through OpenCV (`enhanceAgentIdPhoto` in `web/js/agent.js`) to detect card corners, auto-crop, perspective-straighten (deskew), and enhance contrast (CLAHE + unsharp mask) before upload.
-2. **Step 2 (IDP Extraction — Azure AI Document Intelligence):** Sends the cleaned images to `/api/screen` (`api/_idp.py`), which calls Azure Document Intelligence (`prebuilt-idDocument`, or optional Nanonets OCR-3) to extract structured JSON fields, confidence scores, MRZ data, and authenticity signals.
-3. **Step 3 (NLP Validation — `api/_ai.py`):** Applies lightweight deterministic regex/NLP rules to compare applicant fields (including Filipino compound surnames and Tagalog/English dates) and validate ID number format/checksums (including ICAO 9303 MRZ check digits), 18+ age eligibility, and expiration dates.
-4. **Step 4 (LLM Reasoning — OpenAI GPT-5.4):** Passes the validated JSON with sensitive ID numbers masked (`********3456`) to `gpt-5.4` (`api/_openai_client.py`) via strict JSON schema to generate clear Findings, Tampering Flags, Recommendations (`approve`, `reject`, or `manual_review`), and polite customer correction messages.
+1. To reset an existing demo, run `schema-drop.sql` in Supabase SQL Editor.
+   This deletes PIGEM accounts, applications, and screening jobs. Keep any
+   records you need before running it. Start directly at step 2 for a new database.
+2. Run `schema.sql`. Copy the `admin_setup_code` from the result.
+3. Deploy this code, open `/setup-accounts.html`, and create the Admin using the
+   setup code and the username and password you choose. The code expires after
+   24 hours and is consumed when Admin creation succeeds.
+4. Sign in as Admin and create Agents and Managers from the Admin portal.
+   Staff sign in with the username and password entered on the form. They do
+   not need an email account or a separate enrollment query.
 
-## Environment Variables (Vercel)
-Configure the following in Vercel Project Settings → Environment Variables:
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `APP_BASE_URL`
-- `AZURE_DI_ENDPOINT`, `AZURE_DI_KEY` (Azure AI Document Intelligence `prebuilt-idDocument`)
-- `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-5.4`, `OPENAI_REASONING_EFFORT=low`
-- `RECAPTCHA_SECRET_KEY`
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_NAME`, `SMTP_FROM_EMAIL`
+A reset in the same Supabase project keeps Storage files, Supabase Auth users,
+Vault secrets, and the Cron schedule. Vercel variables are managed separately.
+The legacy portal database policies are broad. Use fictional data for evaluation.
 
+## Background screening
 
-### Screening results and storage
+Customers receive the reference number once the application is saved. The worker
+queues new CAPTCHA-verified submissions and runs OpenCV preparation, Azure
+extraction, local validation, and OpenAI wording. The Admin sees progress, and
+the Agent and Manager see saved findings. Older applications and corrections
+are outside the automatic intake implemented in this version.
 
-Each check is independent for the current application revision. The Agent summary
-starts with the issue that needs attention: an incomplete check, unreadable photo,
-readable differences, an ID rule warning, or matching details. Several of these
-can occur in the same application. Unreadable text cannot prove a mismatch.
-OpenCV prepares the image; Azure extracts fields; local validation compares
-evidence and evaluates supported rules; GPT can draft wording.
+On the existing configured project, a schema reset does not change the scheduler
+or worker secrets. For a new project, configure the Production variables
+`SUPABASE_SERVICE_ROLE_KEY`, `SCREENING_WORKER_SECRET`, and
+`SCREENING_BACKGROUND_ENABLED=true`. Put the same worker secret in Supabase
+Vault as `pigem_screening_worker_secret`, then run
+`schedule-background-screening.sql` after updating its deployment URL.
+Keep the existing Supabase URL and anon key, Azure, OpenAI, SMTP, and CAPTCHA
+configuration on the server as appropriate.
 
-Supabase stores the original photo links on the application and the completed
-screening record in `applications.screening.browser_check`. New results include
-per-side photo preparation and extraction status, field comparison statuses,
-validation findings, and message source. The browser does not persist the full
-Azure payload, raw OCR lines, or another copy of the ID number. Reopening a
-completed revision reuses its saved findings. A customer resubmission creates
-a new revision for checking. No database reset is needed for this update.
-
-
-### Username-only staff screening
-
-Run schema-staff-screening.sql on an existing database. Fresh installations
-include the same private table and functions in schema.sql. A database
-administrator enrolls each authorized Agent or Manager by running
-enroll-screening-staff.sql in the Supabase SQL Editor. Replace the username
-placeholder. The query generates a new password and returns it once. Give it
-privately to the staff member. They sign in with their existing username and the
-new password. No mailbox is needed.
-
-The private record controls paid screening access. Set its active flag to false
-to revoke access. The two-hour screening session is replaced by the next login
-and revoked on normal logout. Customer login and the existing staff portal
-access rules are separate from this screening permission.
-
-
-### Automatic screening enrollment
-
-For an existing database that already has the private screening tables, run
-schema-admin-enrollment.sql. A database owner runs enable-screening-admin.sql
-once for the existing Admin username and gives the generated password privately
-to that Admin. Create Agent / Manager then creates the portal account and its
-screening credentials in one transaction. Staff use the username and password
-entered on that form. Previously enrolled staff can keep their credentials.
-
-
-### Background screening
-
-The worker handles newly submitted applications with a verified, one-use CAPTCHA
-ticket. It keeps a private queue with a 50-admissions-per-day budget and one
-active job. Saved results contain comparison and preparation statuses, not raw
-OCR text. Staff can see queued, checking, completed and failed states. Legacy
-records and later customer corrections require separate intake before they can
-run through this worker.
-
-1. Install schema-background-screening.sql on an existing database.
-2. Set SUPABASE_SERVICE_ROLE_KEY and a long random SCREENING_WORKER_SECRET as
-   sensitive Vercel Production variables. Keep both out of browser code.
-3. Put the same worker secret in Supabase Vault as pigem_screening_worker_secret,
-   then run schedule-background-screening.sql.
-4. Set SCREENING_BACKGROUND_ENABLED=true in Vercel and deploy. Submit one
-   fictional application and confirm the job completes with all portals closed.
+The SQL copies under `pigem-system-duplicate` explain the same install and reset
+steps. Use the root SQL files for setup.
