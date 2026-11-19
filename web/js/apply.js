@@ -739,10 +739,10 @@ function checkSelectedIdQuality(side, file) {
   check.promise = analyzeClientIdQuality(file).then(function (result) {
     if (selectedIdChecks[side] !== check) return result;
     if (box) {
-      box.className = "notice mt " + (result.passed ? "ok" : "bad");
+      box.className = "notice mt " + (result.passed ? "ok" : "warn");
       box.textContent = result.passed
         ? "Photo quality check passed. Make sure all printed details and corners are visible."
-        : "Replace the " + side + " photo. " + result.issues.join(" ");
+        : "Early quality warning (" + side + " photo): " + result.issues.join(" ") + " You may re-upload a clearer photo or continue.";
     }
     return result;
   });
@@ -761,20 +761,19 @@ async function validateSelectedIdQuality(submitting) {
   var checks = await Promise.all([
     checkSelectedIdQuality("front", front), back ? checkSelectedIdQuality("back", back) : { passed: true }
   ]);
-  if (front !== selectedFrontFile || back !== selectedBackFile) return false;
+  if (front !== selectedFrontFile || back !== selectedBackFile) return { severe: [], warning: false };
   var severe = checks.map(function (result, index) {
     return isSevereIdPhoto(result) ? (index === 0 ? "front" : "back") : "";
   }).filter(Boolean);
   var warning = document.getElementById("id-screen-warn");
   var message = severe.length
-    ? "The " + severe.join(" and ") + " ID photo needs replacement. If you submit anyway, we will request a clearer photo in your account and by email."
-    : "Check the marked photo before continuing. You can replace it or continue.";
+    ? "Early quality warning: The " + severe.join(" and ") + " ID photo appears blurry or unclear. You can re-upload a clearer photo now, or continue submitting for automated screening."
+    : "Early quality warning: Check the marked photo above. You can replace it or continue.";
   if (warning) {
     warning.hidden = checks.every(function (result) { return result.passed; });
     warning.textContent = message;
   }
   if (!submitting) return true;
-  if (severe.length && !window.confirm(message + " Submit now?")) return false;
   return { severe: severe, warning: checks.some(function (result) { return !result.passed; }) };
 }
 
@@ -1660,17 +1659,7 @@ async function performApplicationSubmission() {
 
     var photoRequest = "";
     if (photoCheck.severe.length) {
-      photoRequest = "Please upload a clearer " + photoCheck.severe.join(" and ") + " ID photo in your account. Make sure the printed details are visible.";
-      Object.assign(screening, {
-        auto_correction_sent: true,
-        auto_correction_reason: photoRequest,
-        correction_photo_sides: photoCheck.severe,
-        correction_fields: ["id_photo"]
-      });
-      Object.assign(baseAppPayload, {
-        status: "Needs Correction",
-        customer_instruction: photoRequest
-      });
+      photoRequest = "Early quality warning: Your " + photoCheck.severe.join(" and ") + " ID photo may be unclear. Our automated screening engine is checking your upload now—if it cannot be verified, you will be able to upload a clearer photo in your Customer Account.";
     }
     var saved = await dbCreateApplication(baseAppPayload);
     savedApplication = saved;
@@ -1747,9 +1736,6 @@ async function performApplicationSubmission() {
       confirmEmailPromise,
       dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")")
     ];
-    if (photoRequest) {
-      followUp.push(apiSendStatusEmail(email, fullName, saved.ref_no, "Needs Correction", photoRequest, "Valid ID photos"));
-    }
     void Promise.allSettled(followUp);
   } catch (err) {
     if (loadingScreen) loadingScreen.hidden = true;

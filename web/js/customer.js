@@ -63,6 +63,7 @@ async function applyCustomerQrRemoteFile(side, url) {
       var qfStat = document.getElementById("cust-qr-sync-front-state");
       if (qfStat) qfStat.innerHTML = "<b style='color:var(--good)'>Received!</b>";
       if (typeof clearFieldError === "function") clearFieldError("fix-file");
+      checkCustomerFixPhotoQuality("front", file);
     } else {
       custQrBackFile = file;
       var fnB = document.getElementById("fix-back-qr-status");
@@ -73,6 +74,7 @@ async function applyCustomerQrRemoteFile(side, url) {
       var qbStat = document.getElementById("cust-qr-sync-back-state");
       if (qbStat) qbStat.innerHTML = "<b style='color:var(--good)'>Received!</b>";
       if (typeof clearFieldError === "function") clearFieldError("fix-file-back");
+      checkCustomerFixPhotoQuality("back", file);
     }
   } catch (e) {}
 }
@@ -121,6 +123,35 @@ function openCustomerPhoneQrModal() {
     if (files.frontUrl) await applyCustomerQrRemoteFile("front", files.frontUrl);
     if (files.backUrl) await applyCustomerQrRemoteFile("back", files.backUrl);
   }, 2500);
+}
+
+async function checkCustomerFixPhotoQuality(side, file) {
+  var inputId = side === "back" ? "fix-file-back" : "fix-file";
+  var inputEl = document.getElementById(inputId);
+  var boxId = inputId + "-quality";
+  var box = document.getElementById(boxId);
+  if (!box && inputEl) {
+    box = document.createElement("div");
+    box.id = boxId;
+    box.setAttribute("role", "status");
+    box.setAttribute("aria-live", "polite");
+    inputEl.insertAdjacentElement("afterend", box);
+  }
+  if (!box) return;
+  if (!file) {
+    box.hidden = true;
+    box.textContent = "";
+    return;
+  }
+  box.hidden = false;
+  box.className = "notice mt";
+  box.textContent = "Checking photo...";
+  if (typeof analyzeClientIdQuality !== "function") return;
+  var result = await analyzeClientIdQuality(file);
+  box.className = "notice mt " + (result.passed ? "ok" : "warn");
+  box.textContent = result.passed
+    ? "Photo quality check passed. Check that all printed details are visible."
+    : "Early quality warning: " + result.issues.join(" ") + " You can upload a clearer photo now or continue resubmitting.";
 }
 
 function onCustomerLocalFixFileChange(side, inputEl) {
@@ -692,12 +723,12 @@ async function submitCustomerCorrection(appId) {
       hasErr = true;
     }
     if (hasErr) return;
-    for (var item of [{ file: file, id: "fix-file", input: fileInput }, { file: fileBack, id: "fix-file-back", input: fileBackInput }]) {
-      if (!item.file) continue;
+    var earlyQualityWarnings = [];
+    for (var item of [{ file: file, side: "Front", id: "fix-file" }, { file: fileBack, side: "Back", id: "fix-file-back" }]) {
+      if (!item.file || typeof analyzeClientIdQuality !== "function") continue;
       var quality = await analyzeClientIdQuality(item.file);
-      if (!quality.passed) {
-        setFieldError(item.id, quality.issues.join(" "));
-        return;
+      if (!quality.passed && Array.isArray(quality.issues) && quality.issues.length) {
+        earlyQualityWarnings.push(item.side + " ID: " + quality.issues.join(" "));
       }
     }
 
@@ -770,6 +801,8 @@ async function submitCustomerCorrection(appId) {
       phase: "Stage 1 Image Quality Assessment (gpt-6.2-sol)",
       eta_seconds: 25,
       fallback_original_only: false,
+      upload_photo_warning: earlyQualityWarnings.length > 0,
+      early_quality_warnings: earlyQualityWarnings,
       openai_response_id: (app.screening && app.screening.openai_response_id) || "",
       flagged_front_sha256: app.screening && app.screening.flagged_front_sha256,
       flagged_back_sha256: app.screening && app.screening.flagged_back_sha256,

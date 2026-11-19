@@ -566,11 +566,15 @@ async function showSelectedPhotoQuality(input) {
   }
   box.className = "notice mt";
   box.textContent = file ? "Checking photo..." : "";
-  if (!file) return;
+  if (!file) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
   var result = await analyzeClientIdQuality(file);
-  if (input.files[0] !== file) return;
-  box.className = "notice mt " + (result.passed ? "ok" : "bad");
+  if (input.files && input.files[0] && input.files[0] !== file) return;
+  box.className = "notice mt " + (result.passed ? "ok" : "warn");
   box.textContent = result.passed
     ? "Photo quality check passed. Check that all printed details are visible."
-    : "Please replace this photo. " + result.issues.join(" ");
+    : "Early quality warning: " + result.issues.join(" ") + " You can upload a clearer photo now or continue submitting.";
 }
