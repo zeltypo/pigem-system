@@ -328,12 +328,13 @@ def _apply_screening_outcome_to_application(
             })
             try:
                 _mailer.send(
-                    to_email=recipient_email,
+                    to=recipient_email,
                     subject=f"Action Needed: Update Your PIGEM Application ({ref_no})",
                     message=polite_msg,
-                    template_type="correction_needed",
+                    template_type="correction",
                     payload={
                         "customer_name": full_name,
+                        "ref_no": ref_no,
                         "reference_no": ref_no,
                         "status": "Needs Correction",
                         "remarks": polite_msg,

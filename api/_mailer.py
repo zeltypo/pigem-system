@@ -295,7 +295,7 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
                 ref_tag=ref_tag,
             )
 
-        if ttype == "correction":
+        if ttype in ("correction", "correction_needed"):
 
             remarks = self._escape(
 
@@ -455,9 +455,9 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
 
 def send(
 
-    to: str,
+    to: str = "",
 
-    subject: str,
+    subject: str = "",
 
     message: str = "",
 
@@ -467,9 +467,11 @@ def send(
 
     payload: Optional[Dict[str, Any]] = None,
 
+    to_email: str = "",
+
 ) -> Dict[str, Any]:
 
-    recipient = str(to or "").strip().lower()
+    recipient = str(to or to_email or "").strip().lower()
 
     if not recipient or "@" not in recipient:
 
@@ -544,51 +546,34 @@ def send(
     msg.add_alternative(final_html, subtype="html")
 
     host = _get_smtp_host()
-
     port = _get_smtp_port()
 
-    try:
+    ports_to_try = [port, 587 if port == 465 else 465]
+    last_exc = None
+    for try_port in ports_to_try:
+        try:
+            if try_port == 465:
+                with smtplib.SMTP_SSL(host, 465, timeout=15) as server:
+                    server.login(smtp_user, smtp_password)
+                    server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient])
+            else:
+                with smtplib.SMTP(host, try_port, timeout=15) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    server.login(smtp_user, smtp_password)
+                    server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient])
+            return {
+                "sent": True,
+                "provider": "gmail_smtp",
+                "recipient": recipient,
+            }
+        except Exception as exc:
+            last_exc = exc
 
-        if port == 465:
-
-            with smtplib.SMTP_SSL(host, port, timeout=15) as server:
-
-                server.login(smtp_user, smtp_password)
-
-                server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient])
-
-        else:
-
-            with smtplib.SMTP(host, port, timeout=15) as server:
-
-                server.ehlo()
-
-                server.starttls()
-
-                server.ehlo()
-
-                server.login(smtp_user, smtp_password)
-
-                server.send_message(msg, from_addr=smtp_user, to_addrs=[recipient])
-
-        return {
-
-            "sent": True,
-
-            "provider": "gmail_smtp",
-
-            "recipient": recipient,
-
-        }
-
-    except Exception as exc:
-
-        return {
-
-            "sent": False,
-
-            "provider": "gmail_smtp",
-
-            "error": str(exc)[:220],
-
-        }
+    return {
+        "sent": False,
+        "provider": "gmail_smtp",
+        "error": str(last_exc)[:220] if last_exc else "SMTP delivery failed",
+        "reason": str(last_exc)[:220] if last_exc else "SMTP delivery failed",
+    }

@@ -203,7 +203,7 @@ def document_screening_async_notice():
 @app.post("/notify")
 def send_notification(data: EmailRequest, user=Depends(_auth.require_login)):
     return _mailer.send(
-        to_email=data.to,
+        to=data.to,
         subject=data.subject,
         message=data.message or "",
         html_content=data.html_content,
