@@ -957,6 +957,20 @@ function getAgentCardShape(points, cols, rows) {
     return point.x < 3 || point.y < 3 || point.x >= cols - 3 || point.y >= rows - 3;
   })) return null;
 
+  // Verify interior angle at each of the 4 corners (58° to 122°)
+  for (var c = 0; c < 4; c++) {
+    var prev = ordered[(c + 3) % 4];
+    var curr = ordered[c];
+    var next = ordered[(c + 1) % 4];
+    var v1x = prev.x - curr.x, v1y = prev.y - curr.y;
+    var v2x = next.x - curr.x, v2y = next.y - curr.y;
+    var n1 = Math.hypot(v1x, v1y), n2 = Math.hypot(v2x, v2y);
+    if (n1 < 1 || n2 < 1) return null;
+    var cosA = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (n1 * n2)));
+    var deg = Math.acos(cosA) * (180 / Math.PI);
+    if (deg < 58 || deg > 122) return null;
+  }
+
   var distance = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
   var top = distance(ordered[0], ordered[1]);
   var bottom = distance(ordered[3], ordered[2]);
@@ -965,7 +979,7 @@ function getAgentCardShape(points, cols, rows) {
   var width = (top + bottom) / 2;
   var height = (left + right) / 2;
   var aspect = Math.max(width, height) / Math.min(width, height);
-  if (aspect < 1.22 || aspect > 2.1 || Math.min(top, bottom) / Math.max(top, bottom) < 0.55 ||
+  if (aspect < 1.16 || aspect > 2.18 || Math.min(top, bottom) / Math.max(top, bottom) < 0.55 ||
       Math.min(left, right) / Math.max(left, right) < 0.55) return null;
   return { points: ordered, width: width, height: height };
 }
@@ -976,7 +990,8 @@ function agentCardBoundaryEvidence(gray, shape) {
     return { x: total.x + point.x / 4, y: total.y + point.y / 4 };
   }, { x: 0, y: 0 });
   var support = 0;
-  var step = Math.max(5, Math.round(Math.min(shape.width, shape.height) * 0.025));
+  var edgesSupported = 0;
+  var step = Math.max(4, Math.round(Math.min(shape.width, shape.height) * 0.025));
   function pixel(x, y) {
     x = Math.max(0, Math.min(gray.cols - 1, Math.round(x)));
     y = Math.max(0, Math.min(gray.rows - 1, Math.round(y)));
@@ -985,17 +1000,22 @@ function agentCardBoundaryEvidence(gray, shape) {
   for (var i = 0; i < 4; i++) {
     var point = points[i];
     var next = points[(i + 1) % 4];
-    [0.25, 0.5, 0.75].forEach(function (ratio) {
+    var edgeHits = 0;
+    [0.2, 0.5, 0.8].forEach(function (ratio) {
       var x = point.x + ratio * (next.x - point.x);
       var y = point.y + ratio * (next.y - point.y);
       var length = Math.hypot(center.x - x, center.y - y);
       if (!length) return;
       var dx = (center.x - x) * step / length;
       var dy = (center.y - y) * step / length;
-      if (Math.abs(pixel(x + dx, y + dy) - pixel(x - dx, y - dy)) >= 7) support++;
+      if (Math.abs(pixel(x + dx, y + dy) - pixel(x - dx, y - dy)) >= 6) {
+        support++;
+        edgeHits++;
+      }
     });
+    if (edgeHits >= 1) edgesSupported++;
   }
-  return { support: support, center: center };
+  return { support: support, edgesSupported: edgesSupported, center: center };
 }
 
 function findAgentIdCorners(gray, cv) {
@@ -1004,11 +1024,33 @@ function findAgentIdCorners(gray, cv) {
   var mask = new cv.Mat();
   var hierarchy = new cv.Mat();
   var polygon = new cv.Mat();
+  var hull = new cv.Mat();
   var kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
   var clahe = new cv.CLAHE(2.5, new cv.Size(8, 8));
   var frameArea = gray.cols * gray.rows;
   var best = null;
   var bestScore = 0;
+
+  function evaluateQuadPoints(points, area) {
+    var shape = getAgentCardShape(points, gray.cols, gray.rows);
+    if (!shape || area < shape.width * shape.height * 0.68) return;
+    var evidence = agentCardBoundaryEvidence(blurred, shape);
+    if (evidence.edgesSupported < 3 || evidence.support < 6) return;
+    var score = area * (0.55 + (evidence.support / 12) + (evidence.edgesSupported === 4 ? 0.12 : 0));
+    if (score <= bestScore) return;
+    bestScore = score;
+    best = {
+      points: shape.points.flatMap(function (point) {
+        return [
+          Math.max(0, Math.min(gray.cols - 1, evidence.center.x + (point.x - evidence.center.x) * 1.032)),
+          Math.max(0, Math.min(gray.rows - 1, evidence.center.y + (point.y - evidence.center.y) * 1.032))
+        ];
+      }),
+      width: Math.round(shape.width * 1.032),
+      height: Math.round(shape.height * 1.032),
+      fourEdgesVerified: evidence.edgesSupported === 4
+    };
+  }
 
   function scanMask() {
     var contours = new cv.MatVector();
@@ -1019,31 +1061,30 @@ function findAgentIdCorners(gray, cv) {
         var contour = contours.get(i);
         try {
           var area = cv.contourArea(contour);
-          if (area < frameArea * 0.08 || area > frameArea * 0.96) continue;
+          if (area < frameArea * 0.07 || area > frameArea * 0.94) continue;
 
-          var perimeter = cv.arcLength(contour, true);
-          for (var tolerance of [0.015, 0.022, 0.035, 0.05]) {
-            cv.approxPolyDP(contour, polygon, tolerance * perimeter, true);
-            if (polygon.rows !== 4 || !cv.isContourConvex(polygon)) continue;
-            var points = [];
-            for (var j = 0; j < 4; j++) points.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
-            var shape = getAgentCardShape(points, gray.cols, gray.rows);
-            if (!shape || area < shape.width * shape.height * 0.75) continue;
-            var evidence = agentCardBoundaryEvidence(blurred, shape);
-            if (evidence.support < 7) continue;
-            var score = area * (0.6 + evidence.support / 12);
-            if (score <= bestScore) continue;
-            bestScore = score;
-            best = {
-              points: shape.points.flatMap(function (point) {
-                return [
-                  Math.max(0, Math.min(gray.cols - 1, evidence.center.x + (point.x - evidence.center.x) * 1.045)),
-                  Math.max(0, Math.min(gray.rows - 1, evidence.center.y + (point.y - evidence.center.y) * 1.045))
-                ];
-              }),
-              width: Math.round(shape.width * 1.045),
-              height: Math.round(shape.height * 1.045)
-            };
+          cv.convexHull(contour, hull, false, true);
+          var sources = [contour, hull];
+          for (var s = 0; s < sources.length; s++) {
+            var srcMat = sources[s];
+            var perimeter = cv.arcLength(srcMat, true);
+            for (var tolerance of [0.015, 0.022, 0.028, 0.036, 0.05, 0.062]) {
+              cv.approxPolyDP(srcMat, polygon, tolerance * perimeter, true);
+              if (polygon.rows !== 4 || !cv.isContourConvex(polygon)) continue;
+              var points = [];
+              for (var j = 0; j < 4; j++) points.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
+              evaluateQuadPoints(points, area);
+            }
+          }
+
+          if (typeof cv.minAreaRect === "function" && typeof cv.RotatedRect === "function" && typeof cv.RotatedRect.points === "function") {
+            try {
+              var rRect = cv.minAreaRect(hull);
+              var rPts = cv.RotatedRect.points(rRect);
+              if (rPts && rPts.length === 4) {
+                evaluateQuadPoints(rPts, area);
+              }
+            } catch (e) {}
           }
         } finally {
           contour.delete();
@@ -1055,13 +1096,16 @@ function findAgentIdCorners(gray, cv) {
   }
 
   try {
-
     clahe.apply(gray, enhanced);
     cv.GaussianBlur(enhanced, blurred, new cv.Size(5, 5), 0);
     cv.Canny(blurred, mask, 20, 65);
     scanMask();
-    if (!best) {
+    if (!best || !best.fourEdgesVerified) {
       cv.Canny(blurred, mask, 9, 32);
+      scanMask();
+    }
+    if (!best || !best.fourEdgesVerified) {
+      cv.adaptiveThreshold(blurred, mask, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 21, 5);
       scanMask();
     }
     if (!best) {
@@ -1074,7 +1118,7 @@ function findAgentIdCorners(gray, cv) {
     }
     return best;
   } finally {
-    [enhanced, blurred, mask, hierarchy, polygon, kernel, clahe].forEach(function (item) { item.delete(); });
+    [enhanced, blurred, mask, hierarchy, polygon, hull, kernel, clahe].forEach(function (item) { item.delete(); });
   }
 }
 
@@ -1220,7 +1264,7 @@ async function showAgentPreparedPhoto(container) {
     if (!container.isConnected) return;
     image.src = serverPreviewUrl;
     status.textContent = prepSide.cropped
-      ? "OpenCV cropped & straightened (" + appliedOps.join(", ") + ")."
+      ? "OpenCV 4-edge cropped & perspective straightened (" + appliedOps.join(", ") + ")."
       : "OpenCV enhanced (" + appliedOps.join(", ") + ").";
     return;
   }
@@ -1245,7 +1289,7 @@ async function showAgentPreparedPhoto(container) {
     image.src = prepared.canvas.toDataURL("image/jpeg", 0.92);
     var opsLabel = appliedOps.length ? " (" + appliedOps.join(", ") + ")" : "";
     status.textContent = prepared.cropped
-      ? "OpenCV cropped and straightened" + opsLabel + "."
+      ? "OpenCV 4-edge cropped and straightened" + opsLabel + "."
       : "OpenCV enhanced" + opsLabel + ".";
     return;
   }

@@ -141,8 +141,11 @@ def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
     glare_pct = float(np.sum(gray > 246) * 100.0 / max(1, gray.size))
 
     quad = _preprocess.detect_card_quad(sample)
-    card_ratio = float(quad["area_ratio"]) if quad else 1.0
-    has_bg = bool(quad and 0.08 <= card_ratio <= 0.86)
+    has_points = bool(quad and quad.get("points") is not None)
+    card_ratio = float(quad["area_ratio"]) if has_points else 1.0
+    has_bg = bool(has_points and 0.07 <= card_ratio <= 0.88)
+    four_edges_ok = bool(quad.get("four_edges_verified")) if quad else False
+    clipped_edges = list(quad.get("clipped_edges") or []) if quad else []
     is_portrait = bool(h > w * 1.18)
 
     return {
@@ -154,6 +157,8 @@ def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
         "glare_pct": round(glare_pct, 2),
         "has_crop_background": has_bg,
         "card_area_ratio": round(card_ratio, 3),
+        "four_edges_verified": four_edges_ok,
+        "clipped_edges": clipped_edges,
         "is_portrait": is_portrait,
     }
 
@@ -227,6 +232,8 @@ def assess_single_side(
             "mean_brightness_0_255": metrics["brightness"],
             "overexposed_glare_percent": metrics["glare_pct"],
             "detected_surrounding_background_needing_crop": metrics["has_crop_background"],
+            "four_edges_verified": metrics.get("four_edges_verified", False),
+            "clipped_edges": metrics.get("clipped_edges", []),
             "card_to_frame_area_ratio": metrics["card_area_ratio"],
             "is_portrait_rotated": metrics["is_portrait"],
         },
