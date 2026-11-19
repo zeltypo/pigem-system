@@ -815,7 +815,7 @@ class OpenAIScreeningService:
 
         if quality_report and quality_report.get("issues"):
             for q_iss in quality_report["issues"]:
-                if q_iss not in findings:
+                if q_iss not in findings and "tilted" not in q_iss.lower() and "background" not in q_iss.lower():
                     findings.append(q_iss)
 
         for c in comparisons:

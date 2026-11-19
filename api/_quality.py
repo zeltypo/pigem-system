@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 import _openai_client
+import _preprocess
 
 ALLOWED_OPS = {
     "rotate_90_cw",
@@ -114,11 +115,20 @@ def _detect_mime(image_bytes: bytes) -> str:
 
 
 def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
-    """Deterministic OpenCV signal check (resolution, Laplacian sharpness, brightness, glare ratio)."""
+    """Deterministic OpenCV signal check (resolution, Laplacian sharpness, brightness, glare ratio, card boundary)."""
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
-        return {"valid": False, "width": 0, "height": 0, "blur_score": 0.0, "brightness": 0.0, "glare_pct": 0.0}
+        return {
+            "valid": False,
+            "width": 0,
+            "height": 0,
+            "blur_score": 0.0,
+            "brightness": 0.0,
+            "glare_pct": 0.0,
+            "has_crop_background": False,
+            "card_area_ratio": 1.0,
+        }
     h, w = img.shape[:2]
     scale = min(1.0, 640.0 / max(w, h, 1))
     sample = cv2.resize(img, (max(16, int(w * scale)), max(16, int(h * scale))), interpolation=cv2.INTER_AREA)
@@ -129,6 +139,12 @@ def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
     center_lap = float(cv2.Laplacian(center, cv2.CV_64F).var()) if center.size else lap_var
     mean_b = float(np.mean(gray))
     glare_pct = float(np.sum(gray > 246) * 100.0 / max(1, gray.size))
+
+    quad = _preprocess.detect_card_quad(sample)
+    card_ratio = float(quad["area_ratio"]) if quad else 1.0
+    has_bg = bool(quad and 0.08 <= card_ratio <= 0.86)
+    is_portrait = bool(h > w * 1.18)
+
     return {
         "valid": True,
         "width": int(w),
@@ -136,6 +152,9 @@ def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
         "blur_score": round(max(lap_var, center_lap), 1),
         "brightness": round(mean_b, 1),
         "glare_pct": round(glare_pct, 2),
+        "has_crop_background": has_bg,
+        "card_area_ratio": round(card_ratio, 3),
+        "is_portrait": is_portrait,
     }
 
 
@@ -207,6 +226,9 @@ def assess_single_side(
             "laplacian_sharpness": metrics["blur_score"],
             "mean_brightness_0_255": metrics["brightness"],
             "overexposed_glare_percent": metrics["glare_pct"],
+            "detected_surrounding_background_needing_crop": metrics["has_crop_background"],
+            "card_to_frame_area_ratio": metrics["card_area_ratio"],
+            "is_portrait_rotated": metrics["is_portrait"],
         },
     }
 
@@ -264,23 +286,33 @@ def assess_single_side(
                 ops = []
                 if metrics["blur_score"] < 14.0 and "severe_blur" not in issues:
                     issues.insert(0, "severe_blur")
-            elif verdict == "good":
-                # Good images bypass OpenCV completely
-                ops = []
-            elif verdict == "fixable" and not ops:
-                # Choose targeted ops from detected issues
-                if "too_dark" in issues:
-                    ops.append("brighten")
-                if "low_contrast" in issues:
-                    ops.append("clahe")
-                if "mild_glare" in issues:
-                    ops.append("deglare")
-                if "tilted_or_wide_background" in issues:
-                    ops.append("deskew_crop")
-                if "mild_blur" in issues:
-                    ops.append("sharpen")
-                if not ops:
-                    verdict = "good"
+            else:
+                # 2) If OpenCV detected a physical ID boundary on a table/background, ensure deskew_crop runs!
+                if metrics.get("has_crop_background"):
+                    if "deskew_crop" not in ops:
+                        ops.insert(0, "deskew_crop")
+                    if "tilted_or_wide_background" not in issues:
+                        issues.append("tilted_or_wide_background")
+                    verdict = "fixable"
+                if metrics.get("is_portrait") and not any(r in ops for r in ("rotate_90_cw", "rotate_90_ccw", "deskew_crop")):
+                    ops.insert(0, "rotate_90_cw")
+                    verdict = "fixable"
+
+                if verdict == "good" and not ops:
+                    ops = []
+                elif verdict == "fixable" and not ops:
+                    if "too_dark" in issues or metrics["brightness"] < 75.0:
+                        ops.append("brighten")
+                    if "low_contrast" in issues:
+                        ops.append("clahe")
+                    if "mild_glare" in issues or metrics["glare_pct"] > 18.0:
+                        ops.append("deglare")
+                    if "tilted_or_wide_background" in issues:
+                        ops.append("deskew_crop")
+                    if "mild_blur" in issues or metrics["blur_score"] < 55.0:
+                        ops.append("sharpen")
+                    if not ops:
+                        verdict = "good"
 
             return {
                 "side": side_label,
@@ -316,12 +348,20 @@ def assess_single_side(
         ops.append("sharpen")
 
     if verdict != "unfixable":
-        if metrics["brightness"] < 55.0:
+        if metrics.get("has_crop_background"):
+            verdict = "fixable"
+            issues.append("tilted_or_wide_background")
+            if "deskew_crop" not in ops:
+                ops.insert(0, "deskew_crop")
+        if metrics.get("is_portrait") and "deskew_crop" not in ops:
+            verdict = "fixable"
+            ops.insert(0, "rotate_90_cw")
+        if metrics["brightness"] < 70.0:
             verdict = "fixable"
             score = min(score, 65)
             issues.append("too_dark")
             ops.extend(["brighten", "clahe"])
-        elif metrics["glare_pct"] > 28.0:
+        elif metrics["glare_pct"] > 22.0:
             verdict = "fixable"
             score = min(score, 60)
             issues.append("mild_glare")

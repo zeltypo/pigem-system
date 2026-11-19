@@ -1208,22 +1208,53 @@ async function showAgentPreparedPhoto(container) {
   var saved = app ? getSavedAgentFindings(app) : null;
   var check = app ? (getAgentAppIdCheck(app, true) && getAgentAppIdCheck(app, true).result) : null;
   var res = saved || check || null;
-  var route = (res && res.route) || (app && app.screening && app.screening.route) || "good";
-
-  // If image is GOOD (or early stopped), keep the original ID completely untouched and show no enhancement remarks
-  if (route !== "fixable") {
-    status.textContent = "";
-    return;
-  }
+  var route = (res && res.route) || (app && app.screening && app.screening.route) || "";
 
   var sideKey = (container.textContent || "").indexOf("BACK") !== -1 ? "back" : "front";
   var prepSide = res && res.stages && res.stages.photoPreparation && res.stages.photoPreparation[sideKey];
   var appliedOps = (prepSide && Array.isArray(prepSide.applied_ops)) ? prepSide.applied_ops : [];
-  if (!appliedOps.length) {
+  var serverPreviewUrl = (prepSide && prepSide.preview_data_url) ? prepSide.preview_data_url : "";
+
+  // 1) If the server ran targeted OpenCV enhancement/cropping and provided a preview data URL, display it right away
+  if (serverPreviewUrl) {
+    if (!container.isConnected) return;
+    image.src = serverPreviewUrl;
+    status.textContent = prepSide.cropped
+      ? "OpenCV cropped & straightened (" + appliedOps.join(", ") + ")."
+      : "OpenCV enhanced (" + appliedOps.join(", ") + ").";
+    return;
+  }
+
+  // 2) If image is explicitly marked GOOD (no OpenCV needed and no surrounding table background), try browser OpenCV corner check:
+  //    If browser OpenCV detects a physical card boundary on a table background, crop & straighten it visually!
+  //    Otherwise, leave the GOOD image completely untouched with no enhancement remarks.
+  var prepared = await prepareAgentIdPhoto(url);
+  if (!container.isConnected) return;
+
+  if (route === "unfixable") {
+    status.textContent = "Unfixable image quality — OpenCV bypassed (early stop).";
+    return;
+  }
+
+  if (route === "good" && (!prepared || !prepared.cropped)) {
     status.textContent = "";
     return;
   }
-  status.textContent = "Targeted OpenCV applied (" + appliedOps.join(", ") + ") for OCR extraction. Original ID shown.";
+
+  if (prepared && (prepared.cropped || route === "fixable" || appliedOps.length > 0)) {
+    image.src = prepared.canvas.toDataURL("image/jpeg", 0.92);
+    var opsLabel = appliedOps.length ? " (" + appliedOps.join(", ") + ")" : "";
+    status.textContent = prepared.cropped
+      ? "OpenCV cropped and straightened" + opsLabel + "."
+      : "OpenCV enhanced" + opsLabel + ".";
+    return;
+  }
+
+  if (appliedOps.length) {
+    status.textContent = "Targeted OpenCV applied (" + appliedOps.join(", ") + ").";
+  } else {
+    status.textContent = "";
+  }
 }
 
 var agentDocumentTypes = [
