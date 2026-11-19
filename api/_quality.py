@@ -141,11 +141,8 @@ def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
     glare_pct = float(np.sum(gray > 246) * 100.0 / max(1, gray.size))
 
     quad = _preprocess.detect_card_quad(sample)
-    has_points = bool(quad and quad.get("points") is not None)
-    card_ratio = float(quad["area_ratio"]) if has_points else 1.0
-    has_bg = bool(has_points and 0.07 <= card_ratio <= 0.88)
-    four_edges_ok = bool(quad.get("four_edges_verified")) if quad else False
-    clipped_edges = list(quad.get("clipped_edges") or []) if quad else []
+    card_ratio = float(quad["area_ratio"]) if quad else 1.0
+    has_bg = bool(quad and 0.08 <= card_ratio <= 0.86)
     is_portrait = bool(h > w * 1.18)
 
     return {
@@ -157,8 +154,6 @@ def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
         "glare_pct": round(glare_pct, 2),
         "has_crop_background": has_bg,
         "card_area_ratio": round(card_ratio, 3),
-        "four_edges_verified": four_edges_ok,
-        "clipped_edges": clipped_edges,
         "is_portrait": is_portrait,
     }
 
@@ -232,8 +227,6 @@ def assess_single_side(
             "mean_brightness_0_255": metrics["brightness"],
             "overexposed_glare_percent": metrics["glare_pct"],
             "detected_surrounding_background_needing_crop": metrics["has_crop_background"],
-            "four_edges_verified": metrics.get("four_edges_verified", False),
-            "clipped_edges": metrics.get("clipped_edges", []),
             "card_to_frame_area_ratio": metrics["card_area_ratio"],
             "is_portrait_rotated": metrics["is_portrait"],
         },
@@ -277,6 +270,15 @@ def assess_single_side(
             rot = int(parsed.get("rotation_degrees") or 0)
             issues = [str(x) for x in (parsed.get("issues") or []) if str(x)]
             ops = [str(op) for op in (parsed.get("targeted_opencv_ops") or []) if str(op) in ALLOWED_OPS]
+
+            # Do not let a soft 'wrong_side_uploaded' flag on the BACK ID (which often has only a barcode/signature)
+            # block OpenCV cropping or force an unfixable verdict when the back photo is sharp and valid
+            if side_label.upper() == "BACK" and is_id and metrics["blur_score"] >= 18.0 and score < 40:
+                if "severe_blur" not in issues and "severe_glare_over_text" not in issues and "cut_off_text_or_corners" not in issues:
+                    score = max(score, 68)
+                    if verdict == "unfixable":
+                        verdict = "fixable" if (ops or metrics.get("has_crop_background")) else "good"
+                    issues = [x for x in issues if x != "wrong_side_uploaded"]
 
             if rot == 90 and "rotate_90_cw" not in ops and "rotate_90_ccw" not in ops:
                 ops.insert(0, "rotate_90_cw")
@@ -440,15 +442,17 @@ def assess_document_uploads(
         }
 
     # Combine overall verdict
-    verdicts = [front_assessment["verdict"]]
-    if back_assessment:
-        verdicts.append(back_assessment["verdict"])
-
-    # Note: Front is mandatory; if Front is unfixable or duplicate front/back, overall is unfixable.
-    # If Back is unfixable because of severe blur/wrong side when back was uploaded, also flag unfixable.
-    if "unfixable" in verdicts or duplicate_front_back:
+    # Front ID is mandatory: if Front is unfixable or duplicate front/back, overall is unfixable.
+    # If Front is good/fixable, do not let a low-text Back ID prevent Front+Back OpenCV cropping & OCR!
+    if front_assessment["verdict"] == "unfixable" or duplicate_front_back:
         overall_verdict = "unfixable"
-    elif "fixable" in verdicts:
+    elif back_assessment and back_assessment["verdict"] == "unfixable":
+        # Demote Back 'unfixable' to 'fixable' when Front is valid so OpenCV still crops/enhances the Back photo
+        back_assessment["verdict"] = "fixable"
+        if not back_assessment["targeted_opencv_ops"]:
+            back_assessment["targeted_opencv_ops"] = ["deskew_crop", "clahe", "sharpen"]
+        overall_verdict = "fixable"
+    elif front_assessment["verdict"] == "fixable" or (back_assessment and back_assessment["verdict"] == "fixable"):
         overall_verdict = "fixable"
     else:
         overall_verdict = "good"
