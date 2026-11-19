@@ -632,8 +632,8 @@ async function dbSignIn(identifier, password) {
       if (rowData.role && rowData.role !== "customer") {
         throw new Error("Internal accounts must sign in on the Staff or Admin Login page.");
       }
-      if (rowData.role === "customer" && !rowData.activated) {
-        throw new Error("Please create your password first using the one-time activation link sent to your Gmail.");
+      if (rowData.role === "customer" && (!rowData.activated || !rowData.password_hash)) {
+        throw new Error("Please create your password first using the one-time activation link sent to your Gmail (or open activate.html?email=" + encodeURIComponent(cleanEmail) + " and click Send / Resend Code).");
       }
       if (rowData.active === false) throw new Error("This account is disabled. Please contact PIGEM.");
 
@@ -822,7 +822,8 @@ async function dbCreateAccountFromApplication(fullName, email, preferredUsername
   }
 
   var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
-  if (existing.data && existing.data.activated) {
+  var hasRealPassword = Boolean(existing.data && existing.data.password_hash);
+  if (existing.data && existing.data.activated && hasRealPassword) {
     return { user: existing.data, status: "active", code: "" };
   }
 
@@ -860,7 +861,7 @@ async function dbCheckActivationLinkStatus(email, code) {
   if (!record) {
     return { valid: false, alreadyActivated: false, reason: "No pending customer application was found for " + cleanEmail + "." };
   }
-  if (record.activated) {
+  if (record.activated && record.password_hash) {
     return {
       valid: false,
       alreadyActivated: true,
@@ -869,11 +870,11 @@ async function dbCheckActivationLinkStatus(email, code) {
       reason: "This one-time activation link has already been used and your account is active. Please sign in on the Customer Login page."
     };
   }
-  if (cleanCode && String(record.activation_code || "").trim() !== cleanCode) {
+  if (cleanCode && record.activation_code && String(record.activation_code || "").trim() !== cleanCode) {
     return {
       valid: false,
       alreadyActivated: false,
-      reason: "This activation link or code is no longer valid or has expired."
+      reason: "This activation link or code is no longer valid or has expired. Click Resend Activation Code below to receive a fresh 6-digit code."
     };
   }
   return {
@@ -931,7 +932,9 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
 
   var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
   if (!existing.data) throw new Error("No application was found for this email.");
-  if (existing.data.activated) throw new Error("This one-time activation link has already been used. Please log in instead.");
+  if (existing.data.activated && existing.data.password_hash) {
+    throw new Error("This one-time activation link has already been used. Please log in instead.");
+  }
   if (!existing.data.activation_code || String(existing.data.activation_code || "").trim() !== code.trim()) {
     throw new Error("The 6-digit activation code is invalid or has already been used.");
   }
@@ -993,10 +996,78 @@ async function dbIsAccountActivated(email) {
   var cleanEmail = String(email || "").trim().toLowerCase();
   if (IS_DEMO_MODE) {
     var u = findDemoUserByEmail(cleanEmail);
-    return Boolean(u && u.activated);
+    return Boolean(u && u.activated && (u.password || u.password_hash));
   }
-  var res = await supabaseClient.from("users").select("activated").eq("email", cleanEmail).maybeSingle();
-  return Boolean(res.data && res.data.activated);
+  var res = await supabaseClient.from("users").select("activated,password_hash").eq("email", cleanEmail).maybeSingle();
+  return Boolean(res.data && res.data.activated && res.data.password_hash);
+}
+
+async function dbResendCustomerActivationCode(email) {
+  var cleanEmail = String(email || "").trim().toLowerCase();
+  if (!cleanEmail || (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail))) {
+    throw new Error("Please enter a valid @gmail.com email address.");
+  }
+  var newCode = String(Math.floor(100000 + Math.random() * 900000));
+  var fullName = "Valued Subscriber";
+  var username = "";
+  var refNo = "PENDING";
+  var planName = "Plan 1400";
+
+  if (IS_DEMO_MODE) {
+    var users = getDemoUsers();
+    var target = null;
+    for (var i = 0; i < users.length; i++) {
+      if (users[i].email === cleanEmail) {
+        target = users[i];
+        break;
+      }
+    }
+    if (!target) throw new Error("No customer account found for " + cleanEmail + ".");
+    if (target.activated && (target.password || target.password_hash)) {
+      throw new Error("This account is already activated. Please sign in on the Customer Login page.");
+    }
+    target.activated = false;
+    target.activation_code = newCode;
+    if (!target.username) target.username = await dbGenerateUniqueUsername(target.full_name, cleanEmail);
+    writeSaved("pigem_users", users);
+    fullName = target.full_name || fullName;
+    username = target.username || "";
+  } else if (supabaseClient) {
+    var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
+    var appRes = await supabaseClient.from("applications").select("*").eq("email", cleanEmail).order("created_at", { ascending: false }).limit(1);
+    var latestApp = (appRes.data && appRes.data[0]) || null;
+    if (!existing.data && !latestApp) {
+      throw new Error("No customer application was found for " + cleanEmail + ".");
+    }
+    if (existing.data && existing.data.activated && existing.data.password_hash) {
+      throw new Error("This account is already activated. Please sign in on the Customer Login page.");
+    }
+    fullName = (existing.data && existing.data.full_name) || (latestApp && latestApp.full_name) || fullName;
+    username = (existing.data && existing.data.username) || (await dbGenerateUniqueUsername(fullName, cleanEmail));
+    if (latestApp) {
+      refNo = latestApp.reference_no || latestApp.ref_no || refNo;
+      planName = latestApp.plan_name || latestApp.plan || planName;
+    }
+    await supabaseClient.from("users").upsert({
+      id: (existing.data && existing.data.id) || ("cust-" + Date.now()),
+      username: username,
+      email: cleanEmail,
+      full_name: fullName,
+      role: "customer",
+      active: true,
+      activated: false,
+      activation_code: newCode
+    }, { onConflict: "email" });
+  }
+
+  return {
+    email: cleanEmail,
+    full_name: fullName,
+    username: username,
+    code: newCode,
+    ref_no: refNo,
+    plan_name: planName
+  };
 }
 
 async function dbCreateAgentAccount(fullName, email, password, username) {
@@ -2160,7 +2231,7 @@ async function dbFindAccountForRecovery(queryValue, recoveryMode) {
         full_name: fullName,
         role: "customer",
         active: true,
-        activated: true,
+        activated: false,
         activation_code: otpRec.code
       }, { onConflict: "email" });
     }
@@ -3203,7 +3274,9 @@ if (typeof apiSendOtpEmail === "undefined") {
     return await apiSendEmail(toEmail, subject, body, {
       template_type: "otp",
       payload: {
+        otp_code: String(code),
         code: String(code),
+        purpose_label: title || "Account Verification",
         purpose: title || "Account Verification",
         customer_name: recipientName || "Valued Client"
       }
@@ -3241,7 +3314,7 @@ if (typeof apiSendStatusEmail === "undefined") {
         status: custSt,
         remarks: remarks || "",
         target_summary: targetSummary || "Information / Document Clarification Required",
-        portal_link: (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0 ? window.location.origin : (CONFIG.PUBLIC_URL || "https://pigem-system-web.vercel.app")) + "/customer.html"
+        portal_link: (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0 ? window.location.origin : (CONFIG.PUBLIC_URL || "https://pigem-seven.vercel.app")) + "/customer.html"
       }
     });
   };

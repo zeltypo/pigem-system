@@ -56,7 +56,7 @@ def _get_app_base_url() -> str:
     prod_domain = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or "").strip()
     if prod_domain:
         return f"https://{prod_domain}"
-    return (os.getenv("APP_BASE_URL") or "https://pigem-system-web.vercel.app").strip().rstrip("/")
+    return (os.getenv("APP_BASE_URL") or "https://pigem-seven.vercel.app").strip().rstrip("/")
 
 def _get_supabase_logo_url() -> str:
     base = (os.getenv("SUPABASE_URL") or "https://wuunqfxyejxwrawtjdrf.supabase.co").strip().rstrip("/")
@@ -188,7 +188,7 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
 
         customer_name = self._escape(data.get("customer_name") or "Valued Subscriber")
 
-        ref_no = self._escape(data.get("ref_no") or "")
+        ref_no = self._escape(data.get("ref_no") or data.get("reference_no") or "")
 
         plan_name = self._escape(data.get("plan_name") or "Red Fiber Internet Plan")
 
@@ -196,11 +196,11 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
 
         if ttype == "otp":
 
-            otp_code = self._escape(data.get("otp_code") or "")
+            otp_code = self._escape(data.get("otp_code") or data.get("code") or "")
 
             purpose_label = self._escape(
 
-                data.get("purpose_label") or "verify your contact details and continue your transaction"
+                data.get("purpose_label") or data.get("purpose") or "verify your contact details and continue your transaction"
 
             )
 
@@ -295,7 +295,7 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
                 ref_tag=ref_tag,
             )
 
-        if ttype in ("correction", "correction_needed"):
+        if ttype in ("correction", "correction_needed", "correction_notice"):
 
             remarks = self._escape(
 
@@ -344,7 +344,7 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
 
         if ttype == "status_update":
 
-            status_label = self._escape(data.get("status_label") or "Updated")
+            status_label = self._escape(data.get("status_label") or data.get("status") or "Updated")
 
             remarks = self._escape(data.get("remarks") or "")
 

@@ -1,5 +1,5 @@
 function _getPortalBaseUrl() {
-  var origin = "https://pigem-system-web.vercel.app";
+  var origin = "https://pigem-seven.vercel.app";
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
     origin = window.location.origin;
   } else if (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) {
@@ -315,6 +315,7 @@ async function apiSendEmail(toEmail, subjectText, messageText, options) {
     var res = await fetch(_apiEndpoint("/notify"), {
       method: "POST",
       headers: headers,
+      keepalive: true,
       body: JSON.stringify({
         to: toEmail,
         subject: subjectText,
@@ -374,8 +375,8 @@ async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo,
   var p = planObj || {};
   var tag = generateOtpRefTag();
   var subj = "PIGEM Application Received - Reference No. " + refNo + " (Ref no: " + tag + ")";
-  var isExisting = Boolean(accountInfo && accountInfo.status === "active");
-  var actCode = (accountInfo && accountInfo.code) ? String(accountInfo.code) : "";
+  var actCode = (accountInfo && accountInfo.code) ? String(accountInfo.code).trim() : "";
+  var isExisting = Boolean(accountInfo && accountInfo.status === "active" && !actCode);
   var username = (accountInfo && accountInfo.user && accountInfo.user.username) ? String(accountInfo.user.username) : "";
   var baseUrl = _getPortalBaseUrl();
   var actLink = baseUrl + "/activate.html?email=" + encodeURIComponent(toEmail) + (actCode ? "&code=" + encodeURIComponent(actCode) : "") + (username ? "&username=" + encodeURIComponent(username) : "");

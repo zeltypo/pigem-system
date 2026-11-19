@@ -1676,17 +1676,28 @@ async function performApplicationSubmission() {
     savedApplication = saved;
     if (loadingScreen) loadingScreen.hidden = true;
     var isAlreadyActive = accountInfo.status === "active";
+    var actCodeVal = (accountInfo && accountInfo.code) ? String(accountInfo.code).trim() : "";
+    var actUserVal = (accountInfo && accountInfo.user && accountInfo.user.username) ? String(accountInfo.user.username) : "";
+    var directActHref = "activate.html?email=" + encodeURIComponent(email) +
+      (actCodeVal ? "&code=" + encodeURIComponent(actCodeVal) : "") +
+      (actUserVal ? "&username=" + encodeURIComponent(actUserVal) : "");
+
     openPopup(
       '<div class="center">' +
         '<h3>Application Submitted!</h3>' +
         '<p class="small muted mt">Your Application Reference Number is:</p>' +
         '<div class="big-ref">' + escapeHtml(saved.ref_no) + '</div>' +
         (photoRequest ? '<p class="notice warn mt">' + escapeHtml(photoRequest) + '</p>' : '') +
-        '<p class="small muted mt">' +
+        '<p class="small muted mt" id="apply-email-delivery-note">' +
           (isAlreadyActive
-            ? 'Sign in to your account to track your application.'
-            : 'Check your inbox for your account activation instructions.') +
+            ? 'Sending confirmation email to <b>' + escapeHtml(email) + '</b>…'
+            : 'Sending your 6-digit Activation Code &amp; One-Time Link to <b>' + escapeHtml(email) + '</b>…') +
         '</p>' +
+        '<div class="mt">' +
+          (isAlreadyActive
+            ? '<a class="btn btn-red btn-sm" href="login.html">Open Customer Login</a>'
+            : '<a class="btn btn-outline btn-sm" href="' + escapeHtml(directActHref) + '">Activate Account Now</a>') +
+        '</div>' +
       '</div>',
       { showCloseX: true, closeOnBackdrop: true, onClose: resetApplyWizardToStep1 }
     );
@@ -1715,11 +1726,25 @@ async function performApplicationSubmission() {
       (photoRequest ? "Status: Needs Correction\n" + photoRequest + "\n\n" : "Status: Processing\n\n") +
       "Please check your email notification for your 6-digit Activation OTP Code and Account Activation link.";
 
+    var confirmEmailPromise = apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);
+    confirmEmailPromise.then(function (mailRes) {
+      var noteEl = document.getElementById("apply-email-delivery-note");
+      if (!noteEl) return;
+      if (mailRes && mailRes.sent) {
+        noteEl.innerHTML = isAlreadyActive
+          ? 'Confirmation email sent to <b>' + escapeHtml(email) + '</b>. Sign in to track your application.'
+          : 'Activation email sent to <b>' + escapeHtml(email) + '</b>! Check your Gmail inbox for your 6-digit Activation Code.';
+      } else {
+        noteEl.innerHTML = '<span style="color:#b45309;font-weight:700">Email notice:</span> Could not deliver immediately (' +
+          escapeHtml((mailRes && mailRes.reason) || "check inbox") + '). Click <b>Activate Account Now</b> below to resend your code.';
+      }
+    }).catch(function () {});
+
     var followUp = [
       dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body, target_tab: "tab-apps", target_id: saved.id }),
       dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no, target_tab: "tab-queue", target_id: saved.id }),
       dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")", target_tab: "tab-queue", target_id: saved.id }),
-      apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo),
+      confirmEmailPromise,
       dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")")
     ];
     if (photoRequest) {

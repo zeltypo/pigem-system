@@ -417,14 +417,14 @@ async function startRecoveryVerification() {
     _recoveryState.channel = "email";
     _recoveryState.remainingSec = 300;
 
-    await apiSendOtpEmail(
+    var emailRes = await apiSendOtpEmail(
       info.email,
       info.code,
       "recover your " + _recoveryState.tab,
       info.fullName,
       info.refTag
     );
-    renderRecoveryOtpPinModal();
+    renderRecoveryOtpPinModal(emailRes);
   } catch (err) {
     if (btn) {
       btn.disabled = false;
@@ -434,16 +434,20 @@ async function startRecoveryVerification() {
   }
 }
 
-function renderRecoveryOtpPinModal() {
+function renderRecoveryOtpPinModal(emailRes) {
   var info = _recoveryState.account;
   if (!info) return;
+  var sentOk = !(emailRes && emailRes.sent === false);
+  var deliveryBanner = sentOk
+    ? '<p class="small" style="color:var(--text); line-height:1.5;">We\'ve sent a verification code to your email <b>' + escapeHtml(info.maskedEmail) + '</b></p>'
+    : '<p class="small" style="color:#dc2626; line-height:1.5;"><b>Delivery notice:</b> ' + escapeHtml((emailRes && emailRes.reason) || "Could not send email right now. Click Resend OTP below.") + '</p>';
 
   openPopup(
     '<div class="row between" style="margin-bottom:6px;">' +
       '<h3 style="margin:0;">Verification Code</h3>' +
       '<button type="button" class="btn btn-small" onclick="stopRecoveryCountdown(); renderRecoveryStep1();">&larr; Back</button>' +
     '</div>' +
-    '<p class="small" style="color:var(--text); line-height:1.5;">We\'ve sent a verification code to your email <b>' + escapeHtml(info.maskedEmail) + '</b></p>' +
+    deliveryBanner +
     '<div class="small muted mt" style="font-size:12px;">Ref no: <b>' + escapeHtml(info.refTag) + '</b>. Code will expire in 5 minutes.</div>' +
     '<div class="otp-squares mt-big" id="recovery-otp-squares">' +
       '<input type="text" maxlength="1" inputmode="numeric" class="otp-sq" data-sq="0" oninput="handleOtpSquareInput(this, 0)" onkeydown="handleOtpSquareKey(event, 0)">' +
@@ -534,14 +538,14 @@ async function resendRecoveryOtpCode() {
     var info = await dbFindAccountForRecovery(_recoveryState.account.email, _recoveryState.tab);
     _recoveryState.account = info;
     _recoveryState.remainingSec = 300;
-    await apiSendOtpEmail(
+    var emailRes = await apiSendOtpEmail(
       info.email,
       info.code,
       "recover your " + _recoveryState.tab,
       info.fullName,
       info.refTag
     );
-    renderRecoveryOtpPinModal();
+    renderRecoveryOtpPinModal(emailRes);
   } catch (err) {
     if (box) {
       box.innerHTML = '<a href="#" class="resend-otp-link" onclick="resendRecoveryOtpCode(); return false;">Resend OTP</a>';
