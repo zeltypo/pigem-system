@@ -1399,7 +1399,19 @@ async function dbAddAiLog(appId, who, text) {
   await dbUpdateApplication(appId, { ai_log: log });
 }
 
-var DOCUMENT_BUCKETS = ["documents", "documents-2", "documents-3", "documents-4", "documents-5"];
+var DOCUMENT_BUCKETS = [
+  "documents",
+  "documents-1",
+  "documents-2",
+  "documents-3",
+  "documents-4",
+  "documents-5",
+  "documents-6",
+  "documents-7",
+  "documents-8",
+  "documents-9",
+  "documents-10"
+];
 
 async function dbUploadDocument(file, folder, label) {
   if (!file) return null;

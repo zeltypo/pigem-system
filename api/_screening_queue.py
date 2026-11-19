@@ -115,17 +115,22 @@ def _insert_notification(notif: Dict[str, Any]) -> None:
         pass
 
 
-_ALLOWED_STORAGE_PREFIXES = (
-    "/storage/v1/object/public/documents/applications/",
-    "/storage/v1/object/public/documents-2/applications/",
-    "/storage/v1/object/public/documents-3/applications/",
-    "/storage/v1/object/public/documents-4/applications/",
-    "/storage/v1/object/public/documents-5/applications/",
-    "/storage/v1/object/public/documents/qr_sessions/",
-    "/storage/v1/object/public/documents-2/qr_sessions/",
-    "/storage/v1/object/public/documents-3/qr_sessions/",
-    "/storage/v1/object/public/documents-4/qr_sessions/",
-    "/storage/v1/object/public/documents-5/qr_sessions/",
+_ALLOWED_STORAGE_PREFIXES = tuple(
+    f"/storage/v1/object/public/{b}/{folder}/"
+    for b in (
+        "documents",
+        "documents-1",
+        "documents-2",
+        "documents-3",
+        "documents-4",
+        "documents-5",
+        "documents-6",
+        "documents-7",
+        "documents-8",
+        "documents-9",
+        "documents-10",
+    )
+    for folder in ("applications", "qr_sessions")
 )
 
 
