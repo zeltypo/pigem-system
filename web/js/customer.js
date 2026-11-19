@@ -11,6 +11,153 @@ var myApps = [];
 var selectedAppId = null;
 var hasShownCorrectionLoginPopup = false;
 
+var _custQrPollTimer = null;
+var _custQrActiveSid = "";
+var _custQrLoadedUrls = { front: "", back: "" };
+var custQrFrontFile = null;
+var custQrBackFile = null;
+
+function isCustomerDesktopMode() {
+  var isMobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "");
+  return !isMobileUa && (typeof window === "undefined" || window.innerWidth > 768);
+}
+
+function updateCustomerQrButtonVisibility() {
+  var btn = document.getElementById("btn-cust-phone-qr");
+  if (!btn) return;
+  btn.style.display = isCustomerDesktopMode() ? "inline-flex" : "none";
+}
+
+function stopCustomerPhoneQrPolling() {
+  if (_custQrPollTimer) {
+    clearInterval(_custQrPollTimer);
+    _custQrPollTimer = null;
+  }
+}
+
+async function applyCustomerQrRemoteFile(side, url) {
+  if (!url || _custQrLoadedUrls[side] === url) return;
+  _custQrLoadedUrls[side] = url;
+  try {
+    var blob;
+    if (url.indexOf("data:") === 0) {
+      var parts = url.split(",");
+      var mime = (parts[0].match(/:(.*?);/) || [])[1] || "image/jpeg";
+      var bin = atob(parts[1]);
+      var arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      blob = new Blob([arr], { type: mime });
+    } else {
+      var resp = await fetch(url);
+      if (!resp.ok) return;
+      blob = await resp.blob();
+    }
+    var file = new File([blob], "phone-id-" + side + "-corrected.jpg", { type: blob.type || "image/jpeg" });
+    if (side === "front") {
+      custQrFrontFile = file;
+      var fnF = document.getElementById("fix-front-qr-status");
+      if (fnF) fnF.innerHTML = "<b style='color:var(--good)'>Received from Phone:</b> Front ID Photo";
+      var boxF = document.getElementById("fix-front-preview-box");
+      var imgF = document.getElementById("fix-front-preview");
+      if (boxF && imgF) { imgF.src = url; boxF.hidden = false; }
+      var qfStat = document.getElementById("cust-qr-sync-front-state");
+      if (qfStat) qfStat.innerHTML = "<b style='color:var(--good)'>Received!</b>";
+      if (typeof clearFieldError === "function") clearFieldError("fix-file");
+    } else {
+      custQrBackFile = file;
+      var fnB = document.getElementById("fix-back-qr-status");
+      if (fnB) fnB.innerHTML = "<b style='color:var(--good)'>Received from Phone:</b> Back ID Photo";
+      var boxB = document.getElementById("fix-back-preview-box");
+      var imgB = document.getElementById("fix-back-preview");
+      if (boxB && imgB) { imgB.src = url; boxB.hidden = false; }
+      var qbStat = document.getElementById("cust-qr-sync-back-state");
+      if (qbStat) qbStat.innerHTML = "<b style='color:var(--good)'>Received!</b>";
+      if (typeof clearFieldError === "function") clearFieldError("fix-file-back");
+    }
+  } catch (e) {}
+}
+
+function openCustomerPhoneQrModal() {
+  stopCustomerPhoneQrPolling();
+  if (!_custQrActiveSid) {
+    _custQrActiveSid = "QR-FIX-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
+  }
+  var baseOrigin = (typeof _getPortalBaseUrl === "function")
+    ? _getPortalBaseUrl()
+    : window.location.origin;
+  var mobileUploadUrl = baseOrigin.replace(/\/$/, "") + "/apply.html?qr_upload=1&sid=" + encodeURIComponent(_custQrActiveSid);
+  var qrImgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(mobileUploadUrl);
+
+  var hasFrontNow = Boolean(custQrFrontFile || document.getElementById("fix-file")?.files?.length);
+  var hasBackNow = Boolean(custQrBackFile || document.getElementById("fix-file-back")?.files?.length);
+
+  openPopup(
+    '<div class="center">' +
+      '<h3>Continue ID Correction Upload on Phone</h3>' +
+      '<p class="small muted mt">Scan this QR code with your phone to capture or upload clear Front and Back photos of your Valid ID. Uploaded photos sync directly back to this correction form.</p>' +
+      '<div class="mt-big" style="background:#fff; padding:16px; border-radius:12px; display:inline-block; border:1px solid var(--line);">' +
+        '<img src="' + qrImgUrl + '" alt="Scan with Phone" style="width:180px; height:180px; display:block;" />' +
+      '</div>' +
+      '<div class="notice mt" style="text-align:left;font-size:13px;">' +
+        '<div>Front ID Status: <span id="cust-qr-sync-front-state">' + (hasFrontNow ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
+        '<div class="mt">Back ID Status: <span id="cust-qr-sync-back-state">' + (hasBackNow ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
+      '</div>' +
+      '<div class="small muted mt">Or open this link on your mobile browser:</div>' +
+      '<input type="text" readonly value="' + escapeHtml(mobileUploadUrl) + '" style="font-size:12px; text-align:center; margin-top:6px;" onclick="this.select()" />' +
+      '<div class="row mt-big" style="justify-content:center">' +
+        '<button type="button" class="btn btn-red" onclick="stopCustomerPhoneQrPolling(); closePopup()">Done / Close</button>' +
+      '</div>' +
+    '</div>',
+    { showCloseX: true, closeOnBackdrop: true, onClose: stopCustomerPhoneQrPolling }
+  );
+
+  _custQrPollTimer = setInterval(async function () {
+    if (!document.getElementById("popup-modal")) {
+      stopCustomerPhoneQrPolling();
+      return;
+    }
+    if (typeof dbListQrSessionFiles !== "function") return;
+    var files = await dbListQrSessionFiles(_custQrActiveSid);
+    if (files.frontUrl) await applyCustomerQrRemoteFile("front", files.frontUrl);
+    if (files.backUrl) await applyCustomerQrRemoteFile("back", files.backUrl);
+  }, 2500);
+}
+
+function onCustomerLocalFixFileChange(side, inputEl) {
+  if (side === "front") {
+    custQrFrontFile = null;
+    var stF = document.getElementById("fix-front-qr-status");
+    if (stF) stF.innerHTML = "";
+    var boxF = document.getElementById("fix-front-preview-box");
+    var imgF = document.getElementById("fix-front-preview");
+    if (boxF && imgF) {
+      var f = inputEl && inputEl.files && inputEl.files[0];
+      if (f) {
+        imgF.src = URL.createObjectURL(f);
+        boxF.hidden = false;
+      } else {
+        boxF.hidden = true;
+      }
+    }
+  } else {
+    custQrBackFile = null;
+    var stB = document.getElementById("fix-back-qr-status");
+    if (stB) stB.innerHTML = "";
+    var boxB = document.getElementById("fix-back-preview-box");
+    var imgB = document.getElementById("fix-back-preview");
+    if (boxB && imgB) {
+      var b = inputEl && inputEl.files && inputEl.files[0];
+      if (b) {
+        imgB.src = URL.createObjectURL(b);
+        boxB.hidden = false;
+      } else {
+        boxB.hidden = true;
+      }
+    }
+  }
+  if (typeof showSelectedPhotoQuality === "function") showSelectedPhotoQuality(inputEl);
+}
+
 window.openDashTabById = function (tabId, targetId) {
   if (targetId && findMyApp(targetId)) {
     selectMyApp(targetId);
@@ -28,13 +175,17 @@ window.addEventListener("DOMContentLoaded", async function () {
 
 
   initDashUI(currentCustomer, myApps, function (id) { selectMyApp(id, true); });
+  window.addEventListener("resize", updateCustomerQrButtonVisibility);
 
   await loadMyApplications();
 
   setInterval(async function () {
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
 
-    if (document.getElementById("fix-file")?.files?.length ||
+    if (custQrFrontFile ||
+        custQrBackFile ||
+        _custQrPollTimer ||
+        document.getElementById("fix-file")?.files?.length ||
         document.getElementById("fix-file-back")?.files?.length ||
         document.getElementById("btn-fix")?.disabled) return;
     if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") return;
@@ -173,6 +324,13 @@ function findMyApp(id) {
 }
 
 function selectMyApp(id, showModal) {
+  if (selectedAppId !== id) {
+    stopCustomerPhoneQrPolling();
+    _custQrActiveSid = "";
+    _custQrLoadedUrls = { front: "", back: "" };
+    custQrFrontFile = null;
+    custQrBackFile = null;
+  }
   selectedAppId = id;
   renderAppList();
   renderSelectedApp();
@@ -367,15 +525,32 @@ function renderSelectedApp() {
           '<label>Street / Barangay / City ' + (fields.indexOf("address") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
           '<input id="fix-street" type="text" ' + hiAddr + ' value="' + escapeHtml(app.street || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px">' +
+          '<div>' +
+            '<b style="font-size:13.5px">Valid ID Photos (Front &amp; Back)</b>' +
+            '<div class="tiny muted">Upload clear photos from this computer or scan the QR code to capture with your phone.</div>' +
+          '</div>' +
+          '<button type="button" id="btn-cust-phone-qr" class="btn btn-outline btn-sm" style="display:' + (isCustomerDesktopMode() ? 'inline-flex' : 'none') + '; align-items:center; gap:6px" onclick="openCustomerPhoneQrModal()">' +
+            '<img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="Phone QR" class="icon-img" style="width:16px;height:16px" /> Continue on Phone (QR Code)' +
+          '</button>' +
+        '</div>' +
         '<div class="grid-2" ' + hiPhoto + '>' +
           '<div class="field" style="margin-bottom:0">' +
             '<label>Front of Valid ID Photo ' + (needsFront ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
-            '<input id="fix-file" type="file" accept="image/*" onchange="showSelectedPhotoQuality(this)" />' +
+            '<input id="fix-file" type="file" accept="image/*" onchange="onCustomerLocalFixFileChange(\'front\', this)" />' +
+            '<div id="fix-front-qr-status" class="small" style="margin-top:4px"></div>' +
+            '<div id="fix-front-preview-box" class="mt" hidden>' +
+              '<img id="fix-front-preview" alt="Front ID Preview" style="max-height:110px; border-radius:6px; border:1px solid var(--line); object-fit:contain" />' +
+            '</div>' +
             '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Front side showing your name, photo, and ID number.</div>' +
           '</div>' +
           '<div class="field" style="margin-bottom:0">' +
             '<label>Back of Valid ID Photo ' + (needsBack ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
-            '<input id="fix-file-back" type="file" accept="image/*" onchange="showSelectedPhotoQuality(this)" />' +
+            '<input id="fix-file-back" type="file" accept="image/*" onchange="onCustomerLocalFixFileChange(\'back\', this)" />' +
+            '<div id="fix-back-qr-status" class="small" style="margin-top:4px"></div>' +
+            '<div id="fix-back-preview-box" class="mt" hidden>' +
+              '<img id="fix-back-preview" alt="Back ID Preview" style="max-height:110px; border-radius:6px; border:1px solid var(--line); object-fit:contain" />' +
+            '</div>' +
             '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Back side of the same Valid ID card.</div>' +
           '</div>' +
         '</div>' +
@@ -386,6 +561,7 @@ function renderSelectedApp() {
   }
 
   box.innerHTML = html;
+  updateCustomerQrButtonVisibility();
 }
 
 function confirmDeclineCorrection(appId) {
@@ -462,9 +638,9 @@ async function submitCustomerCorrection(appId) {
     var street = document.getElementById("fix-street").value.trim() || app.street;
 
     var fileInput = document.getElementById("fix-file");
-    var file = fileInput?.files?.[0];
+    var file = (fileInput && fileInput.files && fileInput.files[0]) || custQrFrontFile || null;
     var fileBackInput = document.getElementById("fix-file-back");
-    var fileBack = fileBackInput?.files?.[0];
+    var fileBack = (fileBackInput && fileBackInput.files && fileBackInput.files[0]) || custQrBackFile || null;
 
     var hasErr = false;
     var fnCheck = typeof validatePersonName === "function" ? validatePersonName(fname, "First Name", false, false) : { valid: Boolean(fname) };
@@ -516,18 +692,14 @@ async function submitCustomerCorrection(appId) {
       hasErr = true;
     }
     if (hasErr) return;
-    for (var item of [{ file: file, input: fileInput }, { file: fileBack, input: fileBackInput }]) {
+    for (var item of [{ file: file, id: "fix-file", input: fileInput }, { file: fileBack, id: "fix-file-back", input: fileBackInput }]) {
       if (!item.file) continue;
       var quality = await analyzeClientIdQuality(item.file);
       if (!quality.passed) {
-        setFieldError(item.input.id, quality.issues.join(" "));
+        setFieldError(item.id, quality.issues.join(" "));
         return;
       }
-      if (item.input.files[0] !== item.file) return;
     }
-
-
-    if (fileInput?.files?.[0] !== file || fileBackInput?.files?.[0] !== fileBack) return;
 
     var changedList = [];
     if (fullName !== oldName) changedList.push("Name (" + fullName + ")");
@@ -672,6 +844,11 @@ async function submitCustomerCorrection(appId) {
         keepalive: true
       }).catch(function () {});
     } catch (e) {}
+    stopCustomerPhoneQrPolling();
+    _custQrActiveSid = "";
+    _custQrLoadedUrls = { front: "", back: "" };
+    custQrFrontFile = null;
+    custQrBackFile = null;
     showAlert("Update Received", "Thank you! Your updates (" + changedList.join(", ") + ") have been submitted and your application continues in Processing.");
     await loadMyApplications();
   } catch (err) {
