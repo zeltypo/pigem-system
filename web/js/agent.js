@@ -965,8 +965,8 @@ function getAgentCardShape(points, cols, rows) {
   var width = (top + bottom) / 2;
   var height = (left + right) / 2;
   var aspect = Math.max(width, height) / Math.min(width, height);
-  if (aspect < 1.22 || aspect > 2.1 || Math.min(top, bottom) / Math.max(top, bottom) < 0.55 ||
-      Math.min(left, right) / Math.max(left, right) < 0.55) return null;
+  if (aspect < 1.12 || aspect > 2.35 || Math.min(top, bottom) / Math.max(top, bottom) < 0.52 ||
+      Math.min(left, right) / Math.max(left, right) < 0.52) return null;
   return { points: ordered, width: width, height: height };
 }
 
@@ -1121,11 +1121,6 @@ async function enhanceAgentIdPhoto(photo, cv) {
       mats.push(transform);
       color = mat();
       cv.warpPerspective(image, color, transform, new cv.Size(w, h));
-      if (color.rows > color.cols * 1.15) {
-        var rotated = mat();
-        cv.rotate(color, rotated, cv.ROTATE_90_CLOCKWISE);
-        color = rotated;
-      }
       cv.cvtColor(color, gray, cv.COLOR_RGBA2GRAY);
     }
     var source = gray;
@@ -1970,14 +1965,14 @@ async function renderDetailModalContent(updateResultsOnly) {
       '<div class="grid-2" style="margin-bottom:12px">' +
         '<div data-photo-container data-photo-side="front" data-photo="' + escapeHtml(frontIdPhotoUrl) + '" style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + "FRONT ID" + '</div>' +
-          (frontIdPhotoUrl ? '<img src="' + escapeHtml(displayedFrontUrl) + '" alt="Front ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />' +
+          (frontIdPhotoUrl ? '<img src="' + escapeHtml(displayedFrontUrl) + '" alt="Front ID" style="max-height:280px; max-width:100%; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />' +
             '<button type="button" class="btn btn-outline btn-sm mt" data-side="front" onclick="downloadAgentIdPhoto(this.dataset.side)">Download front</button>' +
             '<div class="small muted" role="status" data-photo-status></div>' : '<span class="muted">No front photo uploaded</span>') +
         '</div>' +
         '<div data-photo-container data-photo-side="back" data-photo="' + escapeHtml(idBackPhotoUrl) + '" style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + "BACK ID" + '</div>' +
           (displayedBackUrl
-            ? '<img src="' + escapeHtml(displayedBackUrl) + '" alt="Back ID" style="max-height:185px; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />'
+            ? '<img src="' + escapeHtml(displayedBackUrl) + '" alt="Back ID" style="max-height:280px; max-width:100%; margin:0 auto; border-radius:6px; object-fit:contain; cursor:pointer" onclick="window.open(this.src, \'_blank\')" title="Click to open full size in new tab" />'
               + '<button type="button" class="btn btn-outline btn-sm mt" data-side="back" onclick="downloadAgentIdPhoto(this.dataset.side)">Download back</button>' +
             '<div class="small muted" role="status" data-photo-status></div>'
             : '<span class="muted small" style="display:block; padding:54px 0">No Back ID uploaded</span>') +
@@ -2369,7 +2364,9 @@ async function downloadAgentIdPhoto(side) {
   if (!app) return;
   var copy = getAgentPreviewCopy(app);
   var version = activeCopyMode;
-  var url = side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path;
+  var container = document.querySelector('#det-body [data-photo-container][data-photo-side="' + side + '"]');
+  var imgEl = container ? container.querySelector("img") : null;
+  var url = (imgEl && imgEl.src) ? imgEl.src : (side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path);
   if (!url) return;
   try {
     var response = await fetch(url, { referrerPolicy: "no-referrer" });

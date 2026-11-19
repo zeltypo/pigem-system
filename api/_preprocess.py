@@ -44,13 +44,13 @@ def _boundary_gradient_support(gray: np.ndarray, ordered: np.ndarray, w: float, 
             iy1 = int(np.clip(round(pt[1] + dy), 0, rows - 1))
             ix2 = int(np.clip(round(pt[0] - dx), 0, cols - 1))
             iy2 = int(np.clip(round(pt[1] - dy), 0, rows - 1))
-            if abs(int(gray[iy1, ix1]) - int(gray[iy2, ix2])) >= 6:
+            if abs(int(gray[iy1, ix1]) - int(gray[iy2, ix2])) >= 5:
                 support += 1
     return support, center
 
 
 def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
-    """Multi-pass OpenCV contour & boundary detector for Front and Back ID cards placed on a table/background."""
+    """Multi-pass OpenCV contour & boundary detector for Front and Back ID cards (both Portrait and Landscape)."""
     height, width = image.shape[:2]
     frame_area = float(width * height)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -75,14 +75,14 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
         contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:35]:
             area = float(cv2.contourArea(contour))
-            if area < frame_area * 0.06 or area > frame_area * 0.94:
+            if area < frame_area * 0.05 or area > frame_area * 0.94:
                 continue
             hull = cv2.convexHull(contour)
             for src in (contour, hull):
                 perimeter = cv2.arcLength(src, True)
                 if perimeter <= 0:
                     continue
-                for tol in (0.015, 0.022, 0.028, 0.038, 0.05):
+                for tol in (0.015, 0.022, 0.028, 0.038, 0.05, 0.065):
                     quad = cv2.approxPolyDP(src, tol * perimeter, True)
                     if len(quad) != 4 or not cv2.isContourConvex(quad):
                         continue
@@ -101,11 +101,11 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
                     if min(w, h) < 70:
                         continue
                     aspect = max(w, h) / max(1.0, min(w, h))
-                    if not (1.18 <= aspect <= 2.15):
+                    if not (1.12 <= aspect <= 2.35):
                         continue
-                    if min(top_w, bot_w) / max(top_w, bot_w) < 0.55 or min(left_h, right_h) / max(left_h, right_h) < 0.55:
+                    if min(top_w, bot_w) / max(top_w, bot_w) < 0.52 or min(left_h, right_h) / max(left_h, right_h) < 0.52:
                         continue
-                    if area < w * h * 0.70:
+                    if area < w * h * 0.68:
                         continue
                     support, center = _boundary_gradient_support(blurred, ordered, w, h)
                     if support < 5:
@@ -136,10 +136,7 @@ def _deskew_and_crop(image: np.ndarray) -> Tuple[np.ndarray, bool]:
     h = max(80, int(found["height"]))
     target = np.float32([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]])
     warped = cv2.warpPerspective(image, cv2.getPerspectiveTransform(found["points"], target), (w, h))
-    # Auto-orient portrait-cropped ID cards to landscape if height > width * 1.15
-    wh, ww = warped.shape[:2]
-    if wh > ww * 1.15:
-        warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
+    # Preserve portrait vs landscape orientation so upright portrait IDs stay upright and readable
     return warped, True
 
 

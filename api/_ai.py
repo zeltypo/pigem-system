@@ -966,6 +966,9 @@ class OpenAIScreeningService:
 
         system_prompt = (
             "You are the Stage 4 Screening Remarks & Recommendation Analyst for PIGEM Fiber Internet applications. "
+            "ANTI-HALLUCINATION RULE: Base your output strictly and exclusively on the current JSON payload below. "
+            "If this is a resubmitted or re-uploaded ID, do NOT carry over or repeat stale errors from earlier uploads "
+            "that are no longer present in `field_comparisons` or `image_quality_assessment`. "
             "Given the Stage 1 image quality assessment, Azure IDP extraction results, and deterministic NLP validation "
             "(with ID numbers masked), produce:\n"
             "- `queue_summary`: A concise 1-sentence summary for the Agent application queue card.\n"
@@ -987,8 +990,8 @@ class OpenAIScreeningService:
             system_instruction=system_prompt,
             effort_override="low",
             model_override=_openai_client.configured_model(),
-            previous_response_id=previous_response_id,
-            store_response=bool(previous_response_id),
+            previous_response_id="",
+            store_response=False,
         )
         raw = meta.get("text") or ""
         if not raw:

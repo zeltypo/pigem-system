@@ -1399,6 +1399,8 @@ async function dbAddAiLog(appId, who, text) {
   await dbUpdateApplication(appId, { ai_log: log });
 }
 
+var DOCUMENT_BUCKETS = ["documents", "documents-2", "documents-3", "documents-4", "documents-5"];
+
 async function dbUploadDocument(file, folder, label) {
   if (!file) return null;
   var cleanFolder = String(folder || "applications/uploads").replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9_/-]/g, "_");
@@ -1408,22 +1410,25 @@ async function dbUploadDocument(file, folder, label) {
   var path = cleanFolder + "/" + fileName;
 
   if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
-    try {
-      var res = await supabaseClient.storage.from("documents").upload(path, file, {
-        cacheControl: "3600",
-        upsert: true,
-        contentType: file.type || "image/jpeg"
-      });
-      if (!res.error) {
-        var pub = supabaseClient.storage.from("documents").getPublicUrl(path);
-        if (pub && pub.data && pub.data.publicUrl) {
-          return pub.data.publicUrl;
+    for (var b = 0; b < DOCUMENT_BUCKETS.length; b++) {
+      var bucketName = DOCUMENT_BUCKETS[b];
+      try {
+        var res = await supabaseClient.storage.from(bucketName).upload(path, file, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: file.type || "image/jpeg"
+        });
+        if (!res.error) {
+          var pub = supabaseClient.storage.from(bucketName).getPublicUrl(path);
+          if (pub && pub.data && pub.data.publicUrl) {
+            return pub.data.publicUrl;
+          }
+        } else {
+          console.warn("Supabase " + bucketName + " upload failed, trying next bucket:", res.error.message);
         }
-      } else {
-        console.warn("Supabase documents storage upload failed:", res.error.message);
+      } catch (storageErr) {
+        console.warn("Storage bucket " + bucketName + " notice, trying next bucket:", storageErr);
       }
-    } catch (storageErr) {
-      console.warn("Direct storage upload notice, utilizing encoded fallback:", storageErr);
     }
   }
 
@@ -1438,8 +1443,13 @@ async function dbUploadDocument(file, folder, label) {
 async function dbGetDocumentLink(path) {
   if (!path) return null;
   if (path.indexOf("data:") === 0 || path.indexOf("http") === 0 || IS_DEMO_MODE) return path;
-  var res = await supabaseClient.storage.from("documents").createSignedUrl(path, 600);
-  return res.error ? null : res.data.signedUrl;
+  for (var b = 0; b < DOCUMENT_BUCKETS.length; b++) {
+    try {
+      var res = await supabaseClient.storage.from(DOCUMENT_BUCKETS[b]).createSignedUrl(path, 600);
+      if (!res.error && res.data && res.data.signedUrl) return res.data.signedUrl;
+    } catch (e) {}
+  }
+  return null;
 }
 
 async function dbAddNotification(note, roleArg, titleArg, messageArg) {
@@ -3328,20 +3338,24 @@ async function dbUploadQrSessionFile(sid, side, file) {
   var url = "";
 
   if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
-    try {
-      var storagePath = "qr_sessions/" + cleanSid + "/" + cleanSide + "-" + Date.now() + "." + ext;
-      var upRes = await supabaseClient.storage.from("documents").upload(storagePath, file, {
-        cacheControl: "60",
-        upsert: true,
-        contentType: file.type || "image/jpeg"
-      });
-      if (!upRes.error) {
-        var pub = supabaseClient.storage.from("documents").getPublicUrl(storagePath);
-        if (pub && pub.data && pub.data.publicUrl) {
-          url = pub.data.publicUrl;
+    var storagePath = "qr_sessions/" + cleanSid + "/" + cleanSide + "-" + Date.now() + "." + ext;
+    for (var qb = 0; qb < DOCUMENT_BUCKETS.length; qb++) {
+      var qBucket = DOCUMENT_BUCKETS[qb];
+      try {
+        var upRes = await supabaseClient.storage.from(qBucket).upload(storagePath, file, {
+          cacheControl: "60",
+          upsert: true,
+          contentType: file.type || "image/jpeg"
+        });
+        if (!upRes.error) {
+          var pub = supabaseClient.storage.from(qBucket).getPublicUrl(storagePath);
+          if (pub && pub.data && pub.data.publicUrl) {
+            url = pub.data.publicUrl;
+            break;
+          }
         }
-      }
-    } catch (err) {}
+      } catch (err) {}
+    }
   }
 
   if (!url) {
@@ -3367,26 +3381,30 @@ async function dbListQrSessionFiles(sid) {
   var result = { frontUrl: "", backUrl: "" };
 
   if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
-    try {
-      var res = await supabaseClient.storage.from("documents").list("qr_sessions/" + cleanSid, {
-        limit: 20,
-        sortBy: { column: "created_at", order: "desc" }
-      });
-      if (!res.error && Array.isArray(res.data)) {
-        for (var i = 0; i < res.data.length; i++) {
-          var item = res.data[i];
-          if (!item || !item.name) continue;
-          if (!result.frontUrl && item.name.indexOf("front-") === 0) {
-            var p1 = supabaseClient.storage.from("documents").getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
-            if (p1 && p1.data) result.frontUrl = p1.data.publicUrl;
-          }
-          if (!result.backUrl && item.name.indexOf("back-") === 0) {
-            var p2 = supabaseClient.storage.from("documents").getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
-            if (p2 && p2.data) result.backUrl = p2.data.publicUrl;
+    for (var lb = 0; lb < DOCUMENT_BUCKETS.length; lb++) {
+      var listBucket = DOCUMENT_BUCKETS[lb];
+      if (result.frontUrl && result.backUrl) break;
+      try {
+        var res = await supabaseClient.storage.from(listBucket).list("qr_sessions/" + cleanSid, {
+          limit: 20,
+          sortBy: { column: "created_at", order: "desc" }
+        });
+        if (!res.error && Array.isArray(res.data)) {
+          for (var i = 0; i < res.data.length; i++) {
+            var item = res.data[i];
+            if (!item || !item.name) continue;
+            if (!result.frontUrl && item.name.indexOf("front-") === 0) {
+              var p1 = supabaseClient.storage.from(listBucket).getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
+              if (p1 && p1.data) result.frontUrl = p1.data.publicUrl;
+            }
+            if (!result.backUrl && item.name.indexOf("back-") === 0) {
+              var p2 = supabaseClient.storage.from(listBucket).getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
+              if (p2 && p2.data) result.backUrl = p2.data.publicUrl;
+            }
           }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
   }
 
   var local = readSaved("pigem_qr_" + cleanSid, {});

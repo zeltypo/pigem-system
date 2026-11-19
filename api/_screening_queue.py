@@ -115,12 +115,34 @@ def _insert_notification(notif: Dict[str, Any]) -> None:
         pass
 
 
+_ALLOWED_STORAGE_PREFIXES = (
+    "/storage/v1/object/public/documents/applications/",
+    "/storage/v1/object/public/documents-2/applications/",
+    "/storage/v1/object/public/documents-3/applications/",
+    "/storage/v1/object/public/documents-4/applications/",
+    "/storage/v1/object/public/documents-5/applications/",
+    "/storage/v1/object/public/documents/qr_sessions/",
+    "/storage/v1/object/public/documents-2/qr_sessions/",
+    "/storage/v1/object/public/documents-3/qr_sessions/",
+    "/storage/v1/object/public/documents-4/qr_sessions/",
+    "/storage/v1/object/public/documents-5/qr_sessions/",
+)
+
+
 def download_raw_photo(url: str) -> bytes:
-    """Download raw ID image bytes from Supabase Storage WITHOUT running OpenCV."""
+    """Download raw ID image bytes from Supabase Storage (multi-bucket) or data URL WITHOUT running OpenCV."""
+    if isinstance(url, str) and url.startswith("data:image/"):
+        import base64
+        parts = url.split(",", 1)
+        if len(parts) == 2:
+            raw_bytes = base64.b64decode(parts[1])
+            if len(raw_bytes) > 12_000_000:
+                raise ValueError("Photo too large")
+            return raw_bytes
     allowed = urlsplit(os.environ["SUPABASE_URL"])
     source = urlsplit(url)
     if (source.scheme != "https" or source.netloc != allowed.netloc
-            or not source.path.startswith("/storage/v1/object/public/documents/applications/")):
+            or not source.path.startswith(_ALLOWED_STORAGE_PREFIXES)):
         raise ValueError("Unsupported document location")
     data = bytearray()
     with httpx.stream("GET", url, timeout=20, follow_redirects=False) as response:
@@ -138,7 +160,8 @@ def findings(payload: Dict[str, Any], check_id: str, app_id: str = "") -> Option
 
     app_row = _get_application_row(app_id) if app_id else None
     existing_scr = (app_row.get("screening") or {}) if isinstance(app_row, dict) else {}
-    prev_resp_id = str(existing_scr.get("openai_response_id") or "")
+    # Always run stateless per upload/revision to prevent cross-upload AI hallucination
+    prev_resp_id = ""
 
     def on_stage(stage_name: str, quality_rep: Dict[str, Any]):
         if not app_row:

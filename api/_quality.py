@@ -90,15 +90,20 @@ _QUALITY_SCHEMA = {
 
 _QUALITY_SYSTEM_PROMPT = (
     "You are the Stage 1 Image Quality Assessment Gate for PIGEM Fiber Internet ID verification. "
-    "Inspect ONLY the visual and photographic quality of the uploaded identification card image before OCR runs. "
+    "ANTI-HALLUCINATION RULE: Evaluate ONLY the exact image bytes provided in this single request. "
+    "Do NOT carry over, assume, or remember defects, text, or orientations from any earlier upload or turn. "
     "Do NOT transcribe or repeat personal names, ID numbers, or birth dates. "
+    "ORIENTATION RULE: IDs may be legitimately PORTRAIT (vertical) or LANDSCAPE (horizontal). "
+    "If the printed text on the card is right-side-up and readable as-is (even in portrait mode), "
+    "`rotation_degrees` MUST be 0 and do NOT request `rotate_90_cw` or `rotate_90_ccw`. "
+    "Only request rotation if the printed text itself is sideways (90/270) or upside-down (180). "
     "Classify into one of three verdicts:\n"
-    "1. 'good': The ID card is upright (rotation 0), well-framed, well-lit, sharp, and all printed text regions "
+    "1. 'good': The ID card text is right-side-up (rotation 0), well-framed, well-lit, sharp, and all printed text regions "
     "(Name, Birth Date, ID Number) are clearly legible as-is. `targeted_opencv_ops` MUST be empty `[]` so OpenCV is bypassed.\n"
     "2. 'fixable': All key printed fields are present and not cut off, but the photo has recoverable defects such as "
-    "90/180/270 degree rotation, tilted card with wide table background needing `deskew_crop`, dim lighting (`brighten`), "
-    "flat contrast (`clahe`), mild glare not erasing text (`deglare`), sensor noise (`denoise`), or slight softness (`sharpen`). "
-    "List ONLY the specific `targeted_opencv_ops` required.\n"
+    "sideways/upside-down text needing 90/180/270 degree rotation, tilted card with wide table background needing `deskew_crop`, "
+    "dim lighting (`brighten`), flat contrast (`clahe`), mild glare not erasing text (`deglare`), sensor noise (`denoise`), "
+    "or slight softness (`sharpen`). List ONLY the specific `targeted_opencv_ops` required.\n"
     "3. 'unfixable': Key printed text (Name, Birth Date, or ID Number) is blurred beyond human legibility (`severe_blur`), "
     "washed out by a flash hotspot directly over key text (`severe_glare_over_text`), covered by a finger/object, "
     "cut off at the edges, or the image is not an ID card (`is_id_document=false`). Set `quality_score` < 20 when severely unusable. "
@@ -220,6 +225,11 @@ def assess_single_side(
     prompt_context = {
         "expected_side": side_label.upper(),
         "declared_id_type": declared_id_type or "Philippine Valid ID",
+        "image_sha256_prefix": hashlib.sha256(image_bytes).hexdigest()[:12],
+        "anti_hallucination_hint": (
+            "Assess ONLY this exact uploaded image independently. Ignore any previous ID upload. "
+            "If the card is portrait-oriented and the printed text is upright and readable, keep rotation_degrees=0."
+        ),
         "opencv_signal_hints": {
             "width": metrics["width"],
             "height": metrics["height"],
@@ -228,7 +238,7 @@ def assess_single_side(
             "overexposed_glare_percent": metrics["glare_pct"],
             "detected_surrounding_background_needing_crop": metrics["has_crop_background"],
             "card_to_frame_area_ratio": metrics["card_area_ratio"],
-            "is_portrait_rotated": metrics["is_portrait"],
+            "is_portrait_oriented": metrics["is_portrait"],
         },
     }
 
@@ -250,8 +260,8 @@ def assess_single_side(
         system_instruction=_QUALITY_SYSTEM_PROMPT,
         effort_override=effort,
         model_override=quality_model,
-        previous_response_id=previous_response_id,
-        store_response=bool(previous_response_id),
+        previous_response_id="",
+        store_response=False,
         image_detail="high",
         retries=1,
     )
@@ -297,14 +307,12 @@ def assess_single_side(
                     issues.insert(0, "severe_blur")
             else:
                 # 2) If OpenCV detected a physical ID boundary on a table/background, ensure deskew_crop runs!
+                #    Never force rotate_90_cw just because an image is portrait—only rotate when printed text is sideways.
                 if metrics.get("has_crop_background"):
                     if "deskew_crop" not in ops:
                         ops.insert(0, "deskew_crop")
                     if "tilted_or_wide_background" not in issues:
                         issues.append("tilted_or_wide_background")
-                    verdict = "fixable"
-                if metrics.get("is_portrait") and not any(r in ops for r in ("rotate_90_cw", "rotate_90_ccw", "deskew_crop")):
-                    ops.insert(0, "rotate_90_cw")
                     verdict = "fixable"
 
                 if verdict == "good" and not ops:
@@ -362,9 +370,6 @@ def assess_single_side(
             issues.append("tilted_or_wide_background")
             if "deskew_crop" not in ops:
                 ops.insert(0, "deskew_crop")
-        if metrics.get("is_portrait") and "deskew_crop" not in ops:
-            verdict = "fixable"
-            ops.insert(0, "rotate_90_cw")
         if metrics["brightness"] < 70.0:
             verdict = "fixable"
             score = min(score, 65)
