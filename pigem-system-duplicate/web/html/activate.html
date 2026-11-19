@@ -1,0 +1,228 @@
+<!-- PIGEM STUDY DUPLICATE — web/html/activate.html (Annotated Reference Copy; 0% effect on live deployment) -->
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
+  <title>Customer Account Activation | Combined Facilities Support Services</title>
+
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body class="gray-bg">
+
+  <header class="simple-bar">
+    <div class="container" style="display:flex; align-items:center; gap:12px;">
+      <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+      <span style="font-weight:700; font-size:16px; cursor:default; user-select:none;">Customer Account Activation</span>
+    </div>
+  </header>
+
+  <main class="auth-page" style="min-height:calc(100vh - 62px);">
+    <div class="card auth-card">
+      <div class="auth-head">
+        <h2>Activate Your Account</h2>
+        <p>Create your Customer Account password and confirm your username using the one-time activation link sent to your Gmail.</p>
+      </div>
+
+      <div id="already-active-box" class="notice warn mt" hidden>
+        <b id="already-active-title">One-Time Link Used:</b>
+        <span id="already-active-msg">This one-time activation link has already been used and your Customer Account is active.</span>
+        <div class="mt">
+          <a href="login.html" class="btn btn-red btn-full">Go to Customer Login</a>
+        </div>
+      </div>
+
+      <form id="activate-form" class="mt" autocomplete="off" onsubmit="submitActivation(event)" novalidate>
+        <div>
+          <label for="act-email">Gmail Address <span class="req-mark">*</span></label>
+          <input id="act-email" type="email" value="" placeholder="Enter your registered @gmail.com address">
+        </div>
+        <div class="mt">
+          <label for="act-username">Create Your Customer Username <span class="req-mark">*</span></label>
+          <input id="act-username" type="text" value="" minlength="3" maxlength="30" placeholder="Choose your username (e.g. juan_delacruz)">
+          <div class="small muted" style="font-size:11.5px; margin-top:4px;">3 to 30 characters (letters, numbers, dots, or underscores).</div>
+        </div>
+        <div class="mt">
+          <div class="row between" style="align-items:center; margin-bottom:4px">
+            <label for="act-code" style="margin:0">6-Digit OTP / Activation Code <span class="req-mark">*</span></label>
+            <button type="button" id="btn-resend-act" class="btn btn-outline btn-sm" style="padding:2px 8px; font-size:11.5px" onclick="resendActivationCode()">Send / Resend Code</button>
+          </div>
+          <input id="act-code" type="text" value="" maxlength="6" placeholder="Enter 6-digit code from your email">
+          <div id="act-resend-status" class="small muted" style="margin-top:4px"></div>
+        </div>
+        <div class="mt">
+          <label for="act-pass">Create Password <span class="req-mark">*</span></label>
+          <input id="act-pass" type="password" value="" data-pw-check="1" minlength="8" placeholder="Create strong password">
+        </div>
+        <div class="mt">
+          <label for="act-pass2">Confirm Password <span class="req-mark">*</span></label>
+          <input id="act-pass2" type="password" value="" minlength="8" placeholder="Repeat password">
+        </div>
+        <button type="submit" class="btn btn-red btn-full mt-big">Activate Account</button>
+      </form>
+    </div>
+  </main>
+
+  <script>
+window.SYSTEM = "customer";
+</script>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/db.js"></script>
+  <script src="../js/api.js"></script>
+  <script>
+    async function resendActivationCode() {
+      if (typeof clearFieldError === "function") clearFieldError("act-email");
+      var emailEl = document.getElementById("act-email");
+      var statusEl = document.getElementById("act-resend-status");
+      var btn = document.getElementById("btn-resend-act");
+      var email = emailEl ? emailEl.value.trim().toLowerCase() : "";
+      if (!email || (typeof isCustomerGmail === "function" && !isCustomerGmail(email))) {
+        if (typeof setFieldError === "function") setFieldError("act-email", "Enter your registered @gmail.com email address first.");
+        return;
+      }
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Sending...";
+      }
+      if (statusEl) statusEl.textContent = "Sending new 6-digit activation code to " + email + "...";
+      try {
+        var info = await dbResendCustomerActivationCode(email);
+        var userEl = document.getElementById("act-username");
+        if (userEl && !userEl.value && info.username) userEl.value = info.username;
+        var mailRes = await apiSendApplicationConfirmationEmail(
+          info.email,
+          info.full_name,
+          info.ref_no,
+          { name: info.plan_name },
+          "",
+          { status: "pending", code: info.code, user: { username: info.username } }
+        );
+        if (mailRes && mailRes.sent) {
+          if (statusEl) statusEl.innerHTML = '<span style="color:#15803d;font-weight:700">New 6-digit activation code sent to ' + escapeHtml(email) + '. Check your Gmail inbox.</span>';
+        } else {
+          if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626;font-weight:700">Delivery notice: ' + escapeHtml((mailRes && mailRes.reason) || "Could not send email.") + '</span>';
+        }
+      } catch (err) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:#dc2626;font-weight:700">' + escapeHtml(err.message || "Could not resend activation code.") + '</span>';
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Send / Resend Code";
+        }
+      }
+    }
+
+    async function initActivatePage() {
+      var params = new URLSearchParams(window.location.search);
+      var qEmail = (params.get("email") || "").trim().toLowerCase();
+      var qCode = (params.get("code") || "").trim();
+      var qUser = (params.get("username") || "").trim();
+
+      var emailEl = document.getElementById("act-email");
+      var userEl = document.getElementById("act-username");
+      var codeEl = document.getElementById("act-code");
+      var passEl = document.getElementById("act-pass");
+      var pass2El = document.getElementById("act-pass2");
+      var boxEl = document.getElementById("already-active-box");
+      var titleEl = document.getElementById("already-active-title");
+      var msgEl = document.getElementById("already-active-msg");
+      var formEl = document.getElementById("activate-form");
+
+      if (passEl) passEl.value = "";
+      if (pass2El) pass2El.value = "";
+      if (emailEl) {
+        emailEl.value = qEmail;
+        if (qEmail) emailEl.readOnly = true;
+      }
+      if (userEl) userEl.value = qUser;
+      if (codeEl) codeEl.value = qCode;
+
+      if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles();
+
+      if (qEmail && typeof dbCheckActivationLinkStatus === "function") {
+        var st = await dbCheckActivationLinkStatus(qEmail, qCode);
+        if (!st.valid) {
+          if (st.alreadyActivated) {
+            if (boxEl) boxEl.hidden = false;
+            if (titleEl) titleEl.textContent = "Account Already Activated: ";
+            if (msgEl) msgEl.textContent = st.reason || "This one-time link cannot be used again.";
+            if (formEl) formEl.hidden = true;
+            return;
+          }
+          var statusEl = document.getElementById("act-resend-status");
+          if (statusEl) {
+            statusEl.innerHTML = '<span style="color:#b45309;font-weight:700">' + escapeHtml(st.reason || "Code expired.") + ' Click "Send / Resend Code" above to receive a new code.</span>';
+          }
+          if (codeEl) codeEl.value = "";
+        }
+        if (userEl && !userEl.value && (qUser || st.username)) {
+          userEl.value = qUser || st.username;
+        }
+      }
+    }
+
+    async function submitActivation(event) {
+      event.preventDefault();
+      if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
+      var email = document.getElementById("act-email").value.trim().toLowerCase();
+      var username = document.getElementById("act-username").value.trim().replace(/^@/, "");
+      var code = document.getElementById("act-code").value.trim();
+      var pass = document.getElementById("act-pass").value;
+      var pass2 = document.getElementById("act-pass2").value;
+      var hasError = false;
+
+      if (!email || (typeof isCustomerGmail === "function" && !isCustomerGmail(email))) {
+        if (typeof setFieldError === "function") setFieldError("act-email", "Please enter your registered @gmail.com email address.");
+        hasError = true;
+      }
+      if (!username || (typeof isValidUsername === "function" && !isValidUsername(username))) {
+        if (typeof setFieldError === "function") setFieldError("act-username", "Username must be 3 to 30 characters using letters, numbers, dots (.), or underscores (_).");
+        hasError = true;
+      }
+      if (!code || code.length < 6) {
+        if (typeof setFieldError === "function") setFieldError("act-code", "Please enter the 6-digit activation code from your email.");
+        hasError = true;
+      }
+      if (typeof isStrongPassword === "function" && !isStrongPassword(pass)) {
+        if (typeof setFieldError === "function") setFieldError("act-pass", "Password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
+        hasError = true;
+      }
+      if (pass !== pass2) {
+        if (typeof setFieldError === "function") setFieldError("act-pass2", "Password and Confirm Password do not match.");
+        hasError = true;
+      }
+      if (hasError) return;
+
+      try {
+        var activatedUser = await dbActivateCustomerAccount(email, code, pass, username);
+        var unameLabel = (activatedUser && activatedUser.username) ? (" (@" + activatedUser.username + ")") : "";
+        openPopup(
+          "<h3>Account Activated!</h3>" +
+          '<div class="notice good mt">Your Customer Account' + escapeHtml(unameLabel) + " is now active. You can now sign in and monitor your internet service application.</div>" +
+          '<div class="row mt" style="justify-content:flex-end">' +
+            '<a class="btn btn-red" href="customer.html">Open My Customer Account</a>' +
+          "</div>"
+        );
+      } catch (err) {
+        var errMsg = err.message || "Could not activate account.";
+        if (errMsg.toLowerCase().indexOf("username") !== -1 && typeof setFieldError === "function") {
+          setFieldError("act-username", errMsg);
+        } else if (errMsg.toLowerCase().indexOf("code") !== -1 && typeof setFieldError === "function") {
+          setFieldError("act-code", errMsg);
+        } else {
+          showAlert("Activation Error", errMsg, "bad");
+        }
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", initActivatePage);
+</script>
+  <script src="../js/back-to-top.js" data-phone-only></script>
+</body>
+</html>
