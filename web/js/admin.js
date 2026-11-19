@@ -155,9 +155,9 @@ function toggleMaintMode() {
 
 async function renderAiState() {
   var stAiEl = document.getElementById("st-ai");
-  if (stAiEl) stAiEl.textContent = "IDP + GPT-5.4";
+  if (stAiEl) stAiEl.textContent = "gpt-6.2-sol + IDP + GPT-5.4";
   var lbl = document.getElementById("ai-status-label");
-  if (lbl) lbl.textContent = "Step 1 OpenCV (crop/deskew/contrast) → Step 2 Azure Document Intelligence IDP → Step 3 NLP Validation → Step 4 GPT-5.4 Reasoning."
+  if (lbl) lbl.textContent = "Stage 1 Image Quality Gate (gpt-6.2-sol) → Conditional Targeted OpenCV (if fixable) → Stage 2 Azure Document Intelligence IDP → Stage 3 NLP Rules → Stage 4 GPT-5.4 Remarks & Recommendation.";
 
   var queue = document.getElementById("admin-screening-queue");
   if (queue) {
@@ -237,12 +237,12 @@ async function checkApiHealth() {
         : "Add OPENAI_API_KEY and OPENAI_MODEL=gpt-5.4 in Vercel Environment Variables"
     },
     {
-      name: "Step 1 OpenCV Pre-processing & Step 3 NLP Validation",
-      status: "Active",
-      badge: "badge-green",
+      name: "Stage 1 Image Quality Assessment Gate (OpenAI gpt-6.2-sol) + Targeted OpenCV",
+      status: openaiConfigured ? "Active (" + (data.openai_quality_model || "gpt-6.2-sol") + " + OpenCV)" : "OpenCV Fallback Only",
+      badge: openaiConfigured ? "badge-green" : "badge-yellow",
       healthy: true,
       checked_at: nowIso,
-      detail: "Browser OpenCV.js auto-crops, deskews, and enhances contrast; server NLP rules validate ID checksums, age 18+, and expiry dates."
+      detail: "Inspects raw ID uploads first. GOOD images bypass OpenCV completely; FIXABLE images run targeted OpenCV only; UNFIXABLE images stop early (NEEDS_CORRECTION)."
     },
     {
       name: "Google reCAPTCHA v2 Security (SiteVerify)",

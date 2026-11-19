@@ -593,10 +593,12 @@ async function submitCustomerCorrection(appId) {
     };
 
     var updatedScreening = {
-      state: "paused",
-      phase: "Ready for Staff Review",
-      eta_seconds: 0,
-      fallback_original_only: true,
+      state: "queued",
+      background_state: "queued",
+      phase: "Stage 1 Image Quality Assessment (gpt-6.2-sol)",
+      eta_seconds: 25,
+      fallback_original_only: false,
+      openai_response_id: (app.screening && app.screening.openai_response_id) || "",
       flagged_front_sha256: app.screening && app.screening.flagged_front_sha256,
       flagged_back_sha256: app.screening && app.screening.flagged_back_sha256,
       last_customer_changes: changedList
@@ -662,6 +664,14 @@ async function submitCustomerCorrection(appId) {
     });
 
     await dbAddLog(currentCustomer.email, "Customer submitted update (" + changedList.join(", ") + ") for " + app.reference_no);
+    try {
+      fetch(_apiEndpoint("/screen/queue"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: app.id, resubmission: true }),
+        keepalive: true
+      }).catch(function () {});
+    } catch (e) {}
     showAlert("Update Received", "Thank you! Your updates (" + changedList.join(", ") + ") have been submitted and your application continues in Processing.");
     await loadMyApplications();
   } catch (err) {

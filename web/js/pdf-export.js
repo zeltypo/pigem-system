@@ -119,7 +119,7 @@ function buildPigemPdf(report, logo) {
 
   pageHeader();
   if (report.subtitle) paragraph("OVERVIEW", report.subtitle);
-  if (report.note) paragraph(report.noteTitle || "NOTES", report.note);
+  if (report.note && !report.remarksAtEnd) paragraph(report.noteTitle || "NOTES", report.note);
 
   var columns = report.columns && report.columns.length ? report.columns : ["Details"];
   var widths = columns.map(function (_, index) {
@@ -179,6 +179,24 @@ function buildPigemPdf(report, logo) {
       offset += count;
     }
   });
+
+  var tailRemarks = report.remarks || (report.remarksAtEnd ? report.note : "");
+  if (tailRemarks) {
+    y += 16;
+    var cleanRem = String(tailRemarks).trim().replace(/^"+|"+$/g, "");
+    var remFormatted = 'Remarks: "' + plain(cleanRem) + '"';
+    font(10, true);
+    var remLines = doc.splitTextToSize(remFormatted, width);
+    if (y + remLines.length * 14 + 12 > bottom) {
+      newPage();
+    }
+    doc.setTextColor(36, 45, 60);
+    remLines.forEach(function (line, idx) {
+      font(10, idx === 0);
+      doc.text(line, margin, y);
+      y += 14;
+    });
+  }
 
   var pages = doc.getNumberOfPages();
   for (var page = 1; page <= pages; page++) {

@@ -119,8 +119,9 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile, signal)
       formData.append("id_back", backBlob);
     }
 
-    formData.append("browser_prepared_front", String(Boolean(details.browserPreparedFront)));
-    formData.append("browser_prepared_back", String(Boolean(details.browserPreparedBack)));
+    formData.append("browser_prepared_front", "false");
+    formData.append("browser_prepared_back", "false");
+    formData.append("previous_response_id", details.previous_response_id || "");
     formData.append("full_name", details.full_name || "");
     formData.append("first_name", details.first_name || "");
     formData.append("middle_name", details.middle_name || "");

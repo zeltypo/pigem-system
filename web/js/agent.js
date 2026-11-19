@@ -168,7 +168,21 @@ function onValidatorPresetChange(val) {
 
 function isScreeningActiveOnApp(app) {
   var scr = (app && app.screening) || {};
+  var bgState = scr.background_state || "";
+  if (bgState === "queued" || bgState === "running") return true;
+  if (bgState === "completed" || bgState === "failed" || scr.state === "completed") return false;
+  var check = typeof getAgentAppIdCheck === "function" ? getAgentAppIdCheck(app, true) : null;
+  if (check && !check.result) return true;
   return ["pending_agent", "checking", "queued", "layer1_running", "layer2_running"].includes(scr.state) || visualScreeningRunningAppId === (app && app.id);
+}
+
+function getScreeningEtaLabel(app) {
+  var scr = (app && app.screening) || {};
+  var sec = Number(scr.eta_seconds || 0);
+  if (!sec || sec <= 0) {
+    sec = scr.background_state === "running" || scr.state === "layer2_running" ? 12 : 25;
+  }
+  return "Screening will finish in ~" + sec + "s";
 }
 
 function formatEtaLabel(seconds) {
@@ -471,22 +485,29 @@ function stripFalseReuploadMsg(str, dup) {
 
 function agentBackgroundStatus(app) {
   var states = {
-    queued: "Waiting for document check.",
-    running: "Checking ID photos in the background.",
-    failed: "Document check could not finish. Review the original photos."
+    queued: "Stage 1 Image Quality Assessment (gpt-6.2-sol) queued — " + getScreeningEtaLabel(app) + ".",
+    running: "Checking ID quality and details in the background — " + getScreeningEtaLabel(app) + ".",
+    failed: "Document check could not finish. Click Check documents to inspect the original photos."
   };
-  return states[app?.screening?.background_state] || "No background result yet. Review the original photos if needed.";
+  return states[app?.screening?.background_state] || "No background result yet. Click Check documents to inspect the original photos.";
 }
 
 function getScreeningQuickSummary(app) {
   if (!agentScreeningAvailable()) return "Offline";
   var duplicate = detectClientSideDuplicateId(app);
   if (duplicate.isDup) return escapeHtml(duplicate.reason);
+  var saved = getSavedAgentFindings(app);
+  if (saved) {
+    return escapeHtml(saved.queueSummary || summarizeAgentIdFindings(saved));
+  }
+  if (app && app.screening && app.screening.summary && app.screening.state === "completed") {
+    return escapeHtml(app.screening.summary);
+  }
   var check = getAgentAppIdCheck(app, true);
-  if (check && check.result) return escapeHtml(summarizeAgentIdFindings(check.result));
-  if (check) return "Checking ID photos…";
-  if (backgroundScreeningEnabled) return agentBackgroundStatus(app);
-  return app.id_image_url || app.id_front_path ? "Document check has not run yet." : "No front ID photo is available.";
+  if (check && check.result) return escapeHtml(check.result.queueSummary || summarizeAgentIdFindings(check.result));
+  if (check || isScreeningActiveOnApp(app)) return escapeHtml(getScreeningEtaLabel(app) + "…");
+  if (backgroundScreeningEnabled) return escapeHtml(agentBackgroundStatus(app));
+  return app.id_image_url || app.id_front_path ? "Click Check documents to run quality assessment & verification." : "No front ID photo is available.";
 }
 
 async function checkAgentQueueDocument(appId, button) {
@@ -496,13 +517,15 @@ async function checkAgentQueueDocument(appId, button) {
   if (!check) return;
   if (button) button.disabled = true;
   var node = document.getElementById("check-note-" + appId);
-  if (node) node.textContent = "Checking ID photos…";
+  if (node) node.textContent = getScreeningEtaLabel(app) + "…";
+  renderAgentCards();
   var result = await check.pending;
-  saveAgentFindings(app, result);
-  var summary = summarizeAgentIdFindings(result);
+  await saveAgentFindings(app, result);
+  var summary = result.queueSummary || summarizeAgentIdFindings(result);
   node = document.getElementById("check-note-" + appId);
   if (node) node.textContent = summary;
   if (button) button.disabled = false;
+  renderAgentCards();
 }
 
 function isAgentClaimable(app) {
@@ -510,11 +533,70 @@ function isAgentClaimable(app) {
 }
 
 function getAgentQueueTone(app) {
+  var dup = detectClientSideDuplicateId(app);
+  if (dup.isDup) return "red";
+  var saved = getSavedAgentFindings(app);
+  if (saved && saved.triage) return saved.triage;
+  if (app && app.screening && app.screening.triage) return app.screening.triage;
   if (app.status === "Needs Correction" || app.status === "Rejected") return "red";
+  if (isScreeningActiveOnApp(app)) return "neutral";
   var check = getAgentAppIdCheck(app, true)?.result;
-  if (check && agentFindingsReadyForReview(check)) return "green";
-  if (check || app.screening?.upload_photo_warning) return "yellow";
+  if (check) {
+    if (check.triage) return check.triage;
+    if (agentFindingsReadyForReview(check)) return "green";
+    return "yellow";
+  }
+  if (app.screening?.upload_photo_warning) return "yellow";
   return "neutral";
+}
+
+function openTriageQuestionPopup(appId) {
+  var app = findAppById(appId);
+  if (!app) return;
+  var tone = getAgentQueueTone(app);
+  var saved = getSavedAgentFindings(app) || (getAgentAppIdCheck(app, true) && getAgentAppIdCheck(app, true).result) || {};
+  var summary = saved.queueSummary || (app.screening && app.screening.summary) || getScreeningQuickSummary(app);
+  var finalRec = saved.finalRecommendation || (app.screening && app.screening.final_recommendation) || summarizeAgentIdFindings(saved);
+  var sentMsg = app.agent_remarks || saved.suggestedPoliteRemark || (app.screening && app.screening.Suggested_remark) || "";
+  var id = escapeHtml(app.id);
+
+  if (tone === "red") {
+    openPopup(
+      '<div style="border-left:4px solid #dc2626; padding-left:12px">' +
+        '<span class="badge badge-red" style="margin-bottom:6px">Automatic Needs Correction (PIGEM Screening)</span>' +
+        '<h3>Why this application is marked Red (?)</h3>' +
+        '<p class="mt" style="font-size:13.5px; line-height:1.5"><b>Screening Summary:</b> ' + escapeHtml(summary) + '</p>' +
+        (finalRec ? '<p class="small muted mt"><b>Final Recommendation:</b> ' + escapeHtml(finalRec) + '</p>' : '') +
+        (sentMsg ? '<div class="notice warn mt" style="font-size:12.5px"><b>Automatic Instruction Sent to Customer:</b><br>' + escapeHtml(sentMsg) + '</div>' : '') +
+        '<p class="tiny muted mt">Because the Stage 1 Quality Gate (gpt-6.2-sol) or core ID rules detected a major issue (such as severe blur/score &lt; 20%, expired ID, wrong ID type, or 2+ mismatched fields), the system automatically notified the customer for correction.</p>' +
+      '</div>' +
+      '<div class="row mt" style="gap:8px; justify-content:flex-end; flex-wrap:wrap">' +
+        '<button type="button" class="btn btn-outline" onclick="closePopup()">Close</button>' +
+        '<button type="button" class="btn btn-outline" data-id="' + id + '" onclick="closePopup(); openAppDetail(this.dataset.id, \'documents\')">Check documents</button>' +
+        (!app.assigned_agent && isAgentClaimable(app)
+          ? '<button type="button" class="btn btn-red" data-id="' + id + '" onclick="closePopup(); claimApplication(this.dataset.id)">Claim anyway</button>'
+          : '') +
+      '</div>'
+    );
+    return;
+  }
+
+  openPopup(
+    '<div style="border-left:4px solid #d97706; padding-left:12px">' +
+      '<span class="badge badge-yellow" style="margin-bottom:6px">Agent Decision Required (Yellow Tag)</span>' +
+      '<h3>Please review this finding before claiming</h3>' +
+      '<p class="mt" style="font-size:13.5px; line-height:1.5"><b>Screening Summary:</b> ' + escapeHtml(summary) + '</p>' +
+      (finalRec ? '<p class="small muted mt"><b>Final Recommendation:</b> ' + escapeHtml(finalRec) + '</p>' : '') +
+      '<p class="tiny muted mt">The applicant\'s submission is reasonable and was NOT automatically rejected. Please inspect the ID photo and details before deciding whether to claim for ISP Encoding or send a Needs Correction request.</p>' +
+    '</div>' +
+    '<div class="row mt" style="gap:8px; justify-content:flex-end; flex-wrap:wrap">' +
+      '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
+      '<button type="button" class="btn btn-outline" data-id="' + id + '" onclick="closePopup(); openAppDetail(this.dataset.id, \'documents\')">Check documents first</button>' +
+      (!app.assigned_agent && isAgentClaimable(app)
+        ? '<button type="button" class="btn btn-red" data-id="' + id + '" onclick="closePopup(); claimApplication(this.dataset.id)">Proceed &amp; Claim</button>'
+        : '') +
+    '</div>'
+  );
 }
 
 function renderAgentCards() {
@@ -553,23 +635,67 @@ function renderAgentCards() {
     var shared = activeBranch === "queue";
     var owned = isAssignedToStaff(app.assigned_agent, currentAgent);
     var place = [app.barangay, app.city, app.province].filter(Boolean).join(", ");
-    var actions = '<option value="">Choose an action</option><option value="documents">Check documents</option>';
+    var tone = getAgentQueueTone(app);
+    var running = isScreeningActiveOnApp(app);
+
+    var actions = '<option value="">Choose an action</option><option value="documents">Check documents (PIGEM Screening)</option>';
     if (owned) {
-      actions += '<option value="correction">Needs correction</option><option value="status">Validator decision</option>' +
-        '<option value="Encoding">Encoding</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option>';
+      actions += '<option value="correction">Needs correction (PIGEM / ISP)</option><option value="status">ISP / Validator decision</option>' +
+        '<option value="Encoding">ISP Encoding</option><option value="Approved">ISP Approved</option><option value="Rejected">ISP Rejected</option>';
     }
-    var control = shared
-      ? '<button type="button" class="btn btn-red btn-sm" data-id="' + id + '" onclick="confirmAgentClaim(this.dataset.id)">Claim</button>'
-      : '<select class="agent-queue-action" aria-label="Application action" data-id="' + id + '" onchange="runAgentQueueAction(this)">' + actions + '</select>';
-    return '<div class="q-card agent-queue-item queue-tone-' + getAgentQueueTone(app) + '"><div class="agent-queue-header"><details class="agent-queue-toggle" data-id="' + id + '"' + (expandedSummaryCards[app.id] ? " open" : "") +
+
+    var qMarkBtn = "";
+    if (!running && (tone === "red" || tone === "yellow")) {
+      var qStyle = tone === "red"
+        ? "background:#fee2e2; color:#b91c1c; border:1.5px solid #dc2626; font-weight:800; border-radius:999px; width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; cursor:pointer"
+        : "background:#fef3c7; color:#b45309; border:1.5px solid #d97706; font-weight:800; border-radius:999px; width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; cursor:pointer";
+      var qTitle = tone === "red"
+        ? "Automatic Needs Correction sent — click to view details"
+        : "Review needed before claiming — click to view findings";
+      qMarkBtn = '<button type="button" aria-label="' + qTitle + '" title="' + qTitle + '" style="' + qStyle + '" data-id="' + id + '" onclick="openTriageQuestionPopup(this.dataset.id)">?</button>';
+    }
+
+    var control = "";
+    if (running) {
+      control = '<span class="badge badge-blue" role="status" style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px">' +
+        '<span class="inline-spinner" style="width:12px; height:12px"></span> ' + escapeHtml(getScreeningEtaLabel(app)) + '</span>';
+    } else if (shared) {
+      control = '<div class="row" style="gap:6px; align-items:center">' +
+        qMarkBtn +
+        '<button type="button" class="btn btn-red btn-sm" data-id="' + id + '" onclick="confirmAgentClaim(this.dataset.id)">Claim</button>' +
+      '</div>';
+    } else {
+      control = '<div class="row" style="gap:6px; align-items:center">' +
+        qMarkBtn +
+        '<select class="agent-queue-action" aria-label="Application action" data-id="' + id + '" onchange="runAgentQueueAction(this)">' + actions + '</select>' +
+      '</div>';
+    }
+
+    var corrTrackBadge = "";
+    if (app.status === "Needs Correction") {
+      var isAutoPigem = Boolean(app.screening && app.screening.auto_correction_sent);
+      corrTrackBadge = isAutoPigem
+        ? '<span class="badge badge-red">Auto Needs Correction (PIGEM Screening)</span>'
+        : '<span class="badge badge-yellow">Needs Correction (Agent / ISP Validator)</span>';
+    }
+
+    return '<div class="q-card agent-queue-item queue-tone-' + tone + '"><div class="agent-queue-header"><details class="agent-queue-toggle" data-id="' + id + '"' + (expandedSummaryCards[app.id] ? " open" : "") +
       ' ontoggle="expandedSummaryCards[this.dataset.id] = this.open; if(this.open && !getAgentAppIdCheck(findAppById(this.dataset.id), true)) checkAgentQueueDocument(this.dataset.id)">' +
       '<summary aria-controls="queue-details-' + id + '"><strong>' + escapeHtml(app.full_name) + '</strong><span>' + escapeHtml(app.reference_no) + '</span></summary></details>' +
       '<div class="agent-queue-header-action">' + control + '</div></div>' +
       '<div class="agent-queue-details" id="queue-details-' + id + '">' +
-        (agentScreeningAvailable() ? '<div class="agent-screening-note"><b>Screening recommendation</b><div role="status" id="check-note-' + id + '">' + getScreeningQuickSummary(app) + '</div></div>' : '<p role="status">Offline</p>') +
+        (agentScreeningAvailable()
+          ? '<div class="agent-screening-note">' +
+              '<div class="row between" style="align-items:center; gap:8px; flex-wrap:wrap">' +
+                '<b>Screening summary</b>' +
+                '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px; font-size:11.5px; font-weight:700" data-id="' + id + '" onclick="openAppDetail(this.dataset.id, \'documents\')">Check documents &rarr;</button>' +
+              '</div>' +
+              '<div role="status" id="check-note-' + id + '" style="margin-top:4px">' + getScreeningQuickSummary(app) + '</div>' +
+            '</div>'
+          : '<p role="status">Offline</p>') +
         '<p class="small muted">' + escapeHtml(app.plan_name || "Red Fiber Plan") + (place ? ' &bull; ' + escapeHtml(place) : '') +
           ' &bull; Submitted ' + escapeHtml(formatDate(app.created_at)) + '</p>' +
-        '<div class="agent-queue-controls">' + statusBadge(app.status) +
+        '<div class="agent-queue-controls">' + statusBadge(app.status) + corrTrackBadge +
         (app.agent_link_code ? '<span class="badge badge-blue">Referral · ' + escapeHtml(app.agent_link_code) + '</span>' : '') +
         '</div>' +
       '</div></div>';
@@ -591,10 +717,19 @@ function runAgentQueueAction(select) {
 function confirmAgentClaim(appId) {
   var app = findAppById(appId);
   if (!app || app.assigned_agent || !isAgentClaimable(app)) return;
+  if (isScreeningActiveOnApp(app)) {
+    showAlert("Screening in progress", getScreeningEtaLabel(app) + ". Please wait for the Stage 1 Quality Gate and initial NLP check to finish before claiming.");
+    return;
+  }
+  var tone = getAgentQueueTone(app);
+  if (tone === "yellow" || tone === "red") {
+    openTriageQuestionPopup(appId);
+    return;
+  }
   var id = escapeHtml(appId);
   openPopup(
     '<h3>Claim this application?</h3>' +
-    '<p class="mt">If you claim this application, you will be responsible for reviewing it. Would you like to check the documents first?</p>' +
+    '<p class="mt">Screening passed (Green). If you claim this application, you will be responsible for reviewing it and encoding to the ISP. Would you like to check the documents first?</p>' +
     '<div class="row mt" style="gap:8px;justify-content:flex-end;flex-wrap:wrap">' +
       '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
       '<button type="button" class="btn btn-outline" data-id="' + id + '" onclick="closePopup(); openAppDetail(this.dataset.id)">Check documents first</button>' +
@@ -1068,18 +1203,27 @@ async function showAgentPreparedPhoto(container) {
   var status = container.querySelector("[data-photo-status]");
   var url = container.dataset.photo;
   if (!image || !status || !url) return;
-  status.textContent = "Step 1: Pre-processing photo with OpenCV (auto-crop, deskew, contrast)…";
-  var prepared = await prepareAgentIdPhoto(url);
 
-  if (!container.isConnected) return;
-  if (!prepared) {
-    status.textContent = "Original photo shown. The server can still prepare it for screening.";
+  var app = findAppById(activeDetailAppId);
+  var saved = app ? getSavedAgentFindings(app) : null;
+  var check = app ? (getAgentAppIdCheck(app, true) && getAgentAppIdCheck(app, true).result) : null;
+  var res = saved || check || null;
+  var route = (res && res.route) || (app && app.screening && app.screening.route) || "good";
+
+  // If image is GOOD (or early stopped), keep the original ID completely untouched and show no enhancement remarks
+  if (route !== "fixable") {
+    status.textContent = "";
     return;
   }
-  image.src = prepared.canvas.toDataURL("image/jpeg", 0.9);
-  status.textContent = prepared.cropped
-    ? "Cropped and straightened. Contrast enhanced with color preserved."
-    : "Contrast enhanced. The full photo is shown because the card edges could not be verified.";
+
+  var sideKey = (container.textContent || "").indexOf("BACK") !== -1 ? "back" : "front";
+  var prepSide = res && res.stages && res.stages.photoPreparation && res.stages.photoPreparation[sideKey];
+  var appliedOps = (prepSide && Array.isArray(prepSide.applied_ops)) ? prepSide.applied_ops : [];
+  if (!appliedOps.length) {
+    status.textContent = "";
+    return;
+  }
+  status.textContent = "Targeted OpenCV applied (" + appliedOps.join(", ") + ") for OCR extraction. Original ID shown.";
 }
 
 var agentDocumentTypes = [
@@ -1147,36 +1291,19 @@ async function collectAgentIdFindings(sources, expected, job) {
     }
 
     var duplicatePhotos = sources.length === 2 && backRaw && await areSameAgentPhotos(frontRaw, backRaw);
+    var frontUpload = frontRaw;
+    var backUpload = (!duplicatePhotos && backRaw) ? backRaw : null;
 
-    // Step 1: OpenCV Pre-processing (auto-crop, deskew, contrast enhancement) + client quality check
-    var frontPrep = await prepareAgentIdPhoto(sources[0].url, frontRaw);
-    var backPrep = (!duplicatePhotos && backRaw && sources[1]) ? await prepareAgentIdPhoto(sources[1].url, backRaw) : null;
-
-    if (typeof analyzeClientIdQuality === "function") {
-      try {
-        var fQual = await withAgentReadTimeout(analyzeClientIdQuality(frontRaw), 2500);
-        if (fQual && fQual.issues && fQual.issues.length) photoIssues.push("Front photo: " + fQual.issues[0]);
-      } catch (e) {}
-      if (backRaw && !duplicatePhotos) {
-        try {
-          var bQual = await withAgentReadTimeout(analyzeClientIdQuality(backRaw), 2500);
-          if (bQual && bQual.issues && bQual.issues.length) photoIssues.push("Back photo: " + bQual.issues[0]);
-        } catch (e) {}
-      }
-    }
-
-    var frontUpload = (frontPrep && frontPrep.blob) ? frontPrep.blob : frontRaw;
-    var backUpload = (!duplicatePhotos && backRaw) ? ((backPrep && backPrep.blob) ? backPrep.blob : backRaw) : null;
-
-    // Steps 2, 3, 4: Send OpenCV-cleaned images to /api/screen (Azure DI IDP -> NLP Validation -> GPT-5.4 Reasoning)
+    // Conditional Pipeline on Server: Stage 1 gpt-6.2-sol Quality Gate -> Conditional Targeted OpenCV -> Azure DI IDP -> NLP Rules -> GPT-5.4 Remarks
     var screenData = await withAgentReadTimeout(
       apiRunScreening(frontUpload, {
         full_name: expected.name || "",
         birth_date: expected.birth || "",
         id_type: expected.type || "",
         id_number: expected.number || "",
-        browserPreparedFront: Boolean(frontPrep?.blob),
-        browserPreparedBack: Boolean(backPrep?.blob),
+        previous_response_id: expected.previous_response_id || "",
+        browserPreparedFront: false,
+        browserPreparedBack: false,
         id_back: backUpload
       }, backUpload, job.controller.signal),
       100000
@@ -1231,20 +1358,38 @@ async function collectAgentIdFindings(sources, expected, job) {
 
     var aiObj = screenData.ai || {};
     var nlpObj = screenData.nlp_validation || {};
+    var qualObj = screenData.quality || {};
+    if (Array.isArray(qualObj.issues) && qualObj.issues.length && qualObj.verdict !== "good") {
+      photoIssues = qualObj.issues.slice();
+    }
 
     return {
+      route: screenData.route || qualObj.verdict || "good",
+      triage: screenData.triage || aiObj.triage || "yellow",
+      autoNeedsCorrection: Boolean(aiObj.auto_needs_correction),
+      correctionType: aiObj.correction_type || "none",
+      targetFields: aiObj.target_fields || [],
+      queueSummary: aiObj.queue_summary || "",
+      finalRecommendation: aiObj.final_recommendation || "",
+      openaiResponseId: screenData.openai_response_id || aiObj.response_id || "",
       fields: mappedFields,
       unclearSides: unclearSides,
       unavailableSides: unavailableSides,
       failedReads: failedReads,
-      duplicatePhotos: duplicatePhotos,
+      duplicatePhotos: Boolean(duplicatePhotos || qualObj.duplicate_front_back),
       photoIssues: photoIssues,
       detectedOtherType: detectedOtherType,
       stages: {
         checkId: screenData.check_id || "",
-        photoPreparation: screenData.quality?.preprocessed || null,
+        qualityGate: {
+          model: qualObj.model || "gpt-6.2-sol",
+          verdict: qualObj.verdict || "good",
+          score: qualObj.quality_score != null ? qualObj.quality_score : 85
+        },
+        photoPreparation: qualObj.preprocessed || null,
         extraction: {
           provider: ocr.provider || "",
+          earlyStopped: Boolean(ocr.early_stopped),
           frontReadable: ocr.front_readable === true,
           backReadable: backUpload ? ocr.back_readable === true : null
         },
@@ -1440,6 +1585,14 @@ function getSavedAgentFindings(app) {
 
 function buildSavedAgentFindings(result) {
   return {
+    route: result.route || "good",
+    triage: result.triage || (agentFindingsReadyForReview(result) ? "green" : "yellow"),
+    autoNeedsCorrection: Boolean(result.autoNeedsCorrection),
+    correctionType: result.correctionType || "none",
+    targetFields: result.targetFields || [],
+    queueSummary: result.queueSummary || "",
+    finalRecommendation: result.finalRecommendation || "",
+    openaiResponseId: result.openaiResponseId || "",
     fields: result.fields.map(function (field) {
       return { key: field.key, label: field.label, status: field.status };
     }),
@@ -1469,17 +1622,27 @@ async function saveAgentFindings(app, result) {
     async function saveForRevision(latest) {
       if (!latest || agentScreeningRevision(latest) !== version || !latest.updated_at) return null;
       if (getSavedAgentFindings(latest)) return latest;
-      var summaryText = summarizeAgentIdFindings(result);
-      var reviewRec = !agentFindingsReadyForReview(result);
+      var summaryText = result.queueSummary || summarizeAgentIdFindings(result);
+      var finalRecText = result.finalRecommendation || summaryText;
+      var triage = result.triage || (agentFindingsReadyForReview(result) ? "green" : "yellow");
+      var reviewRec = triage !== "green";
+      var politeMsg = result.suggestedPoliteRemark || "";
       var screening = Object.assign({}, latest.screening, {
         state: "completed",
+        triage: triage,
+        route: result.route || "good",
         summary: summaryText,
+        final_recommendation: finalRecText,
         review_recommended: reviewRec,
-        Suggested_remark: result.suggestedPoliteRemark || "",
+        overall_match: !reviewRec,
+        Suggested_remark: politeMsg,
+        openai_response_id: result.openaiResponseId || (latest.screening && latest.screening.openai_response_id) || "",
         browser_check: { reader_version: 5, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
       });
       var aiResult = Object.assign({}, latest.ai_result, {
-        overall_status: reviewRec ? "Needs Review" : "Verified",
+        overall_status: triage === "green" ? "Verified" : (triage === "red" ? "Needs Correction" : "Needs Review"),
+        triage: triage,
+        route: result.route || "good",
         name_match: Boolean(result.fields.find(function (f) { return f.key === "name" && f.status === "match"; })),
         birth_date_match: Boolean(result.fields.find(function (f) { return f.key === "birth_date" && f.status === "match"; })),
         id_number_match: Boolean(result.fields.find(function (f) { return f.key === "id_number" && f.status === "match"; })),
@@ -1488,14 +1651,32 @@ async function saveAgentFindings(app, result) {
       var aiLog = Array.isArray(latest.ai_log) ? latest.ai_log.slice() : [];
       aiLog.push({
         at: new Date().toISOString(),
-        who: "IDP + GPT-5.4 Screening",
-        text: summaryText
+        who: "Stage 1 (gpt-6.2-sol) + Stage 4 (gpt-5.4)",
+        text: finalRecText
       });
-      return await dbUpdateApplication(app.id, {
+
+      var patchBody = {
         screening: screening,
         ai_result: aiResult,
         ai_log: aiLog
-      }, latest.updated_at);
+      };
+
+      // Automatic RED Needs Correction if triggered during on-demand check on an unencoded application
+      if (triage === "red" && result.autoNeedsCorrection && (latest.status === "Pending Review" || latest.status === "Under Agent Review")) {
+        var autoMsg = politeMsg || "Hello! Thank you for applying with PIGEM. Please sign in to your Customer Account to update your highlighted details or upload a clearer Valid ID photo.";
+        var targetFields = (result.targetFields && result.targetFields.length) ? result.targetFields : ["id_photo"];
+        screening.auto_correction_sent = true;
+        screening.auto_correction_type = "pigem_screening";
+        screening.auto_correction_reason = summaryText;
+        screening.correction_fields = targetFields;
+        patchBody.status = "Needs Correction";
+        patchBody.agent_remarks = autoMsg;
+        patchBody.correction_note = autoMsg;
+        patchBody.customer_instruction = autoMsg;
+        patchBody.has_correction = false;
+      }
+
+      return await dbUpdateApplication(app.id, patchBody, latest.updated_at);
     }
 
     var saved;
@@ -1505,10 +1686,31 @@ async function saveAgentFindings(app, result) {
       saved = await saveForRevision(await dbGetApplication(app.id));
     }
     if (saved) {
+      var wasPending = app.status === "Pending Review" || app.status === "Under Agent Review";
       app.screening = saved.screening;
       app.ai_result = saved.ai_result;
       app.ai_log = saved.ai_log;
+      app.status = saved.status || app.status;
+      app.agent_remarks = saved.agent_remarks || app.agent_remarks;
       app.updated_at = saved.updated_at;
+
+      if (wasPending && saved.status === "Needs Correction" && saved.screening && saved.screening.auto_correction_sent) {
+        var recipientEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email;
+        var autoRemarks = saved.agent_remarks || result.suggestedPoliteRemark || "";
+        var tFields = (result.targetFields && result.targetFields.length) ? result.targetFields : ["id_photo"];
+        var targetSummaryLabel = tFields.map(function (f) { return FIELD_SUMMARY_LABELS[f]; }).filter(Boolean).join(", ");
+        try {
+          await dbAddNotification({
+            email: recipientEmail,
+            role: "customer",
+            title: "Update Needed for Application (" + app.reference_no + ")",
+            message: autoRemarks,
+            target_tab: "tab-apps",
+            target_id: app.id
+          });
+          await apiSendStatusEmail(recipientEmail, app.full_name, app.reference_no, "Needs Correction", autoRemarks, targetSummaryLabel);
+        } catch (e) {}
+      }
     }
   } catch (error) {
 
@@ -1521,36 +1723,56 @@ function getAgentAppIdCheck(app, existingOnly) {
   if (!agentScreeningAvailable() || !app) return null;
   var saved = getSavedAgentFindings(app);
   if (saved) return { result: saved, pending: Promise.resolve(saved) };
-  if (backgroundScreeningEnabled) return null;
+  if (backgroundScreeningEnabled && (app.screening?.background_state === "queued" || app.screening?.background_state === "running")) return null;
   return getAgentIdCheck(app.id_image_url || app.id_front_path || "", app.id_back_image_url || app.id_back_path || "", {
-    name: app.full_name || "", birth: app.birth_date || "", number: app.id_number || "", type: app.id_type || ""
+    name: app.full_name || "",
+    birth: app.birth_date || "",
+    number: app.id_number || "",
+    type: app.id_type || "",
+    previous_response_id: (app.screening && app.screening.openai_response_id) || ""
   }, existingOnly, app.id + "|" + agentScreeningRevision(app));
 }
 
 async function showAgentIdFindings(panel, app) {
   if (!panel) return;
-  var expected = { name: panel.dataset.name, birth: panel.dataset.birth, number: panel.dataset.number, type: panel.dataset.type || "" };
-  var check = app ? getAgentAppIdCheck(app) : backgroundScreeningEnabled ? null : getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected);
+  var expected = {
+    name: panel.dataset.name,
+    birth: panel.dataset.birth,
+    number: panel.dataset.number,
+    type: panel.dataset.type || "",
+    previous_response_id: (app && app.screening && app.screening.openai_response_id) || ""
+  };
+  var check = app ? getAgentAppIdCheck(app) : getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected);
   if (!check) {
     if (backgroundScreeningEnabled) panel.textContent = agentBackgroundStatus(app);
     return;
   }
   var result = await check.pending;
-  if (app) saveAgentFindings(app, result);
+  if (app) await saveAgentFindings(app, result);
   if (!agentScreeningAvailable() || panel.isConnected === false) return;
   panel._documentFindings = result;
-  panel.textContent = summarizeAgentIdFindings(result);
+
+  var headerLine = result.finalRecommendation || summarizeAgentIdFindings(result);
+  var linesOut = [headerLine];
+  if (result.queueSummary && result.queueSummary !== headerLine) {
+    linesOut.push("Summary: " + result.queueSummary);
+  }
   if (!result.failed && !result.unavailableSides?.length && !result.failedReads?.length && result.fields.some(function (field) { return field.status !== "unreadable"; })) {
-    panel.textContent += "\n" + result.fields.filter(function (field) {
+    linesOut.push(result.fields.filter(function (field) {
       return field.status !== "unreadable";
-    }).map(describeAgentIdField).join("\n");
+    }).map(describeAgentIdField).join("\n"));
   }
   if (!result.failed && result.nlpValidation) {
     var nlpLines = [];
     if (result.nlpValidation.age_note) nlpLines.push("Age check: " + result.nlpValidation.age_note);
     if (result.nlpValidation.expiry_note) nlpLines.push("Validity: " + result.nlpValidation.expiry_note);
     if (result.nlpValidation.id_format_note) nlpLines.push("ID format/checksum: " + result.nlpValidation.id_format_note);
-    if (nlpLines.length) panel.textContent += "\n" + nlpLines.join("\n");
+    if (nlpLines.length) linesOut.push(nlpLines.join("\n"));
+  }
+  panel.textContent = linesOut.join("\n");
+
+  if (document.querySelectorAll) {
+    document.querySelectorAll("#det-body [data-photo-container]").forEach(showAgentPreparedPhoto);
   }
 
   var field = document.getElementById("det-correction-field");
@@ -1848,7 +2070,7 @@ async function renderDetailModalContent(updateResultsOnly) {
   }
   var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
   if (findings) showAgentIdFindings(findings, activeCopyMode === "latest" ? app : null);
-  if (agentScreeningAvailable() && !updateResultsOnly && activeCopyMode !== "original" && document.querySelectorAll) {
+  if (!updateResultsOnly && document.querySelectorAll) {
     document.querySelectorAll("#det-body [data-photo-container]").forEach(showAgentPreparedPhoto);
   }
 
@@ -2129,7 +2351,10 @@ function exportApplicantCopy(print) {
     showAlert("Checking documents", "Wait for the screening recommendation before exporting.");
     return;
   }
-  var remarks = panel ? summarizeAgentIdFindings(panel._documentFindings) : "No ID photo was uploaded.";
+  var docFindings = panel ? panel._documentFindings : null;
+  var remarks = docFindings
+    ? (docFindings.finalRecommendation || summarizeAgentIdFindings(docFindings))
+    : "No ID photo was uploaded.";
   var duplicate = detectClientSideDuplicateId(app);
   if (duplicate.isDup) remarks += " " + duplicate.reason;
   var location = [copy.house_no || app.house_no, copy.street || app.street, copy.subdivision || app.subdivision,
@@ -2149,10 +2374,11 @@ function exportApplicantCopy(print) {
   exportPigemPdf({
     title: "Internet Service Application",
     subtitle: "Reference " + app.reference_no,
-    noteTitle: "Screening recommendation",
-    note: remarks,
     section: "Applicant details",
-    columns: ["Field", "Details"], rows: rows, widths: [0.3, 0.7]
+    columns: ["Field", "Details"],
+    rows: rows,
+    widths: [0.3, 0.7],
+    remarks: remarks
   }, "PIGEM-" + app.reference_no + (activeCopyMode === "latest" ? "" : "-" + activeCopyMode) + ".pdf", print);
 }
 

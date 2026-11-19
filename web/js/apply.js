@@ -1527,11 +1527,12 @@ async function performApplicationSubmission() {
     var screening = {
       preliminary: true,
       upload_photo_warning: photoCheck.warning,
-      state: "paused",
-      phase: "Ready for Staff Review",
-      eta_seconds: 0,
-      fallback_original_only: true,
-      advisory: "Staff will review your uploaded ID photos."
+      state: "queued",
+      background_state: "queued",
+      phase: "Stage 1 Image Quality Assessment (gpt-6.2-sol)",
+      eta_seconds: 25,
+      fallback_original_only: false,
+      advisory: "Automated ID quality and details screening is running."
     };
     var subLat = parseFloat((document.getElementById("lat") || {}).value);
     var subLng = parseFloat((document.getElementById("lng") || {}).value);

@@ -19,7 +19,6 @@ import _auth
 import _idp
 import _mailer
 import _openai_client
-import _preprocess
 import _screening_queue
 
 app = FastAPI(title="PIGEM Cloud IDP Screening & Notification API")
@@ -40,7 +39,8 @@ class CaptchaVerifyRequest(BaseModel):
 
 class ScreeningIntake(BaseModel):
     application_id: str
-    ticket: str
+    ticket: Optional[str] = ""
+    resubmission: bool = False
 
 
 class EmailRequest(BaseModel):
@@ -70,12 +70,13 @@ def health():
         "api": True,
         "openai": openai_ok,
         "openai_model": _openai_client.configured_model(),
+        "openai_quality_model": _openai_client.configured_quality_model(),
         "provider": "openai",
         "idp": idp_ok,
         "idp_provider": _idp.provider_name(),
         "opencv": True,
         "ocr": idp_ok,
-        "auto_screening_ready": idp_ok,
+        "auto_screening_ready": idp_ok and openai_ok,
         "recaptcha": recaptcha_ok,
         "recaptcha_site_key": (getenv("RECAPTCHA_SITE_KEY") or "").strip(),
         "smtp": smtp_ok,
@@ -99,11 +100,21 @@ def verify_captcha(data: CaptchaVerifyRequest, request: Request):
 def enqueue_screening(data: ScreeningIntake):
     if not _screening_queue.enabled():
         raise HTTPException(status_code=503, detail="Background screening is not configured.")
-    if len(data.ticket) > 150 or not _screening_queue.valid_ticket(data.ticket):
+    ticket_str = (data.ticket or "").strip()
+    if data.resubmission and not ticket_str:
+        ticket_str = _screening_queue.intake_ticket()
+    if len(ticket_str) > 150 or not _screening_queue.valid_ticket(ticket_str):
         raise HTTPException(status_code=403, detail="Application verification expired.")
     queued = _screening_queue.rpc("pigem_enqueue_screening", {
-        "app_id": data.application_id, "intake_ticket": data.ticket.split(".")[1]
+        "app_id": data.application_id,
+        "intake_ticket": ticket_str.split(".")[1],
     })
+    # Kick off one background pass immediately so applicants/agents do not wait for the next minute cron tick
+    if queued:
+        try:
+            _screening_queue.run_one()
+        except Exception:
+            pass
     return {"queued": bool(queued)}
 
 
@@ -140,6 +151,7 @@ async def screen_document(
     birth_date: str = Form(default=""),
     id_type: str = Form(default=""),
     id_number: str = Form(default=""),
+    previous_response_id: str = Form(default=""),
     browser_prepared_front: bool = Form(default=False),
     browser_prepared_back: bool = Form(default=False),
     user=Depends(_auth.require_screening_staff),
@@ -161,24 +173,17 @@ async def screen_document(
     print(f"screening check={check_id} stage=upload accepted", flush=True)
 
     def run_check():
-        preparation = {}
         try:
-            cleaned_front, preparation["front"] = (
-                (front_bytes, {"source": "browser"}) if browser_prepared_front
-                else _preprocess.prepare_photo(front_bytes)
+            result = _ai.run_conditional_screening_pipeline(
+                front_bytes,
+                back_bytes,
+                entered,
+                check_id=check_id,
+                previous_response_id=previous_response_id,
             )
-            cleaned_back = back_bytes
-            if back_bytes:
-                cleaned_back, preparation["back"] = (
-                    (back_bytes, {"source": "browser"}) if browser_prepared_back
-                    else _preprocess.prepare_photo(back_bytes)
-                )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from None
-        print(f"screening check={check_id} stage=opencv complete", flush=True)
-        result = _ai.run_idp_screening_pipeline(cleaned_front, cleaned_back, entered, check_id=check_id)
         result["check_id"] = check_id
-        result["quality"]["preprocessed"] = preparation
         return result
 
     return await run_in_threadpool(run_check)
@@ -188,9 +193,9 @@ async def screen_document(
 @app.post("/screen-async")
 def document_screening_async_notice():
     return {
-        "screened": False,
         "queued": False,
-        "detail": "Screening runs on demand via the 4-step OpenCV + IDP + NLP + GPT-5.4 pipeline.",
+        "screened": False,
+        "reason": "Document screening runs through the conditional background queue or when an authorized Agent opens an application.",
     }
 
 
@@ -198,7 +203,7 @@ def document_screening_async_notice():
 @app.post("/notify")
 def send_notification(data: EmailRequest, user=Depends(_auth.require_login)):
     return _mailer.send(
-        to=data.to,
+        to_email=data.to,
         subject=data.subject,
         message=data.message or "",
         html_content=data.html_content,

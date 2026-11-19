@@ -8,6 +8,8 @@ import unicodedata
 
 import _idp
 import _openai_client
+import _preprocess
+import _quality
 
 MONTH_MAP = {
     "JAN": "01", "JANUARY": "01", "ENE": "01", "ENERO": "01",
@@ -640,8 +642,10 @@ class OpenAIScreeningService:
         "properties": {
             "recommendation": {
                 "type": "STRING",
-                "enum": ["approve", "reject", "manual_review"],
+                "enum": ["approve", "reject", "manual_review", "needs_correction"],
             },
+            "queue_summary": {"type": "STRING"},
+            "final_recommendation": {"type": "STRING"},
             "findings": {
                 "type": "ARRAY",
                 "items": {"type": "STRING"},
@@ -654,6 +658,8 @@ class OpenAIScreeningService:
         },
         "required": [
             "recommendation",
+            "queue_summary",
+            "final_recommendation",
             "findings",
             "tampering_flags",
             "suggested_polite_remark",
@@ -661,7 +667,7 @@ class OpenAIScreeningService:
     }
 
     _FIELD_PATTERNS = [
-        ("id_photo", re.compile(r"(blur|unclear|dark|glare|flash|unreadable|photo|image|id\s*copy|crop|cut\s*off|expired)", re.I)),
+        ("id_photo", re.compile(r"(blur|unclear|dark|glare|flash|unreadable|photo|image|id\s*copy|crop|cut\s*off|expired|duplicate|same\s*photo)", re.I)),
         ("name", re.compile(r"(name|surname|first\s*name|middle\s*name|last\s*name|spelling)", re.I)),
         ("birth_date", re.compile(r"(birth|birthday|dob|date\s*of\s*birth|age|under\s*18)", re.I)),
         ("id_number", re.compile(r"(id\s*no|id\s*number|card\s*number|license\s*number|psn|pcn|crn)", re.I)),
@@ -694,13 +700,123 @@ class OpenAIScreeningService:
                 fields.append(field_key)
         return fields or ["general"]
 
-    def _build_rule_guidance(
-        self, comparisons: list, nlp_rules: dict, ocr_payload: dict
+    def _evaluate_triage(
+        self,
+        comparisons: list,
+        nlp_rules: dict,
+        ocr_payload: dict,
+        quality_report: Optional[dict] = None,
     ) -> dict:
+        """Deterministically classify screening outcome into GREEN, YELLOW, or RED."""
+        q = quality_report or {}
+        q_verdict = str(q.get("verdict") or "good").lower()
+        q_score = int(q.get("quality_score") if q.get("quality_score") is not None else 85)
+        dup_front_back = bool(q.get("duplicate_front_back"))
+
+        core_keys = ("name", "birth_date", "id_number")
+        core_mismatches = [c for c in comparisons if c.get("key") in core_keys and c.get("status") == "mismatch"]
+        doc_type_mismatch = any(
+            c.get("key") in ("document_type", "id_type") and c.get("status") == "mismatch"
+            for c in comparisons
+        ) or (ocr_payload.get("id_type_matches_declared") is False)
+        partials = [c for c in comparisons if c.get("status") in ("partial", "not_found", "unverified")]
+        is_expired = bool(nlp_rules.get("is_expired"))
+        age_ok = bool(nlp_rules.get("age_eligible", True))
+        format_ok = bool(nlp_rules.get("id_format_valid", True))
+
+        target_fields: List[str] = []
+        reasons: List[str] = []
+
+        if q_verdict == "unfixable" or q_score < 20 or dup_front_back:
+            target_fields.append("id_photo")
+            if dup_front_back:
+                reasons.append("Front and Back ID uploads are identical.")
+            else:
+                q_issues = q.get("issues") or []
+                reasons.append(q_issues[0] if q_issues else "Uploaded ID photo is unreadable or severely blurry.")
+
+        if is_expired:
+            if "id_photo" not in target_fields:
+                target_fields.append("id_photo")
+            reasons.append(nlp_rules.get("expiry_note") or "Uploaded ID is expired.")
+
+        if doc_type_mismatch:
+            if "id_photo" not in target_fields:
+                target_fields.append("id_photo")
+            det = ocr_payload.get("detected_document_type") or "different ID type"
+            reasons.append(f"Selected ID type does not match uploaded document ({det}).")
+
+        for m in core_mismatches:
+            k = m.get("key")
+            if k and k not in target_fields:
+                target_fields.append(k)
+            if m.get("note"):
+                reasons.append(m["note"])
+
+        # RED Trigger: unfixable image / score < 20 / duplicate front-back / expired ID / wrong ID type / 2+ core field mismatches
+        is_red = (
+            q_verdict == "unfixable"
+            or q_score < 20
+            or dup_front_back
+            or is_expired
+            or doc_type_mismatch
+            or len(core_mismatches) >= 2
+        )
+
+        if is_red:
+            return {
+                "triage": "red",
+                "auto_needs_correction": True,
+                "correction_type": "pigem_screening",
+                "target_fields": target_fields or ["id_photo"],
+                "reasons": reasons,
+            }
+
+        # YELLOW Trigger: 1 field mismatch, partial/unreadable fields, format warning, or under-18 check
+        is_yellow = bool(core_mismatches or partials or not format_ok or not age_ok)
+        if is_yellow:
+            for p in partials:
+                if p.get("note"):
+                    reasons.append(p["note"])
+            if not format_ok and nlp_rules.get("id_format_note"):
+                reasons.append(nlp_rules["id_format_note"])
+            if not age_ok and nlp_rules.get("age_note"):
+                reasons.append(nlp_rules["age_note"])
+            return {
+                "triage": "yellow",
+                "auto_needs_correction": False,
+                "correction_type": "agent_review",
+                "target_fields": target_fields or ["id_photo"],
+                "reasons": reasons,
+            }
+
+        return {
+            "triage": "green",
+            "auto_needs_correction": False,
+            "correction_type": "none",
+            "target_fields": [],
+            "reasons": ["All ID details match the application form and passed quality verification."],
+        }
+
+    def _build_rule_guidance(
+        self,
+        comparisons: list,
+        nlp_rules: dict,
+        ocr_payload: dict,
+        quality_report: Optional[dict] = None,
+    ) -> dict:
+        triage_info = self._evaluate_triage(comparisons, nlp_rules, ocr_payload, quality_report)
+        triage = triage_info["triage"]
+
         findings: List[str] = []
         tampering_flags: List[str] = list(ocr_payload.get("authenticity_flags") or [])
         mismatches = [c for c in comparisons if c.get("status") == "mismatch"]
         partials = [c for c in comparisons if c.get("status") in ("partial", "not_found", "unverified")]
+
+        if quality_report and quality_report.get("issues"):
+            for q_iss in quality_report["issues"]:
+                if q_iss not in findings:
+                    findings.append(q_iss)
 
         for c in comparisons:
             if c.get("status") != "match" and c.get("note"):
@@ -713,25 +829,63 @@ class OpenAIScreeningService:
         if not nlp_rules.get("id_format_valid", True):
             tampering_flags.append(nlp_rules.get("id_format_note") or "ID number format/checksum anomaly.")
 
-        if not nlp_rules.get("age_eligible", True):
+        if triage == "red":
+            recommendation = "needs_correction"
+        elif not nlp_rules.get("age_eligible", True):
             recommendation = "reject"
-        elif mismatches or nlp_rules.get("is_expired") or tampering_flags or partials:
+        elif triage == "yellow" or mismatches or tampering_flags or partials:
             recommendation = "manual_review"
         else:
             recommendation = "approve"
             if not findings:
                 findings.append("Name, birth date, and ID number match the uploaded ID. Age (18+) and validity rules passed.")
 
+        if triage == "green":
+            queue_summary = "Screening Passed: Name, birth date, and ID number match the uploaded ID."
+            final_rec = "Recommended: Approve & Proceed to Encoding. All printed ID fields match the applicant's form details."
+        elif triage == "red":
+            primary_reason = triage_info["reasons"][0] if triage_info["reasons"] else "Major ID or detail discrepancy detected."
+            queue_summary = f"Automatic Needs Correction (PIGEM Screening): {primary_reason}"
+            final_rec = (
+                f"Final Recommendation: Needs Correction (Automatic). {primary_reason} "
+                "The customer has been notified to submit a corrected update."
+            )
+        else:
+            primary_reason = triage_info["reasons"][0] if triage_info["reasons"] else "Minor discrepancy or partial field read."
+            queue_summary = f"Agent Review Needed: {primary_reason}"
+            final_rec = (
+                f"Final Recommendation: Manual Agent Review before claiming. {primary_reason} "
+                "Please inspect the ID photo and confirm whether to proceed or request a customer update."
+            )
+
         polite_default = ""
         if recommendation != "approve":
-            if nlp_rules.get("is_expired"):
+            if quality_report and quality_report.get("duplicate_front_back"):
+                polite_default = (
+                    "Hello! Thank you for applying with PIGEM. We noticed that the same photo was uploaded for both the Front "
+                    "and Back of your Valid ID—please sign in to your Customer Account and upload clear, separate photos of both sides."
+                )
+            elif quality_report and quality_report.get("verdict") == "unfixable":
+                polite_default = (
+                    "Hello! Thank you for applying with PIGEM. Your uploaded Valid ID photo is unclear or cut off and the printed "
+                    "details could not be verified—please sign in to your Customer Account and upload a sharp, well-lit photo of your ID."
+                )
+            elif nlp_rules.get("is_expired"):
                 polite_default = (
                     "Hello! Thank you for applying with PIGEM. Your uploaded ID appears to be expired—please sign in "
                     "to your Customer Account and upload a valid, unexpired government ID so we can continue processing."
                 )
-            elif any(c.get("key") in ("document_type", "id_type") for c in mismatches):
+            elif any(c.get("key") in ("document_type", "id_type") for c in mismatches) or (
+                ocr_payload.get("id_type_matches_declared") is False
+            ):
                 polite_default = (
-                    "Hello! Please sign in to your Customer Account and upload a clear photo of the ID type selected on your application."
+                    "Hello! Thank you for applying with PIGEM. Please sign in to your Customer Account and upload a clear photo "
+                    "of the valid ID type selected on your application form."
+                )
+            elif len(mismatches) >= 2:
+                polite_default = (
+                    "Hello! Thank you for applying with PIGEM. Several details on your application form (such as name, birth date, "
+                    "or ID number) do not match your uploaded ID—please sign in to your Customer Account to review and update them."
                 )
             elif len(mismatches) == 1:
                 key = mismatches[0].get("key")
@@ -746,7 +900,13 @@ class OpenAIScreeningService:
         return {
             "available": self.is_available(),
             "model": _openai_client.configured_model(),
+            "triage": triage,
+            "auto_needs_correction": triage_info["auto_needs_correction"],
+            "correction_type": triage_info["correction_type"],
+            "target_fields": triage_info["target_fields"],
             "recommendation": recommendation,
+            "queue_summary": queue_summary,
+            "final_recommendation": final_rec,
             "findings": findings,
             "tampering_flags": tampering_flags,
             "notes": findings + tampering_flags,
@@ -754,11 +914,17 @@ class OpenAIScreeningService:
         }
 
     def reason_over_validated_json(
-        self, entered: dict, comparisons: list, nlp_rules: dict, ocr_payload: dict
+        self,
+        entered: dict,
+        comparisons: list,
+        nlp_rules: dict,
+        ocr_payload: dict,
+        quality_report: Optional[dict] = None,
+        previous_response_id: str = "",
     ) -> dict:
-        """Step 4 (LLM Reasoning): Send masked validated JSON to GPT-5.4 for findings & recommendation."""
-        base_guidance = self._build_rule_guidance(comparisons, nlp_rules, ocr_payload)
-        if not self.is_available() or not ocr_payload.get("available"):
+        """Step 4 (LLM Reasoning): Send masked validated JSON to GPT-5.4 for summary, recommendation & remarks."""
+        base_guidance = self._build_rule_guidance(comparisons, nlp_rules, ocr_payload, quality_report)
+        if not self.is_available():
             return base_guidance
 
         masked_comparisons = []
@@ -777,45 +943,75 @@ class OpenAIScreeningService:
                 "rule_note": c.get("note"),
             })
 
+        q_summary = {}
+        if quality_report:
+            q_summary = {
+                "verdict": quality_report.get("verdict"),
+                "quality_score": quality_report.get("quality_score"),
+                "duplicate_front_back": quality_report.get("duplicate_front_back"),
+                "issues": quality_report.get("issues") or [],
+            }
+
         masked_payload = {
+            "triage_color": base_guidance["triage"],
+            "auto_needs_correction": base_guidance["auto_needs_correction"],
+            "image_quality_assessment": q_summary,
             "declared_id_type": entered.get("id_type") or "",
             "detected_id_type": ocr_payload.get("detected_document_type") or "",
+            "idp_available": bool(ocr_payload.get("available")),
             "idp_confidence": ocr_payload.get("confidence"),
-            "field_confidences": ocr_payload.get("field_confidences") or {},
-            "authenticity_signals": ocr_payload.get("authenticity_flags") or [],
             "field_comparisons": masked_comparisons,
             "nlp_validation": nlp_rules,
         }
 
         system_prompt = (
-            "You are an ID verification analyst for PIGEM Fiber Internet applications. "
-            "Given the IDP extraction confidences and deterministic NLP validation results (with ID numbers masked), "
-            "produce concise, factual `findings` (discrepancies, expired ID, or under-18 ineligibility), "
-            "`tampering_flags` (authenticity/checksum/confidence warnings), a `recommendation` "
-            "('approve' if all fields match and rules pass, 'reject' if under 18 or clear forgery, "
-            "or 'manual_review' if there are field discrepancies, expired ID, or unreadable fields), "
-            "and a polite 1-2 sentence customer correction message in `suggested_polite_remark` "
-            "(empty string if recommendation is 'approve'). Never repeat raw ID numbers."
+            "You are the Stage 4 Screening Remarks & Recommendation Analyst for PIGEM Fiber Internet applications. "
+            "Given the Stage 1 image quality assessment, Azure IDP extraction results, and deterministic NLP validation "
+            "(with ID numbers masked), produce:\n"
+            "- `queue_summary`: A concise 1-sentence summary for the Agent application queue card.\n"
+            "- `final_recommendation`: A clear 1-2 sentence final recommendation for the Agent's document check panel "
+            "explaining exactly what matched or what requires review/correction.\n"
+            "- `findings`: Concise bullet points of discrepancies or quality issues.\n"
+            "- `tampering_flags`: Any authenticity or format warnings.\n"
+            "- `recommendation`: Must align with triage ('approve' for green, 'manual_review' for yellow, 'needs_correction' for red).\n"
+            "- `suggested_polite_remark`: A polite 1-2 sentence message to the customer starting with 'Hello!' explaining "
+            "exactly what to update or re-upload in their Customer Account (empty string if recommendation is 'approve'). "
+            "Never repeat raw ID numbers."
         )
 
-        raw = _openai_client.complete(
+        meta = _openai_client.complete_with_meta(
             parts=[{"text": json.dumps(masked_payload, ensure_ascii=False)}],
             expect_json=True,
-            max_tokens=350,
+            max_tokens=420,
             response_schema=self._REASONING_SCHEMA,
             system_instruction=system_prompt,
             effort_override="low",
+            model_override=_openai_client.configured_model(),
+            previous_response_id=previous_response_id,
+            store_response=bool(previous_response_id),
         )
+        raw = meta.get("text") or ""
         if not raw:
             return base_guidance
 
         try:
             parsed = self._parse_json_text(raw)
             polite = self._sanitize_plain_text(str(parsed.get("suggested_polite_remark") or ""))
+            q_sum = self._sanitize_plain_text(str(parsed.get("queue_summary") or ""))
+            fin_rec = self._sanitize_plain_text(str(parsed.get("final_recommendation") or ""))
+            gpt_findings = [
+                self._sanitize_plain_text(str(x))
+                for x in (parsed.get("findings") or [])
+                if str(x).strip()
+            ]
             return {
                 **base_guidance,
                 "available": True,
-                "model": _openai_client.configured_model(),
+                "model": meta.get("model") or _openai_client.configured_model(),
+                "response_id": meta.get("response_id") or "",
+                "queue_summary": q_sum or base_guidance["queue_summary"],
+                "final_recommendation": fin_rec or base_guidance["final_recommendation"],
+                "findings": base_guidance["findings"] or gpt_findings,
                 "suggested_polite_remark": (
                     polite or base_guidance["suggested_polite_remark"]
                     if base_guidance["recommendation"] != "approve" else ""
@@ -919,40 +1115,226 @@ def is_idp_available() -> bool:
     return _idp.is_configured()
 
 
-def run_idp_screening_pipeline(
-    front_bytes: bytes, back_bytes: Optional[bytes], entered: Dict[str, Any], check_id: str = ""
+def run_conditional_screening_pipeline(
+    front_bytes: bytes,
+    back_bytes: Optional[bytes],
+    entered: Dict[str, Any],
+    check_id: str = "",
+    previous_response_id: str = "",
+    stage_callback=None,
 ) -> Dict[str, Any]:
-    """Execute Steps 2 (IDP Extraction), 3 (NLP Validation), and 4 (GPT-5.4 Reasoning)."""
-    # Step 2: IDP Extraction (Azure AI Document Intelligence / Nanonets)
-    print(f"screening check={check_id} stage=idp started", flush=True)
-    ocr_payload = _idp.extract_id_document(
+    """Execute the 3-route conditional screening architecture:
+    1. Stage 1 Image Quality Assessment Gate (`gpt-6.2-sol`).
+    2. Conditional Routing:
+       - GOOD: Bypass OpenCV completely; keep original ID untouched; run Azure IDP + NLP rules + GPT-5.4 summary.
+       - FIXABLE: Run targeted OpenCV enhancement only for detected defects; then Azure IDP + NLP rules + GPT-5.4 remarks.
+       - UNFIXABLE: Stop early (`NEEDS_CORRECTION`, RED triage); skip OpenCV and Azure IDP; generate clear customer remarks via GPT-5.4.
+    """
+    declared_type = str(entered.get("id_type") or "")
+    print(f"screening check={check_id} stage=quality_gate started model={_openai_client.configured_quality_model()}", flush=True)
+    quality_report = _quality.assess_document_uploads(
         front_bytes,
         back_bytes=back_bytes,
-        declared_id_type=str(entered.get("id_type") or ""),
+        declared_id_type=declared_type,
+        previous_response_id=previous_response_id,
+    )
+    verdict = quality_report["verdict"]
+    chained_resp_id = quality_report.get("response_id") or previous_response_id
+    print(
+        f"screening check={check_id} stage=quality_gate verdict={verdict} score={quality_report.get('quality_score')}",
+        flush=True,
+    )
+
+    if callable(stage_callback):
+        try:
+            stage_callback("quality_done", quality_report)
+        except Exception:
+            pass
+
+    preparation: Dict[str, Any] = {
+        "route": verdict,
+        "front": {"bypassed": True, "enhanced": False, "cropped": False, "applied_ops": []},
+        "back": {"bypassed": True, "enhanced": False, "cropped": False, "applied_ops": []} if back_bytes else None,
+    }
+
+    # Route C: UNFIXABLE -> Stop early without wasting OpenCV or Azure IDP calls
+    if verdict == "unfixable":
+        print(f"screening check={check_id} stage=early_stop reason=unfixable_quality", flush=True)
+        empty_ocr = {
+            "available": True,
+            "early_stopped": True,
+            "provider": "quality_gate_early_stop",
+            "is_valid_government_id": False,
+            "id_type_matches_declared": True,
+            "detected_document_type": "",
+            "extracted_name": "",
+            "extracted_first_name": "",
+            "extracted_middle_name": "",
+            "extracted_last_name": "",
+            "extracted_birth_date": "",
+            "extracted_expiry_date": "",
+            "extracted_id_number": "",
+            "alternate_id_numbers": [],
+            "unreadable_or_occluded_fields": ["name", "birth_date", "id_number"],
+            "confidence": "low",
+            "field_confidences": {},
+            "authenticity_flags": list(quality_report.get("issues") or ["Unfixable image quality."]),
+            "lines": [],
+            "front_readable": quality_report["front"]["verdict"] != "unfixable",
+            "back_readable": (
+                True
+                if not back_bytes
+                else (quality_report.get("back") or {}).get("verdict") != "unfixable"
+            ),
+        }
+        comparisons = [
+            {
+                "key": "name",
+                "field": "Full Name",
+                "entered": entered.get("full_name") or "",
+                "found_on_id": "",
+                "status": "unverified",
+                "matched": False,
+                "note": "Skipped OCR because the uploaded ID photo failed the image quality gate.",
+            },
+            {
+                "key": "birth_date",
+                "field": "Birth Date",
+                "entered": entered.get("birth_date") or "",
+                "found_on_id": "",
+                "status": "unverified",
+                "matched": False,
+                "note": "Skipped OCR because the uploaded ID photo failed the image quality gate.",
+            },
+            {
+                "key": "id_number",
+                "field": "ID Number",
+                "entered": entered.get("id_number") or "",
+                "found_on_id": "",
+                "status": "unverified",
+                "matched": False,
+                "note": "Skipped OCR because the uploaded ID photo failed the image quality gate.",
+            },
+        ]
+        nlp_rules = {
+            "age_eligible": True,
+            "age_years": None,
+            "age_note": "",
+            "is_expired": False,
+            "expiry_date": "",
+            "expiry_note": "",
+            "id_format_valid": True,
+            "id_format_note": "",
+            "mrz_valid": True,
+            "mrz_note": "",
+        }
+        ai_reasoning = _ai_service.reason_over_validated_json(
+            entered,
+            comparisons,
+            nlp_rules,
+            empty_ocr,
+            quality_report=quality_report,
+            previous_response_id=chained_resp_id,
+        )
+        return {
+            "route": "unfixable",
+            "triage": "red",
+            "ocr": empty_ocr,
+            "comparisons": comparisons,
+            "nlp_validation": nlp_rules,
+            "ai": ai_reasoning,
+            "quality": {
+                "available": True,
+                "verdict": "unfixable",
+                "quality_score": quality_report.get("quality_score", 0),
+                "model": quality_report.get("model", _openai_client.configured_quality_model()),
+                "duplicate_front_back": quality_report.get("duplicate_front_back", False),
+                "front_sha256": quality_report.get("front_sha256", ""),
+                "back_sha256": quality_report.get("back_sha256", ""),
+                "preprocessed": preparation,
+                "issues": quality_report.get("issues") or [],
+            },
+            "openai_response_id": ai_reasoning.get("response_id") or chained_resp_id,
+        }
+
+    # Route A (GOOD -> bypass OpenCV completely) vs Route B (FIXABLE -> targeted OpenCV only)
+    idp_front_bytes = front_bytes
+    idp_back_bytes = back_bytes
+
+    if verdict == "fixable":
+        front_ops = quality_report["front"].get("targeted_opencv_ops") or []
+        if front_ops:
+            idp_front_bytes, preparation["front"] = _preprocess.enhance_targeted(front_bytes, front_ops)
+        if back_bytes and quality_report.get("back"):
+            back_ops = quality_report["back"].get("targeted_opencv_ops") or []
+            if back_ops:
+                idp_back_bytes, preparation["back"] = _preprocess.enhance_targeted(back_bytes, back_ops)
+        print(
+            f"screening check={check_id} stage=opencv_targeted front_ops={preparation['front'].get('applied_ops')}",
+            flush=True,
+        )
+    else:
+        print(f"screening check={check_id} stage=opencv_bypassed verdict=good", flush=True)
+
+    # Stage 2: Azure Document Intelligence IDP Extraction
+    print(f"screening check={check_id} stage=idp started", flush=True)
+    ocr_payload = _idp.extract_id_document(
+        idp_front_bytes,
+        back_bytes=idp_back_bytes,
+        declared_id_type=declared_type,
     )
     print(f"screening check={check_id} stage=idp available={bool(ocr_payload.get('available'))}", flush=True)
-    # Step 3: Lightweight Regex / NLP Validation (Field comparisons + Checksum, Age 18+, Expiration)
+
+    # Stage 3: Deterministic NLP & Field Comparison Rules
     comparisons = _matcher.compare(entered, ocr_payload)
     nlp_rules = _matcher.validate_nlp_rules(entered, ocr_payload)
     print(f"screening check={check_id} stage=validation complete", flush=True)
-    # Step 4: LLM Reasoning (GPT-5.4 over masked JSON)
-    if ocr_payload.get("available"):
-        print(f"screening check={check_id} stage=llm checking", flush=True)
-    ai_reasoning = (_ai_service.reason_over_validated_json(
-        entered, comparisons, nlp_rules, ocr_payload
-    ) if ocr_payload.get("available") else {})
-    print(f"screening check={check_id} stage=llm completed={bool(ai_reasoning.get('available'))}", flush=True)
+
+    # Stage 4: GPT-5.4 Remarks, Queue Summary & Final Recommendation
+    ai_reasoning = (
+        _ai_service.reason_over_validated_json(
+            entered,
+            comparisons,
+            nlp_rules,
+            ocr_payload,
+            quality_report=quality_report,
+            previous_response_id=chained_resp_id,
+        )
+        if ocr_payload.get("available")
+        else _ai_service._build_rule_guidance(comparisons, nlp_rules, ocr_payload, quality_report)
+    )
+    print(
+        f"screening check={check_id} stage=llm completed={bool(ai_reasoning.get('available'))} triage={ai_reasoning.get('triage')}",
+        flush=True,
+    )
+
     return {
+        "route": verdict,
+        "triage": ai_reasoning.get("triage", "yellow"),
         "ocr": ocr_payload,
         "comparisons": comparisons,
         "nlp_validation": nlp_rules,
         "ai": ai_reasoning,
         "quality": {
             "available": True,
-            "preprocessed": "browser_opencv",
-            "issues": [],
+            "verdict": verdict,
+            "quality_score": quality_report.get("quality_score", 85),
+            "model": quality_report.get("model", _openai_client.configured_quality_model()),
+            "duplicate_front_back": quality_report.get("duplicate_front_back", False),
+            "front_sha256": quality_report.get("front_sha256", ""),
+            "back_sha256": quality_report.get("back_sha256", ""),
+            "preprocessed": preparation,
+            "issues": [] if verdict == "good" else (quality_report.get("issues") or []),
         },
+        "openai_response_id": ai_reasoning.get("response_id") or chained_resp_id,
     }
+
+
+def run_idp_screening_pipeline(
+    front_bytes: bytes, back_bytes: Optional[bytes], entered: Dict[str, Any], check_id: str = ""
+) -> Dict[str, Any]:
+    """Alias to the conditional screening pipeline so all callers use the new architecture."""
+    return run_conditional_screening_pipeline(front_bytes, back_bytes, entered, check_id=check_id)
 
 
 def write_polite_remark(raw_remark: str, chosen_field: str = "") -> dict:
