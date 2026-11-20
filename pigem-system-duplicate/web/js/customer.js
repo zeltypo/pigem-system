@@ -14,11 +14,18 @@
  *     AI screening (`resubmission: true`) upon saving.
  * ============================================================================ */
 
-function previousCustomerSubmissions(latest) {
+function previousCustomerSubmissions(latest, currentScreening) {
   if (!latest || !latest.submitted_at) return [];
   var history = Array.isArray(latest.previous_submissions) ? latest.previous_submissions : [];
   var snapshot = Object.assign({}, latest);
   delete snapshot.previous_submissions;
+  if (!snapshot.screening_findings && currentScreening) {
+    snapshot.screening_findings =
+      currentScreening.correction_findings ||
+      currentScreening.background_findings ||
+      (currentScreening.browser_check && currentScreening.browser_check.findings) ||
+      null;
+  }
   return history.concat(snapshot);
 }
 
@@ -765,20 +772,43 @@ async function submitCustomerCorrection(appId) {
     btn.disabled = true;
     btn.textContent = "Submitting Update...";
 
-    var orig = app.original_submission || app.original_copy || {
+    var existingOrig = (app.original_submission && app.original_submission.full_name)
+      ? app.original_submission
+      : ((app.original_copy && app.original_copy.full_name) ? app.original_copy : null);
+    var orig = existingOrig ? Object.assign({}, existingOrig) : {
       full_name: app.full_name,
       first_name: app.first_name,
       middle_name: app.middle_name,
       last_name: app.last_name,
       birth_date: app.birth_date,
       email: app.email,
+      contact_email: app.email,
       phone: app.phone,
       id_type: app.id_type,
       id_number: app.id_number,
+      house_no: app.house_no,
+      building_name: app.building_name,
       street: app.street,
-      id_image_url: app.id_image_url,
-      id_back_image_url: app.id_back_image_url || app.id_back_path || ""
+      subdivision: app.subdivision,
+      barangay: app.barangay,
+      city: app.city,
+      province: app.province,
+      landmark: app.landmark,
+      latitude: app.latitude != null ? app.latitude : app.lat,
+      longitude: app.longitude != null ? app.longitude : app.lng,
+      id_image_url: app.id_image_url || app.id_front_path || "",
+      id_front_path: app.id_front_path || app.id_image_url || "",
+      id_back_image_url: app.id_back_image_url || app.id_back_path || "",
+      id_back_path: app.id_back_path || app.id_back_image_url || "",
+      submitted_at: app.created_at
     };
+    if (!orig.screening_findings && app.screening && !app.has_correction) {
+      orig.screening_findings =
+        app.screening.correction_findings ||
+        app.screening.background_findings ||
+        (app.screening.browser_check && app.screening.browser_check.findings) ||
+        null;
+    }
 
     var idUrl = app.id_image_url || app.id_front_path;
     var idBackUrl = app.id_back_image_url || app.id_back_path || "";
@@ -792,7 +822,7 @@ async function submitCustomerCorrection(appId) {
     }
 
     var correctedSnapshot = {
-      previous_submissions: previousCustomerSubmissions(app.corrected_copy),
+      previous_submissions: previousCustomerSubmissions(app.corrected_copy, app.screening),
       requested_fields: Array.isArray(app.correction_fields) ? app.correction_fields : [],
       reviewed_findings: (app.screening && app.screening.correction_findings) || null,
       id_type: app.id_type,
@@ -804,9 +834,20 @@ async function submitCustomerCorrection(appId) {
       contact_email: newEmail,
       phone: phone,
       id_number: idNo,
+      house_no: app.house_no,
+      building_name: app.building_name,
       street: street,
+      subdivision: app.subdivision,
+      barangay: app.barangay,
+      city: app.city,
+      province: app.province,
+      landmark: app.landmark,
+      latitude: app.latitude != null ? app.latitude : app.lat,
+      longitude: app.longitude != null ? app.longitude : app.lng,
       id_image_url: idUrl,
+      id_front_path: idUrl,
       id_back_image_url: idBackUrl,
+      id_back_path: idBackUrl,
       changed_fields: changedList,
       submitted_at: new Date().toISOString()
     };

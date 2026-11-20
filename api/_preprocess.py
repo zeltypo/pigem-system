@@ -75,21 +75,30 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
         contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:35]:
             area = float(cv2.contourArea(contour))
-            if area < frame_area * 0.05 or area > frame_area * 0.94:
+            if area < frame_area * 0.05 or area > frame_area * 0.95:
                 continue
             hull = cv2.convexHull(contour)
             for src in (contour, hull):
                 perimeter = cv2.arcLength(src, True)
                 if perimeter <= 0:
                     continue
+                candidate_quads = []
                 for tol in (0.015, 0.022, 0.028, 0.038, 0.05, 0.065):
                     quad = cv2.approxPolyDP(src, tol * perimeter, True)
-                    if len(quad) != 4 or not cv2.isContourConvex(quad):
-                        continue
+                    if len(quad) == 4 and cv2.isContourConvex(quad):
+                        candidate_quads.append(quad)
+                # Fallback for rounded-corner Philippine IDs using minAreaRect when contour is rectangular
+                if not candidate_quads and 0.06 * frame_area <= area <= 0.90 * frame_area:
+                    rect = cv2.minAreaRect(src)
+                    rw, rh = rect[1]
+                    if rw > 70 and rh > 70 and (area / float(rw * rh)) >= 0.78:
+                        box = cv2.boxPoints(rect).reshape(4, 1, 2).astype(np.float32)
+                        candidate_quads.append(box)
+                for quad in candidate_quads:
                     ordered = _order_quad_points(quad)
                     if ordered is None:
                         continue
-                    if np.any(ordered < 2) or np.any(ordered[:, 0] >= width - 2) or np.any(ordered[:, 1] >= height - 2):
+                    if np.any(ordered < 1) or np.any(ordered[:, 0] >= width - 1) or np.any(ordered[:, 1] >= height - 1):
                         continue
                     tl, tr, br, bl = ordered
                     top_w = float(np.linalg.norm(tr - tl))

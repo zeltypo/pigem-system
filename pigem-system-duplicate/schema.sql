@@ -740,7 +740,7 @@ BEGIN
   WHERE id = app_id
   FOR UPDATE;
 
-  IF NOT FOUND OR app.status NOT IN ('Pending Review', 'Needs Correction') THEN
+  IF NOT FOUND OR app.status NOT IN ('Pending Review', 'Under Agent Review', 'Needs Correction') THEN
     RETURN false;
   END IF;
 
@@ -752,7 +752,7 @@ BEGIN
     c_bdate   := COALESCE(app.corrected_copy->>'birth_date', app.birth_date);
     c_idnum   := COALESCE(app.corrected_copy->>'id_number', app.id_number);
     c_idtype  := COALESCE(app.corrected_copy->>'id_type', app.id_type);
-    rev       := COALESCE(app.corrected_copy->>'resubmitted_at', app.updated_at::text, app.created_at::text);
+    rev       := COALESCE(app.corrected_copy->>'submitted_at', app.corrected_copy->>'resubmitted_at', app.updated_at::text, app.created_at::text);
   ELSE
     front_url := COALESCE(app.id_image_url, app.id_front_path, '');
     back_url  := COALESCE(app.id_back_image_url, app.id_back_path, '');

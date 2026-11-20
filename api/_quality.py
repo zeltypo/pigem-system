@@ -147,7 +147,7 @@ def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
 
     quad = _preprocess.detect_card_quad(sample)
     card_ratio = float(quad["area_ratio"]) if quad else 1.0
-    has_bg = bool(quad and 0.08 <= card_ratio <= 0.86)
+    has_bg = bool(quad and 0.05 <= card_ratio <= 0.93)
     is_portrait = bool(h > w * 1.18)
 
     return {
@@ -306,30 +306,27 @@ def assess_single_side(
                 if metrics["blur_score"] < 14.0 and "severe_blur" not in issues:
                     issues.insert(0, "severe_blur")
             else:
-                # 2) If OpenCV detected a physical ID boundary on a table/background, ensure deskew_crop runs!
-                #    Never force rotate_90_cw just because an image is portrait—only rotate when printed text is sideways.
+                # 2) Always run deskew_crop when a card boundary is detected, and ensure OpenCV
+                #    contrast/sharpness enhancement runs on the working copy for Latest Copy & OCR.
                 if metrics.get("has_crop_background"):
                     if "deskew_crop" not in ops:
                         ops.insert(0, "deskew_crop")
                     if "tilted_or_wide_background" not in issues:
                         issues.append("tilted_or_wide_background")
                     verdict = "fixable"
+                elif "deskew_crop" not in ops:
+                    ops.insert(0, "deskew_crop")
 
-                if verdict == "good" and not ops:
-                    ops = []
-                elif verdict == "fixable" and not ops:
-                    if "too_dark" in issues or metrics["brightness"] < 75.0:
+                if "too_dark" in issues or metrics["brightness"] < 105.0:
+                    if "brighten" not in ops:
                         ops.append("brighten")
-                    if "low_contrast" in issues:
-                        ops.append("clahe")
-                    if "mild_glare" in issues or metrics["glare_pct"] > 18.0:
+                if "mild_glare" in issues or metrics["glare_pct"] > 10.0:
+                    if "deglare" not in ops:
                         ops.append("deglare")
-                    if "tilted_or_wide_background" in issues:
-                        ops.append("deskew_crop")
-                    if "mild_blur" in issues or metrics["blur_score"] < 55.0:
-                        ops.append("sharpen")
-                    if not ops:
-                        verdict = "good"
+                if "clahe" not in ops:
+                    ops.append("clahe")
+                if "sharpen" not in ops:
+                    ops.append("sharpen")
 
             return {
                 "side": side_label,
@@ -381,6 +378,13 @@ def assess_single_side(
             issues.append("mild_glare")
             ops.append("deglare")
 
+        if "deskew_crop" not in ops:
+            ops.insert(0, "deskew_crop")
+        if "clahe" not in ops:
+            ops.append("clahe")
+        if "sharpen" not in ops:
+            ops.append("sharpen")
+
     summary = ""
     if verdict == "unfixable":
         summary = f"The uploaded {side_label.lower()} ID photo is too blurry or unclear to read the printed text."
@@ -395,7 +399,7 @@ def assess_single_side(
         "side_matches_expected": True,
         "rotation_degrees": 0,
         "issues": issues,
-        "targeted_opencv_ops": ops if verdict == "fixable" else [],
+        "targeted_opencv_ops": ops if verdict != "unfixable" else [],
         "customer_issue_summary": summary,
         "metrics": metrics,
         "model": used_model,

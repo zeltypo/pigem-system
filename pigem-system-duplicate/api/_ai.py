@@ -1289,17 +1289,15 @@ def run_conditional_screening_pipeline(
     idp_back_bytes = back_bytes
 
     front_ops = list(quality_report["front"].get("targeted_opencv_ops") or [])
-    if not front_ops and (quality_report["front"].get("metrics") or {}).get("has_crop_background"):
+    if not front_ops:
         front_ops = ["deskew_crop", "clahe", "sharpen"]
-    if front_ops:
-        idp_front_bytes, preparation["front"] = _preprocess.enhance_targeted(front_bytes, front_ops)
+    idp_front_bytes, preparation["front"] = _preprocess.enhance_targeted(front_bytes, front_ops)
 
     if back_bytes and quality_report.get("back"):
         back_ops = list(quality_report["back"].get("targeted_opencv_ops") or [])
-        if not back_ops and ((quality_report["back"].get("metrics") or {}).get("has_crop_background") or preparation["front"].get("cropped")):
+        if not back_ops:
             back_ops = ["deskew_crop", "clahe", "sharpen"]
-        if back_ops:
-            idp_back_bytes, preparation["back"] = _preprocess.enhance_targeted(back_bytes, back_ops)
+        idp_back_bytes, preparation["back"] = _preprocess.enhance_targeted(back_bytes, back_ops)
 
     print(
         f"screening check={check_id} stage=opencv front_ops={preparation['front'].get('applied_ops')} back_ops={(preparation.get('back') or {}).get('applied_ops')}",

@@ -72,7 +72,14 @@ def _get_application_row(app_id: str) -> Optional[Dict[str, Any]]:
         resp = httpx.get(
             url,
             headers=_rest_headers(),
-            params={"id": f"eq.{app_id}", "select": "id,ref_no,reference_no,full_name,email,status,screening,corrected_copy,ai_log"},
+            params={
+                "id": f"eq.{app_id}",
+                "select": (
+                    "id,ref_no,reference_no,full_name,birth_date,id_number,id_type,"
+                    "id_image_url,id_front_path,id_back_image_url,id_back_path,"
+                    "email,status,screening,corrected_copy,ai_log,created_at,updated_at"
+                ),
+            },
             timeout=10,
         )
         if resp.status_code == 200:
@@ -82,6 +89,49 @@ def _get_application_row(app_id: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
     return None
+
+
+def _find_app_id_by_front_url(front_url: str) -> str:
+    if not front_url or not enabled():
+        return ""
+    try:
+        url = os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1/applications"
+        resp = httpx.get(
+            url,
+            headers=_rest_headers(),
+            params={
+                "or": f"(id_image_url.eq.{front_url},id_front_path.eq.{front_url})",
+                "select": "id",
+                "order": "updated_at.desc",
+                "limit": "1",
+            },
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            rows = resp.json()
+            if isinstance(rows, list) and rows:
+                return str(rows[0].get("id") or "")
+    except Exception:
+        pass
+    return ""
+
+
+def _mark_manual_review_fallback(app_id: str, reason: str = "") -> None:
+    if not app_id or not enabled():
+        return
+    row = _get_application_row(app_id)
+    scr = dict((row.get("screening") or {}) if isinstance(row, dict) else {})
+    msg = reason or "Automated screening unavailable — switched to Manual Agent Review. Inspect the ID photos and details manually."
+    scr.update({
+        "state": "manual_fallback",
+        "background_state": "failed",
+        "manual_fallback": True,
+        "phase": "Manual Agent Review (Fallback Active)",
+        "summary": msg,
+        "final_recommendation": msg,
+        "eta_seconds": 0,
+    })
+    _patch_application_row(app_id, {"screening": scr})
 
 
 def _patch_application_row(app_id: str, patch_body: Dict[str, Any]) -> bool:
@@ -280,10 +330,15 @@ def _apply_screening_outcome_to_application(
     )
     target_fields = built_findings.get("targetFields") or ["id_photo"]
 
+    corr = latest_row.get("corrected_copy") if isinstance(latest_row.get("corrected_copy"), dict) else None
+    revision_stamp = str((corr.get("submitted_at") or corr.get("resubmitted_at")) if corr else (latest_row.get("created_at") or ""))
+
     scr.update({
         "state": "completed",
         "background_state": "completed",
+        "background_revision": revision_stamp,
         "background_findings": built_findings,
+        "manual_fallback": False,
         "triage": triage,
         "route": built_findings.get("route", "good"),
         "summary": built_findings.get("queueSummary") or "",
@@ -293,6 +348,12 @@ def _apply_screening_outcome_to_application(
         "Suggested_remark": polite_msg if triage != "green" else "",
         "openai_response_id": built_findings.get("openaiResponseId") or scr.get("openai_response_id") or "",
         "eta_seconds": 0,
+        "browser_check": {
+            "reader_version": 5,
+            "revision": revision_stamp,
+            "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "findings": built_findings,
+        },
     })
 
     ai_result_obj = {
@@ -373,6 +434,55 @@ def _apply_screening_outcome_to_application(
                 pass
 
 
+def ensure_application_screened(app_id: str) -> bool:
+    """Directly screen an application (including Needs Correction resubmissions) if the SQL queue skipped or did not complete it."""
+    if not app_id or not enabled():
+        return False
+    row = _get_application_row(app_id)
+    if not row:
+        return False
+    scr = row.get("screening") if isinstance(row.get("screening"), dict) else {}
+    corr = row.get("corrected_copy") if isinstance(row.get("corrected_copy"), dict) else None
+    current_rev = str((corr.get("submitted_at") or corr.get("resubmitted_at")) if corr else (row.get("created_at") or ""))
+
+    if (
+        scr.get("background_state") == "completed"
+        and scr.get("background_findings")
+        and (not current_rev or scr.get("background_revision") == current_rev or (scr.get("browser_check") or {}).get("revision") == current_rev)
+    ):
+        return True
+
+    front_url = str((corr.get("id_image_url") or corr.get("id_front_path")) if corr else (row.get("id_image_url") or row.get("id_front_path") or "")).strip()
+    if not front_url:
+        front_url = str(row.get("id_image_url") or row.get("id_front_path") or "").strip()
+    back_url = str((corr.get("id_back_image_url") or corr.get("id_back_path")) if corr else (row.get("id_back_image_url") or row.get("id_back_path") or "")).strip()
+    if not back_url:
+        back_url = str(row.get("id_back_image_url") or row.get("id_back_path") or "").strip()
+
+    if not front_url:
+        _mark_manual_review_fallback(app_id, "No Front ID image found — switched to Manual Agent Review.")
+        return False
+
+    payload = {
+        "front": front_url,
+        "back": back_url,
+        "full_name": str((corr.get("full_name") if corr else None) or row.get("full_name") or ""),
+        "birth_date": str((corr.get("birth_date") if corr else None) or row.get("birth_date") or ""),
+        "id_number": str((corr.get("id_number") if corr else None) or row.get("id_number") or ""),
+        "id_type": str((corr.get("id_type") if corr else None) or row.get("id_type") or ""),
+    }
+    try:
+        res = findings(payload, f"direct-{app_id[:8]}", app_id=app_id)
+        if not res:
+            _mark_manual_review_fallback(app_id)
+            return False
+        return True
+    except Exception as error:
+        print(f"screening direct app={app_id} failed={type(error).__name__}", flush=True)
+        _mark_manual_review_fallback(app_id)
+        return False
+
+
 def run_one():
     max_jobs = 1
     try:
@@ -387,11 +497,15 @@ def run_one():
             break
         payload = job.get("payload") or {}
         app_id = str(job.get("application_id") or payload.get("application_id") or "")
+        if not app_id and payload.get("front"):
+            app_id = _find_app_id_by_front_url(str(payload["front"]))
         try:
             result = findings(payload, str(job["id"]), app_id=app_id)
         except Exception as error:
             print(f"screening job={job['id']} failed={type(error).__name__}", flush=True)
             result = None
+        if result is None and app_id:
+            _mark_manual_review_fallback(app_id)
         rpc("pigem_finish_screening", {
             "job_id": job["id"],
             "job_attempt": job["attempt"],

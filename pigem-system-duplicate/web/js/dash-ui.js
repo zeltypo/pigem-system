@@ -776,29 +776,239 @@ function renderColumns(boxId, cols) {
   box.innerHTML = html;
 }
 
+var _pigemCalendarState = {};
+
+function _getPigemCalendarState(boxId, apps) {
+  var now = new Date();
+  if (!_pigemCalendarState[boxId]) {
+    _pigemCalendarState[boxId] = {
+      year: now.getFullYear(),
+      month: now.getMonth(),
+      selectedDay: now.getDate(),
+      reportMode: "monthly",
+      showTable: false,
+      apps: apps || []
+    };
+  } else if (apps) {
+    _pigemCalendarState[boxId].apps = apps;
+  }
+  var st = _pigemCalendarState[boxId];
+  var maxDay = new Date(st.year, st.month + 1, 0).getDate();
+  if (st.selectedDay > maxDay) st.selectedDay = maxDay;
+  if (st.selectedDay < 1) st.selectedDay = 1;
+  return st;
+}
+
+function changePigemCalendarMonth(boxId, delta) {
+  var st = _getPigemCalendarState(boxId);
+  var nextDate = new Date(st.year, st.month + Number(delta || 0), 1);
+  st.year = nextDate.getFullYear();
+  st.month = nextDate.getMonth();
+  var maxDay = new Date(st.year, st.month + 1, 0).getDate();
+  if (st.selectedDay > maxDay) st.selectedDay = maxDay;
+  renderCalendar(boxId, st.apps);
+}
+
+function setPigemCalendarMonth(boxId, monthVal) {
+  var st = _getPigemCalendarState(boxId);
+  var m = parseInt(monthVal, 10);
+  if (!isNaN(m) && m >= 0 && m <= 11) {
+    st.month = m;
+    var maxDay = new Date(st.year, st.month + 1, 0).getDate();
+    if (st.selectedDay > maxDay) st.selectedDay = maxDay;
+    renderCalendar(boxId, st.apps);
+  }
+}
+
+function setPigemCalendarYear(boxId, yearVal) {
+  var st = _getPigemCalendarState(boxId);
+  var y = parseInt(yearVal, 10);
+  if (!isNaN(y) && y >= 2000 && y <= 2100) {
+    st.year = y;
+    var maxDay = new Date(st.year, st.month + 1, 0).getDate();
+    if (st.selectedDay > maxDay) st.selectedDay = maxDay;
+    renderCalendar(boxId, st.apps);
+  }
+}
+
+function resetPigemCalendarToday(boxId) {
+  var st = _getPigemCalendarState(boxId);
+  var now = new Date();
+  st.year = now.getFullYear();
+  st.month = now.getMonth();
+  st.selectedDay = now.getDate();
+  st.reportMode = "daily";
+  renderCalendar(boxId, st.apps);
+}
+
+function selectPigemCalendarDay(boxId, dayNum) {
+  var st = _getPigemCalendarState(boxId);
+  st.selectedDay = Number(dayNum) || 1;
+  st.reportMode = "daily";
+  renderCalendar(boxId, st.apps);
+}
+
+function setPigemCalendarReportMode(boxId, mode) {
+  var st = _getPigemCalendarState(boxId);
+  if (["daily", "monthly", "yearly"].indexOf(mode) !== -1) {
+    st.reportMode = mode;
+    renderCalendar(boxId, st.apps);
+  }
+}
+
+function onPigemCalendarDateInput(boxId, ymd) {
+  if (!ymd) return;
+  var parts = String(ymd).split("-");
+  if (parts.length !== 3) return;
+  var st = _getPigemCalendarState(boxId);
+  st.year = parseInt(parts[0], 10) || st.year;
+  st.month = Math.max(0, Math.min(11, (parseInt(parts[1], 10) || 1) - 1));
+  st.selectedDay = parseInt(parts[2], 10) || 1;
+  st.reportMode = "daily";
+  renderCalendar(boxId, st.apps);
+}
+
+function togglePigemCalendarReportTable(boxId) {
+  var st = _getPigemCalendarState(boxId);
+  st.showTable = !st.showTable;
+  renderCalendar(boxId, st.apps);
+}
+
+function _buildPigemCalendarReportPayload(boxId) {
+  var st = _getPigemCalendarState(boxId);
+  var monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var list = Array.isArray(st.apps) ? st.apps : [];
+  var mode = st.reportMode || "monthly";
+  var ymdStr = st.year + "-" + String(st.month + 1).padStart(2, "0") + "-" + String(st.selectedDay).padStart(2, "0");
+
+  var matched = list.filter(function (a) {
+    if (!a || !a.created_at) return false;
+    var d = new Date(a.created_at);
+    if (isNaN(d.getTime())) return false;
+    if (mode === "daily") {
+      return d.getFullYear() === st.year && d.getMonth() === st.month && d.getDate() === st.selectedDay;
+    }
+    if (mode === "monthly") {
+      return d.getFullYear() === st.year && d.getMonth() === st.month;
+    }
+    if (mode === "yearly") {
+      return d.getFullYear() === st.year;
+    }
+    return true;
+  });
+
+  var label = mode === "daily"
+    ? ("Daily Report — " + monthNames[st.month] + " " + st.selectedDay + ", " + st.year + " (" + ymdStr + ")")
+    : (mode === "monthly"
+      ? ("Monthly Report — " + monthNames[st.month] + " " + st.year)
+      : ("Yearly Report — " + st.year));
+
+  var cntPend = matched.filter(function (a) { return a.status === "Pending Review" || a.status === "Under Agent Review"; }).length;
+  var cntEnc  = matched.filter(function (a) { return a.status === "Encoding"; }).length;
+  var cntFix  = matched.filter(function (a) { return a.status === "Needs Correction"; }).length;
+  var cntApp  = matched.filter(function (a) { return a.status === "Approved" || a.status === "Submitted to Provider" || a.status === "Installed"; }).length;
+  var cntRej  = matched.filter(function (a) { return a.status === "Rejected"; }).length;
+
+  var slices = [
+    { label: "Pending / Review", value: cntPend, color: "#2563eb" },
+    { label: "Encoding", value: cntEnc, color: "#0284c7" },
+    { label: "Needs Correction", value: cntFix, color: "#d97706" },
+    { label: "Approved", value: cntApp, color: "#15803d" },
+    { label: "Rejected", value: cntRej, color: "#dc2626" }
+  ];
+
+  var columns = ["Reference No.", "Applicant Name", "Plan", "City", "Assigned Agent", "Status", "Submitted At"];
+  var rows = matched.map(function (a) {
+    return [
+      a.reference_no || a.ref_no || "-",
+      a.full_name || "-",
+      a.plan_name || "-",
+      a.city || "-",
+      a.assigned_agent || "Unassigned",
+      a.status || "-",
+      typeof formatDate === "function" ? formatDate(a.created_at) : (a.created_at || "-")
+    ];
+  });
+
+  var fileSuffix = mode === "daily"
+    ? ymdStr
+    : (mode === "monthly" ? (st.year + "-" + String(st.month + 1).padStart(2, "0")) : String(st.year));
+
+  return {
+    title: "Calendar Applications Report (" + mode.charAt(0).toUpperCase() + mode.slice(1) + ")",
+    timeframeLabel: label,
+    mode: mode,
+    ymdStr: ymdStr,
+    matched: matched,
+    counts: { total: matched.length, pending: cntPend, encoding: cntEnc, correction: cntFix, approved: cntApp, rejected: cntRej },
+    slices: slices,
+    columns: columns,
+    rows: rows,
+    fileBase: "PIGEM-calendar-" + mode + "-" + fileSuffix
+  };
+}
+
+function exportPigemCalendarReport(boxId, action) {
+  var payload = _buildPigemCalendarReportPayload(boxId);
+  if (action === "csv") {
+    exportReportToCsv(payload.columns, payload.rows, payload.fileBase + ".csv");
+    return;
+  }
+  if (action === "print") {
+    exportDashboardReport(payload.title, payload.timeframeLabel, payload.slices, payload.columns, payload.rows, payload.fileBase + ".pdf", true);
+    return;
+  }
+  exportDashboardReport(payload.title, payload.timeframeLabel, payload.slices, payload.columns, payload.rows, payload.fileBase + ".pdf", false);
+}
+
 function renderCalendar(boxId, apps) {
   var box = document.getElementById(boxId);
   if (!box) return;
+  var st = _getPigemCalendarState(boxId, apps);
   var now = new Date();
-  var year = now.getFullYear();
-  var month = now.getMonth();
+  var year = st.year;
+  var month = st.month;
   var monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   var firstDay = new Date(year, month, 1).getDay();
   var daysInMonth = new Date(year, month + 1, 0).getDate();
 
   var byDay = {};
-  var list = apps || [];
+  var list = st.apps || [];
+  var minYear = Math.min(2024, now.getFullYear() - 2, year);
+  var maxYear = Math.max(now.getFullYear() + 2, year);
   for (var i = 0; i < list.length; i++) {
     var d = new Date(list[i].created_at);
-    if (!isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() === month) {
-      var dayNum = d.getDate();
-      byDay[dayNum] = (byDay[dayNum] || 0) + 1;
+    if (!isNaN(d.getTime())) {
+      var dy = d.getFullYear();
+      if (dy < minYear) minYear = dy;
+      if (dy > maxYear) maxYear = dy;
+      if (dy === year && d.getMonth() === month) {
+        var dayNum = d.getDate();
+        byDay[dayNum] = (byDay[dayNum] || 0) + 1;
+      }
     }
   }
 
-  var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
-    '<b>' + monthNames[month] + ' ' + year + '</b>' +
-    '<span class="muted" style="font-size:12px">Today: ' + monthNames[month] + ' ' + now.getDate() + '</span>' +
+  var safeBoxId = escapeHtml(boxId);
+  var monthOpts = "";
+  for (var m = 0; m < 12; m++) {
+    monthOpts += '<option value="' + m + '"' + (m === month ? " selected" : "") + '>' + monthNames[m] + '</option>';
+  }
+  var yearOpts = "";
+  for (var y = minYear; y <= maxYear; y++) {
+    yearOpts += '<option value="' + y + '"' + (y === year ? " selected" : "") + '>' + y + '</option>';
+  }
+
+  var html =
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+        '<button type="button" class="btn btn-outline btn-sm" style="padding:4px 9px;font-weight:700" title="Previous Month" onclick="changePigemCalendarMonth(\'' + safeBoxId + '\', -1)">&larr; Prev</button>' +
+        '<select aria-label="Select Month" style="padding:5px 8px;border-radius:8px;border:1px solid var(--line);font-weight:700;background:var(--card);color:var(--text)" onchange="setPigemCalendarMonth(\'' + safeBoxId + '\', this.value)">' + monthOpts + '</select>' +
+        '<select aria-label="Select Year" style="padding:5px 8px;border-radius:8px;border:1px solid var(--line);font-weight:700;background:var(--card);color:var(--text)" onchange="setPigemCalendarYear(\'' + safeBoxId + '\', this.value)">' + yearOpts + '</select>' +
+        '<button type="button" class="btn btn-outline btn-sm" style="padding:4px 9px;font-weight:700" title="Next Month" onclick="changePigemCalendarMonth(\'' + safeBoxId + '\', 1)">Next &rarr;</button>' +
+        '<button type="button" class="btn btn-outline btn-sm" style="padding:4px 9px;font-size:11.5px" onclick="resetPigemCalendarToday(\'' + safeBoxId + '\')">Today</button>' +
+      '</div>' +
+      '<span class="muted" style="font-size:12px">Today: ' + monthNames[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear() + '</span>' +
     '</div>';
 
   html += '<div class="calendar">';
@@ -810,13 +1020,71 @@ function renderCalendar(boxId, apps) {
     html += '<div class="day" style="opacity:0.35"></div>';
   }
   for (var day = 1; day <= daysInMonth; day++) {
-    var isToday = day === now.getDate();
+    var isToday = (year === now.getFullYear() && month === now.getMonth() && day === now.getDate());
+    var isSelected = (day === st.selectedDay);
     var count = byDay[day] || 0;
-    html += '<div class="day' + (isToday ? ' today' : '') + '">' +
+    var selStyle = isSelected
+      ? "cursor:pointer;outline:2px solid #c8102e;background:rgba(200,16,46,0.07);"
+      : "cursor:pointer;";
+    html += '<div class="day' + (isToday ? ' today' : '') + '" style="' + selStyle + '" title="Click to view Daily Report for ' + monthNames[month] + ' ' + day + ', ' + year + '" onclick="selectPigemCalendarDay(\'' + safeBoxId + '\', ' + day + ')">' +
       '<b>' + day + '</b>' +
       (count > 0 ? '<div class="dot">' + count + ' app' + (count > 1 ? 's' : '') + '</div>' : '') +
       '</div>';
   }
+  html += '</div>';
+
+  var rep = _buildPigemCalendarReportPayload(boxId);
+  var mode = rep.mode;
+
+  html +=
+    '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">' +
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+          '<b style="font-size:13px">Calendar Application Report:</b>' +
+          '<button type="button" class="btn btn-sm ' + (mode === "daily" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px;font-size:12px" onclick="setPigemCalendarReportMode(\'' + safeBoxId + '\', \'daily\')">Daily</button>' +
+          '<button type="button" class="btn btn-sm ' + (mode === "monthly" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px;font-size:12px" onclick="setPigemCalendarReportMode(\'' + safeBoxId + '\', \'monthly\')">Monthly</button>' +
+          '<button type="button" class="btn btn-sm ' + (mode === "yearly" ? "btn-red" : "btn-outline") + '" style="padding:3px 10px;font-size:12px" onclick="setPigemCalendarReportMode(\'' + safeBoxId + '\', \'yearly\')">Yearly</button>' +
+          (mode === "daily"
+            ? '<input type="date" aria-label="Select exact day" value="' + escapeHtml(rep.ymdStr) + '" style="padding:3px 8px;border-radius:6px;border:1px solid var(--line);font-size:12px" onchange="onPigemCalendarDateInput(\'' + safeBoxId + '\', this.value)" />'
+            : '') +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+          '<button type="button" class="btn btn-outline btn-sm" style="padding:3px 9px;font-size:11.5px" onclick="togglePigemCalendarReportTable(\'' + safeBoxId + '\')">' + (st.showTable ? "Hide Table" : "View Table (" + rep.counts.total + ")") + '</button>' +
+          '<button type="button" class="btn btn-outline btn-sm" style="padding:3px 9px;font-size:11.5px" onclick="exportPigemCalendarReport(\'' + safeBoxId + '\', \'csv\')">Export CSV</button>' +
+          '<button type="button" class="btn btn-outline btn-sm" style="padding:3px 9px;font-size:11.5px" onclick="exportPigemCalendarReport(\'' + safeBoxId + '\', \'print\')">Print</button>' +
+          '<button type="button" class="btn btn-red btn-sm" style="padding:3px 10px;font-size:11.5px" onclick="exportPigemCalendarReport(\'' + safeBoxId + '\', \'pdf\')">Download PDF Report</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="small" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:var(--soft);border:1px solid var(--line)">' +
+        '<b>' + escapeHtml(rep.timeframeLabel) + ':</b>' +
+        '<span class="badge badge-gray">Total: ' + rep.counts.total + '</span>' +
+        '<span class="badge badge-blue">Pending/Review: ' + rep.counts.pending + '</span>' +
+        '<span class="badge badge-blue">Encoding: ' + rep.counts.encoding + '</span>' +
+        '<span class="badge badge-yellow">Needs Correction: ' + rep.counts.correction + '</span>' +
+        '<span class="badge badge-green">Approved: ' + rep.counts.approved + '</span>' +
+        '<span class="badge badge-red">Rejected: ' + rep.counts.rejected + '</span>' +
+      '</div>';
+
+  if (st.showTable) {
+    html += '<div class="table-wrap" style="margin-top:8px;max-height:240px;overflow:auto"><table><thead><tr>';
+    for (var c = 0; c < rep.columns.length; c++) {
+      html += '<th>' + escapeHtml(rep.columns[c]) + '</th>';
+    }
+    html += '</tr></thead><tbody>';
+    if (!rep.rows.length) {
+      html += '<tr><td colspan="' + rep.columns.length + '" class="muted" style="text-align:center;padding:12px">No applications recorded for this ' + escapeHtml(mode) + ' period.</td></tr>';
+    } else {
+      for (var r = 0; r < rep.rows.length; r++) {
+        html += '<tr>';
+        for (var k = 0; k < rep.rows[r].length; k++) {
+          html += '<td>' + (k === 0 ? '<b>' + escapeHtml(rep.rows[r][k]) + '</b>' : escapeHtml(rep.rows[r][k])) + '</td>';
+        }
+        html += '</tr>';
+      }
+    }
+    html += '</tbody></table></div>';
+  }
+
   html += '</div>';
   box.innerHTML = html;
 }

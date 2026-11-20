@@ -187,13 +187,21 @@ function onValidatorPresetChange(val) {
 }
 
 function isScreeningActiveOnApp(app) {
-  var scr = (app && app.screening) || {};
-  var bgState = scr.background_state || "";
-  if (bgState === "queued" || bgState === "running") return true;
-  if (bgState === "completed" || bgState === "failed" || scr.state === "completed") return false;
+  if (!app || !agentScreeningAvailable()) return false;
+  var scr = app.screening || {};
+  if (scr.manual_fallback || scr.state === "manual_fallback" || scr.background_state === "failed") return false;
+  if (typeof getSavedAgentFindings === "function" && getSavedAgentFindings(app)) return false;
   var check = typeof getAgentAppIdCheck === "function" ? getAgentAppIdCheck(app, true) : null;
-  if (check && !check.result) return true;
-  return ["pending_agent", "checking", "queued", "layer1_running", "layer2_running"].includes(scr.state) || visualScreeningRunningAppId === (app && app.id);
+  if (check) return !check.result;
+  var bgState = scr.background_state || "";
+  if (bgState === "queued" || bgState === "running") {
+    var stamp = (app.corrected_copy && app.corrected_copy.submitted_at) || app.updated_at || app.created_at;
+    var ageMs = stamp ? (Date.now() - new Date(stamp).getTime()) : 0;
+    if (ageMs > 25000) return false;
+    return true;
+  }
+  if (bgState === "completed" || scr.state === "completed") return false;
+  return ["pending_agent", "checking", "layer1_running", "layer2_running"].includes(scr.state) || visualScreeningRunningAppId === app.id;
 }
 
 function getScreeningEtaLabel(app) {
@@ -469,17 +477,15 @@ function getScreeningCardBadge(app) {
   }
   var scr = app.screening || {};
   var state = scr.state || "";
-  if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || state === "unavailable" || state === "paused" || scr.fallback_original_only) {
-    return '<span class="badge badge-gray">Open to check documents</span>';
+  if (!isAiEnabled() || !isScreeningServiceOnline || documentCheckUnavailable(app.id) || state === "unavailable" || state === "paused" || state === "manual_fallback" || scr.manual_fallback || scr.background_state === "failed" || scr.fallback_original_only) {
+    return '<span class="badge badge-yellow">Manual Review Fallback</span>';
   }
-  if (["pending_agent", "queued", "checking"].includes(state)) return '<span class="badge badge-blue">Waiting for Document Check</span>';
-  var eta = formatEtaLabel(scr.eta_seconds);
-
-  if (state === "queued" || state === "layer1_running") {
+  if (isScreeningActiveOnApp(app)) {
+    var eta = formatEtaLabel(scr.eta_seconds);
+    if (state === "layer2_running") {
+      return '<span class="badge badge-blue">Cropping and Verifying' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
+    }
     return '<span class="badge badge-blue">Screening in Progress' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
-  }
-  if (state === "layer2_running") {
-    return '<span class="badge badge-blue">Cropping and Verifying' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
   }
   if (scr.overall_match === false || (scr.review_recommended && app.status !== "Approved" && app.status !== "Rejected")) {
     return '<span class="badge badge-yellow">Preliminary Finding - Review Needed</span>';
@@ -504,27 +510,37 @@ function stripFalseReuploadMsg(str, dup) {
 }
 
 function agentBackgroundStatus(app) {
+  if (!agentScreeningAvailable() || app?.screening?.manual_fallback || app?.screening?.state === "manual_fallback" || app?.screening?.background_state === "failed") {
+    return "Manual Review Fallback — Automated screening is offline or unavailable. Compare the ID photos and applicant details manually below.";
+  }
   var states = {
     queued: "Stage 1 Image Quality Assessment (gpt-6.2-sol) queued — " + getScreeningEtaLabel(app) + ".",
     running: "Checking ID quality and details in the background — " + getScreeningEtaLabel(app) + ".",
-    failed: "Document check could not finish. Click Check documents to inspect the original photos."
+    failed: "Manual Review Fallback — Automated document check could not finish. Inspect the ID photos and details manually."
   };
-  return states[app?.screening?.background_state] || "No background result yet. Click Check documents to inspect the original photos.";
+  return states[app?.screening?.background_state] || "Click Check documents to inspect the ID photos and run verification.";
 }
 
 function getScreeningQuickSummary(app) {
-  if (!agentScreeningAvailable()) return "Offline";
   var duplicate = detectClientSideDuplicateId(app);
   if (duplicate.isDup) return escapeHtml(duplicate.reason);
   var saved = getSavedAgentFindings(app);
   if (saved) {
     return escapeHtml(saved.queueSummary || summarizeAgentIdFindings(saved));
   }
-  if (app && app.screening && app.screening.summary && app.screening.state === "completed") {
+  if (!agentScreeningAvailable() || app?.screening?.manual_fallback || app?.screening?.state === "manual_fallback" || app?.screening?.background_state === "failed") {
+    return "Manual Review Fallback — Automated screening is offline or unavailable. Click Check documents to review the ID photos and details manually.";
+  }
+  if (app && app.screening && app.screening.summary && app.screening.state === "completed" && !app.has_correction) {
     return escapeHtml(app.screening.summary);
   }
   var check = getAgentAppIdCheck(app, true);
-  if (check && check.result) return escapeHtml(check.result.queueSummary || summarizeAgentIdFindings(check.result));
+  if (check && check.result) {
+    if (check.result.failed) {
+      return "Manual Review Fallback — Automated check could not finish. Click Check documents to review the ID photos and details manually.";
+    }
+    return escapeHtml(check.result.queueSummary || summarizeAgentIdFindings(check.result));
+  }
   if (check || isScreeningActiveOnApp(app)) return escapeHtml(getScreeningEtaLabel(app) + "…");
   if (backgroundScreeningEnabled) return escapeHtml(agentBackgroundStatus(app));
   return app.id_image_url || app.id_front_path ? "Click Check documents to run quality assessment & verification." : "No front ID photo is available.";
@@ -704,15 +720,13 @@ function renderAgentCards() {
       '<summary aria-controls="queue-details-' + id + '"><strong>' + escapeHtml(app.full_name) + '</strong><span>' + escapeHtml(app.reference_no) + '</span></summary></details>' +
       '<div class="agent-queue-header-action">' + control + '</div></div>' +
       '<div class="agent-queue-details" id="queue-details-' + id + '">' +
-        (agentScreeningAvailable()
-          ? '<div class="agent-screening-note">' +
-              '<div class="row between" style="align-items:center; gap:8px; flex-wrap:wrap">' +
-                '<b>Screening summary</b>' +
-                '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px; font-size:11.5px; font-weight:700" data-id="' + id + '" onclick="openAppDetail(this.dataset.id, \'documents\')">Check documents &rarr;</button>' +
-              '</div>' +
-              '<div role="status" id="check-note-' + id + '" style="margin-top:4px">' + getScreeningQuickSummary(app) + '</div>' +
-            '</div>'
-          : '<p role="status">Offline</p>') +
+        '<div class="agent-screening-note">' +
+          '<div class="row between" style="align-items:center; gap:8px; flex-wrap:wrap">' +
+            '<b>' + (agentScreeningAvailable() ? 'Screening summary' : 'Manual Review Fallback') + '</b>' +
+            '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px; font-size:11.5px; font-weight:700" data-id="' + id + '" onclick="openAppDetail(this.dataset.id, \'documents\')">Check documents &rarr;</button>' +
+          '</div>' +
+          '<div role="status" id="check-note-' + id + '" style="margin-top:4px">' + getScreeningQuickSummary(app) + '</div>' +
+        '</div>' +
         '<p class="small muted">' + escapeHtml(app.plan_name || "Red Fiber Plan") + (place ? ' &bull; ' + escapeHtml(place) : '') +
           ' &bull; Submitted ' + escapeHtml(formatDate(app.created_at)) + '</p>' +
         '<div class="agent-queue-controls">' + statusBadge(app.status) + corrTrackBadge +
@@ -1040,16 +1054,34 @@ function findAgentIdCorners(gray, cv) {
         var contour = contours.get(i);
         try {
           var area = cv.contourArea(contour);
-          if (area < frameArea * 0.08 || area > frameArea * 0.96) continue;
+          if (area < frameArea * 0.05 || area > frameArea * 0.96) continue;
 
           var perimeter = cv.arcLength(contour, true);
-          for (var tolerance of [0.015, 0.022, 0.035, 0.05]) {
+          var candidateShapes = [];
+          for (var tolerance of [0.015, 0.022, 0.035, 0.05, 0.065]) {
             cv.approxPolyDP(contour, polygon, tolerance * perimeter, true);
-            if (polygon.rows !== 4 || !cv.isContourConvex(polygon)) continue;
-            var points = [];
-            for (var j = 0; j < 4; j++) points.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
-            var shape = getAgentCardShape(points, gray.cols, gray.rows);
-            if (!shape || area < shape.width * shape.height * 0.72) continue;
+            if (polygon.rows === 4 && cv.isContourConvex(polygon)) {
+              var pts = [];
+              for (var j = 0; j < 4; j++) pts.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
+              var sh = getAgentCardShape(pts, gray.cols, gray.rows);
+              if (sh) candidateShapes.push(sh);
+            }
+          }
+          if (!candidateShapes.length && area >= frameArea * 0.06 && area <= frameArea * 0.90 && typeof cv.minAreaRect === "function" && typeof cv.RotatedRect === "function" && typeof cv.RotatedRect.points === "function") {
+            try {
+              var rRect = cv.minAreaRect(contour);
+              var rw = rRect.size.width;
+              var rh = rRect.size.height;
+              if (rw > 70 && rh > 70 && (area / (rw * rh)) >= 0.78) {
+                var rPts = cv.RotatedRect.points(rRect);
+                var shRect = getAgentCardShape(rPts, gray.cols, gray.rows);
+                if (shRect) candidateShapes.push(shRect);
+              }
+            } catch (e) {}
+          }
+          for (var sIdx = 0; sIdx < candidateShapes.length; sIdx++) {
+            var shape = candidateShapes[sIdx];
+            if (area < shape.width * shape.height * 0.68) continue;
             var evidence = agentCardBoundaryEvidence(blurred, shape);
             if (evidence.support < 5) continue;
             var score = area * (0.6 + evidence.support / 12);
@@ -1058,12 +1090,12 @@ function findAgentIdCorners(gray, cv) {
             best = {
               points: shape.points.flatMap(function (point) {
                 return [
-                  Math.max(0, Math.min(gray.cols - 1, evidence.center.x + (point.x - evidence.center.x) * 1.045)),
-                  Math.max(0, Math.min(gray.rows - 1, evidence.center.y + (point.y - evidence.center.y) * 1.045))
+                  Math.max(0, Math.min(gray.cols - 1, evidence.center.x + (point.x - evidence.center.x) * 1.04)),
+                  Math.max(0, Math.min(gray.rows - 1, evidence.center.y + (point.y - evidence.center.y) * 1.04))
                 ];
               }),
-              width: Math.round(shape.width * 1.045),
-              height: Math.round(shape.height * 1.045)
+              width: Math.round(shape.width * 1.04),
+              height: Math.round(shape.height * 1.04)
             };
           }
         } finally {
@@ -1230,26 +1262,33 @@ async function showAgentPreparedPhoto(container) {
   var url = container.dataset.photo;
   if (!image || !status || !url) return;
 
+  // Original copy must ALWAYS display the untouched original upload without OpenCV modification
+  if (activeCopyMode === "original") {
+    image.src = url;
+    status.textContent = "Original uploaded photo (untouched).";
+    return;
+  }
+
   var app = findAppById(activeDetailAppId);
-  var saved = app ? getSavedAgentFindings(app) : null;
-  var check = app ? (getAgentAppIdCheck(app, true) && getAgentAppIdCheck(app, true).result) : null;
+  var saved = (app && activeCopyMode === "latest") ? getSavedAgentFindings(app) : null;
+  var check = (app && activeCopyMode === "latest") ? (getAgentAppIdCheck(app, true) && getAgentAppIdCheck(app, true).result) : null;
   var res = saved || check || null;
-  var route = (res && res.route) || (app && app.screening && app.screening.route) || "";
+  var route = (res && res.route) || (app && activeCopyMode === "latest" && app.screening && app.screening.route) || "";
 
   var sideKey = container.dataset.photoSide || ((container.textContent || "").indexOf("BACK") !== -1 ? "back" : "front");
   var prepSide = res && res.stages && res.stages.photoPreparation && res.stages.photoPreparation[sideKey];
   var appliedOps = (prepSide && Array.isArray(prepSide.applied_ops)) ? prepSide.applied_ops : [];
-  var serverPreviewUrl = (prepSide && prepSide.preview_data_url) ? prepSide.preview_data_url : "";
+  var serverPreviewUrl = (activeCopyMode === "latest" && prepSide && prepSide.preview_data_url) ? prepSide.preview_data_url : "";
 
-  // 1) If the server already cropped this side and provided a preview data URL, show it immediately
+  // 1) If the server already cropped this side on the Latest copy, show it immediately
   if (serverPreviewUrl && prepSide && prepSide.cropped) {
     if (!container.isConnected) return;
     image.src = serverPreviewUrl;
-    status.textContent = "OpenCV cropped & straightened (" + appliedOps.join(", ") + ").";
+    status.textContent = "OpenCV cropped & enhanced (" + (appliedOps.join(", ") || "deskew_crop, clahe, sharpen") + ").";
     return;
   }
 
-  // 2) Run browser OpenCV on this side's URL (works for both Front and Back ID photos)
+  // 2) Run browser OpenCV on this side's URL (crops + CLAHE contrast + lighting + unsharp mask sharpening)
   var prepared = await prepareAgentIdPhoto(url);
   if (!container.isConnected) return;
 
@@ -1258,30 +1297,26 @@ async function showAgentPreparedPhoto(container) {
     return;
   }
 
-  // If browser OpenCV found and cropped the card boundary (e.g. Back ID on a table), display the cropped canvas!
   if (prepared && prepared.cropped) {
     image.src = prepared.canvas.toDataURL("image/jpeg", 0.92);
-    var opsLabel = appliedOps.length ? " (" + appliedOps.join(", ") + ")" : "";
-    status.textContent = "OpenCV cropped and straightened" + opsLabel + ".";
+    var opsLabel = appliedOps.length ? " (" + appliedOps.join(", ") + ")" : " (deskew_crop, clahe, sharpen)";
+    status.textContent = "OpenCV cropped & straightened" + opsLabel + ".";
     return;
   }
 
-  // If server enhanced without cropping, use server preview
   if (serverPreviewUrl) {
     image.src = serverPreviewUrl;
-    status.textContent = "OpenCV enhanced (" + appliedOps.join(", ") + ").";
+    status.textContent = "OpenCV enhanced (" + (appliedOps.join(", ") || "clahe, sharpen") + ").";
     return;
   }
 
-  if (route === "good" && !appliedOps.length) {
-    status.textContent = "";
-    return;
-  }
-
-  if (prepared && (route === "fixable" || appliedOps.length > 0)) {
+  if (prepared && prepared.canvas) {
     image.src = prepared.canvas.toDataURL("image/jpeg", 0.92);
-    var opsLbl = appliedOps.length ? " (" + appliedOps.join(", ") + ")" : "";
-    status.textContent = "OpenCV enhanced" + opsLbl + ".";
+    var featList = [];
+    if (prepared.lightingAdjusted) featList.push("brighten/deglare");
+    featList.push("clahe", "sharpen");
+    var mergedOps = appliedOps.length ? appliedOps : featList;
+    status.textContent = "OpenCV enhanced (" + mergedOps.join(", ") + ").";
     return;
   }
 
@@ -1644,9 +1679,22 @@ function agentScreeningRevision(app) {
 }
 
 function getSavedAgentFindings(app) {
-  var stored = app.screening && app.screening.browser_check;
-  if (app.screening?.background_state === "completed" && app.screening.background_findings) return app.screening.background_findings;
-  return stored && stored.reader_version === 5 && stored.revision === agentScreeningRevision(app) ? stored.findings : null;
+  if (!app || !app.screening) return null;
+  var rev = agentScreeningRevision(app);
+  var stored = app.screening.browser_check;
+  if (stored && stored.reader_version === 5 && stored.revision === rev && stored.findings) {
+    return stored.findings;
+  }
+  if (app.screening.background_state === "completed" && app.screening.background_findings) {
+    if (app.corrected_copy && app.corrected_copy.submitted_at) {
+      if (app.screening.background_revision === rev) {
+        return app.screening.background_findings;
+      }
+      return null;
+    }
+    return app.screening.background_findings;
+  }
+  return null;
 }
 
 function buildSavedAgentFindings(result) {
@@ -1678,13 +1726,40 @@ function buildSavedAgentFindings(result) {
 }
 
 async function saveAgentFindings(app, result) {
-  if (!agentScreeningAvailable() || !currentAgent || !app.updated_at || !agentScreeningRevision(app) || getSavedAgentFindings(app) ||
-      result.failed || result.unavailableSides.length || (result.failedReads && result.failedReads.length)) return;
+  if (!currentAgent || !app || !app.updated_at || !agentScreeningRevision(app) || getSavedAgentFindings(app)) return;
+  var isFailedOrOffline = Boolean(
+    !agentScreeningAvailable() ||
+    result.failed ||
+    result.offline ||
+    result.timedOut ||
+    (result.unavailableSides && result.unavailableSides.length) ||
+    (result.failedReads && result.failedReads.length)
+  );
   var version = agentScreeningRevision(app);
   var key = app.id + "|" + version;
   if (agentScreeningWrites.has(key)) return;
   agentScreeningWrites.add(key);
   try {
+    if (isFailedOrOffline) {
+      var fallbackMsg = "Manual Review Fallback — Automated document check could not finish. Please inspect the ID photos and applicant details manually.";
+      var fbScreening = Object.assign({}, app.screening || {}, {
+        state: "manual_fallback",
+        background_state: "failed",
+        manual_fallback: true,
+        eta_seconds: 0,
+        summary: fallbackMsg,
+        final_recommendation: fallbackMsg
+      });
+      var fbSaved = await dbUpdateApplication(app.id, { screening: fbScreening }, app.updated_at).catch(function () { return null; });
+      if (fbSaved) {
+        app.screening = fbSaved.screening;
+        app.updated_at = fbSaved.updated_at;
+      } else {
+        app.screening = fbScreening;
+      }
+      return;
+    }
+
     async function saveForRevision(latest) {
       if (!latest || agentScreeningRevision(latest) !== version || !latest.updated_at) return null;
       if (getSavedAgentFindings(latest)) return latest;
@@ -1693,8 +1768,14 @@ async function saveAgentFindings(app, result) {
       var triage = result.triage || (agentFindingsReadyForReview(result) ? "green" : "yellow");
       var reviewRec = triage !== "green";
       var politeMsg = result.suggestedPoliteRemark || "";
+      var savedFindingsObj = buildSavedAgentFindings(result);
       var screening = Object.assign({}, latest.screening, {
         state: "completed",
+        background_state: "completed",
+        background_revision: version,
+        background_findings: savedFindingsObj,
+        manual_fallback: false,
+        eta_seconds: 0,
         triage: triage,
         route: result.route || "good",
         summary: summaryText,
@@ -1703,7 +1784,7 @@ async function saveAgentFindings(app, result) {
         overall_match: !reviewRec,
         Suggested_remark: politeMsg,
         openai_response_id: result.openaiResponseId || (latest.screening && latest.screening.openai_response_id) || "",
-        browser_check: { reader_version: 5, revision: version, checked_at: new Date().toISOString(), findings: buildSavedAgentFindings(result) }
+        browser_check: { reader_version: 5, revision: version, checked_at: new Date().toISOString(), findings: savedFindingsObj }
       });
       var aiResult = Object.assign({}, latest.ai_result, {
         overall_status: triage === "green" ? "Verified" : (triage === "red" ? "Needs Correction" : "Needs Review"),
@@ -1789,34 +1870,70 @@ function getAgentAppIdCheck(app, existingOnly) {
   if (!agentScreeningAvailable() || !app) return null;
   var saved = getSavedAgentFindings(app);
   if (saved) return { result: saved, pending: Promise.resolve(saved) };
-  if (backgroundScreeningEnabled && (app.screening?.background_state === "queued" || app.screening?.background_state === "running")) return null;
-  return getAgentIdCheck(app.id_image_url || app.id_front_path || "", app.id_back_image_url || app.id_back_path || "", {
-    name: app.full_name || "",
-    birth: app.birth_date || "",
-    number: app.id_number || "",
-    type: app.id_type || "",
-    previous_response_id: (app.screening && app.screening.openai_response_id) || ""
+  var bgState = app.screening && app.screening.background_state;
+  var isModalOpenOnApp = activeDetailAppId === app.id;
+  if (backgroundScreeningEnabled && (bgState === "queued" || bgState === "running") && !isModalOpenOnApp) {
+    var stamp = (app.corrected_copy && app.corrected_copy.submitted_at) || app.updated_at || app.created_at;
+    var ageMs = stamp ? (Date.now() - new Date(stamp).getTime()) : 0;
+    if (ageMs < 15000) return null;
+  }
+  var latestCopy = (app.corrected_copy && app.corrected_copy.submitted_at) ? app.corrected_copy : app;
+  var frontUrl = latestCopy.id_image_url || latestCopy.id_front_path || app.id_image_url || app.id_front_path || "";
+  var backUrl = latestCopy.id_back_image_url || latestCopy.id_back_path || app.id_back_image_url || app.id_back_path || "";
+  return getAgentIdCheck(frontUrl, backUrl, {
+    name: latestCopy.full_name || app.full_name || "",
+    birth: latestCopy.birth_date || app.birth_date || "",
+    number: latestCopy.id_number || app.id_number || "",
+    type: latestCopy.id_type || app.id_type || "",
+    previous_response_id: ""
   }, existingOnly, app.id + "|" + agentScreeningRevision(app));
 }
 
-async function showAgentIdFindings(panel, app) {
+async function showAgentIdFindings(panel, app, copySnapshot) {
   if (!panel) return;
+  // If viewing Original copy or an earlier resubmission copy that already has preserved findings, display those directly
+  if (!app && copySnapshot && (copySnapshot.screening_findings || copySnapshot.reviewed_findings)) {
+    var histResult = copySnapshot.screening_findings || copySnapshot.reviewed_findings;
+    panel._documentFindings = histResult;
+    var histHeader = histResult.finalRecommendation || summarizeAgentIdFindings(histResult);
+    var histLines = [histHeader];
+    if (histResult.queueSummary && histResult.queueSummary !== histHeader) {
+      histLines.push("Summary: " + histResult.queueSummary);
+    }
+    if (Array.isArray(histResult.fields) && histResult.fields.some(function (f) { return f.status !== "unreadable"; })) {
+      histLines.push(histResult.fields.filter(function (f) { return f.status !== "unreadable"; }).map(describeAgentIdField).join("\n"));
+    }
+    panel.textContent = histLines.join("\n");
+    return;
+  }
+  if (!agentScreeningAvailable()) {
+    panel.textContent = "Manual Review Fallback Active: Automated AI screening is currently offline or paused. Please visually compare the applicant's Front & Back Valid ID photos below against the submitted Name, Birth Date, and ID Number, then proceed with your Agent decision.";
+    return;
+  }
   var expected = {
     name: panel.dataset.name,
     birth: panel.dataset.birth,
     number: panel.dataset.number,
     type: panel.dataset.type || "",
-    previous_response_id: (app && app.screening && app.screening.openai_response_id) || ""
+    previous_response_id: ""
   };
-  var check = app ? getAgentAppIdCheck(app) : getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected);
+  var check = app ? getAgentAppIdCheck(app) : getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected, false, "copy|" + (panel.dataset.front || "") + "|" + (panel.dataset.name || ""));
   if (!check) {
     if (backgroundScreeningEnabled) panel.textContent = agentBackgroundStatus(app);
     return;
   }
   var result = await check.pending;
   if (app) await saveAgentFindings(app, result);
-  if (!agentScreeningAvailable() || panel.isConnected === false) return;
+  if (panel.isConnected === false) return;
   panel._documentFindings = result;
+
+  if (result.failed || result.offline || result.timedOut || (result.unavailableSides && result.unavailableSides.length) || (result.failedReads && result.failedReads.length)) {
+    panel.textContent = "Manual Review Fallback Active: " + summarizeAgentIdFindings(result) + " Please visually inspect the Valid ID photos and applicant details below to complete your review manually.";
+    if (document.querySelectorAll) {
+      document.querySelectorAll("#det-body [data-photo-container]").forEach(showAgentPreparedPhoto);
+    }
+    return;
+  }
 
   var headerLine = result.finalRecommendation || summarizeAgentIdFindings(result);
   var linesOut = [headerLine];
@@ -2004,19 +2121,19 @@ async function renderDetailModalContent(updateResultsOnly) {
       '</div>';
   var recommendation = '<section id="document-check-results">' +
       ((frontIdPhotoUrl || idBackPhotoUrl)
-        ? '<div class="agent-screening-note"><b>Screening recommendation</b><div class="small muted">Review the findings before sending a correction request.</div>' +
+        ? '<div class="agent-screening-note"><b>' + (agentScreeningAvailable() ? 'Screening recommendation' : 'Manual Review Mode (Fallback Active)') + '</b><div class="small muted">' +
+          (agentScreeningAvailable() ? 'Review the findings before sending a correction request.' : 'Automated screening is offline or paused. Compare the ID photos and applicant details manually below.') + '</div>' +
           '<div class="small" data-id-text-result role="status" style="white-space:pre-wrap; overflow-wrap:anywhere" data-front="' + escapeHtml(frontIdPhotoUrl) +
           '" data-back="' + escapeHtml(idBackPhotoUrl) + '" data-name="' + escapeHtml(viewData.full_name || app.full_name || "") +
           '" data-birth="' + escapeHtml(viewData.birth_date || "") + '" data-number="' + escapeHtml(viewData.id_number || "") +
           '" data-type="' + escapeHtml(viewData.id_type || app.id_type || "") +
-          '">Checking the ID photos…</div></div>'
+          '">' + (agentScreeningAvailable() ? 'Checking the ID photos…' : 'Manual Review Fallback Active: Please visually compare the Front & Back Valid ID photos below against the applicant details.') + '</div></div>'
         : '<div class="agent-screening-note"><b>Screening recommendation</b><div class="small muted">Review the findings before sending a correction request.</div><div>No ID photo was uploaded.</div></div>');
 
   if (dupCheck.isDup) recommendation += '<p class="notice warn">' + escapeHtml(dupCheck.reason) + '</p>';
   recommendation += "</section>";
-  if (!agentScreeningAvailable()) recommendation = '<section id="document-check-results" role="status">Offline</section>';
   var exportActions = document.getElementById("det-export-actions");
-  if (exportActions) exportActions.hidden = !agentScreeningAvailable() || agentDetailMode !== "documents";
+  if (exportActions) exportActions.hidden = agentDetailMode !== "documents";
   var statusSection =
     '<div class="section-card">' +
       '<div class="section-head">' +
@@ -2135,7 +2252,7 @@ async function renderDetailModalContent(updateResultsOnly) {
     document.getElementById("det-body").innerHTML = detailHtml;
   }
   var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
-  if (findings) showAgentIdFindings(findings, activeCopyMode === "latest" ? app : null);
+  if (findings) showAgentIdFindings(findings, activeCopyMode === "latest" ? app : null, viewData);
   if (!updateResultsOnly && document.querySelectorAll) {
     document.querySelectorAll("#det-body [data-photo-container]").forEach(showAgentPreparedPhoto);
   }
@@ -2344,20 +2461,47 @@ async function saveAgentDecision(newStatus) {
 
 function getAgentSubmissionCopies(app) {
   var latest = app.corrected_copy;
+  var rawOrig = (app.original_submission && app.original_submission.full_name)
+    ? app.original_submission
+    : ((app.original_copy && app.original_copy.full_name) ? app.original_copy : null);
+  var origData = rawOrig
+    ? Object.assign({}, app, rawOrig, {
+        id_image_url: rawOrig.id_image_url || rawOrig.id_front_path || "",
+        id_front_path: rawOrig.id_front_path || rawOrig.id_image_url || "",
+        id_back_image_url: rawOrig.id_back_image_url || rawOrig.id_back_path || "",
+        id_back_path: rawOrig.id_back_path || rawOrig.id_back_image_url || "",
+        screening_findings: rawOrig.screening_findings || (app.screening && app.screening.correction_findings) || null
+      })
+    : app;
+
   if (!latest || !latest.submitted_at) return [
-    { key: "latest", label: "Photo preview of the original submission", data: app },
-    { key: "original", label: "Original submission", data: app }
+    { key: "latest", label: "Latest copy (OpenCV enhanced)", data: app },
+    { key: "original", label: "Original submission (untouched)", data: origData }
   ];
   var earlier = Array.isArray(latest.previous_submissions) ? latest.previous_submissions : [];
   var copies = earlier.map(function (snapshot, index) {
-    return { key: "correction-" + index, label: "Resubmission " + (index + 1) + " · " + formatDate(snapshot.submitted_at), data: snapshot };
+    return {
+      key: "correction-" + index,
+      label: "Resubmission " + (index + 1) + " · " + formatDate(snapshot.submitted_at),
+      data: Object.assign({}, origData, snapshot, {
+        id_image_url: snapshot.id_image_url || snapshot.id_front_path || "",
+        id_front_path: snapshot.id_front_path || snapshot.id_image_url || "",
+        id_back_image_url: snapshot.id_back_image_url || snapshot.id_back_path || "",
+        id_back_path: snapshot.id_back_path || snapshot.id_back_image_url || ""
+      })
+    };
   });
   copies.unshift({
-    key: "latest", label: "Latest resubmission (" + (earlier.length + 1) + ") · " + formatDate(latest.submitted_at),
-    data: Object.assign({}, app, latest)
+    key: "latest",
+    label: "Latest resubmission (" + (earlier.length + 1) + ") · " + formatDate(latest.submitted_at),
+    data: Object.assign({}, app, latest, {
+      id_image_url: latest.id_image_url || latest.id_front_path || app.id_image_url || app.id_front_path || "",
+      id_front_path: latest.id_front_path || latest.id_image_url || app.id_front_path || app.id_image_url || "",
+      id_back_image_url: latest.id_back_image_url || latest.id_back_path || app.id_back_image_url || app.id_back_path || "",
+      id_back_path: latest.id_back_path || latest.id_back_image_url || app.id_back_path || app.id_back_image_url || ""
+    })
   });
-  var original = app.original_submission || app.original_copy;
-  if (original) copies.push({ key: "original", label: "Original submission", data: original });
+  copies.push({ key: "original", label: "Original submission (untouched)", data: origData });
   return copies;
 }
 
@@ -2411,19 +2555,16 @@ function downloadApplicantCopy() {
 }
 
 function exportApplicantCopy(print) {
-  if (!agentScreeningAvailable()) return;
   var app = findAppById(activeDetailAppId);
   if (!app) return;
   var copy = getAgentPreviewCopy(app);
   var panel = document.querySelector("#det-body [data-id-text-result]");
-  if (panel && !panel._documentFindings) {
-    showAlert("Checking documents", "Wait for the screening recommendation before exporting.");
-    return;
-  }
   var docFindings = panel ? panel._documentFindings : null;
   var remarks = docFindings
     ? (docFindings.finalRecommendation || summarizeAgentIdFindings(docFindings))
-    : "No ID photo was uploaded.";
+    : (!agentScreeningAvailable()
+      ? "Manual Review Fallback: Application reviewed manually by Agent."
+      : ((app.agent_remarks || (app.screening && app.screening.final_recommendation)) || "Reviewed by Agent."));
   var duplicate = detectClientSideDuplicateId(app);
   if (duplicate.isDup) remarks += " " + duplicate.reason;
   var location = [copy.house_no || app.house_no, copy.street || app.street, copy.subdivision || app.subdivision,

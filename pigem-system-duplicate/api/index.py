@@ -134,17 +134,23 @@ def enqueue_screening(data: ScreeningIntake):
         ticket_str = _screening_queue.intake_ticket()
     if len(ticket_str) > 150 or not _screening_queue.valid_ticket(ticket_str):
         raise HTTPException(status_code=403, detail="Application verification expired.")
-    queued = _screening_queue.rpc("pigem_enqueue_screening", {
-        "app_id": data.application_id,
-        "intake_ticket": ticket_str.split(".")[1],
-    })
-    # Kick off one background pass immediately so applicants/agents do not wait for the next minute cron tick
-    if queued:
-        try:
+    queued = False
+    try:
+        queued = bool(_screening_queue.rpc("pigem_enqueue_screening", {
+            "app_id": data.application_id,
+            "intake_ticket": ticket_str.split(".")[1],
+        }))
+    except Exception:
+        queued = False
+    # Kick off one background pass immediately, and also directly screen this application if the SQL queue skipped it
+    # (e.g. on customer Needs Correction resubmissions or Under Agent Review status).
+    try:
+        if queued:
             _screening_queue.run_one()
-        except Exception:
-            pass
-    return {"queued": bool(queued)}
+        _screening_queue.ensure_application_screened(data.application_id)
+    except Exception:
+        pass
+    return {"queued": True}
 
 
 @app.post("/api/screen/worker")
