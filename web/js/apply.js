@@ -310,13 +310,33 @@ function attachApplyLiveValidation() {
         updateContactOtpButton(emailEl.value.trim().toLowerCase());
       }
     });
+    var onEmailBlur = function () {
+      var val = emailEl.value.trim().toLowerCase();
+      if (val && typeof isCustomerGmail === "function" && isCustomerGmail(val)) {
+        checkContactDetailsAlreadyInSystem(true);
+      }
+    };
+    emailEl.addEventListener("blur", onEmailBlur);
+    emailEl.addEventListener("change", onEmailBlur);
   }
 
   var phoneEl = document.getElementById("phone");
   if (phoneEl) {
     phoneEl.addEventListener("input", function () {
       if (typeof clearFieldError === "function") clearFieldError("phone");
+      var digits = phoneEl.value.trim().replace(/\D/g, "");
+      if (digits.length === 11 && /^09\d{9}$/.test(digits)) {
+        checkContactDetailsAlreadyInSystem(false);
+      }
     });
+    var onPhoneBlur = function () {
+      var digits = phoneEl.value.trim().replace(/\D/g, "");
+      if (digits.length >= 10) {
+        checkContactDetailsAlreadyInSystem(false);
+      }
+    };
+    phoneEl.addEventListener("blur", onPhoneBlur);
+    phoneEl.addEventListener("change", onPhoneBlur);
   }
 
   var altPhoneEl = document.getElementById("phone_alt");
@@ -620,6 +640,36 @@ async function openPhoneQrModal() {
   }
 }
 
+async function checkContactDetailsAlreadyInSystem(checkEmailOnly) {
+  if (typeof dbCheckExistingContactInSystem !== "function") return { ok: true };
+  var emailEl = document.getElementById("email");
+  var phoneEl = document.getElementById("phone");
+  var email = emailEl ? emailEl.value.trim().toLowerCase() : "";
+  var phone = (!checkEmailOnly && phoneEl) ? phoneEl.value.trim().replace(/\D/g, "") : "";
+
+  var dup = await dbCheckExistingContactInSystem(email, phone);
+  var hasConflict = false;
+
+  if (email && dup.emailTaken) {
+    var emailMsg = "This Gmail address (" + email + ") is already in the system" +
+      (dup.existingEmailRef ? " (Ref: " + dup.existingEmailRef + ")" : "") +
+      ". Please enter a different @gmail.com address.";
+    if (typeof setFieldError === "function") setFieldError("email", emailMsg);
+    flashErrorBubble("email", "Gmail Already in System", emailMsg);
+    hasConflict = true;
+  }
+  if (!checkEmailOnly && phone && dup.phoneTaken) {
+    var phoneMsg = "This mobile number (" + phone + ") is already in the system" +
+      (dup.existingPhoneRef ? " (Ref: " + dup.existingPhoneRef + ")" : "") +
+      ". Please enter a different 11-digit mobile number.";
+    if (typeof setFieldError === "function") setFieldError("phone", phoneMsg);
+    flashErrorBubble("phone", "Mobile Number Already in System", phoneMsg);
+    hasConflict = true;
+  }
+
+  return { ok: !hasConflict, dup: dup };
+}
+
 function normalizeApplyGmail() {
   var input = document.getElementById("email");
   var value = input.value.trim().toLowerCase();
@@ -713,6 +763,8 @@ async function sendContactOtp(resend) {
   var resendButton = document.getElementById("contact-otp-resend");
   if (resendButton) resendButton.disabled = true;
   try {
+    var existingCheck = await checkContactDetailsAlreadyInSystem(true);
+    if (!existingCheck.ok) return;
     var otp = generateSecuredOtp("apply_email_" + email);
     var first = document.getElementById("first_name").value.trim();
     var last = document.getElementById("last_name").value.trim();
@@ -1255,6 +1307,13 @@ async function enforceLiveMaintenanceOnStep() {
 async function nextPanel() {
   if (!requireApplyCaptcha()) return;
   if (await enforceLiveMaintenanceOnStep()) return;
+  if (currentPanel === 2) {
+    if (!validateCurrentPanel()) return;
+    var contactCheck = await checkContactDetailsAlreadyInSystem(false);
+    if (!contactCheck.ok) return;
+    showPanel(3);
+    return;
+  }
   if (currentPanel === 3 && _pinLookupPromise) {
     var lookup = _pinLookupPromise;
     await lookup;
@@ -1698,7 +1757,8 @@ async function performApplicationSubmission() {
           lat: latNum,
           lng: lngNum,
           plan: selectedPlanId,
-          full_name: fullName
+          full_name: fullName,
+          phone: document.getElementById("phone").value.trim()
         }))
       : { isDuplicate: false };
 

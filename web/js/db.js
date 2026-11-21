@@ -1138,64 +1138,93 @@ async function dbGetApplication(appId) {
   return res.data;
 }
 
+async function dbCheckExistingContactInSystem(email, phone) {
+  var cleanEmail = String(email || "").trim().toLowerCase();
+  var cleanPhone = String(phone || "").replace(/\D/g, "");
+  var result = {
+    emailTaken: false,
+    phoneTaken: false,
+    existingEmailRef: "",
+    existingPhoneRef: ""
+  };
+  if (!cleanEmail && !cleanPhone) return result;
+
+  try {
+    var existingApps = await dbListAllApplications();
+    if (Array.isArray(existingApps)) {
+      for (var i = 0; i < existingApps.length; i++) {
+        var a = existingApps[i];
+        if (!a || String(a.status || "") === "Rejected") continue;
+        var aEmail = String((a.corrected_copy && a.corrected_copy.contact_email) || a.email || "").trim().toLowerCase();
+        var aOrigEmail = String(a.email || "").trim().toLowerCase();
+        var aPhone = String((a.corrected_copy && a.corrected_copy.phone) || a.phone || "").replace(/\D/g, "");
+        var aOrigPhone = String(a.phone || "").replace(/\D/g, "");
+        var refLabel = a.reference_no || a.ref_no || "EXISTING";
+
+        if (cleanEmail && (cleanEmail === aEmail || cleanEmail === aOrigEmail)) {
+          result.emailTaken = true;
+          result.existingEmailRef = refLabel;
+        }
+        if (cleanPhone && cleanPhone.length >= 10 && (cleanPhone === aPhone || cleanPhone === aOrigPhone)) {
+          result.phoneTaken = true;
+          result.existingPhoneRef = refLabel;
+        }
+      }
+    }
+  } catch (e) {}
+
+  if (!IS_DEMO_MODE && supabaseClient && (!result.emailTaken || !result.phoneTaken)) {
+    try {
+      if (cleanEmail && !result.emailTaken) {
+        var uEmailRes = await supabaseClient.from("users").select("id,email").ilike("email", cleanEmail).limit(1);
+        if (!uEmailRes.error && Array.isArray(uEmailRes.data) && uEmailRes.data.length > 0) {
+          result.emailTaken = true;
+        }
+      }
+      if (cleanPhone && cleanPhone.length >= 10 && !result.phoneTaken) {
+        var uPhoneRes = await supabaseClient.from("users").select("id,phone").eq("phone", cleanPhone).limit(1);
+        if (!uPhoneRes.error && Array.isArray(uPhoneRes.data) && uPhoneRes.data.length > 0) {
+          result.phoneTaken = true;
+        }
+      }
+    } catch (e) {}
+  }
+
+  return result;
+}
+
 async function dbFindDuplicateCustomerApplication(email, appData) {
   var cleanEmail = String(email || (appData && appData.email) || "").trim().toLowerCase();
   var payload = appData || (typeof email === "object" ? email : {}) || {};
   if (!cleanEmail && payload.email) cleanEmail = String(payload.email || "").trim().toLowerCase();
+  var newPhoneKey = String(payload.phone || "").replace(/\D/g, "");
 
   var existingApps = await dbListAllApplications();
   if (!existingApps || existingApps.length === 0) return { isDuplicate: false };
 
-  var normStr = function (v) {
-    return String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  };
-  var normPhone = function (v) {
-    return String(v || "").replace(/\D/g, "");
-  };
-
-  var newNameKey = normStr(payload.full_name);
-  var newPhoneKey = normPhone(payload.phone);
-  var newIdNumKey = normStr(payload.id_number);
-  var newAddrKey = normStr((payload.house_no || "") + (payload.street || "") + (payload.barangay || "") + (payload.city || ""));
-  var newLat = Number(payload.lat != null ? payload.lat : payload.latitude);
-  var newLng = Number(payload.lng != null ? payload.lng : payload.longitude);
-  var hasNewCoords = !isNaN(newLat) && !isNaN(newLng) && newLat !== 0 && newLng !== 0;
-
+  // A user can apply multiple times as long as they use a different Gmail address and a different mobile number.
   for (var i = 0; i < existingApps.length; i++) {
     var a = existingApps[i];
     if (!a || String(a.status || "") === "Rejected") continue;
     var oldEmail = String(a.email || "").trim().toLowerCase();
-    var oldNameKey = normStr(a.full_name);
-    var oldPhoneKey = normPhone(a.phone);
-    var oldIdNumKey = normStr(a.id_number);
-    var oldAddrKey = normStr((a.house_no || "") + (a.street || "") + (a.barangay || "") + (a.city || ""));
-    var oldLat = Number(a.lat != null ? a.lat : a.latitude);
-    var oldLng = Number(a.lng != null ? a.lng : a.longitude);
+    var oldCorrEmail = String((a.corrected_copy && a.corrected_copy.contact_email) || "").trim().toLowerCase();
+    var oldPhoneKey = String(a.phone || "").replace(/\D/g, "");
+    var oldCorrPhoneKey = String((a.corrected_copy && a.corrected_copy.phone) || "").replace(/\D/g, "");
 
-    var sameEmail = Boolean(cleanEmail && oldEmail && cleanEmail === oldEmail);
-    var sameName = Boolean(newNameKey && oldNameKey && newNameKey === oldNameKey);
-    var samePhone = Boolean(newPhoneKey && oldPhoneKey && newPhoneKey.length >= 10 && newPhoneKey === oldPhoneKey);
-    var sameIdNumber = Boolean(newIdNumKey && oldIdNumKey && newIdNumKey.length >= 5 && newIdNumKey === oldIdNumKey);
-    var sameCoords = hasNewCoords && !isNaN(oldLat) && !isNaN(oldLng) &&
-      Math.abs(newLat - oldLat) < 0.00045 && Math.abs(newLng - oldLng) < 0.00045 && (sameEmail || sameName);
-    var sameAddress = Boolean(newAddrKey && oldAddrKey && newAddrKey.length > 8 && newAddrKey === oldAddrKey && (sameEmail || sameName));
-    var samePersonEmail = Boolean(sameName && sameEmail);
-    var samePersonPhone = Boolean(sameName && samePhone);
-    var sameEmailPhone = Boolean(sameEmail && samePhone);
-    var samePersonPlan = Boolean(sameEmail && String(a.plan || a.plan_id || "") === String(payload.plan || payload.plan_id || ""));
+    var sameEmail = Boolean(cleanEmail && (cleanEmail === oldEmail || cleanEmail === oldCorrEmail));
+    var samePhone = Boolean(newPhoneKey && newPhoneKey.length >= 10 && (newPhoneKey === oldPhoneKey || newPhoneKey === oldCorrPhoneKey));
 
-    if (samePersonEmail || samePersonPhone || sameEmailPhone || sameIdNumber || sameCoords || sameAddress || samePersonPlan) {
+    if (sameEmail || samePhone) {
       var refLabel = a.reference_no || a.ref_no || "EXISTING";
-      var locText = (typeof formatAddress === "function" ? formatAddress(a) : "") || a.address_line || "the same installation location";
-      var reasonDetail = sameIdNumber
-        ? "Duplicate Primary ID Number: An active application (" + refLabel + ", Status: " + a.status + ") is already registered under ID Number " + (payload.id_number || a.id_number) + "."
-        : (samePersonEmail || samePersonPhone || sameEmailPhone)
-          ? "Duplicate Applicant Record: An active application (" + refLabel + ", Status: " + a.status + ") already exists for " + (a.full_name || payload.full_name) + " with the same email or mobile number."
-          : (sameCoords || sameAddress)
-            ? "Duplicate Application at Same Location: This customer account already has an active application (" + refLabel + ", Status: " + a.status + ") registered at " + locText + "."
-            : "Duplicate Application Under Same Account: This customer account already has an active application (" + refLabel + ", Status: " + a.status + ").";
+      var reasonDetail = (sameEmail && samePhone)
+        ? "This Gmail address and mobile number are already registered in application " + refLabel + " (Status: " + a.status + "). Please use a different Gmail address and mobile number."
+        : (sameEmail
+          ? "This Gmail address (" + cleanEmail + ") is already registered in application " + refLabel + " (Status: " + a.status + "). Please use a different @gmail.com address."
+          : "This mobile number (" + (payload.phone || a.phone) + ") is already registered in application " + refLabel + " (Status: " + a.status + "). Please use a different mobile number.");
       return {
         isDuplicate: true,
+        sameEmail: sameEmail,
+        samePhone: samePhone,
         existingApp: a,
         existingRef: refLabel,
         existingStatus: a.status || "Pending Review",
@@ -1380,19 +1409,25 @@ async function dbUpdateApplication(appId, changes, expectedUpdatedAt) {
     }
     throw new Error("Application not found.");
   }
-  function updateMatchingRow(payload) {
+  function updateMatchingRow(payload, useExpectedTimestamp) {
     var query = supabaseClient.from("applications").update(payload).eq("id", appId);
-    if (expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
+    if (useExpectedTimestamp && expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
     return query.select("*").maybeSingle();
   }
-  var res = await updateMatchingRow(changes);
+  var res = await updateMatchingRow(changes, true);
   if (res.error) {
     var cleanChanges = _stripOptionalAppColumns(changes);
-    res = await updateMatchingRow(cleanChanges);
+    res = await updateMatchingRow(cleanChanges, true);
+  }
+  if (!res.error && !res.data && expectedUpdatedAt) {
+    res = await updateMatchingRow(changes, false);
+    if (res.error) {
+      res = await updateMatchingRow(_stripOptionalAppColumns(changes), false);
+    }
   }
   if (res.error) throw new Error(res.error.message);
   if (!res.data) {
-    throw new Error(expectedUpdatedAt ? "This application changed while you were editing. Reopen it and try again." : "Application not found.");
+    throw new Error("Application not found.");
   }
   if (res.data) {
     _saveLocalAppMirror(res.data);
