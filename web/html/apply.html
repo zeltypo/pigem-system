@@ -14,12 +14,13 @@
 
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
-<body>
+<body class="apply-page">
 
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="simple-bar">
     <div class="container" style="justify-content:space-between;">
       <div style="display:flex; align-items:center; gap:12px;">
-        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" width="38" height="38">
         <span style="font-weight:700; font-size:18px; cursor:default; user-select:none;">Application Form</span>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
@@ -28,14 +29,14 @@
     </div>
   </header>
 
-  <main class="form-wrap">
+  <main id="main-content" class="form-wrap">
 
     <div class="card" style="margin-bottom:18px;">
       <div class="row between">
-        <b id="section-title">Select Your Plan</b>
+        <b id="section-title" aria-live="polite">Select Your Plan</b>
         <span id="section-pct" class="small muted">17%</span>
       </div>
-      <div class="progress mt">
+      <div class="progress mt" role="progressbar" aria-label="Application progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="17">
         <div id="section-bar" style="width:17%"></div>
       </div>
       <div id="agent-ref-banner" class="notice good mt" hidden></div>
@@ -45,7 +46,11 @@
       <h3>Select Your Plan <span class="req-mark">*</span></h3>
       <p class="small muted">Choose the monthly Red Fiber internet plan for your home. Fields marked <span class="req-mark">*</span> are required.</p>
 
-      <div id="plan-choice-box" class="plan-choice mt"></div>
+      <div id="plan-choice-box" class="plan-choice mt" role="radiogroup" aria-label="Internet plan"></div>
+      <div id="apply-captcha-wrap" class="captcha-inline mt">
+        <div id="apply-captcha-box"></div>
+        <p id="apply-captcha-status" class="small muted" role="status" tabindex="-1"></p>
+      </div>
 
       <div class="row between mt-big">
         <span></span>
@@ -60,7 +65,7 @@
       <div class="form-grid mt">
         <div>
           <label for="first_name">First Name <span class="req-mark">*</span></label>
-          <input id="first_name" type="text" placeholder="Juan">
+          <input id="first_name" type="text" autocomplete="given-name" placeholder="Juan">
         </div>
         <div>
           <label for="middle_name">Middle Name</label>
@@ -68,11 +73,11 @@
         </div>
         <div>
           <label for="last_name">Last Name <span class="req-mark">*</span></label>
-          <input id="last_name" type="text" placeholder="Dela Cruz">
+          <input id="last_name" type="text" autocomplete="family-name" placeholder="Dela Cruz">
         </div>
         <div>
           <label for="birth_date">Birth Date <span class="req-mark">*</span></label>
-          <input id="birth_date" type="date">
+          <input id="birth_date" type="date" autocomplete="bday">
         </div>
       </div>
 
@@ -84,16 +89,23 @@
 
     <section id="panel-2" class="card panel" hidden>
       <h3>Contact Information</h3>
-      <p class="small muted">Provide your active Gmail and primary mobile number for application updates and one-time OTP verification. (<span class="req-mark">*</span> Required)</p>
+      <p class="small muted">Enter the Gmail address and mobile number where you want to receive updates. (<span class="req-mark">*</span> Required)</p>
 
       <div class="form-grid mt">
         <div class="full">
           <label for="email">Email Address (Gmail) <span class="req-mark">*</span></label>
           <div class="email-otp-inline">
             <input id="email" type="email" placeholder="juandelacruz@gmail.com">
-            <button type="button" id="btn-send-otp" class="btn btn-small btn-red" style="white-space:nowrap;" onclick="sendContactOtp()">Send Email OTP</button>
+            <button type="button" id="btn-send-otp" class="btn btn-small btn-red" style="white-space:nowrap;" onclick="sendContactOtp()">Send code</button>
           </div>
-          <div id="email-otp-inline-status" class="small mt" style="display:none;"></div>
+          <div id="email-otp-inline-status" class="small mt" role="status" style="display:none;"></div>
+          <div id="contact-otp-fields" class="mt" hidden>
+            <label for="contact-otp-code">Email verification code</label>
+            <div class="email-otp-inline">
+              <input id="contact-otp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+              <button type="button" class="btn btn-outline" onclick="verifyContactOtp()">Verify email</button>
+            </div>
+          </div>
         </div>
         <div>
           <label for="phone">Primary Mobile Number <span class="req-mark">*</span></label>
@@ -121,8 +133,9 @@
         <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location" class="icon-img"> Use My Location</button>
       </div>
 
-      <div id="map"></div>
-      <p id="map-status" class="small muted mt">Click anywhere on the map or drag the marker to auto-fill your address below.</p>
+      <div id="map" tabindex="0" aria-label="Installation location map"></div>
+      <p id="map-status" class="small muted mt">Tap the map, drag the pin, or move the map with the arrow keys and select its center.</p>
+      <button type="button" class="btn btn-small mt" onclick="useMapCenter()">Place pin at map center</button>
       <div id="map-coverage-banner" class="notice mt" hidden></div>
       <input id="lat" type="hidden" value="14.3294">
       <input id="lng" type="hidden" value="120.9367">
@@ -201,13 +214,14 @@
       <div class="row between" style="align-items:flex-start; flex-wrap:wrap; gap:10px;">
         <div>
           <h3>Valid ID Photos</h3>
-          <p class="small muted">Upload clear, distinct photos of both the <b>Front</b> and <b>Back</b> of your valid government-issued ID.</p>
+          <p class="small muted">Upload a clear photo of the front of your ID. Add the back if it has printed details.</p>
         </div>
-        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="Phone QR" class="icon-img"> Continue on Phone (QR Code)</button>
+        <button type="button" id="btn-phone-qr" class="btn btn-red" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img"> Continue application on phone</button>
       </div>
 
-      <div class="notice mt" style="background:var(--bg-soft); border:1px solid var(--line);">
-        <b>Document Upload Instructions</b>
+      <p id="apply-phone-status" class="small muted" role="status"></p>
+      <details class="notice mt upload-instructions" open>
+        <summary>How to take a clear ID photo</summary>
         <ul style="margin:8px 0 10px 18px; font-size:13.5px; color:var(--muted); line-height:1.5;">
           <li>Place your physical ID flat on a well-lit surface. Do not upload photocopies or digital screenshots.</li>
           <li>Make sure your <b>Full Name, Birth Date, ID Number, Photo, and Barcode/Signature</b> are sharp and readable.</li>
@@ -252,7 +266,7 @@
             </svg>
           </div>
         </div>
-      </div>
+      </details>
 
       <div class="form-grid mt">
         <div>
@@ -394,11 +408,9 @@
     </section>
 
     <section id="panel-qr-mobile" class="card panel" hidden>
-      <div class="center">
-        <h3>Mobile Valid ID Capture or Upload</h3>
-        <p class="small muted mt">Take camera photos or upload existing gallery a photo of the front of your ID and the back if it has printed details. Uploaded photos sync directly back to your computer application session.</p>
-        <div id="qr-mobile-session-badge" class="badge mt">Session Ready</div>
-      </div>
+      <h3>Upload ID photos for your correction</h3>
+      <p id="phone-mobile-status" class="small muted mt" role="status"></p>
+      <div id="phone-mobile-fields" hidden>
       <div class="form-grid mt-big">
         <div class="upload-box">
           <div style="font-weight:700;margin-bottom:6px;">Front of Valid ID</div>
@@ -427,8 +439,7 @@
           </div>
         </div>
       </div>
-      <div id="qr-mobile-done-note" class="notice ok mt-big" hidden>
-        <b>Synced!</b> Your front ID photo has been uploaded. Add the back if it has printed details, or return to your computer to continue.
+      <button type="button" class="btn btn-red mt" onclick="sendMobileCorrectionPhotos(this)">Send photos</button>
       </div>
     </section>
   </main>
@@ -443,6 +454,7 @@
 
   <script src="../js/api.js"></script>
 
+  <script src="../js/phone-transfer.js"></script>
   <script src="../js/apply.js"></script>
   <script src="../js/back-to-top.js" data-phone-only></script>
 </body>

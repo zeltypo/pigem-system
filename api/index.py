@@ -20,8 +20,10 @@ import _idp
 import _mailer
 import _openai_client
 import _screening_queue
+import _phone_transfer
 
 app = FastAPI(title="PIGEM Cloud IDP Screening & Notification API")
+app.include_router(_phone_transfer.router)
 
 app.add_middleware(
     CORSMiddleware,

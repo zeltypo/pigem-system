@@ -65,15 +65,14 @@ function setupDeviceUploadUI() {
   }
 }
 
-var _qrPollTimer = null;
-var _qrActiveSid = "";
-var _qrLoadedUrls = { front: "", back: "" };
-
+var phoneCorrectionToken = "";
+var phoneCorrectionFiles = {};
+var phoneCorrectionPreviews = {};
 
 var APPLY_DRAFT_KEY = "pigem_apply_wizard_draft";
 var APPLY_DRAFT_FIELDS = [
   "first_name", "middle_name", "last_name", "birth_date", "email", "phone", "phone_alt",
-  "house_no", "house_suffix", "unit_no", "floor_no", "building_name", "street", "subdivision",
+  "house_no", "house_suffix", "unit_no", "unit_type", "floor_no", "building_name", "street", "subdivision",
   "barangay", "city", "province", "landmark", "remarks", "id_type", "id_number"
 ];
 
@@ -88,7 +87,7 @@ function saveApplyDraftState() {
     var agree1 = document.getElementById("agree_sub");
     var agree2 = document.getElementById("agree_tu");
     var draft = {
-      currentPanel: currentPanel,
+      currentPanel: applyResumePanel || currentPanel,
       selectedPlanId: selectedPlanId,
       isContactOtpVerified: isContactOtpVerified,
       verifiedEmailAddress: verifiedEmailAddress,
@@ -130,29 +129,35 @@ function restoreApplyDraftState(hasExplicitUrlPlan) {
         }
       }
     }
-    if (draft.pinLocationState && draft.pinLocationState.lat) {
+    if (draft.pinLocationState?.lat && draft.pinLocationState?.lng) {
       _pinLocationState = draft.pinLocationState;
+      document.getElementById("lat").value = _pinLocationState.lat;
+      document.getElementById("lng").value = _pinLocationState.lng;
     }
+    if (!referralAgentId && draft.referralAgentId) referralAgentId = draft.referralAgentId;
     var agree1 = document.getElementById("agree_sub");
     var agree2 = document.getElementById("agree_tu");
     if (agree1 && typeof draft.agree_sub === "boolean") agree1.checked = draft.agree_sub;
     if (agree2 && typeof draft.agree_tu === "boolean") agree2.checked = draft.agree_tu;
     renderPlanChoices();
     if (typeof updateIdFormatHint === "function") updateIdFormatHint();
-    var targetPanel = Number(draft.currentPanel || 0);
+    var targetPanel = Math.min(Number(draft.currentPanel || 0), 4);
+    if (!applyCaptchaVerified) applyResumePanel = targetPanel;
     if (targetPanel >= 0 && targetPanel < TOTAL_PANELS) {
-      showPanel(targetPanel);
+      showPanel(applyCaptchaVerified ? targetPanel : 0);
     }
   } catch (e) {}
 }
 
 async function initApplyPage() {
   var params = new URLSearchParams(window.location.search);
-  var qrUpload = params.get("qr_upload");
-  var qrSid = params.get("sid");
-
-  if (qrUpload === "1" && qrSid) {
-    initMobileQrMode(qrSid);
+  var phoneToken = new URLSearchParams(window.location.hash.slice(1)).get("phone");
+  if (phoneToken || (params.get("phone_correction") === "1" && sessionStorage.getItem("pigem_phone_correction"))) {
+    if (await openMobilePhoneTransfer(phoneToken)) return;
+  }
+  if (params.get("qr_upload") === "1" || params.get("phone_correction") === "1") {
+    showMobileTransferPanel();
+    document.getElementById("phone-mobile-status").textContent = "This link has expired. Create a new QR code on your computer.";
     return;
   }
 
@@ -187,8 +192,7 @@ async function initApplyPage() {
   });
   window.addEventListener("resize", setupDeviceUploadUI);
 
-  document.querySelector("main")?.setAttribute("inert", "");
-  showApplySecurityCaptchaModal();
+  renderApplyCaptchaBox();
 
   try {
     if (typeof dbSyncLiveSettingsAndContent === "function") {
@@ -271,12 +275,17 @@ function attachApplyLiveValidation() {
   if (emailEl) {
     emailEl.addEventListener("input", function () {
       if (typeof clearFieldError === "function") clearFieldError("email");
-      if (verifiedEmailAddress && emailEl.value.trim().toLowerCase() !== verifiedEmailAddress) {
+      if (emailEl.value.trim().toLowerCase() !== verifiedEmailAddress) {
         isContactOtpVerified = false;
         var st = document.getElementById("email-otp-inline-status");
         if (st) st.style.display = "none";
         var btn = document.getElementById("btn-send-otp");
-        if (btn) btn.textContent = "Send Email OTP";
+        if (btn) {
+          btn.textContent = "Send code";
+          btn.disabled = false;
+        }
+        document.getElementById("contact-otp-fields").hidden = true;
+        document.getElementById("contact-otp-code").value = "";
       }
     });
   }
@@ -310,73 +319,102 @@ function attachApplyLiveValidation() {
   }
 }
 
-function initMobileQrMode(sid) {
-  _qrActiveSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
-  var prog = document.querySelector(".prog");
-  if (prog) prog.style.display = "none";
-  var refBanner = document.getElementById("agent-ref-banner");
-  if (refBanner) refBanner.hidden = true;
-  for (var i = 0; i < TOTAL_PANELS; i++) {
-    var p = document.getElementById("panel-" + i);
-    if (p) p.hidden = true;
-  }
-  var mobilePanel = document.getElementById("panel-qr-mobile");
-  if (mobilePanel) mobilePanel.hidden = false;
-  var badge = document.getElementById("qr-mobile-session-badge");
-  if (badge) badge.textContent = "Session: " + _qrActiveSid;
+function showMobileTransferPanel() {
+  document.querySelectorAll(".form-wrap > :not(#panel-qr-mobile)").forEach(function (section) {
+    section.hidden = true;
+  });
+  document.getElementById("panel-qr-mobile").hidden = false;
 }
 
-async function handleMobileQrUpload(side, inputEl) {
-  var file = inputEl && inputEl.files && inputEl.files[0];
+async function openMobilePhoneTransfer(token) {
+  showMobileTransferPanel();
+  var status = document.getElementById("phone-mobile-status");
+  status.textContent = "Opening phone link…";
+  try {
+    var transfer = token
+      ? await phoneTransfer("open", { token: token })
+      : { mode: "correction", upload: sessionStorage.getItem("pigem_phone_correction") };
+    if (transfer.mode === "application") {
+      sessionStorage.removeItem("pigem_phone_correction");
+      sessionStorage.setItem(APPLY_DRAFT_KEY, JSON.stringify(transfer.draft));
+      window.location.replace(window.location.pathname);
+      return true;
+    }
+    phoneCorrectionToken = transfer.upload;
+    sessionStorage.setItem("pigem_phone_correction", phoneCorrectionToken);
+    history.replaceState(null, "", window.location.pathname + "?phone_correction=1");
+    document.getElementById("phone-mobile-fields").hidden = false;
+    status.textContent = "Choose the requested photos, then select Send photos.";
+  } catch (error) {
+    status.textContent = error.message || "Could not open this phone link.";
+  }
+  return true;
+}
+
+function handleMobileQrUpload(side, input) {
+  var file = input.files[0];
   if (!file) return;
-  var ftype = String(file.type || "").toLowerCase();
-  var fname = String(file.name || "").toLowerCase();
-  var isImageMime = ftype.indexOf("image/") === 0;
-  var isImageExt = /\.(jpe?g|png|webp|heic|heif|bmp|gif)$/.test(fname);
-  var hasNoExt = !/\.[a-z0-9]{2,5}$/.test(fname);
-  var allowedOpaqueMime = !ftype || ftype === "application/octet-stream";
-  if (!isImageMime && !isImageExt && !(allowedOpaqueMime && hasNoExt)) {
-    showAlert("Invalid File", "Please capture or choose a valid image photo.", "warn");
-    inputEl.value = "";
+  var status = document.getElementById("qr-" + side + "-status");
+  if (!file.type.startsWith("image/")) {
+    status.textContent = "Choose a JPG or PNG image.";
     return;
   }
-  var statusEl = document.getElementById(side === "front" ? "qr-front-status" : "qr-back-status");
-  if (statusEl) statusEl.innerHTML = "<b>Uploading...</b> Syncing to your computer...";
+  phoneCorrectionFiles[side] = file;
+  if (phoneCorrectionPreviews[side]) URL.revokeObjectURL(phoneCorrectionPreviews[side]);
+  phoneCorrectionPreviews[side] = URL.createObjectURL(file);
+  document.getElementById("qr-" + side + "-preview").src = phoneCorrectionPreviews[side];
+  document.getElementById("qr-" + side + "-preview-box").hidden = false;
+  status.textContent = "Photo selected.";
+}
+
+async function phonePhotoAsJpeg(file) {
+  if (!file) return "";
+  var bitmap = await createImageBitmap(file);
   try {
-    var uploadedUrl = await dbUploadQrSessionFile(_qrActiveSid, side, file);
-    if (statusEl) statusEl.innerHTML = "<b style='color:var(--good)'>Uploaded &amp; Synced!</b>";
-    var box = document.getElementById(side === "front" ? "qr-front-preview-box" : "qr-back-preview-box");
-    var img = document.getElementById(side === "front" ? "qr-front-preview" : "qr-back-preview");
-    if (box && img) {
-      img.src = uploadedUrl;
-      box.hidden = false;
-    }
-    var files = await dbListQrSessionFiles(_qrActiveSid);
-    if (files.frontUrl) {
-      var doneNote = document.getElementById("qr-mobile-done-note");
-      if (doneNote) doneNote.hidden = false;
-    }
-  } catch (err) {
-    if (statusEl) statusEl.innerHTML = "<span style='color:#b42318;'>Upload failed: " + escapeHtml(err.message || "Try again") + "</span>";
+    var scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    var canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    var ctx = canvas.getContext("2d", { alpha: false });
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.86);
+  } finally {
+    bitmap.close();
   }
 }
 
-function showApplySecurityCaptchaModal() {
-  if (applyCaptchaVerified || document.getElementById("apply-captcha-box")) return;
-  openPopup(
-    '<div class="center" style="padding:10px 4px;">' +
-      '<div style="width:52px;height:52px;border-radius:50%;background:#e0f2fe;color:#0284c7;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>' +
-      '<h3 style="font-size:18px;margin-bottom:4px;">PIGEM Security Verification</h3>' +
-      '<p class="small muted" style="margin-bottom:16px;">Please confirm you are not a robot before proceeding to the application form.</p>' +
-      '<div style="display:flex;justify-content:center;margin:8px 0;min-height:78px;">' +
-        '<div id="apply-captcha-box" style="min-height:78px;"></div>' +
-        '<p id="apply-captcha-status" role="status" class="small muted"></p>' +
-      '</div>' +
-    '</div>',
-    { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true,
-      onClose: function () { window.location.replace("index.html"); } }
-  );
-  renderApplyCaptchaBox();
+async function sendMobileCorrectionPhotos(button) {
+  if (button.disabled) return;
+  var status = document.getElementById("phone-mobile-status");
+  if (!phoneCorrectionFiles.front && !phoneCorrectionFiles.back) {
+    status.textContent = "Choose at least one ID photo.";
+    return;
+  }
+  button.disabled = true;
+  status.textContent = "Sending photos…";
+  try {
+    var photos = await Promise.all([
+      phonePhotoAsJpeg(phoneCorrectionFiles.front), phonePhotoAsJpeg(phoneCorrectionFiles.back)
+    ]);
+    await phoneTransfer("photos", { token: phoneCorrectionToken, front: photos[0], back: photos[1] });
+    sessionStorage.removeItem("pigem_phone_correction");
+    document.getElementById("phone-mobile-fields").hidden = true;
+    status.textContent = "Photos sent. Return to your computer to review and submit your correction.";
+  } catch (error) {
+    status.textContent = error.name === "InvalidStateError" ? "Choose a JPG or PNG image." : (error.message || "Could not send photos. Try again.");
+    button.disabled = false;
+  }
+}
+
+function requireApplyCaptcha() {
+  if (applyCaptchaVerified) return true;
+  if (currentPanel !== 0) showPanel(0);
+  var status = document.getElementById("apply-captcha-status");
+  status.textContent = "Complete the security check before continuing.";
+  status.focus();
+  return false;
 }
 
 async function renderApplyCaptchaBox() {
@@ -392,7 +430,7 @@ async function renderApplyCaptchaBox() {
       try {
         applyCaptchaWidget = grecaptcha.render("g-apply-recaptcha", {
           sitekey: siteKey,
-          size: box.clientWidth < 304 ? "compact" : "normal",
+          size: box.getBoundingClientRect().width >= 304 ? "normal" : "compact",
           callback: onApplyCaptchaVerified,
           "error-callback": function () { renderApplyCaptchaFallback(box); }
         });
@@ -435,15 +473,19 @@ async function onApplyCaptchaVerified(token) {
   }
   applyCaptchaVerified = true;
   applicationScreeningTicket = result.screeningTicket || "";
-  document.querySelector("main")?.removeAttribute("inert");
-  closePopup();
+  status.textContent = "Security check complete.";
+  if (applyResumePanel > 0) {
+    var panel = applyResumePanel;
+    applyResumePanel = 0;
+    showPanel(panel);
+  }
 }
 
 function renderPlanChoices() {
   var plans = getActivePlans();
   var box = document.getElementById("plan-choice-box");
   if (!box) return;
-  if (!selectedPlanId && plans && plans.length > 0) {
+  if (plans.length && !plans.some(function (plan) { return String(plan.id) === selectedPlanId; })) {
     selectedPlanId = String(plans[0].id);
   }
   var html = "";
@@ -471,97 +513,33 @@ function pickPlan(planId) {
   if (typeof clearFieldError === "function") clearFieldError("plan-choice-box");
 }
 
+var applyResumePanel = 0;
 var applyCaptchaVerified = false;
 var applicationScreeningTicket = "";
 var applyCaptchaWidget;
 
-async function applyQrRemoteFile(side, url) {
-  if (!url || _qrLoadedUrls[side] === url) return;
-  _qrLoadedUrls[side] = url;
+async function openPhoneQrModal() {
+  var button = document.getElementById("btn-phone-qr");
+  var status = document.getElementById("apply-phone-status");
+  button.disabled = true;
+  status.textContent = "Creating phone link…";
   try {
-    var blob;
-    if (url.indexOf("data:") === 0) {
-      var parts = url.split(",");
-      var mime = (parts[0].match(/:(.*?);/) || [])[1] || "image/jpeg";
-      var bin = atob(parts[1]);
-      var arr = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      blob = new Blob([arr], { type: mime });
-    } else {
-      var resp = await fetch(url);
-      if (!resp.ok) return;
-      blob = await resp.blob();
-    }
-    var file = new File([blob], "phone-id-" + side + ".jpg", { type: blob.type || "image/jpeg" });
-    if (side === "front") {
-      selectedFrontFile = file;
-      var fnF = document.getElementById("id-front-filename");
-      if (fnF) fnF.innerHTML = "<b style='color:var(--good)'>Received from Phone:</b> Front ID Photo";
-      var boxF = document.getElementById("id-front-preview-box");
-      var imgF = document.getElementById("id-front-preview");
-      if (boxF && imgF) { imgF.src = url; boxF.hidden = false; }
-      var qfStat = document.getElementById("qr-sync-front-state");
-      if (qfStat) qfStat.innerHTML = "<b style='color:var(--good)'>Received!</b>";
-    } else {
-      selectedBackFile = file;
-      var fnB = document.getElementById("id-back-filename");
-      if (fnB) fnB.innerHTML = "<b style='color:var(--good)'>Received from Phone:</b> Back ID Photo";
-      var boxB = document.getElementById("id-back-preview-box");
-      var imgB = document.getElementById("id-back-preview");
-      if (boxB && imgB) { imgB.src = url; boxB.hidden = false; }
-      var qbStat = document.getElementById("qr-sync-back-state");
-      if (qbStat) qbStat.innerHTML = "<b style='color:var(--good)'>Received!</b>";
-    }
-    var warnEl = document.getElementById("id-screen-warn");
-    if (warnEl) { warnEl.hidden = true; warnEl.innerHTML = ""; }
-    checkSelectedIdQuality(side, file);
-  } catch (e) {}
-}
-
-function stopPhoneQrPolling() {
-  if (_qrPollTimer) {
-    clearInterval(_qrPollTimer);
-    _qrPollTimer = null;
+    saveApplyDraftState();
+    var draft = JSON.parse(sessionStorage.getItem(APPLY_DRAFT_KEY));
+    draft.referralAgentId = referralAgentId;
+    draft.isContactOtpVerified = false;
+    draft.verifiedEmailAddress = "";
+    draft.agree_sub = false;
+    draft.agree_tu = false;
+    if (draft.currentPanel > 2) draft.currentPanel = 2;
+    var link = await phoneTransfer("create", { mode: "application", credential: applicationScreeningTicket, draft: draft, path: location.pathname });
+    status.textContent = "";
+    showPhoneTransferLink(link, "Continue application on your phone", "Scan the code to open your saved details. Verify your email on your phone, then add your ID photos and submit there.");
+  } catch (error) {
+    status.textContent = error.message || "Could not create a phone link. Try again.";
+  } finally {
+    button.disabled = false;
   }
-}
-
-function openPhoneQrModal() {
-  stopPhoneQrPolling();
-  if (!_qrActiveSid) {
-    _qrActiveSid = "QR-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
-  }
-  var baseUrl = window.location.href.split("?")[0].split("#")[0];
-  var currentUrl = baseUrl + "?qr_upload=1&sid=" + encodeURIComponent(_qrActiveSid);
-  var qrImgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(currentUrl);
-
-  openPopup(
-    '<div class="center">' +
-      '<h3>Continue ID Upload on Phone</h3>' +
-      '<p class="small muted mt">Scan this QR code with your phone to upload the front photo of your ID and the back if it has printed details without restarting your application.</p>' +
-      '<div class="mt-big" style="background:#fff; padding:16px; border-radius:12px; display:inline-block; border:1px solid var(--line);">' +
-        '<img src="' + qrImgUrl + '" alt="Scan with Phone" style="width:180px; height:180px; display:block;" />' +
-      '</div>' +
-      '<div class="notice mt" style="text-align:left;font-size:13px;">' +
-        '<div>Front ID Status: <span id="qr-sync-front-state">' + (selectedFrontFile ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
-        '<div class="mt">Back ID Status: <span id="qr-sync-back-state">' + (selectedBackFile ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
-      '</div>' +
-      '<div class="small muted mt">Or open this link on your mobile browser:</div>' +
-      '<input type="text" readonly value="' + currentUrl + '" style="font-size:12px; text-align:center; margin-top:6px;" onclick="this.select()" />' +
-      '<div class="row mt-big" style="justify-content:center">' +
-        '<button type="button" class="btn btn-red" onclick="stopPhoneQrPolling(); closePopup()">Done / Close</button>' +
-      '</div>' +
-    '</div>'
-  );
-
-  _qrPollTimer = setInterval(async function () {
-    if (!document.getElementById("popup-modal")) {
-      stopPhoneQrPolling();
-      return;
-    }
-    var files = await dbListQrSessionFiles(_qrActiveSid);
-    if (files.frontUrl) await applyQrRemoteFile("front", files.frontUrl);
-    if (files.backUrl) await applyQrRemoteFile("back", files.backUrl);
-  }, 2500);
 }
 
 async function sendContactOtp() {
@@ -596,40 +574,24 @@ async function sendContactOtp() {
   );
 
   btn.disabled = false;
-  btn.textContent = "Resend Email OTP";
+  btn.textContent = "Resend code";
 
-  openApplyOtpModal(email, otpRec.refTag, emailRes);
+  if (document.getElementById("email").value.trim().toLowerCase() !== email) return;
+  var status = document.getElementById("email-otp-inline-status");
+  status.style.display = "block";
+  if (emailRes && emailRes.sent === false) {
+    status.textContent = "We couldn’t send the code. Use Resend code to try again.";
+    return;
+  }
+  status.textContent = "Enter the 6-digit code sent to your Gmail. It expires in 5 minutes.";
+  document.getElementById("contact-otp-fields").hidden = false;
+  document.getElementById("contact-otp-code").focus();
 }
 
-function openApplyOtpModal(email, refTag, emailRes) {
-  var sentOk = !(emailRes && emailRes.sent === false);
-  var statusLine = sentOk
-    ? 'We sent a 6-digit verification code to <b>' + escapeHtml(email) + '</b> (Ref no: <b>' + escapeHtml(refTag || "VSCF") + '</b>). Valid for 5 minutes.'
-    : '<span style="color:#dc2626;font-weight:700;">Delivery notice:</span> ' + escapeHtml((emailRes && emailRes.reason) || "Could not deliver email right now.");
-
-  openPopup(
-    '<h3 style="margin:0 0 6px;">Email Verification (OTP)</h3>' +
-    '<p class="small muted" style="line-height:1.5;">' + statusLine + '</p>' +
-    '<div class="mt-big">' +
-      '<label for="modal-contact-otp-code">Enter 6-Digit Email OTP</label>' +
-      '<input id="modal-contact-otp-code" type="text" maxlength="6" inputmode="numeric" placeholder="000000" style="text-align:center;font-size:20px;font-weight:800;letter-spacing:6px;">' +
-    '</div>' +
-    '<div class="row between mt-big" style="gap:8px;">' +
-      '<button type="button" class="btn btn-outline btn-small" onclick="sendContactOtp()">Resend OTP</button>' +
-      '<button type="button" class="btn btn-red" onclick="verifyContactOtpModal()">Verify Email OTP</button>' +
-    '</div>',
-    { showCloseX: true, closeOnBackdrop: true }
-  );
-  setTimeout(function () {
-    var inp = document.getElementById("modal-contact-otp-code");
-    if (inp) inp.focus();
-  }, 60);
-}
-
-function verifyContactOtpModal() {
-  if (typeof clearFieldError === "function") clearFieldError("modal-contact-otp-code");
+function verifyContactOtp() {
+  if (typeof clearFieldError === "function") clearFieldError("contact-otp-code");
   var email = document.getElementById("email").value.trim().toLowerCase();
-  var codeInp = document.getElementById("modal-contact-otp-code");
+  var codeInp = document.getElementById("contact-otp-code");
   var entered = (codeInp ? codeInp.value : "").trim();
   var check = typeof verifySecuredOtp === "function"
     ? verifySecuredOtp("apply_email_" + email, entered)
@@ -637,17 +599,22 @@ function verifyContactOtpModal() {
 
   if (!check.valid) {
     if (typeof setFieldError === "function" && codeInp) {
-      setFieldError("modal-contact-otp-code", check.reason || "Incorrect 6-digit OTP code.");
+      setFieldError("contact-otp-code", check.reason || "Incorrect 6-digit OTP code.");
     }
     return;
   }
 
   isContactOtpVerified = true;
   verifiedEmailAddress = email;
-  closePopup();
+  document.getElementById("contact-otp-fields").hidden = true;
+  saveApplyDraftState();
 
   var btn = document.getElementById("btn-send-otp");
-  if (btn) btn.textContent = "Email Verified";
+  if (btn) {
+    btn.textContent = "Email verified";
+    btn.disabled = true;
+  }
+  document.querySelector("#panel-2 button[onclick='nextPanel()']")?.focus();
   var st = document.getElementById("email-otp-inline-status");
   if (st) {
     st.style.display = "block";
@@ -674,25 +641,18 @@ function handleIdFileSelect(side, inputEl) {
 
   if (String(file.type || "").indexOf("image/") !== 0 || file.size < 4096) {
     inputEl.value = "";
-    showAlert(
-      "Invalid ID Photo",
-      "Please select a clear, full-resolution image file (JPG or PNG, at least 4 KB) showing your Valid Government ID.",
-      "warn"
-    );
+    setFieldError("id-" + side + "-box", "Choose a clear ID photo in JPG or PNG format.");
     return;
   }
 
   var otherFile = side === "front" ? selectedBackFile : selectedFrontFile;
   if (otherFile && otherFile.size === file.size && otherFile.name === file.name) {
     inputEl.value = "";
-    showAlert(
-      "Duplicate ID Image Detected",
-      "You selected the exact same image file (" + escapeHtml(file.name) + ") for both the Front and Back of your Valid ID. Please upload two distinct photos showing the Front side and the Back side of your ID.",
-      "warn"
-    );
+    setFieldError("id-" + side + "-box", "Choose a different photo for each side of your ID.");
     return;
   }
 
+  clearFieldError("id-" + side + "-box");
   var warnEl = document.getElementById("id-screen-warn");
   if (warnEl) {
     warnEl.hidden = true;
@@ -798,42 +758,37 @@ function showPanel(index) {
   var pct = Math.round(((index + 1) / TOTAL_PANELS) * 100);
   document.getElementById("section-title").textContent = SECTION_TITLES[index];
   document.getElementById("section-pct").textContent = pct + "%";
-  document.getElementById("section-bar").style.width = pct + "%";
+  var bar = document.getElementById("section-bar");
+  bar.style.width = pct + "%";
+  bar.parentElement.setAttribute("aria-valuenow", String(pct));
 
   if (index === 3) {
     setTimeout(initMapPin, 180);
   }
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  var heading = document.querySelector("#panel-" + index + " h3");
+  if (heading) {
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  }
+  window.scrollTo(0, 0);
 }
 
 function validateCurrentPanel() {
   var panelEl = document.getElementById("panel-" + currentPanel);
   if (typeof clearAllFieldErrors === "function" && panelEl) clearAllFieldErrors(panelEl);
-    var firstInvalidEl = null;
-  var invalidReasons = [];
+  var firstInvalidEl = null;
 
   function markInvalid(fieldId, name, msg, elToFocus) {
     flashErrorBubble(fieldId, name, msg);
-    invalidReasons.push("&bull; <b>" + escapeHtml(name) + ":</b> " + escapeHtml(msg));
     if (!firstInvalidEl) {
       firstInvalidEl = elToFocus || document.getElementById(fieldId);
     }
   }
 
-  function showInvalidSummaryPopup() {
-    if (invalidReasons.length > 0 && typeof showAlert === "function") {
-      showAlert(
-        "Cannot Proceed — Please Check Required Fields",
-        "<div style='text-align:left;line-height:1.6;'>Please complete or correct the following before proceeding:<br><br>" + invalidReasons.join("<br>") + "</div>",
-        "warn"
-      );
-    }
-  }
-
   if (currentPanel === 0) {
-    if (!selectedPlanId) {
+    if (!selectedPlanId || !getPlanById(selectedPlanId)) {
       markInvalid("plan-choice-box", "Plan Selection", "Please pick an internet plan.");
-      showInvalidSummaryPopup();
+
       return false;
     }
     return true;
@@ -858,7 +813,6 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
-      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -872,7 +826,7 @@ function validateCurrentPanel() {
 
     if (!email || !isCustomerGmail(email)) markInvalid("email", "Gmail Address", "Enter a valid @gmail.com address.");
     else if (!isContactOtpVerified || verifiedEmailAddress !== email) {
-      markInvalid("contact_otp", "Email OTP", "Click 'Send Email OTP' on the right to verify your Gmail address.", document.getElementById("btn-send-otp"));
+      markInvalid("contact_otp", "Email OTP", "Verify your Gmail address using the code sent to your inbox.", document.getElementById("btn-send-otp"));
     }
     if (!FORM_VALIDATOR.isValidMobile(phone)) markInvalid("phone", "Mobile Number", "Enter a valid 11-digit mobile number starting with 09.");
 
@@ -884,7 +838,6 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
-      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -906,14 +859,12 @@ function validateCurrentPanel() {
     var phResolvedOk = !_pinLocationState.resolved || _pinLocationState.inPhilippines;
     if (!phBoundsOk || !phResolvedOk) {
       refreshCoverageBanner();
-      showAlert(
-        "Philippines Only",
-        "PIGEM Fiber installation is available only in the Philippines. Pinned location (" + (_pinLocationState.displayName || _pinLocationState.country || "Outside Philippines") + ") cannot proceed.",
-        "warn"
-      );
       var mapBox = document.getElementById("map");
-      if (mapBox) mapBox.scrollIntoView({ behavior: "smooth", block: "center" });
-      showInvalidSummaryPopup();
+      var message = isNaN(latNum) || isNaN(lngNum)
+        ? "Pin your installation address on the map."
+        : "Choose an installation address in the Philippines.";
+      setFieldError("map", message);
+      mapBox?.focus();
       return false;
     }
 
@@ -929,7 +880,6 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
-      showInvalidSummaryPopup();
       return false;
     }
 
@@ -938,13 +888,12 @@ function validateCurrentPanel() {
       refreshCoverageBanner();
       markInvalid("city", "City / Municipality", pinMatch.reason);
       markInvalid("province", "Province / District", pinMatch.reason);
-      showAlert("Pin & Address Mismatch", pinMatch.reason, "warn");
       var cityEl = document.getElementById("city");
       if (cityEl) {
         cityEl.scrollIntoView({ behavior: "smooth", block: "center" });
         cityEl.focus();
       }
-      showInvalidSummaryPopup();
+
       return false;
     }
     return true;
@@ -961,7 +910,6 @@ function validateCurrentPanel() {
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
       firstInvalidEl.focus();
-      showInvalidSummaryPopup();
       return false;
     }
     return true;
@@ -973,7 +921,7 @@ function validateCurrentPanel() {
     }
     if (firstInvalidEl) {
       firstInvalidEl.scrollIntoView({ behavior: "smooth", block: "center" });
-      showInvalidSummaryPopup();
+
       return false;
     }
     return true;
@@ -1124,7 +1072,7 @@ async function enforceLiveMaintenanceOnStep() {
 }
 
 async function nextPanel() {
-  if (!applyCaptchaVerified) return showApplySecurityCaptchaModal();
+  if (!requireApplyCaptcha()) return;
   if (await enforceLiveMaintenanceOnStep()) return;
   if (currentPanel === 3) {
     var latVal = parseFloat(document.getElementById("lat").value);
@@ -1156,6 +1104,13 @@ async function prevPanel() {
   if (currentPanel > 0) {
     showPanel(currentPanel - 1);
   }
+}
+
+function useMapCenter() {
+  if (!leafletMap || !leafletMarker) return;
+  var center = leafletMap.getCenter();
+  leafletMarker.setLatLng(center);
+  updatePinAndAddress(center.lat, center.lng);
 }
 
 function initMapPin() {
@@ -1199,6 +1154,7 @@ function initMapPin() {
 }
 
 async function updatePinAndAddress(lat, lng) {
+  clearFieldError("map");
   var mySeq = ++_pinSeq;
   if (_pinLookupResolve) {
     try { _pinLookupResolve(); } catch (_err) {}
@@ -1428,12 +1384,11 @@ function advanceLoadingStep(stepNum) {
 }
 
 function resetApplyWizardToStep1() {
-  if (applicationScreeningTicket) {
-    applyCaptchaVerified = false;
-    applicationScreeningTicket = "";
-    document.querySelector("main")?.setAttribute("inert", "");
-    showApplySecurityCaptchaModal();
-  }
+  applyCaptchaVerified = false;
+  applyResumePanel = 0;
+  applicationScreeningTicket = "";
+  document.getElementById("apply-captcha-status").textContent = "";
+  if (applyCaptchaWidget != null && typeof grecaptcha !== "undefined") grecaptcha.reset(applyCaptchaWidget);
   try { sessionStorage.removeItem(APPLY_DRAFT_KEY); } catch (e) {}
   selectedIdChecks = { front: null, back: null };
   var loadingScreen = document.getElementById("panel-loading");
@@ -1488,7 +1443,7 @@ async function submitRegistration() {
 }
 
 async function performApplicationSubmission() {
-  if (!applyCaptchaVerified) return showApplySecurityCaptchaModal();
+  if (!requireApplyCaptcha()) return;
   var savedApplication = null;
   if (await enforceLiveMaintenanceOnStep()) return;
   if (!validateCurrentPanel()) return;

@@ -440,7 +440,40 @@ function openPopup(htmlContent, isWideOrOpts) {
     ? '<button type="button" class="popup-close-x" id="popup-close-x-btn" aria-label="Close">&times;</button>'
     : '';
   back.innerHTML = '<div class="popup' + (opts.wide ? " wide" : "") + '">' + closeBtnHtml + htmlContent + "</div>";
+  var previousFocus = document.activeElement;
   document.body.appendChild(back);
+  if (document.body.matches(".customer-portal, .customer-login, .apply-page")) {
+    var dialog = back.querySelector(".popup");
+    var title = dialog.querySelector("h2, h3");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.tabIndex = -1;
+    if (title) {
+      title.id = title.id || "popup-title";
+      dialog.setAttribute("aria-labelledby", title.id);
+    }
+    dialog.focus({ preventScroll: true });
+    back.restoreFocus = previousFocus;
+    back.addEventListener("keydown", function (event) {
+      if (event.key !== "Tab") return;
+      var controls = Array.from(dialog.querySelectorAll("button, a[href], input, select, textarea, [tabindex='0']")).filter(function (el) {
+        return !el.disabled && el.tabIndex >= 0 && el.getClientRects().length;
+      });
+      if (!controls.length) {
+        event.preventDefault();
+        return;
+      }
+      var first = controls[0];
+      var last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
   var handleClose = function () {
     closePopup();
     if (typeof opts.onClose === "function") opts.onClose();
@@ -459,7 +492,10 @@ function openPopup(htmlContent, isWideOrOpts) {
 
 function closePopup() {
   var existing = document.getElementById("popup-modal");
-  if (existing) existing.remove();
+  if (existing) {
+    existing.remove();
+    if (existing.restoreFocus?.isConnected) existing.restoreFocus.focus({ preventScroll: true });
+  }
 }
 
 function showAlert(title, message, type) {
@@ -482,7 +518,15 @@ function previewImage(filePath, titleText) {
 }
 
 function toggleMenu() {
-  document.body.classList.toggle("menu-open");
+  var open = document.body.classList.toggle("menu-open");
+  var button = document.querySelector(".menu-toggle");
+  var menu = document.getElementById("public-mobile-menu");
+  if (button && menu) {
+    button.setAttribute("aria-expanded", String(open));
+    menu.inert = !open;
+    if (open) menu.querySelector("button")?.focus();
+    else button.focus();
+  }
 }
 
 var sliderTimers = {};
@@ -721,6 +765,9 @@ function setFieldError(inputOrId, message) {
     if (anchor.nextSibling) parent.insertBefore(errEl, anchor.nextSibling);
     else parent.appendChild(errEl);
   }
+  el.setAttribute("aria-invalid", "true");
+  var describedBy = (el.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+  if (!describedBy.includes(errEl.id)) el.setAttribute("aria-describedby", describedBy.concat(errEl.id).join(" "));
   errEl.textContent = String(message || "Invalid value.");
   errEl.style.display = "block";
 }
@@ -729,6 +776,7 @@ function clearFieldError(inputOrId) {
   var el = typeof inputOrId === "string" ? document.getElementById(inputOrId) : inputOrId;
   if (!el) return;
   el.classList.remove("input-invalid");
+  el.removeAttribute("aria-invalid");
   var anchor = el.closest(".email-otp-inline") || el.closest(".pw-wrap") || el;
   var parent = anchor.parentNode;
   if (!parent) return;
@@ -751,6 +799,7 @@ function clearAllFieldErrors(rootEl) {
   var invs = scope.querySelectorAll(".input-invalid");
   for (var j = 0; j < invs.length; j++) {
     invs[j].classList.remove("input-invalid");
+    invs[j].removeAttribute("aria-invalid");
   }
 }
 
@@ -998,6 +1047,7 @@ window.addEventListener("DOMContentLoaded", async function () {
 
 window.addEventListener("keydown", function (e) {
   var popup = document.getElementById("popup-modal");
+  if (e.key === "Escape" && !popup && document.body.classList.contains("menu-open")) toggleMenu();
   if (e.key === "Escape" && popup) {
     if (popup.closeFromEscape) popup.closeFromEscape();
     else closePopup();
@@ -1368,13 +1418,13 @@ function openConfirmPopup(title, messageHtml, confirmLabel, onConfirm, isDanger)
   openPopup(
     '<div class="row between" style="margin-bottom:8px;">' +
       '<h3>' + title + '</h3>' +
-      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Cancel</button>' +
     '</div>' +
     '<div class="notice ' + (isDanger ? "warn" : "") + ' mt" style="font-size:13.5px;line-height:1.55;">' + messageHtml + '</div>' +
     '<div class="row mt" style="justify-content:flex-end;gap:8px;">' +
       '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
       '<button type="button" class="' + btnClass + '" onclick="runPendingConfirmAction()">' + (confirmLabel || "Confirm") + '</button>' +
-    '</div>'
+    '</div>',
+    { closeOnBackdrop: true, closeOnEscape: true }
   );
 }
 

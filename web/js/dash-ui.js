@@ -14,45 +14,58 @@ var DASH_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 var _dashSessionRedirecting = false;
 
 function confirmDashboardSignOut() {
-  openConfirmPopup("Sign out?", "Are you sure you want to sign out?", "Sign Out",
-    function () { return signOutAndGoLogin("", true); }, true);
+  if (dashCurrentUser?.role !== "customer") {
+    openConfirmPopup("Sign out?", "Are you sure you want to sign out?", "Sign Out",
+      function () { return signOutAndGoLogin("", true); }, true);
+    return;
+  }
+  openPopup(
+    '<div class="row between"><h2>Sign out?</h2><button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button></div>' +
+    '<p class="mt muted">You can sign in again to view your applications.</p>' +
+    '<div class="row mt" style="justify-content:flex-end"><button type="button" class="btn btn-red" onclick="signOutAndGoLogin(&quot;&quot;, true)">Sign Out</button></div>',
+    { closeOnBackdrop: true, closeOnEscape: true }
+  );
 }
 
 function startDashSecurityWatchers() {
   if (_dashSecurityStarted || !dashCurrentUser) return;
   _dashSecurityStarted = true;
-  var session = getActiveSessionPair();
-  var activityKey = "pigem_activity_" + (session.tok || dashCurrentUser.id);
-  var lastActivity = Date.now();
-  var lastSaved = 0;
+  if (dashCurrentUser.role !== "customer") {
+    var session = getActiveSessionPair();
+    var activityKey = "pigem_activity_" + (session.tok || dashCurrentUser.id);
+    var lastActivity = Date.now();
+    var lastSaved = 0;
 
-  function touchActivity() {
-    lastActivity = Date.now();
-    if (lastActivity - lastSaved >= 10000) {
-      lastSaved = lastActivity;
-      try { localStorage.setItem(activityKey, String(lastSaved)); } catch (error) {}
+    function touchActivity() {
+      lastActivity = Date.now();
+      if (lastActivity - lastSaved >= 10000) {
+        lastSaved = lastActivity;
+        try { localStorage.setItem(activityKey, String(lastSaved)); } catch (error) {}
+      }
     }
+
+    touchActivity();
+    ["pointerdown", "keydown", "scroll", "touchstart"].forEach(function (event) {
+      window.addEventListener(event, touchActivity, { passive: true });
+    });
+
+    _dashIdleTimer = setInterval(function () {
+      if (_dashSessionRedirecting) return;
+      var sharedActivity = 0;
+      try { sharedActivity = Number(localStorage.getItem(activityKey)) || 0; } catch (error) {}
+      if (Date.now() - Math.max(lastActivity, sharedActivity) < DASH_IDLE_TIMEOUT_MS) return;
+      _dashSessionRedirecting = true;
+      clearInterval(_dashIdleTimer);
+      clearInterval(_dashSessionTimer);
+      try { localStorage.removeItem(activityKey); } catch (error) {}
+      signOutAndGoLogin("idle", true);
+    }, 15000);
+
   }
-
-  touchActivity();
-  ["pointerdown", "keydown", "scroll", "touchstart"].forEach(function (event) {
-    window.addEventListener(event, touchActivity, { passive: true });
-  });
-
-  _dashIdleTimer = setInterval(function () {
-    if (_dashSessionRedirecting) return;
-    var sharedActivity = 0;
-    try { sharedActivity = Number(localStorage.getItem(activityKey)) || 0; } catch (error) {}
-    if (Date.now() - Math.max(lastActivity, sharedActivity) < DASH_IDLE_TIMEOUT_MS) return;
-    _dashSessionRedirecting = true;
-    clearInterval(_dashIdleTimer);
-    clearInterval(_dashSessionTimer);
-    try { localStorage.removeItem(activityKey); } catch (error) {}
-    signOutAndGoLogin("idle", true);
-  }, 15000);
 
   var verifySingleDevice = async function () {
     if (!dashCurrentUser || _dashSessionRedirecting || typeof dbVerifyActiveSession !== "function") return;
+    if (dashCurrentUser.role === "customer" && navigator.onLine === false) return;
     try {
       var chk = await dbVerifyActiveSession(dashCurrentUser.id, window.PORTAL_ALLOWED_ROLES || null);
       if (chk && chk.valid === false) {
@@ -78,6 +91,7 @@ function startDashSecurityWatchers() {
 
   _dashSessionTimer = setInterval(verifySingleDevice, 8000);
   window.addEventListener("focus", verifySingleDevice);
+  if (dashCurrentUser.role === "customer") window.addEventListener("online", verifySingleDevice);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) verifySingleDevice();
   });
@@ -494,8 +508,8 @@ function renderProfileDrawer(user) {
   var pwSection = '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
         '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password</div>' +
         '<div id="prof-pw-msg" class="msg"></div>' +
-        '<div class="field"><label>Current Password</label><input id="prof-pw-current" type="password" placeholder="Enter current password" /></div>' +
-        '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" placeholder="Strong new password" /></div>' +
+        '<div class="field"><label for="prof-pw-current">Current Password</label><input id="prof-pw-current" type="password" autocomplete="current-password" required placeholder="Enter current password" /></div>' +
+        '<div class="field"><label for="prof-pw-new">New Password</label><input id="prof-pw-new" type="password" autocomplete="new-password" required data-pw-check="1" placeholder="Strong new password" /></div>' +
         '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmDirectProfilePassword()">Update Password</button>' +
       '</div>';
 

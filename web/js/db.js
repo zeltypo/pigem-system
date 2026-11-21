@@ -220,7 +220,13 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles, verifiedPair)
     if (!userRow) return { valid: false, reason: "missing" };
   } else {
     if (!supabaseClient) return { valid: !verifiedPair };
-    var res = await supabaseClient.from("users").select("id,active,session_token,role,email,username").eq("id", currentId).maybeSingle();
+    var res;
+    try {
+      res = await supabaseClient.from("users").select("id,active,session_token,role,email,username").eq("id", currentId).maybeSingle();
+    } catch (error) {
+      if (SYSTEM === "customer") return { valid: !verifiedPair };
+      throw error;
+    }
     if (res.error) return { valid: !verifiedPair };
     if (!res.data && !verifiedPair && SYSTEM === "admin") {
       var targetRole = (allowedRoles && allowedRoles[0]) ? String(allowedRoles[0]).toLowerCase() : (SYSTEM === "customer" ? "customer" : "");
@@ -767,7 +773,20 @@ async function checkPageAccess(allowedRoles) {
       return null;
     }
   }
-  var user = await dbGetCurrentUser();
+  var user;
+  try {
+    user = await dbGetCurrentUser();
+  } catch (error) {
+    if (SYSTEM !== "customer" || !pair.id) throw error;
+  }
+  if (!user && SYSTEM === "customer" && pair.id) {
+    var main = document.querySelector("main");
+    if (main) main.innerHTML = '<p class="notice" role="status">We couldn’t check your session. Reconnect and try again.</p><button class="btn btn-outline mt" type="button" onclick="window.location.reload()">Try again</button>';
+    var nav = document.querySelector(".customer-nav");
+    if (nav) nav.hidden = true;
+    window.addEventListener("online", function () { window.location.reload(); }, { once: true });
+    return null;
+  }
   if (!user) {
     window.location.replace(getLoginPage());
     return null;
@@ -3340,87 +3359,4 @@ if (typeof apiSendStatusEmail === "undefined") {
       }
     });
   };
-}
-
-async function dbUploadQrSessionFile(sid, side, file) {
-  var cleanSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
-  if (!cleanSid || !file) throw new Error("Missing QR upload session or file.");
-  var cleanSide = side === "back" ? "back" : "front";
-  var ext = (file.name && file.name.split(".").pop()) || "jpg";
-  var url = "";
-
-  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
-    var storagePath = "qr_sessions/" + cleanSid + "/" + cleanSide + "-" + Date.now() + "." + ext;
-    for (var qb = 0; qb < DOCUMENT_BUCKETS.length; qb++) {
-      var qBucket = DOCUMENT_BUCKETS[qb];
-      try {
-        var upRes = await supabaseClient.storage.from(qBucket).upload(storagePath, file, {
-          cacheControl: "60",
-          upsert: true,
-          contentType: file.type || "image/jpeg"
-        });
-        if (!upRes.error) {
-          var pub = supabaseClient.storage.from(qBucket).getPublicUrl(storagePath);
-          if (pub && pub.data && pub.data.publicUrl) {
-            url = pub.data.publicUrl;
-            break;
-          }
-        }
-      } catch (err) {}
-    }
-  }
-
-  if (!url) {
-    url = await new Promise(function (resolve, reject) {
-      var reader = new FileReader();
-      reader.onload = function () { resolve(reader.result); };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  var cached = readSaved("pigem_qr_" + cleanSid, {});
-  if (cleanSide === "front") cached.frontUrl = url;
-  else cached.backUrl = url;
-  cached.updatedAt = Date.now();
-  writeSaved("pigem_qr_" + cleanSid, cached);
-  return url;
-}
-
-async function dbListQrSessionFiles(sid) {
-  var cleanSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
-  if (!cleanSid) return { frontUrl: "", backUrl: "" };
-  var result = { frontUrl: "", backUrl: "" };
-
-  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
-    for (var lb = 0; lb < DOCUMENT_BUCKETS.length; lb++) {
-      var listBucket = DOCUMENT_BUCKETS[lb];
-      if (result.frontUrl && result.backUrl) break;
-      try {
-        var res = await supabaseClient.storage.from(listBucket).list("qr_sessions/" + cleanSid, {
-          limit: 20,
-          sortBy: { column: "created_at", order: "desc" }
-        });
-        if (!res.error && Array.isArray(res.data)) {
-          for (var i = 0; i < res.data.length; i++) {
-            var item = res.data[i];
-            if (!item || !item.name) continue;
-            if (!result.frontUrl && item.name.indexOf("front-") === 0) {
-              var p1 = supabaseClient.storage.from(listBucket).getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
-              if (p1 && p1.data) result.frontUrl = p1.data.publicUrl;
-            }
-            if (!result.backUrl && item.name.indexOf("back-") === 0) {
-              var p2 = supabaseClient.storage.from(listBucket).getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
-              if (p2 && p2.data) result.backUrl = p2.data.publicUrl;
-            }
-          }
-        }
-      } catch (e) {}
-    }
-  }
-
-  var local = readSaved("pigem_qr_" + cleanSid, {});
-  if (!result.frontUrl && local.frontUrl) result.frontUrl = local.frontUrl;
-  if (!result.backUrl && local.backUrl) result.backUrl = local.backUrl;
-  return result;
 }

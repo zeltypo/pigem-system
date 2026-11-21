@@ -12,18 +12,19 @@
 
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
-<body class="public-page">
+<body class="public-page customer-login">
 
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="site-header">
     <div class="container" style="display:flex; align-items:center; justify-content:space-between; height:64px;">
       <a href="index.html" class="btn btn-small">&#8592; Back</a>
       <div style="display:flex; align-items:center; gap:10px;">
-        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" width="38" height="38">
       </div>
     </div>
   </header>
 
-  <main class="auth-page">
+  <main id="main-content" class="auth-page">
     <div class="card auth-card">
       <div class="center">
         <h2>Customer Login</h2>
@@ -46,14 +47,18 @@
           </div>
         </div>
 
-        <div id="login-recaptcha-wrap" style="display:flex; justify-content:center; margin:16px 0; min-height:78px;">
-          <div id="login-captcha-box" style="min-width:304px; min-height:78px;"></div>
+        <div id="login-recaptcha-wrap" class="captcha-inline mt">
+          <div id="login-captcha-box"></div>
+          <p id="login-captcha-status" class="small muted" role="status" tabindex="-1"></p>
         </div>
 
         <div class="mt-big">
           <button id="btn-login" type="submit" class="btn btn-red btn-full">Sign In</button>
         </div>
       </form>
+      <p class="small login-help mt">
+        <a href="index.html#account-help">How do I get an account or fix sign-in problems?</a>
+      </p>
     </div>
   </main>
 

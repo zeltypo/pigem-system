@@ -16,10 +16,8 @@ function previousCustomerSubmissions(latest, currentScreening) {
 var currentCustomer = null;
 var myApps = [];
 var selectedAppId = null;
-var hasShownCorrectionLoginPopup = false;
 
 var _custQrPollTimer = null;
-var _custQrActiveSid = "";
 var _custQrLoadedUrls = { front: "", back: "" };
 var custQrFrontFile = null;
 var custQrBackFile = null;
@@ -86,50 +84,51 @@ async function applyCustomerQrRemoteFile(side, url) {
   } catch (e) {}
 }
 
-function openCustomerPhoneQrModal() {
+async function openCustomerPhoneQrModal() {
+  var button = document.getElementById("btn-cust-phone-qr");
+  var status = document.getElementById("cust-phone-status");
+  var applicationId = selectedAppId;
+  var session = getActiveSessionPair(["customer"]);
+  button.disabled = true;
+  status.textContent = "Creating phone link…";
   stopCustomerPhoneQrPolling();
-  if (!_custQrActiveSid) {
-    _custQrActiveSid = "QR-FIX-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
+  try {
+    var link = await phoneTransfer("create", { mode: "correction", customer_id: session.id, credential: session.tok });
+    if (selectedAppId !== applicationId || !button.isConnected) return;
+    status.textContent = "";
+    showPhoneTransferLink(link, "Send ID photos from your phone", "Scan the code to upload the requested ID photos. Return here to review and submit the correction.");
+    var modal = document.getElementById("popup-modal");
+    var receiving = false;
+    _custQrPollTimer = setInterval(async function () {
+      if (!modal.isConnected || selectedAppId !== applicationId) {
+        stopCustomerPhoneQrPolling();
+        return;
+      }
+      if (receiving) return;
+      receiving = true;
+      try {
+        var photos = await phoneTransfer("receive", { token: link.receiver });
+        if (!modal.isConnected || selectedAppId !== applicationId) return;
+        if (!photos.front && !photos.back) return;
+        if (photos.front) await applyCustomerQrRemoteFile("front", photos.front);
+        if (photos.back) await applyCustomerQrRemoteFile("back", photos.back);
+        if ((photos.front && !custQrFrontFile) || (photos.back && !custQrBackFile)) return;
+        stopCustomerPhoneQrPolling();
+        document.getElementById("phone-transfer-status").textContent = "Photos received. Close this window to review and submit.";
+        phoneTransfer("finish", { token: link.receiver }).catch(function () {});
+      } catch (error) {
+        var message = document.getElementById("phone-transfer-status");
+        if (message && modal.isConnected) message.textContent = error.message || "Waiting to reconnect…";
+        if (error.message && error.message.includes("expired")) stopCustomerPhoneQrPolling();
+      } finally {
+        receiving = false;
+      }
+    }, 3000);
+  } catch (error) {
+    status.textContent = error.message || "Could not create a phone link. Try again.";
+  } finally {
+    button.disabled = false;
   }
-  var baseOrigin = (typeof _getPortalBaseUrl === "function")
-    ? _getPortalBaseUrl()
-    : window.location.origin;
-  var mobileUploadUrl = baseOrigin.replace(/\/$/, "") + "/apply.html?qr_upload=1&sid=" + encodeURIComponent(_custQrActiveSid);
-  var qrImgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(mobileUploadUrl);
-
-  var hasFrontNow = Boolean(custQrFrontFile || document.getElementById("fix-file")?.files?.length);
-  var hasBackNow = Boolean(custQrBackFile || document.getElementById("fix-file-back")?.files?.length);
-
-  openPopup(
-    '<div class="center">' +
-      '<h3>Continue ID Correction Upload on Phone</h3>' +
-      '<p class="small muted mt">Scan this QR code with your phone to capture or upload clear Front and Back photos of your Valid ID. Uploaded photos sync directly back to this correction form.</p>' +
-      '<div class="mt-big" style="background:#fff; padding:16px; border-radius:12px; display:inline-block; border:1px solid var(--line);">' +
-        '<img src="' + qrImgUrl + '" alt="Scan with Phone" style="width:180px; height:180px; display:block;" />' +
-      '</div>' +
-      '<div class="notice mt" style="text-align:left;font-size:13px;">' +
-        '<div>Front ID Status: <span id="cust-qr-sync-front-state">' + (hasFrontNow ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
-        '<div class="mt">Back ID Status: <span id="cust-qr-sync-back-state">' + (hasBackNow ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
-      '</div>' +
-      '<div class="small muted mt">Or open this link on your mobile browser:</div>' +
-      '<input type="text" readonly value="' + escapeHtml(mobileUploadUrl) + '" style="font-size:12px; text-align:center; margin-top:6px;" onclick="this.select()" />' +
-      '<div class="row mt-big" style="justify-content:center">' +
-        '<button type="button" class="btn btn-red" onclick="stopCustomerPhoneQrPolling(); closePopup()">Done / Close</button>' +
-      '</div>' +
-    '</div>',
-    { showCloseX: true, closeOnBackdrop: true, onClose: stopCustomerPhoneQrPolling }
-  );
-
-  _custQrPollTimer = setInterval(async function () {
-    if (!document.getElementById("popup-modal")) {
-      stopCustomerPhoneQrPolling();
-      return;
-    }
-    if (typeof dbListQrSessionFiles !== "function") return;
-    var files = await dbListQrSessionFiles(_custQrActiveSid);
-    if (files.frontUrl) await applyCustomerQrRemoteFile("front", files.frontUrl);
-    if (files.backUrl) await applyCustomerQrRemoteFile("back", files.backUrl);
-  }, 2500);
 }
 
 async function checkCustomerFixPhotoQuality(side, file) {
@@ -218,6 +217,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   await loadMyApplications();
 
   setInterval(async function () {
+    if (document.hidden || navigator.onLine === false || document.getElementById("popup-modal")) return;
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
 
     if (custQrFrontFile ||
@@ -226,7 +226,7 @@ window.addEventListener("DOMContentLoaded", async function () {
         document.getElementById("fix-file")?.files?.length ||
         document.getElementById("fix-file-back")?.files?.length ||
         document.getElementById("btn-fix")?.disabled) return;
-    if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") return;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(activeTag) || document.activeElement?.closest("#my-applications, #profile-drawer, #notif-modal")) return;
     await loadMyApplications(true);
     if (typeof refreshNotifBell === "function") refreshNotifBell(currentCustomer);
   }, 8000);
@@ -259,27 +259,23 @@ function promptCustomerCorrectionReminder(apps) {
     }
   }
 
-  if (!hasShownCorrectionLoginPopup && pendingFixes.length > 0 && typeof openPopup === "function") {
-    hasShownCorrectionLoginPopup = true;
-    var listItems = pendingFixes.map(function (a) {
-      return '<div style="padding:8px 10px;border:1px solid #fed7aa;background:#fffaf5;border-radius:8px;margin-bottom:8px;">' +
-        '<b>' + escapeHtml(a.reference_no || a.ref_no) + '</b> (' + escapeHtml(a.plan_name || "") + ')<br>' +
-        '<span class="small" style="color:#7c2d12;">' + escapeHtml(a.agent_remarks || "Please update the flagged details or upload clearer Front and Back Valid ID photos.") + '</span>' +
-      '</div>';
-    }).join("");
-    openPopup(
-      '<div style="padding:4px 2px;">' +
-        '<h3 style="color:#b42318;margin-bottom:6px;">Important: Application Correction Required</h3>' +
-        '<p class="small muted" style="margin-bottom:12px;">You have <b>' + pendingFixes.length + '</b> application(s) in <b>Needs Correction</b> status:</p>' +
-        listItems +
-        '<p class="small" style="margin:8px 0 14px;line-height:1.55;color:#7c2d12;background:#fff7ed;padding:8px 10px;border-radius:8px;border:1px solid #fed7aa;"><b>Why this is important:</b> Submitting the requested correction or clear Valid ID photos (Front &amp; Back) is required by the telecom provider validator before your line installation can be scheduled. Follow-up notices are sent at 24 hours and 72 hours.</p>' +
-        '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
-          '<button type="button" class="btn btn-red btn-sm" onclick="selectMyApp(\'' + escapeHtml(pendingFixes[0].id) + '\', false); closePopup();">Review &amp; Update Now</button>' +
-        '</div>' +
-      '</div>',
-      { showCloseX: true, closeOnBackdrop: true }
-    );
-  }
+}
+
+function showCustomerLoginUpdates() {
+  if (!myApps.length || sessionStorage.getItem("pigem_show_application_updates") !== String(currentCustomer.id)) return;
+  if (document.getElementById("popup-modal")) return;
+  sessionStorage.removeItem("pigem_show_application_updates");
+  var items = myApps.map(function (app) {
+    return '<li><b>' + escapeHtml(app.reference_no || app.ref_no || "Application") + '</b> ' +
+      (app.status === "Needs Correction" && !app.correction_declined
+        ? '<span class="badge badge-yellow">Needs Correction</span>'
+        : customerStatusBadge(app.status === "Needs Correction" ? "Processing" : app.status)) + '</li>';
+  }).join("");
+  openPopup(
+    '<h2>Application updates</h2><ul class="customer-update-list">' + items + '</ul>' +
+    '<div class="row mt"><button class="btn btn-red" type="button" onclick="closePopup()">View applications</button></div>',
+    { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true }
+  );
 }
 
 function renderAppList() {
@@ -289,7 +285,7 @@ function renderAppList() {
     listEl.innerHTML =
       '<div class="muted" style="padding:18px 0; text-align:center">' +
       'You have not submitted any applications yet.<br><br>' +
-      '<a href="apply.html" target="_blank" class="btn btn-red btn-sm">Apply Now</a>' +
+      '<a href="apply.html" class="btn btn-red btn-sm">Apply Now</a>' +
       '</div>';
     return;
   }
@@ -299,15 +295,15 @@ function renderAppList() {
     var a = myApps[j];
     var isSel = a.id === selectedAppId;
     html +=
-      '<div class="q-card" style="cursor:pointer; border-color:' + (isSel ? "#c8102e" : "var(--line)") + '" onclick="selectMyApp(\'' + escapeHtml(a.id) + '\', true)">' +
-        '<div class="q-head">' +
-          '<div>' +
-            '<div class="q-name">' + escapeHtml(a.reference_no) + ' - ' + escapeHtml(a.plan_name) + '</div>' +
-            '<div class="q-sub">' + customerStatusBadge(a.status) + ' - Submitted ' + formatDate(a.created_at) + '</div>' +
-          '</div>' +
-          '<span class="btn btn-outline btn-sm">View -></span>' +
-        '</div>' +
-      '</div>';
+      '<button type="button" class="q-card customer-application-row" aria-pressed="' + isSel + '" onclick="selectMyApp(\'' + escapeHtml(a.id) + '\', true)">' +
+        '<span class="q-head">' +
+          '<span>' +
+            '<span class="q-name">' + escapeHtml(a.reference_no || a.ref_no) + ' · ' + escapeHtml(a.plan_name) + '</span>' +
+            '<span class="q-sub">' + customerStatusBadge(a.status) + ' · ' + formatDate(a.created_at) + '</span>' +
+          '</span>' +
+          '<span class="btn btn-outline btn-sm">View</span>' +
+        '</span>' +
+      '</button>';
   }
   listEl.innerHTML = html;
 }
@@ -322,10 +318,11 @@ async function loadMyApplications(backgroundRefresh) {
     updateDashSearchApps(myApps);
   }
 
-  var proc = 0, done = 0, rej = 0;
+  var proc = 0, done = 0, rej = 0, fix = 0;
   for (var i = 0; i < myApps.length; i++) {
     var vis = getCustomerStatus(myApps[i].status);
-    if (vis === "Approved") done++;
+    if (myApps[i].status === "Needs Correction" && !myApps[i].correction_declined) fix++;
+    else if (vis === "Approved") done++;
     else if (vis === "Rejected") rej++;
     else proc++;
   }
@@ -335,6 +332,7 @@ async function loadMyApplications(backgroundRefresh) {
   var rejEl = document.getElementById("st-rej");
   if (totalEl) totalEl.textContent = myApps.length;
   if (procEl) procEl.textContent = proc;
+  document.getElementById("st-fix").textContent = fix;
   if (doneEl) doneEl.textContent = done;
   if (rejEl) rejEl.textContent = rej;
 
@@ -352,6 +350,7 @@ async function loadMyApplications(backgroundRefresh) {
   renderAppList();
 
   if (!backgroundRefresh || !document.getElementById("btn-fix")) renderSelectedApp();
+  showCustomerLoginUpdates();
 }
 
 function findMyApp(id) {
@@ -364,13 +363,14 @@ function findMyApp(id) {
 function selectMyApp(id, showModal) {
   if (selectedAppId !== id) {
     stopCustomerPhoneQrPolling();
-    _custQrActiveSid = "";
     _custQrLoadedUrls = { front: "", back: "" };
     custQrFrontFile = null;
     custQrBackFile = null;
   }
+  var focusOnRow = document.activeElement?.matches(".customer-application-row");
   selectedAppId = id;
   renderAppList();
+  if (focusOnRow) document.querySelector('.customer-application-row[aria-pressed="true"]')?.focus();
   renderSelectedApp();
   var app = findMyApp(id);
   if (showModal && app && typeof openPopup === "function") {
@@ -414,14 +414,17 @@ function selectMyApp(id, showModal) {
           '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
         '</div>' +
       '</div>';
-    openPopup(modalHtml, { showCloseX: true, closeOnBackdrop: true });
+    openPopup(modalHtml, { closeOnBackdrop: true, closeOnEscape: true });
   }
 }
 
 function proceedToCustomerCorrectionForm() {
   if (typeof closePopup === "function") closePopup();
   var box = document.getElementById("cust-detail-box");
-  if (box) box.scrollIntoView({ behavior: "smooth" });
+  if (box) {
+    box.tabIndex = -1;
+    box.focus();
+  }
 }
 
 function renderSelectedApp() {
@@ -568,13 +571,14 @@ function renderSelectedApp() {
             '<b style="font-size:13.5px">Valid ID Photos (Front &amp; Back)</b>' +
             '<div class="tiny muted">Upload clear photos from this computer or scan the QR code to capture with your phone.</div>' +
           '</div>' +
-          '<button type="button" id="btn-cust-phone-qr" class="btn btn-outline btn-sm" style="display:' + (isCustomerDesktopMode() ? 'inline-flex' : 'none') + '; align-items:center; gap:6px" onclick="openCustomerPhoneQrModal()">' +
-            '<img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="Phone QR" class="icon-img" style="width:16px;height:16px" /> Continue on Phone (QR Code)' +
+          '<button type="button" id="btn-cust-phone-qr" class="btn btn-red btn-sm" style="display:' + (isCustomerDesktopMode() ? 'inline-flex' : 'none') + '; align-items:center; gap:6px" onclick="openCustomerPhoneQrModal()">' +
+            '<img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img" style="width:16px;height:16px" /> Upload ID photos from phone' +
           '</button>' +
         '</div>' +
+        '<p id="cust-phone-status" class="small muted" role="status"></p>' +
         '<div class="grid-2" ' + hiPhoto + '>' +
           '<div class="field" style="margin-bottom:0">' +
-            '<label>Front of Valid ID Photo ' + (needsFront ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
+            '<label for="fix-file">Front of Valid ID Photo ' + (needsFront ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
             '<input id="fix-file" type="file" accept="image/*" onchange="onCustomerLocalFixFileChange(\'front\', this)" />' +
             '<div id="fix-front-qr-status" class="small" style="margin-top:4px"></div>' +
             '<div id="fix-front-preview-box" class="mt" hidden>' +
@@ -583,7 +587,7 @@ function renderSelectedApp() {
             '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Front side showing your name, photo, and ID number.</div>' +
           '</div>' +
           '<div class="field" style="margin-bottom:0">' +
-            '<label>Back of Valid ID Photo ' + (needsBack ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
+            '<label for="fix-file-back">Back of Valid ID Photo ' + (needsBack ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
             '<input id="fix-file-back" type="file" accept="image/*" onchange="onCustomerLocalFixFileChange(\'back\', this)" />' +
             '<div id="fix-back-qr-status" class="small" style="margin-top:4px"></div>' +
             '<div id="fix-back-preview-box" class="mt" hidden>' +
@@ -919,7 +923,6 @@ async function submitCustomerCorrection(appId) {
       }).catch(function () {});
     } catch (e) {}
     stopCustomerPhoneQrPolling();
-    _custQrActiveSid = "";
     _custQrLoadedUrls = { front: "", back: "" };
     custQrFrontFile = null;
     custQrBackFile = null;

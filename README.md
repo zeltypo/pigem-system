@@ -32,6 +32,15 @@ service-role key, and worker secret are present. There is no separate enable
 flag. The scheduler still has to be installed and active. On the same Supabase
 project, the schema reset keeps the scheduler and Vault secret.
 
+## Customer phone transfers
+
+The application QR opens the saved form on a phone. The customer completes the
+security and email checks there and chooses new ID photos. The correction QR
+only stages replacement photos for the original browser to review and submit.
+Each QR can be opened once and expires in 15 minutes. The API creates a private
+temporary Storage bucket using the existing server-side Supabase and worker
+configuration. No schema reset is needed.
+
 ## Environment setup
 
 Copy the names from `.env.example` into Vercel Project Settings under

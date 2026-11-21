@@ -13,19 +13,21 @@
 </head>
 <body class="public-page">
 
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="site-header">
     <div class="container">
       <div class="logo">
-        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page">
+        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo">
         <span style="cursor:default; user-select:none;">Combined Facilities Support Services</span>
       </div>
 
-      <nav class="menu">
-        <a href="index.html" class="active hide-phone">Home</a>
+      <nav class="menu" aria-label="Main navigation">
+        <a href="index.html" class="active hide-phone" aria-current="page">Home</a>
         <a href="about.html" class="hide-phone">About Us</a>
         <a href="customer.html" class="hide-phone customer-only" hidden>My Account</a>
-        <a href="login.html" class="btn btn-red btn-small account-btn">Customer Login</a>
-        <button class="menu-toggle" onclick="toggleMenu()" aria-label="Open Menu">
+        <a href="login.html" class="account-btn hide-phone">Customer Login</a>
+        <a href="apply.html" class="btn btn-red btn-small hide-phone">Apply</a>
+        <button class="menu-toggle" type="button" onclick="toggleMenu()" aria-label="Menu" aria-expanded="false" aria-controls="public-mobile-menu">
           <span class="bar"></span>
           <span class="bar"></span>
           <span class="bar"></span>
@@ -36,20 +38,21 @@
 
   <div class="side-menu-back" onclick="toggleMenu()"></div>
 
-  <aside class="side-menu">
+  <aside id="public-mobile-menu" class="side-menu" aria-label="Website menu" inert>
     <div class="row between" style="padding-bottom:12px; border-bottom:1px solid var(--line); align-items:center;">
       <div style="display:flex; align-items:center; gap:10px;">
-        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="height:32px; width:auto; cursor:pointer;" title="Click logo to refresh page">
+        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo">
       </div>
       <button class="btn btn-small" onclick="toggleMenu()" aria-label="Close Menu">&#10005;</button>
     </div>
     <a href="index.html" onclick="toggleMenu()">Home</a>
     <a href="about.html" onclick="toggleMenu()">About Us</a>
     <a href="customer.html" class="customer-only" hidden>My Account</a>
-    <a href="login.html" class="btn btn-red account-btn">Customer Login</a>
+    <a href="login.html" class="account-btn">Customer Login</a>
+    <a href="apply.html" class="btn btn-red">Apply</a>
   </aside>
 
-  <main>
+  <main id="main-content">
 
     <div id="site-announcement-bar" style="display:none; background:#101828; color:#ffffff; padding:10px 16px; font-size:13.5px; text-align:center;"></div>
 
@@ -102,7 +105,17 @@
           <h2>Frequently Asked Questions</h2>
           <p class="muted mt">Click any question to view the answer.</p>
         </div>
-        <div id="faq-list"></div>
+        <div>
+          <div id="faq-list"></div>
+          <details id="account-help" open>
+            <summary>How do I get a customer account?</summary>
+            <p>Submit an <a href="apply.html">internet application</a>. Then open the activation email sent to the Gmail address you verified and set your password. Check Spam if you don’t see it.</p>
+          </details>
+          <details>
+            <summary>Why can’t I sign in?</summary>
+            <p>Activate your account from the email first. If you already did, sign in with your username or the Gmail address used to apply. Use <a href="login.html">Forgot Username or Password</a> on the sign-in page if you need help.</p>
+          </details>
+        </div>
       </div>
     </section>
   </main>
