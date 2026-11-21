@@ -112,15 +112,24 @@ function showHandoffProgress(percent) {
   document.getElementById("application-handoff-percent-text").textContent = percent + "%";
 }
 
-function refreshApplicationHandoffButtons() {
-  var onPhone = Boolean(sessionStorage.getItem(APPLICATION_HANDOFF_EDIT));
-  var monitoring = Boolean(sessionStorage.getItem(APPLICATION_HANDOFF_WATCH));
-  document.getElementById("btn-return-desktop").hidden = !onPhone;
-  if (onPhone || monitoring) document.getElementById("btn-phone-qr").hidden = true;
+function refreshApplicationHandoffButtons(hideNavigation) {
+  var params = new URLSearchParams(location.search);
+  var correctionUpload = params.get("phone_correction") === "1";
+  hideNavigation = hideNavigation || params.get("phone_returned") === "1";
+  var editingRemotely = !correctionUpload && Boolean(sessionStorage.getItem(APPLICATION_HANDOFF_EDIT));
+  var monitoring = !correctionUpload && Boolean(sessionStorage.getItem(APPLICATION_HANDOFF_WATCH));
+  document.getElementById("btn-back-website").hidden = Boolean(hideNavigation || editingRemotely || monitoring);
+  document.getElementById("btn-return-desktop").hidden = Boolean(hideNavigation || !editingRemotely);
+  if (hideNavigation || correctionUpload || editingRemotely || monitoring) document.getElementById("btn-phone-qr").hidden = true;
+}
+
+function showApplicationReturnedToDesktop() {
+  refreshApplicationHandoffButtons(true);
+  showApplicationHandoff("Returned to desktop", "Continue on your desktop. To switch devices again, scan the new QR code from there.", true);
 }
 
 function startApplicationHandoffMonitor(watch) {
-  showApplicationHandoff("Continue on your phone", "Waiting for your phone to open the application.", true);
+  showApplicationHandoff("Continue on another device", "Waiting for the other device to open the application.", true);
   document.getElementById("application-handoff-code").src = watch.qr;
   document.getElementById("application-handoff-link").value = watch.url;
   document.getElementById("application-handoff-qr").hidden = false;
@@ -142,20 +151,20 @@ async function pollApplicationHandoff(watch) {
     if (result.status === "submitted") {
       clearCompletedApplicationHandoff();
       showHandoffProgress(100);
-      showApplicationHandoff("Application submitted", "Your application was submitted from your phone.", true);
+      showApplicationHandoff("Application submitted", "Your application was submitted from the other device.", true);
       phoneTransfer("application/ack", { token: watch.token }).catch(function () {});
       return;
     }
     var waiting = result.status === "waiting";
     document.getElementById("application-handoff-qr").hidden = !waiting;
     document.getElementById("application-handoff-cancel").hidden = !waiting && result.status !== "expired";
-    setApplicationHandoffStatus(waiting ? "Waiting for your phone to open the application." :
+    setApplicationHandoffStatus(waiting ? "Waiting for the other device to open the application." :
       (result.status === "expired" ? "The QR code expired. Resume on this computer to continue." :
-        "Your phone is editing this application. Select Back to desktop on your phone to return here."));
+        "This application is open on another device. Select Back to desktop there to continue here."));
     if (Number.isInteger(result.percent)) showHandoffProgress(result.percent);
   } catch (error) {
     if (!sessionStorage.getItem(APPLICATION_HANDOFF_WATCH)) return;
-    setApplicationHandoffStatus(error.status === 410 ? "The phone session ended. You can reopen the original desktop draft." :
+    setApplicationHandoffStatus(error.status === 410 ? "The transfer session ended. You can reopen the original desktop draft." :
       "Couldn’t check progress. Reconnecting…");
     if (error.status === 410) {
       document.getElementById("application-handoff-qr").hidden = true;
@@ -179,6 +188,7 @@ async function resumeApplicationOnDesktop(watch, snapshot) {
   document.getElementById("application-handoff-link").value = "";
   document.getElementById("application-handoff-code").removeAttribute("src");
   setupDeviceUploadUI();
+  refreshApplicationHandoffButtons();
   restoreApplyDraftState(false);
   updateContactOtpButton(document.getElementById("email").value.trim().toLowerCase());
   await restoreApplicationHandoffPhotos();
@@ -246,7 +256,7 @@ async function returnApplicationToDesktop() {
     history.replaceState(null, "", location.pathname + "?phone_returned=1");
     status.textContent = "";
     main.inert = false;
-    showApplicationHandoff("Returned to desktop", "The phone form was cleared. Continue on your computer.", true);
+    showApplicationReturnedToDesktop();
   } catch (error) {
     status.textContent = error.message || "Couldn’t return the application. Please try again.";
   } finally {

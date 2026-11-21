@@ -161,7 +161,7 @@ function restoreApplyDraftState(hasExplicitUrlPlan) {
 async function initApplyPage() {
   var params = new URLSearchParams(window.location.search);
   if (params.get("phone_returned") === "1") {
-    showApplicationHandoff("Returned to desktop", "Continue on your computer.", true);
+    showApplicationReturnedToDesktop();
     return;
   }
   var phoneToken = new URLSearchParams(window.location.hash.slice(1)).get("phone");
@@ -169,8 +169,7 @@ async function initApplyPage() {
     if (await openMobilePhoneTransfer(phoneToken)) return;
   }
   if (params.get("qr_upload") === "1" || params.get("phone_correction") === "1") {
-    showMobileTransferPanel();
-    document.getElementById("phone-mobile-status").textContent = "This link has expired. Create a new QR code on your computer.";
+    showApplicationHandoff("QR link expired", "Create a new QR code on your desktop and scan it again.", true);
     return;
   }
 
@@ -350,9 +349,8 @@ function showMobileTransferPanel() {
 }
 
 async function openMobilePhoneTransfer(token) {
-  showMobileTransferPanel();
-  var status = document.getElementById("phone-mobile-status");
-  status.textContent = "Opening phone link…";
+  refreshApplicationHandoffButtons(true);
+  showApplicationHandoff("Opening transfer", "Opening the QR link…", true);
   try {
     var transfer = token
       ? await phoneTransfer("open", { token: token })
@@ -363,17 +361,21 @@ async function openMobilePhoneTransfer(token) {
       sessionStorage.setItem(APPLY_PHONE_TICKET_KEY, transfer.screening_ticket || "");
       if (transfer.edit) sessionStorage.setItem(APPLICATION_HANDOFF_EDIT, transfer.edit);
       history.replaceState(null, "", window.location.pathname);
-      document.getElementById("panel-qr-mobile").hidden = true;
+      document.getElementById("application-handoff").hidden = true;
       document.getElementById("apply-step-progress").hidden = false;
       return false;
     }
+    if (transfer.mode !== "correction" || !transfer.upload) throw new Error("This QR link could not be opened.");
     phoneCorrectionToken = transfer.upload;
     sessionStorage.setItem("pigem_phone_correction", phoneCorrectionToken);
     history.replaceState(null, "", window.location.pathname + "?phone_correction=1");
+    showMobileTransferPanel();
+    refreshApplicationHandoffButtons();
     document.getElementById("phone-mobile-fields").hidden = false;
-    status.textContent = "Choose the requested photos, then select Send photos.";
+    document.getElementById("phone-mobile-status").textContent = "Choose the requested photos, then select Send photos.";
   } catch (error) {
-    status.textContent = error.message || "Could not open this phone link.";
+    refreshApplicationHandoffButtons();
+    showApplicationHandoff("Could not open transfer", error.message || "Generate a new QR code on your desktop and scan it again.", true);
   }
   return true;
 }
@@ -601,7 +603,7 @@ async function openPhoneQrModal() {
   try {
     var snapshot = await applicationHandoffSnapshot();
     var link = await phoneTransfer("create", { mode: "application", credential: applicationScreeningTicket, path: location.pathname, ...snapshot });
-    if (!link.watch) throw new Error("Could not start monitoring the phone. Try again.");
+    if (!link.watch) throw new Error("Could not start the transfer. Try again.");
     var watch = { token: link.watch, url: link.url, qr: link.qr, percent: applicationHandoffPercent(snapshot.draft.currentPanel) };
     sessionStorage.setItem(APPLICATION_HANDOFF_WATCH, JSON.stringify(watch));
     if (applicationScreeningTicket) sessionStorage.setItem(APPLY_PHONE_TICKET_KEY, applicationScreeningTicket);
@@ -1301,6 +1303,9 @@ function showInstallationMarker(lat, lng, zoom) {
     return;
   }
   leafletMarker = L.marker([lat, lng], { draggable: true }).addTo(leafletMap);
+  leafletMarker.on("click", function () {
+    if (_addressNeedsPin) confirmCurrentMapPin();
+  });
   leafletMarker.on("dragend", function () {
     var position = leafletMarker.getLatLng();
     chooseInstallationPin(position.lat, position.lng);
@@ -1449,7 +1454,7 @@ function lookupInstallationAddress(query, useTypedAddress) {
     if (sequence !== _pinSeq) return;
     var match = matches?.[0];
     if (!match || !Number.isFinite(Number(match.lat)) || !Number.isFinite(Number(match.lon))) {
-      status.textContent = "Address not found. Try the barangay and city in Search Map, or place the pin manually.";
+      status.textContent = "Address not found. Search for the area or place the pin yourself. If the existing pin is correct, tap it.";
       return;
     }
     var lat = Number(match.lat);
