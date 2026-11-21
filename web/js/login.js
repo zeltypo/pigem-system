@@ -22,7 +22,7 @@ window.onLoginCaptchaVerified = async function (token) {
   var result = await apiVerifyCaptcha(token);
   if (version !== loginCaptchaVersion) return;
   loginCaptchaVerified = Boolean(result && result.verified === true);
-  if (status) status.textContent = loginCaptchaVerified ? "Security check complete." : "Security check failed. Try the checkbox again.";
+  if (status) status.textContent = loginCaptchaVerified ? "" : "Security check failed. Try the checkbox again.";
   if (!loginCaptchaVerified && loginCaptchaWidget != null) grecaptcha.reset(loginCaptchaWidget);
 };
 
@@ -179,7 +179,7 @@ function openStaffResetRequestModal(initialTab) {
   var fieldPlaceholder = isPw ? "e.g. maria_santos" : "e.g. Maria Santos";
 
   openPopup(
-    '<h3 style="margin:0 0 6px;">Account Recovery</h3>' +
+    '<h3>Sign-in problems?</h3>' +
     '<p class="small muted">Recover your Internal Staff Username or Password:</p>' +
     '<div class="recovery-tabs mt">' +
       '<button type="button" class="recovery-tab-btn' + (isPw ? " active" : "") + '" onclick="switchStaffRecoveryTab(\'password\')">' +
@@ -369,6 +369,7 @@ function openForgotModal(initialTab) {
   }
   stopRecoveryCountdown();
   _recoveryState.tab = initialTab || "password";
+  _recoveryState.query = "";
   _recoveryState.account = null;
   _recoveryState.channel = "email";
   renderRecoveryStep1();
@@ -392,8 +393,8 @@ function renderRecoveryStep1() {
     : "Enter your registered @gmail.com email address to verify your identity and recover your Customer Username.";
 
   openPopup(
-    '<h3 style="margin:0 0 6px;">Account Recovery</h3>' +
-    '<p class="small muted">Recover your Customer Portal Username or Password:</p>' +
+    '<h3>Sign-in problems?</h3>' +
+    '<p class="small muted">First time signing in? Open the activation link sent to your Gmail after you submitted an application. Check Spam if you can’t find it.</p>' +
     '<div class="recovery-tabs mt">' +
       '<button type="button" class="recovery-tab-btn' + (isPw ? " active" : "") + '" onclick="switchRecoveryTab(\'password\')">' +
         '<b>Forgot Password</b><span>Reset your password via Gmail OTP</span>' +

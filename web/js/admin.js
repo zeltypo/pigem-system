@@ -412,6 +412,9 @@ function renderAdminUsers() {
         '<button type="button" class="btn btn-outline btn-sm" onclick="openEditStaffModal(\'' + escapeHtml(u.id) + '\')">Edit</button>' +
         '<button type="button" class="btn btn-outline btn-sm" onclick="adminOpenResetPasswordModal(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(displayRef) + '\')">Reset Password</button>';
     }
+    if (isCustomer && u.active && !u.activated && u.email) {
+      actionBtns += '<button type="button" class="btn btn-outline btn-sm" onclick="adminSendActivation(this, &quot;' + escapeHtml(u.id) + '&quot;)">Send Activation Link</button>';
+    }
     if (!isSoleAdmin) {
       actionBtns +=
         '<button type="button" class="btn btn-outline btn-sm" onclick="adminToggleActive(\'' + escapeHtml(u.id) + '\', ' + (!u.active) + ')">' +
@@ -581,6 +584,23 @@ async function submitEditStaffModal(event, userId) {
     else setFieldError("edit-acc-username", msg);
     btn.disabled = false;
     btn.textContent = "Save Changes";
+  }
+}
+
+async function adminSendActivation(button, userId) {
+  var user = adminUsers.find(function (account) { return account.id === userId; });
+  if (!currentAdmin || !user || user.role !== "customer" || user.activated || !user.active || button.disabled) return;
+  button.disabled = true;
+  try {
+    var info = await dbResendCustomerActivationCode(user.email);
+    var result = await apiSendApplicationConfirmationEmail(info.email, info.full_name, info.ref_no,
+      { name: info.plan_name }, "", { status: "pending", code: info.code, user: { username: info.username } });
+    if (!result?.sent) throw new Error("Could not send the email. Try sending another link.");
+    showAlert("Activation link sent", "The new link was sent to the customer’s Gmail.", "good");
+  } catch (error) {
+    showAlert("Could not send activation link", escapeHtml(error.message), "warn");
+  } finally {
+    button.disabled = false;
   }
 }
 

@@ -24,7 +24,7 @@
         <span style="font-weight:700; font-size:18px; cursor:default; user-select:none;">Application Form</span>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
-        <a href="index.html" class="btn btn-small">&#8592; Back</a>
+        <a href="index.html" class="btn btn-small" onclick="return leaveApplicationForm(event)">&#8592; Back</a>
       </div>
     </div>
   </header>
@@ -47,10 +47,6 @@
       <p class="small muted">Choose the monthly Red Fiber internet plan for your home. Fields marked <span class="req-mark">*</span> are required.</p>
 
       <div id="plan-choice-box" class="plan-choice mt" role="radiogroup" aria-label="Internet plan"></div>
-      <div id="apply-captcha-wrap" class="captcha-inline mt">
-        <div id="apply-captcha-box"></div>
-        <p id="apply-captcha-status" class="small muted" role="status" tabindex="-1"></p>
-      </div>
 
       <div class="row between mt-big">
         <span></span>
@@ -89,23 +85,17 @@
 
     <section id="panel-2" class="card panel" hidden>
       <h3>Contact Information</h3>
-      <p class="small muted">Enter the Gmail address and mobile number where you want to receive updates. (<span class="req-mark">*</span> Required)</p>
+      <p class="small muted">Enter your Gmail username or full Gmail address and the mobile number where you want to receive updates. (<span class="req-mark">*</span> Required)</p>
 
       <div class="form-grid mt">
         <div class="full">
           <label for="email">Email Address (Gmail) <span class="req-mark">*</span></label>
           <div class="email-otp-inline">
-            <input id="email" type="email" placeholder="juandelacruz@gmail.com">
+            <input id="email" type="text" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Gmail username or address">
             <button type="button" id="btn-send-otp" class="btn btn-small btn-red" style="white-space:nowrap;" onclick="sendContactOtp()">Send code</button>
           </div>
           <div id="email-otp-inline-status" class="small mt" role="status" style="display:none;"></div>
-          <div id="contact-otp-fields" class="mt" hidden>
-            <label for="contact-otp-code">Email verification code</label>
-            <div class="email-otp-inline">
-              <input id="contact-otp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
-              <button type="button" class="btn btn-outline" onclick="verifyContactOtp()">Verify email</button>
-            </div>
-          </div>
+
         </div>
         <div>
           <label for="phone">Primary Mobile Number <span class="req-mark">*</span></label>

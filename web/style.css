@@ -2033,10 +2033,9 @@ textarea.input-invalid {
 .phone-transfer-code { display: block; width: min(220px, 100%); height: auto; margin: 12px auto; }
 .customer-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .customer-nav :is(a, button) { min-height: 44px; }
-.customer-portal .topbar > .container { flex-wrap: wrap; padding-block: 8px; }
+.customer-portal .topbar > .container { padding-block: 8px; }
 .customer-portal .topbar, .customer-portal .topbar-inner { height: auto; min-height: 62px; }
 .customer-portal #popup-modal { z-index: 220; }
-.customer-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .customer-portal .grid-2 > * { min-width: 0; }
 .customer-portal .kv b,
 .customer-portal .q-name { overflow-wrap: anywhere; }
@@ -2047,15 +2046,11 @@ textarea.input-invalid {
   color: var(--text);
 }
 .customer-portal .customer-application-row :is(.q-name, .q-sub) { display: block; }
-.customer-portal .customer-application-row[aria-pressed="true"] { border-color: var(--red); }
+.customer-application-actions { gap: 8px; flex-wrap: wrap; }
 .customer-update-list { list-style: none; padding: 0; margin: 12px 0; }
 .customer-update-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 
-@media (max-width: 840px) {
-  .customer-stats { grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); }
-}
 @media (max-width: 560px) {
-  .customer-nav { width: 100%; }
   .customer-portal .topbar > .container { gap: 8px; height: auto; }
   .customer-portal .kv > div { display: grid; gap: 4px; }
   .customer-portal .kv b { text-align: left; }
@@ -2066,4 +2061,18 @@ textarea.input-invalid {
     scroll-behavior: auto !important;
     animation-duration: .01ms !important;
   }
+}
+
+.customer-login #login-captcha-box > div,
+.apply-page #apply-captcha-box > div { display: flex; justify-content: center; }
+.customer-login #login-captcha-status,
+.apply-page #apply-captcha-status { text-align: center; }
+.apply-leave-actions { flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.customer-nav { flex-wrap: nowrap; }
+.customer-nav .avatar-btn { flex: 0 0 44px; width: 44px; height: 44px; border-radius: 50%; }
+@media (max-width: 640px) {
+  .site-header .menu-toggle { flex: 0 0 42px; }
+  .site-header .logo { min-width: 0; }
+  .side-menu { width: min(270px, 90vw); height: 100dvh; overflow-y: auto; }
+  .customer-application-row .q-head { flex-wrap: wrap; gap: 10px; }
 }

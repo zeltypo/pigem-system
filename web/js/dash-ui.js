@@ -510,6 +510,7 @@ function renderProfileDrawer(user) {
         '<div id="prof-pw-msg" class="msg"></div>' +
         '<div class="field"><label for="prof-pw-current">Current Password</label><input id="prof-pw-current" type="password" autocomplete="current-password" required placeholder="Enter current password" /></div>' +
         '<div class="field"><label for="prof-pw-new">New Password</label><input id="prof-pw-new" type="password" autocomplete="new-password" required data-pw-check="1" placeholder="Strong new password" /></div>' +
+        (user.role === "customer" ? '<div class="field"><label for="prof-pw-confirm">Confirm New Password</label><input id="prof-pw-confirm" type="password" autocomplete="new-password" required placeholder="Enter new password again"></div>' : '') +
         '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmDirectProfilePassword()">Update Password</button>' +
       '</div>';
 
@@ -620,6 +621,7 @@ async function confirmDirectProfilePassword() {
   if (typeof clearFieldError === "function") {
     clearFieldError("prof-pw-current");
     clearFieldError("prof-pw-new");
+    clearFieldError("prof-pw-confirm");
   }
   var curEl = document.getElementById("prof-pw-current");
   var newEl = document.getElementById("prof-pw-new");
@@ -635,10 +637,17 @@ async function confirmDirectProfilePassword() {
     else showMsg("prof-pw-msg", "error", "New password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
     return;
   }
+  var confirmEl = document.getElementById("prof-pw-confirm");
+  if (confirmEl && confirmEl.value !== newPw) {
+    setFieldError(confirmEl, "Enter the same new password again.");
+    confirmEl.focus();
+    return;
+  }
   try {
     await dbChangeStaffPasswordDirect(dashCurrentUser.id, curPw, newPw);
     if (curEl) curEl.value = "";
     if (newEl) newEl.value = "";
+    if (confirmEl) confirmEl.value = "";
     showMsg("prof-pw-msg", "ok", "Password updated successfully.");
   } catch (err) {
     var errMsg = err.message || "Could not update password.";

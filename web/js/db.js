@@ -639,7 +639,7 @@ async function dbSignIn(identifier, password) {
         throw new Error("Internal accounts must sign in on the Staff or Admin Login page.");
       }
       if (rowData.role === "customer" && (!rowData.activated || !rowData.password_hash)) {
-        throw new Error("Please create your password first using the one-time activation link sent to your Gmail (or open activate.html?email=" + encodeURIComponent(cleanEmail) + " and click Send / Resend Code).");
+        throw new Error("Open the activation link sent to your Gmail and set your password first.");
       }
       if (rowData.active === false) throw new Error("This account is disabled. Please contact PIGEM.");
 
@@ -867,20 +867,21 @@ async function dbCreateAccountFromApplication(fullName, email, preferredUsername
 async function dbCheckActivationLinkStatus(email, code) {
   var cleanEmail = String(email || "").trim().toLowerCase();
   var cleanCode = String(code || "").trim();
-  if (!cleanEmail) {
+  if (!cleanEmail || !/^\d{6}$/.test(cleanCode)) {
     return { valid: false, alreadyActivated: false, reason: "Missing customer email in activation link." };
   }
   var record = null;
   if (IS_DEMO_MODE) {
     record = findDemoUserByEmail(cleanEmail);
   } else if (supabaseClient) {
-    var res = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
+    var res = await supabaseClient.from("users").select("active,activated,activation_code,role").eq("email", cleanEmail).maybeSingle();
+    if (res.error) throw new Error("Could not check the activation link.");
     record = res.data || null;
   }
-  if (!record) {
+  if (!record || record.role !== "customer" || record.active === false) {
     return { valid: false, alreadyActivated: false, reason: "No pending customer application was found for " + cleanEmail + "." };
   }
-  if (record.activated && record.password_hash) {
+  if (record.activated) {
     return {
       valid: false,
       alreadyActivated: true,
@@ -889,19 +890,16 @@ async function dbCheckActivationLinkStatus(email, code) {
       reason: "This one-time activation link has already been used and your account is active. Please sign in on the Customer Login page."
     };
   }
-  if (cleanCode && record.activation_code && String(record.activation_code || "").trim() !== cleanCode) {
+  if (!record.activation_code || String(record.activation_code).trim() !== cleanCode) {
     return {
       valid: false,
       alreadyActivated: false,
-      reason: "This activation link or code is no longer valid or has expired. Click Resend Activation Code below to receive a fresh 6-digit code."
+      reason: "Open the latest activation email or contact PIGEM for a new link."
     };
   }
   return {
     valid: true,
-    alreadyActivated: false,
-    username: record.username || "",
-    full_name: record.full_name || "",
-    code: record.activation_code || ""
+    alreadyActivated: false
   };
 }
 
@@ -950,8 +948,8 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
   }
 
   var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
-  if (!existing.data) throw new Error("No application was found for this email.");
-  if (existing.data.activated && existing.data.password_hash) {
+  if (!existing.data || existing.data.role !== "customer" || existing.data.active === false) throw new Error("No customer application was found for this email.");
+  if (existing.data.activated) {
     throw new Error("This one-time activation link has already been used. Please log in instead.");
   }
   if (!existing.data.activation_code || String(existing.data.activation_code || "").trim() !== code.trim()) {
@@ -968,14 +966,6 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     finalUsername = await dbGenerateUniqueUsername(existing.data.full_name, cleanEmail);
   }
 
-  try {
-    await supabaseClient.auth.signUp({
-      email: cleanEmail,
-      password: newPassword,
-      options: { data: { full_name: existing.data.full_name, username: finalUsername } }
-    });
-  } catch (authErr) {}
-
   var upPayload = {
     username: finalUsername,
     password_hash: pwHash,
@@ -984,24 +974,25 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     activated: true,
     activation_code: null
   };
-  var upRes = await supabaseClient.from("users").update(upPayload).eq("email", cleanEmail).select("*").maybeSingle();
-  if (upRes.error) {
-    upRes = await supabaseClient.from("users").update({
-      username: finalUsername,
-      password_hash: pwHash,
-      activated: true,
-      activation_code: null
-    }).eq("email", cleanEmail).select("*").maybeSingle();
-  }
-  if (upRes.error) {
-    throw new Error(upRes.error.message);
-  }
+  var upRes = await supabaseClient.from("users").update(upPayload)
+    .eq("id", existing.data.id).eq("role", "customer").eq("active", true).eq("activated", false)
+    .eq("activation_code", code.trim()).select("*").maybeSingle();
+  if (upRes.error) throw new Error(upRes.error.message);
+  if (!upRes.data) throw new Error("This activation code has already been used or replaced.");
+
+  try {
+    await supabaseClient.auth.signUp({
+      email: cleanEmail,
+      password: newPassword,
+      options: { data: { full_name: existing.data.full_name, username: finalUsername } }
+    });
+  } catch (authErr) {}
 
   try {
     await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
   } catch (e) {}
 
-  var user = (upRes.data) || existing.data || (await dbGetCurrentUser(true));
+  var user = upRes.data;
   if (user) {
     user.activated = true;
     user.username = finalUsername;
@@ -1026,7 +1017,7 @@ async function dbResendCustomerActivationCode(email) {
   if (!cleanEmail || (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail))) {
     throw new Error("Please enter a valid @gmail.com email address.");
   }
-  var newCode = String(Math.floor(100000 + Math.random() * 900000));
+  var newCode = String(100000 + crypto.getRandomValues(new Uint32Array(1))[0] % 900000);
   var fullName = "Valued Subscriber";
   var username = "";
   var refNo = "PENDING";
@@ -1067,16 +1058,15 @@ async function dbResendCustomerActivationCode(email) {
       refNo = latestApp.reference_no || latestApp.ref_no || refNo;
       planName = latestApp.plan_name || latestApp.plan || planName;
     }
-    await supabaseClient.from("users").upsert({
-      id: (existing.data && existing.data.id) || ("cust-" + Date.now()),
-      username: username,
-      email: cleanEmail,
-      full_name: fullName,
-      role: "customer",
-      active: true,
-      activated: false,
-      activation_code: newCode
-    }, { onConflict: "email" });
+    if (!existing.data || existing.data.role !== "customer" || existing.data.active === false) {
+      throw new Error("No pending customer account is available.");
+    }
+    if (newCode === existing.data.activation_code) newCode = newCode === "999999" ? "100000" : String(Number(newCode) + 1);
+    var updated = await supabaseClient.from("users").update({ activation_code: newCode })
+      .eq("id", existing.data.id).eq("role", "customer").eq("active", true)
+      .eq("activated", false).select("id").maybeSingle();
+    if (updated.error) throw new Error(updated.error.message);
+    if (!updated.data) throw new Error("This account has already been activated.");
   }
 
   return {

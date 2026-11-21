@@ -892,10 +892,8 @@ async function setupPublicHeader() {
   } catch (error) {}
   if (check !== publicHeaderCheck) return;
   accountButtons.forEach(function (button) {
-    button.textContent = signedIn ? "Apply" : "Customer Login";
-    button.href = ROOT + (signedIn ? "apply.html" : "login.html");
-    if (signedIn) button.target = "_blank";
-    else button.removeAttribute("target");
+    button.hidden = signedIn;
+    button.href = ROOT + "login.html";
   });
   document.querySelectorAll(".customer-only").forEach(function (link) {
     link.hidden = !signedIn;

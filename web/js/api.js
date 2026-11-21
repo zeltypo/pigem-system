@@ -379,7 +379,7 @@ async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo,
   var isExisting = Boolean(accountInfo && accountInfo.status === "active" && !actCode);
   var username = (accountInfo && accountInfo.user && accountInfo.user.username) ? String(accountInfo.user.username) : "";
   var baseUrl = _getPortalBaseUrl();
-  var actLink = baseUrl + "/activate.html?email=" + encodeURIComponent(toEmail) + (actCode ? "&code=" + encodeURIComponent(actCode) : "") + (username ? "&username=" + encodeURIComponent(username) : "");
+  var actLink = baseUrl + "/activate.html?email=" + encodeURIComponent(toEmail) + (actCode ? "&code=" + encodeURIComponent(actCode) : "");
   var portalLink = baseUrl + "/login.html";
   var msg = isExisting
     ? ("Thank you for applying. Reference No: " + refNo + ". Sign in to check your status at " + portalLink)

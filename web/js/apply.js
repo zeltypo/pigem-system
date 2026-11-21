@@ -192,8 +192,6 @@ async function initApplyPage() {
   });
   window.addEventListener("resize", setupDeviceUploadUI);
 
-  renderApplyCaptchaBox();
-
   try {
     if (typeof dbSyncLiveSettingsAndContent === "function") {
       await dbSyncLiveSettingsAndContent(false);
@@ -221,6 +219,7 @@ async function initApplyPage() {
     }
     renderPlanChoices();
   } catch (e) {}
+  showApplyCaptcha();
 }
 
 function attachApplyLiveValidation() {
@@ -273,6 +272,7 @@ function attachApplyLiveValidation() {
 
   var emailEl = document.getElementById("email");
   if (emailEl) {
+    emailEl.addEventListener("blur", normalizeApplyGmail);
     emailEl.addEventListener("input", function () {
       if (typeof clearFieldError === "function") clearFieldError("email");
       if (emailEl.value.trim().toLowerCase() !== verifiedEmailAddress) {
@@ -284,8 +284,6 @@ function attachApplyLiveValidation() {
           btn.textContent = "Send code";
           btn.disabled = false;
         }
-        document.getElementById("contact-otp-fields").hidden = true;
-        document.getElementById("contact-otp-code").value = "";
       }
     });
   }
@@ -408,12 +406,48 @@ async function sendMobileCorrectionPhotos(button) {
   }
 }
 
+function leaveApplicationForm(event) {
+  if (!document.getElementById("panel-qr-mobile").hidden) return true;
+  var hasDetails = APPLY_DRAFT_FIELDS.some(function (key) {
+    var field = document.getElementById(key);
+    return field && field.value.trim() !== field.defaultValue && field.value.trim() !== "";
+  });
+  if (!hasDetails && !selectedFrontFile && !selectedBackFile) return true;
+  event.preventDefault();
+  openPopup(
+    '<h2>Go back to the website?</h2><p class="muted mt">You can keep your filled-in details for this tab. Choose your ID photos again when you return.</p>' +
+    '<div class="row mt apply-leave-actions">' +
+    '<button type="button" class="btn btn-outline" onclick="closePopup()">Keep editing</button>' +
+    '<button type="button" class="btn btn-outline" onclick="exitApplicationForm(false)">Leave without saving</button>' +
+    '<button type="button" class="btn btn-red" onclick="exitApplicationForm(true)">Save and leave</button></div>',
+    { closeOnBackdrop: true, closeOnEscape: true }
+  );
+  return false;
+}
+
+function exitApplicationForm(save) {
+  if (save) saveApplyDraftState();
+  else {
+    sessionStorage.removeItem(APPLY_DRAFT_KEY);
+    sessionStorage.removeItem("pigem_selected_plan");
+  }
+  window.location.assign("index.html");
+}
+
+function showApplyCaptcha() {
+  if (applyCaptchaVerified || document.getElementById("apply-captcha-box")) return;
+  openPopup(
+    '<h2>Security check</h2><p class="muted mt">Complete the checkbox to continue your application.</p>' +
+    '<div class="captcha-inline mt"><div id="apply-captcha-box"></div>' +
+    '<p id="apply-captcha-status" class="small" role="status"></p></div>',
+    { showCloseX: true, closeOnBackdrop: false, closeOnEscape: true }
+  );
+  renderApplyCaptchaBox();
+}
+
 function requireApplyCaptcha() {
   if (applyCaptchaVerified) return true;
-  if (currentPanel !== 0) showPanel(0);
-  var status = document.getElementById("apply-captcha-status");
-  status.textContent = "Complete the security check before continuing.";
-  status.focus();
+  showApplyCaptcha();
   return false;
 }
 
@@ -426,6 +460,7 @@ async function renderApplyCaptchaBox() {
   box.innerHTML = '<div id="g-apply-recaptcha"></div>';
 
   function tryRenderGoogle() {
+    if (!box.isConnected) return true;
     if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
       try {
         applyCaptchaWidget = grecaptcha.render("g-apply-recaptcha", {
@@ -473,7 +508,7 @@ async function onApplyCaptchaVerified(token) {
   }
   applyCaptchaVerified = true;
   applicationScreeningTicket = result.screeningTicket || "";
-  status.textContent = "Security check complete.";
+  closePopup();
   if (applyResumePanel > 0) {
     var panel = applyResumePanel;
     applyResumePanel = 0;
@@ -542,9 +577,17 @@ async function openPhoneQrModal() {
   }
 }
 
+function normalizeApplyGmail() {
+  var input = document.getElementById("email");
+  var value = input.value.trim().toLowerCase();
+  if (/^[a-z0-9][a-z0-9._+-]*$/.test(value)) value += "@gmail.com";
+  input.value = value;
+  return value;
+}
+
 async function sendContactOtp() {
   if (typeof clearFieldError === "function") clearFieldError("email");
-  var email = document.getElementById("email").value.trim().toLowerCase();
+  var email = normalizeApplyGmail();
 
   if (!email || !isCustomerGmail(email)) {
     flashErrorBubble("email", "Gmail Address", "Please enter a valid @gmail.com address first.");
@@ -577,14 +620,18 @@ async function sendContactOtp() {
   btn.textContent = "Resend code";
 
   if (document.getElementById("email").value.trim().toLowerCase() !== email) return;
-  var status = document.getElementById("email-otp-inline-status");
-  status.style.display = "block";
   if (emailRes && emailRes.sent === false) {
-    status.textContent = "We couldn’t send the code. Use Resend code to try again.";
+    setFieldError("email", "Could not send the code. Select Resend code to try again.");
     return;
   }
-  status.textContent = "Enter the 6-digit code sent to your Gmail. It expires in 5 minutes.";
-  document.getElementById("contact-otp-fields").hidden = false;
+  openPopup(
+    '<h2>Verify your email</h2><p class="muted mt">Enter the 6-digit code sent to ' + escapeHtml(email) + '. It expires in 5 minutes.</p>' +
+    '<div class="mt"><label for="contact-otp-code">Email verification code</label>' +
+    '<input id="contact-otp-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>' +
+    '<div class="row between mt"><button type="button" class="btn btn-outline" onclick="sendContactOtp()">Resend code</button>' +
+    '<button type="button" class="btn btn-red" onclick="verifyContactOtp()">Verify email</button></div>',
+    { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true }
+  );
   document.getElementById("contact-otp-code").focus();
 }
 
@@ -606,7 +653,7 @@ function verifyContactOtp() {
 
   isContactOtpVerified = true;
   verifiedEmailAddress = email;
-  document.getElementById("contact-otp-fields").hidden = true;
+  closePopup();
   saveApplyDraftState();
 
   var btn = document.getElementById("btn-send-otp");
@@ -819,7 +866,7 @@ function validateCurrentPanel() {
   }
 
   if (currentPanel === 2) {
-    var email = document.getElementById("email").value.trim().toLowerCase();
+    var email = normalizeApplyGmail();
     var phone = document.getElementById("phone").value.trim().replace(/\D/g, "");
     var phoneAltRaw = document.getElementById("phone_alt").value.trim();
     var phoneAltDigits = phoneAltRaw.replace(/\D/g, "");
@@ -1387,8 +1434,7 @@ function resetApplyWizardToStep1() {
   applyCaptchaVerified = false;
   applyResumePanel = 0;
   applicationScreeningTicket = "";
-  document.getElementById("apply-captcha-status").textContent = "";
-  if (applyCaptchaWidget != null && typeof grecaptcha !== "undefined") grecaptcha.reset(applyCaptchaWidget);
+  applyCaptchaWidget = undefined;
   try { sessionStorage.removeItem(APPLY_DRAFT_KEY); } catch (e) {}
   selectedIdChecks = { front: null, back: null };
   var loadingScreen = document.getElementById("panel-loading");
@@ -1620,30 +1666,14 @@ async function performApplicationSubmission() {
     savedApplication = saved;
     if (loadingScreen) loadingScreen.hidden = true;
     var isAlreadyActive = accountInfo.status === "active";
-    var actCodeVal = (accountInfo && accountInfo.code) ? String(accountInfo.code).trim() : "";
-    var actUserVal = (accountInfo && accountInfo.user && accountInfo.user.username) ? String(accountInfo.user.username) : "";
-    var directActHref = "activate.html?email=" + encodeURIComponent(email) +
-      (actCodeVal ? "&code=" + encodeURIComponent(actCodeVal) : "") +
-      (actUserVal ? "&username=" + encodeURIComponent(actUserVal) : "");
-
     openPopup(
       '<div class="center">' +
-        '<h3>Application Submitted!</h3>' +
-        '<p class="small muted mt">Your Application Reference Number is:</p>' +
+        '<h2>Application submitted</h2><p class="small muted mt">Reference number</p>' +
         '<div class="big-ref">' + escapeHtml(saved.ref_no) + '</div>' +
-        (photoRequest ? '<p class="notice warn mt">' + escapeHtml(photoRequest) + '</p>' : '') +
         '<p class="small muted mt" id="apply-email-delivery-note">' +
-          (isAlreadyActive
-            ? 'Sending confirmation email to <b>' + escapeHtml(email) + '</b>…'
-            : 'Sending your 6-digit Activation Code &amp; One-Time Link to <b>' + escapeHtml(email) + '</b>…') +
-        '</p>' +
-        '<div class="mt">' +
-          (isAlreadyActive
-            ? '<a class="btn btn-red btn-sm" href="login.html">Open Customer Login</a>'
-            : '<a class="btn btn-outline btn-sm" href="' + escapeHtml(directActHref) + '">Activate Account Now</a>') +
-        '</div>' +
-      '</div>',
-      { showCloseX: true, closeOnBackdrop: true, onClose: resetApplyWizardToStep1 }
+          (isAlreadyActive ? 'Sign in to track your application.' : 'Open the activation email in Gmail to set up your account.') +
+        '</p></div>',
+      { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true, onClose: resetApplyWizardToStep1 }
     );
 
     if (applicationScreeningTicket) {
@@ -1674,13 +1704,8 @@ async function performApplicationSubmission() {
     confirmEmailPromise.then(function (mailRes) {
       var noteEl = document.getElementById("apply-email-delivery-note");
       if (!noteEl) return;
-      if (mailRes && mailRes.sent) {
-        noteEl.innerHTML = isAlreadyActive
-          ? 'Confirmation email sent to <b>' + escapeHtml(email) + '</b>. Sign in to track your application.'
-          : 'Activation email sent to <b>' + escapeHtml(email) + '</b>! Check your Gmail inbox for your 6-digit Activation Code.';
-      } else {
-        noteEl.innerHTML = '<span style="color:#b45309;font-weight:700">Email notice:</span> Could not deliver immediately (' +
-          escapeHtml((mailRes && mailRes.reason) || "check inbox") + '). Click <b>Activate Account Now</b> below to resend your code.';
+      if (!isAlreadyActive && !mailRes?.sent) {
+        noteEl.textContent = "We couldn’t send your activation email. Contact PIGEM support with your reference number.";
       }
     }).catch(function () {});
 
@@ -1697,8 +1722,7 @@ async function performApplicationSubmission() {
     if (savedApplication) {
       openPopup('<h3>Application saved</h3><p>Your reference is <b>' +
         escapeHtml(savedApplication.ref_no || savedApplication.reference_no) +
-        '</b>.</p><p>A confirmation message could not be completed. Check your account for the application status.</p>' +
-        '<a class="btn btn-red" href="customer.html">Open my applications</a>',
+        '</b>.</p><p>Check your Gmail for next steps. Contact PIGEM with your reference number if you need help.</p>',
         { showCloseX: true, onClose: resetApplyWizardToStep1 });
       return;
     }
