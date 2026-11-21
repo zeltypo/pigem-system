@@ -1,14 +1,3 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/dash-ui.js (Shared Dashboard Shell & Notifications)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Shared UI controller for Customer, Agent, Manager, and Admin portals:
- *   - Sidebar navigation, mobile drawer toggle, and active tab switching
- *   - Real-time notification bell dropdown (`notifications` table polling)
- *   - User profile modal, password change with `password_history` reuse prevention,
- *     and single-session token enforcement.
- * ============================================================================ */
-
 function dashboardUserLabel(user) {
   var label = { agent: "Agent", manager: "Manager" }[user.role];
   return user.full_name + (label ? " · " + label : "");
@@ -25,45 +14,58 @@ var DASH_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 var _dashSessionRedirecting = false;
 
 function confirmDashboardSignOut() {
-  openConfirmPopup("Sign out?", "Are you sure you want to sign out?", "Sign Out",
-    function () { return signOutAndGoLogin("", true); }, true);
+  if (dashCurrentUser?.role !== "customer") {
+    openConfirmPopup("Sign out?", "Are you sure you want to sign out?", "Sign Out",
+      function () { return signOutAndGoLogin("", true); }, true);
+    return;
+  }
+  openPopup(
+    '<div class="row between"><h2>Sign out?</h2><button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button></div>' +
+    '<p class="mt muted">You can sign in again to view your applications.</p>' +
+    '<div class="row mt" style="justify-content:flex-end"><button type="button" class="btn btn-red" onclick="signOutAndGoLogin(&quot;&quot;, true)">Sign Out</button></div>',
+    { closeOnBackdrop: true, closeOnEscape: true }
+  );
 }
 
 function startDashSecurityWatchers() {
   if (_dashSecurityStarted || !dashCurrentUser) return;
   _dashSecurityStarted = true;
-  var session = getActiveSessionPair();
-  var activityKey = "pigem_activity_" + (session.tok || dashCurrentUser.id);
-  var lastActivity = Date.now();
-  var lastSaved = 0;
+  if (dashCurrentUser.role !== "customer") {
+    var session = getActiveSessionPair();
+    var activityKey = "pigem_activity_" + (session.tok || dashCurrentUser.id);
+    var lastActivity = Date.now();
+    var lastSaved = 0;
 
-  function touchActivity() {
-    lastActivity = Date.now();
-    if (lastActivity - lastSaved >= 10000) {
-      lastSaved = lastActivity;
-      try { localStorage.setItem(activityKey, String(lastSaved)); } catch (error) {}
+    function touchActivity() {
+      lastActivity = Date.now();
+      if (lastActivity - lastSaved >= 10000) {
+        lastSaved = lastActivity;
+        try { localStorage.setItem(activityKey, String(lastSaved)); } catch (error) {}
+      }
     }
+
+    touchActivity();
+    ["pointerdown", "keydown", "scroll", "touchstart"].forEach(function (event) {
+      window.addEventListener(event, touchActivity, { passive: true });
+    });
+
+    _dashIdleTimer = setInterval(function () {
+      if (_dashSessionRedirecting) return;
+      var sharedActivity = 0;
+      try { sharedActivity = Number(localStorage.getItem(activityKey)) || 0; } catch (error) {}
+      if (Date.now() - Math.max(lastActivity, sharedActivity) < DASH_IDLE_TIMEOUT_MS) return;
+      _dashSessionRedirecting = true;
+      clearInterval(_dashIdleTimer);
+      clearInterval(_dashSessionTimer);
+      try { localStorage.removeItem(activityKey); } catch (error) {}
+      signOutAndGoLogin("idle", true);
+    }, 15000);
+
   }
-
-  touchActivity();
-  ["pointerdown", "keydown", "scroll", "touchstart"].forEach(function (event) {
-    window.addEventListener(event, touchActivity, { passive: true });
-  });
-
-  _dashIdleTimer = setInterval(function () {
-    if (_dashSessionRedirecting) return;
-    var sharedActivity = 0;
-    try { sharedActivity = Number(localStorage.getItem(activityKey)) || 0; } catch (error) {}
-    if (Date.now() - Math.max(lastActivity, sharedActivity) < DASH_IDLE_TIMEOUT_MS) return;
-    _dashSessionRedirecting = true;
-    clearInterval(_dashIdleTimer);
-    clearInterval(_dashSessionTimer);
-    try { localStorage.removeItem(activityKey); } catch (error) {}
-    signOutAndGoLogin("idle", true);
-  }, 15000);
 
   var verifySingleDevice = async function () {
     if (!dashCurrentUser || _dashSessionRedirecting || typeof dbVerifyActiveSession !== "function") return;
+    if (dashCurrentUser.role === "customer" && navigator.onLine === false) return;
     try {
       var chk = await dbVerifyActiveSession(dashCurrentUser.id, window.PORTAL_ALLOWED_ROLES || null);
       if (chk && chk.valid === false) {
@@ -89,6 +91,7 @@ function startDashSecurityWatchers() {
 
   _dashSessionTimer = setInterval(verifySingleDevice, 8000);
   window.addEventListener("focus", verifySingleDevice);
+  if (dashCurrentUser.role === "customer") window.addEventListener("online", verifySingleDevice);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) verifySingleDevice();
   });
@@ -505,8 +508,9 @@ function renderProfileDrawer(user) {
   var pwSection = '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
         '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Change Password</div>' +
         '<div id="prof-pw-msg" class="msg"></div>' +
-        '<div class="field"><label>Current Password</label><input id="prof-pw-current" type="password" placeholder="Enter current password" /></div>' +
-        '<div class="field"><label>New Password</label><input id="prof-pw-new" type="password" data-pw-check="1" placeholder="Strong new password" /></div>' +
+        '<div class="field"><label for="prof-pw-current">Current Password</label><input id="prof-pw-current" type="password" autocomplete="current-password" required placeholder="Enter current password" /></div>' +
+        '<div class="field"><label for="prof-pw-new">New Password</label><input id="prof-pw-new" type="password" autocomplete="new-password" required data-pw-check="1" placeholder="Strong new password" /></div>' +
+        (user.role === "customer" ? '<div class="field"><label for="prof-pw-confirm">Confirm New Password</label><input id="prof-pw-confirm" type="password" autocomplete="new-password" required placeholder="Enter new password again"></div>' : '') +
         '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmDirectProfilePassword()">Update Password</button>' +
       '</div>';
 
@@ -522,9 +526,9 @@ function renderProfileDrawer(user) {
     '<div style="margin-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line)">' +
       '<div style="font-size:12px; font-weight:700; margin-bottom:8px">Appearance / Theme</div>' +
       '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px">' +
-        '<button type="button" data-theme-btn="light" class="btn btn-sm ' + (savedTheme === "light" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'light\')"><img data-img="icons/sun.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/sun.png" alt="Light" class="icon-img" />Light</button>' +
-        '<button type="button" data-theme-btn="dark" class="btn btn-sm ' + (savedTheme === "dark" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'dark\')"><img data-img="icons/moon.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/moon.png" alt="Dark" class="icon-img" />Dark</button>' +
-        '<button type="button" data-theme-btn="device" class="btn btn-sm ' + (savedTheme === "device" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'device\')"><img data-img="icons/monitor.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/monitor.png" alt="Device" class="icon-img" />Device</button>' +
+        '<button type="button" data-theme-btn="light" class="btn btn-sm ' + (savedTheme === "light" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'light\')"><img data-img="icons/sun.png" src="/api/assets/icons/sun.png" alt="Light" class="icon-img" />Light</button>' +
+        '<button type="button" data-theme-btn="dark" class="btn btn-sm ' + (savedTheme === "dark" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'dark\')"><img data-img="icons/moon.png" src="/api/assets/icons/moon.png" alt="Dark" class="icon-img" />Dark</button>' +
+        '<button type="button" data-theme-btn="device" class="btn btn-sm ' + (savedTheme === "device" ? "btn-red" : "btn-outline") + '" onclick="setThemeMode(\'device\')"><img data-img="icons/monitor.png" src="/api/assets/icons/monitor.png" alt="Device" class="icon-img" />Device</button>' +
       '</div>' +
     '</div>' +
 
@@ -542,7 +546,7 @@ function renderProfileDrawer(user) {
 
     '<div style="margin-top:16px">' +
       '<a href="index.html" target="_blank" rel="noopener" class="btn btn-outline" style="width:100%; margin-bottom:8px; display:inline-flex; align-items:center; justify-content:center;">' +
-        '<img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="" class="icon-img" />Back to Website' +
+        '<img data-img="icons/link.png" src="/api/assets/icons/link.png" alt="" class="icon-img" />Back to Website' +
       '</a>' +
       '<button type="button" class="btn btn-red" style="width:100%" onclick="confirmDashboardSignOut()">Sign Out</button>' +
     '</div>';
@@ -617,6 +621,7 @@ async function confirmDirectProfilePassword() {
   if (typeof clearFieldError === "function") {
     clearFieldError("prof-pw-current");
     clearFieldError("prof-pw-new");
+    clearFieldError("prof-pw-confirm");
   }
   var curEl = document.getElementById("prof-pw-current");
   var newEl = document.getElementById("prof-pw-new");
@@ -632,10 +637,17 @@ async function confirmDirectProfilePassword() {
     else showMsg("prof-pw-msg", "error", "New password must be at least 8 characters with uppercase, lowercase, number, and special symbol.");
     return;
   }
+  var confirmEl = document.getElementById("prof-pw-confirm");
+  if (confirmEl && confirmEl.value !== newPw) {
+    setFieldError(confirmEl, "Enter the same new password again.");
+    confirmEl.focus();
+    return;
+  }
   try {
     await dbChangeStaffPasswordDirect(dashCurrentUser.id, curPw, newPw);
     if (curEl) curEl.value = "";
     if (newEl) newEl.value = "";
+    if (confirmEl) confirmEl.value = "";
     showMsg("prof-pw-msg", "ok", "Password updated successfully.");
   } catch (err) {
     var errMsg = err.message || "Could not update password.";

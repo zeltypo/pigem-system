@@ -1,17 +1,3 @@
-# ============================================================================
-# PIGEM STUDY DUPLICATE — api/_auth.py (Authentication & reCAPTCHA Verification)
-# ============================================================================
-# ROLE IN ARCHITECTURE:
-#   Provides FastAPI dependency guards (`require_login`, `require_screening_staff`)
-#   and server-side Google reCAPTCHA v2 token verification (`verify_recaptcha`).
-#
-# WHY SERVER-SIDE CAPTCHA VERIFICATION MATTERS:
-#   A browser checkbox alone can be bypassed if not verified on the backend.
-#   `verify_recaptcha_token` sends the user's token + IP to Google's
-#   `https://www.google.com/recaptcha/api/siteverify` endpoint using
-#   `RECAPTCHA_SECRET_KEY`.
-# ============================================================================
-
 from os import getenv
 import re
 import httpx

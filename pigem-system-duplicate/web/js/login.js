@@ -1,18 +1,6 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/login.js (Role-Based Login, Activation & Provisioning)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Handles authentication flows across:
- *   - `login.html` (Customer email/username sign-in & Forgot Password OTP flow)
- *   - `staff-login.html` (Agent & Manager username sign-in via `pigem_screening_sign_in`)
- *   - `admin-login.html` & `#admin-setup` (One-time 48-char Admin provisioning via
- *     `pigem_provision_admin` and Admin sign-in)
- *   - `activate.html` (Customer 6-digit email OTP verification + `Send / Resend Code`
- *     button + username & password creation).
- * ============================================================================ */
-
 var loginCaptchaVerified = false;
 var loginCaptchaVersion = 0;
+var loginCaptchaWidget;
 var loginAttempts = 0;
 var MAX_ATTEMPTS = 5;
 
@@ -29,13 +17,20 @@ window.onLoginCaptchaVerified = async function (token) {
   var version = ++loginCaptchaVersion;
   loginCaptchaVerified = false;
   if (!token || typeof apiVerifyCaptcha !== "function") return;
+  var status = document.getElementById("login-captcha-status");
+  if (status) status.textContent = "Checking…";
   var result = await apiVerifyCaptcha(token);
-  if (version === loginCaptchaVersion) loginCaptchaVerified = Boolean(result && result.verified === true);
+  if (version !== loginCaptchaVersion) return;
+  loginCaptchaVerified = Boolean(result && result.verified === true);
+  if (status) status.textContent = loginCaptchaVerified ? "" : "Security check failed. Try the checkbox again.";
+  if (!loginCaptchaVerified && loginCaptchaWidget != null) grecaptcha.reset(loginCaptchaWidget);
 };
 
 window.onLoginCaptchaExpired = function () {
   loginCaptchaVersion++;
   loginCaptchaVerified = false;
+  var status = document.getElementById("login-captcha-status");
+  if (status) status.textContent = "";
 };
 
 async function renderLoginCaptchaBox() {
@@ -45,13 +40,14 @@ async function renderLoginCaptchaBox() {
   var health = await apiCheckHealth();
   if (!box.isConnected) return;
   var siteKey = health?.recaptcha_site_key || CONFIG.RECAPTCHA_SITE_KEY;
-  box.innerHTML = '<div id="g-login-recaptcha" class="g-recaptcha" data-sitekey="' + siteKey + '" data-callback="onLoginCaptchaVerified" data-expired-callback="onLoginCaptchaExpired"></div>';
+  box.innerHTML = '<div id="g-login-recaptcha"></div>';
 
   function tryRenderGoogle() {
     if (typeof grecaptcha !== "undefined" && grecaptcha.render) {
       try {
-        grecaptcha.render("g-login-recaptcha", {
+        loginCaptchaWidget = grecaptcha.render("g-login-recaptcha", {
           sitekey: siteKey,
+          size: window.SYSTEM === "customer" && box.clientWidth < 304 ? "compact" : "normal",
           callback: onLoginCaptchaVerified,
           "expired-callback": onLoginCaptchaExpired,
           "error-callback": function () {
@@ -91,7 +87,7 @@ function resetLoginFieldsAndCaptcha() {
   window.onLoginCaptchaExpired();
   if (typeof grecaptcha !== "undefined" && grecaptcha.reset) {
     try {
-      grecaptcha.reset();
+      grecaptcha.reset(loginCaptchaWidget);
       return;
     } catch (e) {}
   }
@@ -137,7 +133,7 @@ function showSessionReasonBanner() {
 window.addEventListener("DOMContentLoaded", function () {
   var field = document.getElementById("email");
   try {
-    if (field && !field.value) field.value = localStorage.getItem("pigem_login_name_" + window.SYSTEM) || "";
+    if (window.SYSTEM !== "customer" && field && !field.value) field.value = localStorage.getItem("pigem_login_name_" + window.SYSTEM) || "";
   } catch (error) {}
   showSessionReasonBanner();
   renderLoginCaptchaBox();
@@ -183,7 +179,7 @@ function openStaffResetRequestModal(initialTab) {
   var fieldPlaceholder = isPw ? "e.g. maria_santos" : "e.g. Maria Santos";
 
   openPopup(
-    '<h3 style="margin:0 0 6px;">Account Recovery</h3>' +
+    '<h3>Sign-in problems?</h3>' +
     '<p class="small muted">Recover your Internal Staff Username or Password:</p>' +
     '<div class="recovery-tabs mt">' +
       '<button type="button" class="recovery-tab-btn' + (isPw ? " active" : "") + '" onclick="switchStaffRecoveryTab(\'password\')">' +
@@ -278,6 +274,12 @@ async function handleLogin(event) {
   if (login.error || !password) return;
 
   if (!loginCaptchaVerified) {
+    var captchaStatus = document.getElementById("login-captcha-status");
+    if (captchaStatus) {
+      captchaStatus.textContent = "Complete the security check before signing in.";
+      captchaStatus.focus();
+      return;
+    }
     var card = document.getElementById("login-captcha-card") || document.getElementById("login-recaptcha-wrap");
     if (card) {
       card.style.borderColor = "#c8102e";
@@ -299,7 +301,10 @@ async function handleLogin(event) {
 
   try {
     var user = await dbSignIn(login.value, password);
-    try { localStorage.setItem("pigem_login_name_" + window.SYSTEM, login.value); } catch (error) {}
+    try {
+      if (window.SYSTEM === "customer") sessionStorage.setItem("pigem_show_application_updates", String(user.id));
+      else localStorage.setItem("pigem_login_name_" + window.SYSTEM, login.value);
+    } catch (error) {}
     loginAttempts = 0;
     var bannerEl = document.getElementById("login-attempt-banner");
     if (bannerEl) bannerEl.hidden = true;
@@ -331,6 +336,15 @@ async function handleLogin(event) {
     } else {
       var remaining = MAX_ATTEMPTS - loginAttempts;
       var msgText = (err.message || "Invalid username or password.") + " (Failed attempt " + loginAttempts + " of " + MAX_ATTEMPTS + ", " + remaining + " remaining)";
+      if (window.SYSTEM === "customer") {
+        if (banner) banner.hidden = true;
+        var message = err.message || "Sign-in failed. Check your username and password.";
+        if (message.includes("activate.html") || message.toLowerCase().includes("activate your account")) {
+          message = "Open the activation email we sent after you applied and set your password.";
+        }
+        setFieldError("password", message);
+        return;
+      }
       if (typeof setFieldError === "function") setFieldError("password", msgText);
       if (banner) {
         banner.hidden = false;
@@ -355,6 +369,7 @@ function openForgotModal(initialTab) {
   }
   stopRecoveryCountdown();
   _recoveryState.tab = initialTab || "password";
+  _recoveryState.query = "";
   _recoveryState.account = null;
   _recoveryState.channel = "email";
   renderRecoveryStep1();
@@ -378,8 +393,8 @@ function renderRecoveryStep1() {
     : "Enter your registered @gmail.com email address to verify your identity and recover your Customer Username.";
 
   openPopup(
-    '<h3 style="margin:0 0 6px;">Account Recovery</h3>' +
-    '<p class="small muted">Recover your Customer Portal Username or Password:</p>' +
+    '<h3>Sign-in problems?</h3>' +
+    '<p class="small muted">First time signing in? Open the activation link sent to your Gmail after you submitted an application. Check Spam if you can’t find it.</p>' +
     '<div class="recovery-tabs mt">' +
       '<button type="button" class="recovery-tab-btn' + (isPw ? " active" : "") + '" onclick="switchRecoveryTab(\'password\')">' +
         '<b>Forgot Password</b><span>Reset your password via Gmail OTP</span>' +

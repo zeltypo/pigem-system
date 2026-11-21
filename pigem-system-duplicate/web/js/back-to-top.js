@@ -1,10 +1,3 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/back-to-top.js (Floating Scroll-to-Top Button)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Shows a floating back-to-top button when the user scrolls down past 260px.
- * ============================================================================ */
-
 (function () {
   var button = document.createElement("button");
   button.type = "button";

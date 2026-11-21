@@ -11,14 +11,25 @@ var SESSION_TOKEN_KEY = SESSION_KEY + "_tok";
 
 var sessionStore = SYSTEM === "staff" ? sessionStorage : localStorage;
 
-var IS_DEMO_MODE = (CONFIG.SUPABASE_URL === "" || CONFIG.SUPABASE_ANON_KEY === "");
+var IS_DEMO_MODE = false;
 var supabaseClient = null;
 
-if (!IS_DEMO_MODE && window.supabase) {
+if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase) {
 
   supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
     auth: { storageKey: "pigem-" + SYSTEM, storage: sessionStore }
   });
+} else {
+  document.addEventListener("DOMContentLoaded", function () {
+    var main = document.querySelector("main") || document.body;
+    main.replaceChildren();
+    var notice = document.createElement("p");
+    notice.className = "notice";
+    notice.setAttribute("role", "alert");
+    notice.textContent = "PIGEM cannot connect. Check the project environment settings and reload.";
+    main.appendChild(notice);
+  });
+  throw new Error("Missing Supabase configuration");
 }
 
 function generateSessionToken() {
@@ -1202,7 +1213,6 @@ async function dbFindDuplicateCustomerApplication(email, appData) {
   var existingApps = await dbListAllApplications();
   if (!existingApps || existingApps.length === 0) return { isDuplicate: false };
 
-  // A user can apply multiple times as long as they use a different Gmail address and a different mobile number.
   for (var i = 0; i < existingApps.length; i++) {
     var a = existingApps[i];
     if (!a || String(a.status || "") === "Rejected") continue;
@@ -1289,6 +1299,7 @@ function _stripOptionalAppColumns(payload) {
 }
 
 function _saveLocalAppMirror(appRow) {
+  if (!IS_DEMO_MODE) return;
   if (!appRow || !appRow.id) return;
   try {
     var all = readSaved("pigem_applications", []);
@@ -1308,7 +1319,7 @@ function _saveLocalAppMirror(appRow) {
 
 async function dbCreateApplication(appData) {
   var now = new Date().toISOString();
-  var refNo = "PIGEM-" + String(Date.now()).slice(-6) + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+  var refNo = appData.ref_no || generateApplicationReference();
 
   var row = Object.assign({}, appData, {
     ref_no: refNo,
@@ -1329,10 +1340,6 @@ async function dbCreateApplication(appData) {
     return row;
   }
   var res = await supabaseClient.from("applications").insert(row).select("*").single();
-  if (res.error) {
-    var cleanRow = _stripOptionalAppColumns(row);
-    res = await supabaseClient.from("applications").insert(cleanRow).select("*").single();
-  }
   if (res.error) throw new Error(res.error.message);
   if (res.data) {
     _saveLocalAppMirror(res.data);
@@ -1415,16 +1422,7 @@ async function dbUpdateApplication(appId, changes, expectedUpdatedAt) {
     return query.select("*").maybeSingle();
   }
   var res = await updateMatchingRow(changes, true);
-  if (res.error) {
-    var cleanChanges = _stripOptionalAppColumns(changes);
-    res = await updateMatchingRow(cleanChanges, true);
-  }
-  if (!res.error && !res.data && expectedUpdatedAt) {
-    res = await updateMatchingRow(changes, false);
-    if (res.error) {
-      res = await updateMatchingRow(_stripOptionalAppColumns(changes), false);
-    }
-  }
+  if (!res.error && !res.data && expectedUpdatedAt) throw new Error("This application changed. Reopen it and try again.");
   if (res.error) throw new Error(res.error.message);
   if (!res.data) {
     throw new Error("Application not found.");
@@ -1435,35 +1433,28 @@ async function dbUpdateApplication(appId, changes, expectedUpdatedAt) {
   return res.data;
 }
 
-async function dbAddAiLog(appId, who, text) {
+async function dbAddAiLog(appId, who, text, message) {
+  if (message !== undefined) { who = text; text = message; }
   var app = await dbGetApplication(appId);
   if (!app) return;
   var log = app.ai_log || [];
   log.push({ at: new Date().toISOString(), who: who, text: text });
-  await dbUpdateApplication(appId, { ai_log: log });
+  await dbUpdateApplication(appId, { ai_log: log }, app.updated_at);
 }
 
-var DOCUMENT_BUCKETS = [
-  "documents",
-  "documents-1",
-  "documents-2",
-  "documents-3",
-  "documents-4",
-  "documents-5",
-  "documents-6",
-  "documents-7",
-  "documents-8",
-  "documents-9",
-  "documents-10"
-];
+var DOCUMENT_BUCKETS = ["documents"];
+
+function generateApplicationReference() {
+  return "PIGEM-" + String(Date.now()).slice(-8) + "-" + crypto.randomUUID().slice(0, 8).toUpperCase();
+}
 
 async function dbUploadDocument(file, folder, label) {
   if (!file) return null;
-  var cleanFolder = String(folder || "applications/uploads").replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9_/-]/g, "_");
+  var cleanFolder = String(folder || "application").replace(/[^a-zA-Z0-9_-]/g, "_");
   var cleanLabel = String(label || "doc").replace(/[^a-zA-Z0-9_-]/g, "_");
   var ext = ((file.name && file.name.split(".").pop()) || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-  var fileName = Date.now() + "-" + cleanLabel + "." + ext;
-  var path = cleanFolder + "/" + fileName;
+  var path = cleanFolder + "_" + cleanLabel + "_" + crypto.randomUUID() + "." + ext;
+  if (file.size > 12000000) throw new Error("Choose a document smaller than 12 MB.");
 
   if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
     for (var b = 0; b < DOCUMENT_BUCKETS.length; b++) {
@@ -1471,7 +1462,7 @@ async function dbUploadDocument(file, folder, label) {
       try {
         var res = await supabaseClient.storage.from(bucketName).upload(path, file, {
           cacheControl: "3600",
-          upsert: true,
+          upsert: false,
           contentType: file.type || "image/jpeg"
         });
         if (!res.error) {
@@ -1488,12 +1479,7 @@ async function dbUploadDocument(file, folder, label) {
     }
   }
 
-  return await new Promise(function (resolve, reject) {
-    var reader = new FileReader();
-    reader.onload = function () { resolve(reader.result); };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+  throw new Error("Document could not be saved. Please check your connection and try again.");
 }
 
 async function dbGetDocumentLink(path) {
@@ -1765,7 +1751,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09171234567",
     id_type: "Philippine Driver's License",
     id_number: "N01-23-456789",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
+    id_image_url: "/api/assets/black-logo-white-mode.png",
     building_name: "Greenwoods Subd.",
     street: "Blk 4 Lot 12 Sampaguita St.",
     subdivision: "Greenwoods Executive",
@@ -1807,7 +1793,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09189876543",
     id_type: "National ID",
     id_number: "1234-5678-9012-3456",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
+    id_image_url: "/api/assets/black-logo-white-mode.png",
     building_name: "Villa Luisa",
     street: "24 Mabini St.",
     subdivision: "Villa Luisa Homes",
@@ -1851,7 +1837,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09223334455",
     id_type: "Philippine Passport",
     id_number: "P1234567A",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
+    id_image_url: "/api/assets/black-logo-white-mode.png",
     building_name: "St. Charbel",
     street: "88 Aguinaldo Hwy",
     subdivision: "St. Charbel South",
@@ -1872,7 +1858,7 @@ var DEFAULT_DEMO_APPS = [
       id_type: "Philippine Passport",
       id_number: "P1234567",
       street: "Aguinaldo Hwy",
-      id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png"
+      id_image_url: "/api/assets/black-logo-white-mode.png"
     },
     ai_result: {
       overall_status: "Verified",
@@ -1961,7 +1947,7 @@ function normalizeAppRecord(a) {
     }
   }
   if (!a.original_submission && a.original_copy) a.original_submission = a.original_copy;
-  if (!a.correction_fields && a.screening && a.screening.correction_fields) {
+  if ((!a.correction_fields || !a.correction_fields.length) && a.screening && a.screening.correction_fields) {
     a.correction_fields = a.screening.correction_fields;
   }
   if (!a.validator_raw_remark && a.screening && a.screening.validator_raw_remark) {
@@ -2441,7 +2427,7 @@ async function dbListApplicationsForCustomer(customerOrEmail) {
   }
 
 
-  var localApps = readSaved("pigem_applications", []) || [];
+  var localApps = IS_DEMO_MODE ? (readSaved("pigem_applications", []) || []) : [];
   for (var li = 0; li < localApps.length; li++) {
     var la = localApps[li];
     if (!la) continue;
@@ -2497,8 +2483,7 @@ async function dbListApplicationsForCustomer(customerOrEmail) {
 }
 
 async function dbUploadIdPhoto(file, label, customerId) {
-  var safeOwner = String(customerId || "customer").replace(/[^a-zA-Z0-9_-]/g, "_");
-  return await dbUploadDocument(file, "applications/" + safeOwner + "/corrections", label || "id-update");
+  return await dbUploadDocument(file, "corrected", label || "id-update");
 }
 
 async function dbListNotifications(emailOrUser, role) {
@@ -3384,7 +3369,7 @@ if (typeof apiSendStatusEmail === "undefined") {
         status: custSt,
         remarks: remarks || "",
         target_summary: targetSummary || "Information / Document Clarification Required",
-        portal_link: (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0 ? window.location.origin : (CONFIG.PUBLIC_URL || "https://pigem-seven.vercel.app")) + "/customer.html"
+        portal_link: (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0 ? window.location.origin : (CONFIG.PUBLIC_URL || "")) + "/customer.html"
       }
     });
   };

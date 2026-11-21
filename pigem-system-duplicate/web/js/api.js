@@ -1,21 +1,5 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/api.js (Frontend-to-FastAPI Client & Early Quality Check)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Bridges the browser frontend with the Python FastAPI backend (`/api/*`):
- *   - `apiCheckHealth()`: Polls `/api/health` to verify AI, OCR, OpenCV, and SMTP status.
- *   - `apiVerifyCaptcha()`: Calls `/api/verify-captcha` and receives the intake ticket.
- *   - `apiEnqueueBackgroundScreening()`: Queues an application or resubmission at `/api/screen/queue`.
- *   - `apiScreenDocument()`: Calls `/api/screen` for on-demand Agent ID screening.
- *   - `apiSendEmail()`: Sends transactional emails via `/api/notify` (and sets
- *     `window._lastEmailDeliveryOk` so callers can verify real SMTP delivery).
- *   - `checkLocalImageQuality()`: Runs an instant browser-side canvas check for
- *     resolution, brightness, glare, and sharpness to give applicants an early
- *     non-blocking warning before upload without blocking submission.
- * ============================================================================ */
-
 function _getPortalBaseUrl() {
-  var origin = "https://pigem-seven.vercel.app";
+  var origin = "";
   if (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
     origin = window.location.origin;
   } else if (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_URL) {
@@ -216,14 +200,23 @@ async function apiRunScreening(idFrontFile, customerDetails, idBackFile, signal)
   }
 }
 
+async function sameIdPhotoFiles(front, back) {
+  if (!front || !back || front.size !== back.size) return false;
+  try {
+    var a = new Uint8Array(await front.arrayBuffer());
+    var b = new Uint8Array(await back.arrayBuffer());
+    return a.every(function (byte, i) { return byte === b[i]; });
+  } catch (error) { return false; }
+}
+
 async function analyzeClientIdQuality(fileObj) {
   return new Promise(function (resolve) {
     if (!fileObj || typeof Image === "undefined" || typeof document === "undefined") {
       resolve({ passed: false, issues: ["We could not check this photo. Please select a readable JPG or PNG image."], metrics: {} });
       return;
     }
-    if (fileObj.size > 5 * 1024 * 1024) {
-      resolve({ passed: false, issues: ["Choose a photo smaller than 5 MB."], metrics: {} });
+    if (fileObj.size > 12000000) {
+      resolve({ passed: false, issues: ["Choose a photo smaller than 12 MB."], metrics: {} });
       return;
     }
     var url = URL.createObjectURL(fileObj);
@@ -395,7 +388,7 @@ async function apiSendApplicationConfirmationEmail(toEmail, customerName, refNo,
   var isExisting = Boolean(accountInfo && accountInfo.status === "active" && !actCode);
   var username = (accountInfo && accountInfo.user && accountInfo.user.username) ? String(accountInfo.user.username) : "";
   var baseUrl = _getPortalBaseUrl();
-  var actLink = baseUrl + "/activate.html?email=" + encodeURIComponent(toEmail) + (actCode ? "&code=" + encodeURIComponent(actCode) : "") + (username ? "&username=" + encodeURIComponent(username) : "");
+  var actLink = baseUrl + "/activate.html?email=" + encodeURIComponent(toEmail) + (actCode ? "&code=" + encodeURIComponent(actCode) : "");
   var portalLink = baseUrl + "/login.html";
   var msg = isExisting
     ? ("Thank you for applying. Reference No: " + refNo + ". Sign in to check your status at " + portalLink)
@@ -546,27 +539,7 @@ function documentCheckUnavailable(id) {
   return automaticDocumentFailures[id] === true;
 }
 async function checkPendingDocuments(applications, onComplete) {
-  if (automaticDocumentChecksRunning || !isAiEnabled()) return;
-  automaticDocumentChecksRunning = true;
-  try {
-    for (var application of applications) {
-      var state = (application.screening || {}).state;
-      if (!["Pending Review", "Under Agent Review"].includes(application.status)) continue;
-      if (!["pending_agent", "queued", "checking", "unavailable", "paused", undefined].includes(state)) continue;
-      var key = application.id + "|" + (application.updated_at || application.created_at || "");
-      var attempt = automaticDocumentAttempts[key] || { count: 0, next: 0 };
-      if (attempt.count >= 3 || Date.now() < attempt.next) continue;
-      attempt.count++;
-      attempt.next = Date.now() + 60000;
-      automaticDocumentAttempts[key] = attempt;
-      var result = await apiStartBackgroundScreening(application.id);
-      automaticDocumentFailures[application.id] = !result || (!result.screened && !result.queued);
-      if (result && result.screened || automaticDocumentFailures[application.id]) await onComplete(application.id);
-      if (result && (result.status === 401 || result.status === 403)) break;
-    }
-  } finally {
-    automaticDocumentChecksRunning = false;
-  }
+  return;
 }
 
 async function showSelectedPhotoQuality(input) {

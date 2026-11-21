@@ -1,17 +1,3 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/manager.js (Manager Portal & ISP Provider Encoding)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Powers `web/html/manager.html`:
- *   - Reviews applications forwarded by Agents (`Ready for Provider Encoding`).
- *   - Displays saved AI screening findings and ID previews (without re-triggering
- *     paid AI calls when opening already-screened applications).
- *   - Records external ISP provider encoding reference numbers, encoding proof
- *     screenshots, and updates final application status (`Approved`, `Installed`,
- *     `Rejected`, or returns to `Needs Correction`).
- *   - Provides analytics charts, agent performance metrics, and PDF report exports.
- * ============================================================================ */
-
 var currentManager = null;
 var mgrApps = [];
 var mgrUsers = [];
@@ -43,10 +29,11 @@ window.openDashTabById = function (tabId, targetId) {
 };
 
 async function checkMgrScreeningService() {
-  isMgrScreeningOnline = false;
+  var health = await apiCheckHealth();
+  isMgrScreeningOnline = Boolean(health?.auto_screening_ready);
   var banner = document.getElementById("mgr-screening-banner");
   if (banner) banner.classList.remove("hidden");
-  return false;
+  return isMgrScreeningOnline;
 }
 
 function isMgrScreeningActive(app) {
@@ -70,7 +57,9 @@ function getMgrScreeningBadge(app) {
   var savedFindings = scr.background_findings || scr.browser_check?.findings;
   if (savedFindings) {
     var fnd = savedFindings;
-    if (fnd.aiRecommendation === "approve" || (!fnd.aiRecommendation && Array.isArray(fnd.fields) && fnd.fields.length === 3 && fnd.fields.every(function (f) { return f.status === "match"; }))) {
+    if (scr.auto_correction_sent) return '<span class="badge badge-red">Update Requested</span>';
+    if (fnd.manualFallback) return '<span class="badge badge-gray">Manual Review Needed</span>';
+    if (fnd.aiRecommendation === "approve" && fnd.triage === "green") {
       return '<span class="badge badge-green">Screening Passed</span>';
     }
     return '<span class="badge badge-yellow">Review Recommended</span>';
@@ -79,7 +68,7 @@ function getMgrScreeningBadge(app) {
     return '<span class="badge badge-gray">Original ID Copy (Manual Review)</span>';
   }
   if (["pending_agent", "queued", "checking"].includes(state)) return '<span class="badge badge-blue">Checking Documents</span>';
-  var eta = formatMgrEta(scr.eta_seconds);
+  var eta = screeningTimeLabel(scr);
 
   if (state === "queued" || state === "layer1_running") {
     return '<span class="badge badge-blue">Screening in Progress' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
@@ -158,9 +147,6 @@ async function refreshManagerData() {
     var check = openApplication.screening || {};
     note.textContent = String(check.summary || check.advisory || "Waiting for the document check.")
       .replace(/\b(OpenAI|OpenCV|Gemini|OCR|API|AI)\b/gi, "document check");
-  }
-  if (isMgrScreeningOnline) {
-    checkPendingDocuments(mgrApps, async function () { await refreshManagerData(); });
   }
   mgrUsers = await dbListUsers();
   mgrLogs = typeof dbListLogs === "function" ? await dbListLogs() : [];
@@ -426,10 +412,10 @@ function openMgrAppModal(appId) {
   if (app.cropped_id_url || app.id_front_url) {
     docLinksHtml = '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">';
     if (app.cropped_id_url) {
-      docLinksHtml += '<a href="' + escapeHtml(app.cropped_id_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/preview.png" alt="Cropped ID" class="icon-img" />View Cropped and Enhanced ID</a>';
+      docLinksHtml += '<a href="' + escapeHtml(app.cropped_id_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="/api/assets/icons/preview.png" alt="Cropped ID" class="icon-img" />View Cropped and Enhanced ID</a>';
     }
     if (app.id_front_url) {
-      docLinksHtml += '<a href="' + escapeHtml(app.id_front_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Original ID" class="icon-img" />View Original Uploaded ID</a>';
+      docLinksHtml += '<a href="' + escapeHtml(app.id_front_url) + '" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/camera.png" src="/api/assets/icons/camera.png" alt="Original ID" class="icon-img" />View Original Uploaded ID</a>';
     }
     docLinksHtml += '</div>';
   }
@@ -480,6 +466,14 @@ async function saveMgrOverride() {
   var agentEmail = document.getElementById("mgr-assign-agent").value;
   var newStatus = document.getElementById("mgr-override-status").value;
   var remarks = document.getElementById("mgr-remarks").value.trim();
+  if (!canChangeApplicationStatus(app.status, newStatus)) {
+    showAlert("Check the current step", "A validator decision can only be recorded after encoding.");
+    return;
+  }
+  if (newStatus === "Needs Correction" && app.status !== newStatus) {
+    showAlert("Ask the assigned agent", "The agent must select the exact details the customer needs to update.");
+    return;
+  }
 
   if (newStatus === "Rejected" && newStatus !== app.status && (!remarks || remarks === (app.agent_remarks || "").trim())) {
     showAlert("Reason needed", "Enter a short reason the customer can understand.");
@@ -498,7 +492,7 @@ async function saveMgrOverride() {
     correction_note: newStatus === "Needs Correction" ? effectiveRemarks : (app.correction_note || ""),
     customer_instruction: effectiveRemarks,
     encoded: (newStatus === "Encoding" || newStatus === "Approved" || newStatus === "Submitted to Provider") ? true : app.encoded
-  });
+  }, app.updated_at);
 
   if (typeof dbRecordProviderUpdate === "function" && (newStatus === "Encoding" || newStatus === "Approved" || newStatus === "Rejected")) {
     await dbRecordProviderUpdate(app.id, app.provider_ref || "", newStatus, effectiveRemarks, effectiveRemarks);

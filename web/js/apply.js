@@ -841,16 +841,9 @@ function handleIdFileSelect(side, inputEl) {
   var file = inputEl && inputEl.files && inputEl.files[0];
   if (!file) return;
 
-  if (String(file.type || "").indexOf("image/") !== 0 || file.size < 4096) {
+  if (String(file.type || "").indexOf("image/") !== 0 || !file.size) {
     inputEl.value = "";
     setFieldError("id-" + side + "-box", "Choose a clear ID photo in JPG or PNG format.");
-    return;
-  }
-
-  var otherFile = side === "front" ? selectedBackFile : selectedFrontFile;
-  if (otherFile && otherFile.size === file.size && otherFile.name === file.name) {
-    inputEl.value = "";
-    setFieldError("id-" + side + "-box", "Choose a different photo for each side of your ID.");
     return;
   }
 
@@ -883,6 +876,7 @@ function handleIdFileSelect(side, inputEl) {
     }
   }
   checkSelectedIdQuality(side, file);
+  validateSelectedIdQuality(false);
 }
 
 var selectedIdChecks = { front: null, back: null };
@@ -921,22 +915,23 @@ async function validateSelectedIdQuality(submitting) {
   var front = selectedFrontFile;
   var back = selectedBackFile;
   var checks = await Promise.all([
-    checkSelectedIdQuality("front", front), back ? checkSelectedIdQuality("back", back) : { passed: true }
+    front ? checkSelectedIdQuality("front", front) : { passed: true }, back ? checkSelectedIdQuality("back", back) : { passed: true }
   ]);
+  var samePhoto = await sameIdPhotoFiles(front, back);
   if (front !== selectedFrontFile || back !== selectedBackFile) return { severe: [], warning: false };
   var severe = checks.map(function (result, index) {
     return isSevereIdPhoto(result) ? (index === 0 ? "front" : "back") : "";
   }).filter(Boolean);
   var warning = document.getElementById("id-screen-warn");
-  var message = severe.length
+  var message = samePhoto ? "Warning: Both ID photos appear identical. Please choose separate front and back photos, or continue and watch My Account for a correction request." : severe.length
     ? "Early quality warning: The " + severe.join(" and ") + " ID photo appears blurry or unclear. You can re-upload a clearer photo now, or continue submitting for automated screening."
     : "Early quality warning: Check the marked photo above. You can replace it or continue.";
   if (warning) {
-    warning.hidden = checks.every(function (result) { return result.passed; });
+    warning.hidden = !samePhoto && checks.every(function (result) { return result.passed; });
     warning.textContent = message;
   }
   if (!submitting) return true;
-  return { severe: severe, warning: checks.some(function (result) { return !result.passed; }) };
+  return { severe: severe, warning: samePhoto || checks.some(function (result) { return !result.passed; }) };
 }
 
 function showPanel(index) {
@@ -1687,8 +1682,8 @@ async function performApplicationSubmission() {
       upload_photo_warning: photoCheck.warning,
       state: "queued",
       background_state: "queued",
-      phase: "Stage 1 Image Quality Assessment (gpt-6.2-sol)",
-      eta_seconds: 25,
+      phase: "Waiting for document check",
+      eta_seconds: 0,
       fallback_original_only: false,
       advisory: "Automated ID quality and details screening is running."
     };
@@ -1783,12 +1778,14 @@ async function performApplicationSubmission() {
     }
 
     var accountInfo = await dbCreateAccountFromApplication(fullName, email);
-    var appFolder = "applications/" + (accountInfo.user.id || "public") + "/original";
+    var applicationRef = generateApplicationReference();
+    var appFolder = applicationRef + "_original";
     var frontPath = await dbUploadDocument(selectedFrontFile, appFolder, "id-front");
     var backPath = await dbUploadDocument(selectedBackFile, appFolder, "id-back");
 
     advanceLoadingStep(3);
     var baseAppPayload = Object.assign({}, addrData, {
+      ref_no: applicationRef,
       customer_id: accountInfo.user.id,
       agent_id: referralAgentId,
       agent_link_code: referralAgentId,
@@ -1835,28 +1832,13 @@ async function performApplicationSubmission() {
       { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true, onClose: resetApplyWizardToStep1 }
     );
 
-    if (applicationScreeningTicket) {
-      fetch(_apiEndpoint("/screen/queue"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ application_id: saved.id, ticket: applicationScreeningTicket }),
-        keepalive: true
-      }).then(async function (response) {
-        if (!response.ok || !(await response.json()).queued) {
-          console.warn("Application saved without an automatic document check.");
-        }
-      }).catch(function () {
-        console.warn("Application saved without an automatic document check.");
-      });
-    }
-
     var subject = "PIGEM Application Confirmation - Reference No. " + saved.ref_no;
     var body =
       "Dear " + fullName + ",\n\n" +
       "Thank you for submitting your internet service application with PIGEM Combined Facilities Support Services.\n\n" +
       "Reference Number: " + saved.ref_no + "\n" +
       "Plan: Red Fiber " + p.name + " (" + p.speed + " Mbps - " + formatPeso(p.price) + "/mo)\n" +
-      (photoRequest ? "Status: Needs Correction\n" + photoRequest + "\n\n" : "Status: Processing\n\n") +
+      "Status: Processing\n\n" +
       "Please check your email notification for your 6-digit Activation OTP Code and Account Activation link.";
 
     var confirmEmailPromise = apiSendApplicationConfirmationEmail(email, fullName, saved.ref_no, p, formatAddress(addrData), accountInfo);

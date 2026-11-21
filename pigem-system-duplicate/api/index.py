@@ -1,38 +1,15 @@
-# ============================================================================
-# PIGEM STUDY DUPLICATE — api/index.py (FastAPI Main Entry Point & Router)
-# ============================================================================
-# ROLE IN ARCHITECTURE:
-#   This is the main Vercel Serverless Python entry point. All `/api/*` requests
-#   from the browser or Supabase pg_cron are routed here via `vercel.json`.
-#
-# KEY ENDPOINTS TO KNOW FOR DEFENSE:
-#   1. GET  /api/health         -> Checks live status of OpenAI (gpt-6.2-sol + gpt-5.4),
-#                                  Azure Document Intelligence, OpenCV, reCAPTCHA, SMTP,
-#                                  Supabase, and the background screening worker.
-#   2. POST /api/verify-captcha -> Verifies Google reCAPTCHA v2 token and issues a
-#                                  signed HMAC `screening_ticket` for application intake.
-#   3. POST /api/screen/queue   -> Enqueues a new application or customer resubmission
-#                                  into `pigem_private.screening_jobs` and immediately
-#                                  triggers one background worker pass (`run_one()`).
-#   4. POST /api/screen/worker  -> Called every 1 minute by Supabase pg_cron (authenticated
-#                                  with `SCREENING_WORKER_SECRET`) to process queued IDs.
-#   5. POST /api/screen         -> On-demand staff screening endpoint (requires verified
-#                                  Agent/Manager session token).
-#   6. POST /api/notify         -> Sends transactional HTML emails via Gmail SMTP
-#                                  (Port 465 SSL with Port 587 STARTTLS automatic fallback).
-#   7. POST /api/polite-remark  -> Uses GPT-5.4 to rewrite raw Agent correction notes into
-#                                  a polite, customer-friendly correction message.
-# ============================================================================
-
 from hmac import compare_digest
 from uuid import uuid4
 from os import getenv
+import json
+from urllib.parse import quote
 from pathlib import Path
 import sys
 from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
@@ -46,8 +23,10 @@ import _idp
 import _mailer
 import _openai_client
 import _screening_queue
+import _phone_transfer
 
 app = FastAPI(title="PIGEM Cloud IDP Screening & Notification API")
+app.include_router(_phone_transfer.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -83,9 +62,25 @@ class PoliteRemarkRequest(BaseModel):
     chosen_field: Optional[str] = "auto"
 
 
+@app.get("/api/config.js")
+def browser_config():
+    values = {key: (getenv(key) or "").strip() for key in (
+        "SUPABASE_URL", "SUPABASE_ANON_KEY", "RECAPTCHA_SITE_KEY", "LOCATIONIQ_API_KEY"
+    )}
+    return Response("window.PIGEM_CONFIG = " + json.dumps(values) + ";",
+                    media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/assets/{asset_path:path}")
+def website_asset(asset_path: str):
+    base = (getenv("SUPABASE_URL") or "").rstrip("/")
+    if not base or any(part in ("", ".", "..") for part in asset_path.split("/")):
+        raise HTTPException(404, "Asset unavailable")
+    return RedirectResponse(base + "/storage/v1/object/public/website-assets/" + quote(asset_path, safe="/"))
+
+
 @app.get("/api/health")
 @app.get("/health")
-# [STUDY NOTE — health]: Health-check endpoint returning configuration & readiness flags for OpenAI, Azure DI, OpenCV, reCAPTCHA, SMTP, and Supabase.
 def health():
     openai_ok = _ai.is_available()
     idp_ok = _idp.is_configured()
@@ -103,7 +98,7 @@ def health():
         "idp_provider": _idp.provider_name(),
         "opencv": True,
         "ocr": idp_ok,
-        "auto_screening_ready": idp_ok and openai_ok,
+        "auto_screening_ready": idp_ok and openai_ok and _screening_queue.enabled(),
         "recaptcha": recaptcha_ok,
         "recaptcha_site_key": (getenv("RECAPTCHA_SITE_KEY") or "").strip(),
         "smtp": smtp_ok,
@@ -115,7 +110,6 @@ def health():
 
 @app.post("/api/verify-captcha")
 @app.post("/verify-captcha")
-# [STUDY NOTE — verify_captcha]: Verifies Google reCAPTCHA v2 token and attaches a signed intake ticket when called from the application form.
 def verify_captcha(data: CaptchaVerifyRequest, request: Request):
     client_ip = request.client.host if request.client else ""
     result = _auth.verify_recaptcha(data.token, client_ip)
@@ -125,13 +119,10 @@ def verify_captcha(data: CaptchaVerifyRequest, request: Request):
 
 
 @app.post("/api/screen/queue")
-# [STUDY NOTE — enqueue_screening]: Enqueues an application (or customer resubmission) into the durable Postgres queue and immediately runs one worker pass.
 def enqueue_screening(data: ScreeningIntake):
     if not _screening_queue.enabled():
         raise HTTPException(status_code=503, detail="Background screening is not configured.")
     ticket_str = (data.ticket or "").strip()
-    if data.resubmission and not ticket_str:
-        ticket_str = _screening_queue.intake_ticket()
     if len(ticket_str) > 150 or not _screening_queue.valid_ticket(ticket_str):
         raise HTTPException(status_code=403, detail="Application verification expired.")
     queued = False
@@ -141,20 +132,11 @@ def enqueue_screening(data: ScreeningIntake):
             "intake_ticket": ticket_str.split(".")[1],
         }))
     except Exception:
-        queued = False
-    # Kick off one background pass immediately, and also directly screen this application if the SQL queue skipped it
-    # (e.g. on customer Needs Correction resubmissions or Under Agent Review status).
-    try:
-        if queued:
-            _screening_queue.run_one()
-        _screening_queue.ensure_application_screened(data.application_id)
-    except Exception:
-        pass
-    return {"queued": True}
+        raise HTTPException(503, "Could not read the document queue.") from None
+    return {"queued": queued}
 
 
 @app.post("/api/screen/worker")
-# [STUDY NOTE — run_screening_worker]: Cron worker endpoint called every minute by Supabase pg_cron using SCREENING_WORKER_SECRET.
 def run_screening_worker(request: Request):
     if not _screening_queue.enabled():
         raise HTTPException(status_code=503, detail="Background screening is not configured.")
@@ -165,7 +147,6 @@ def run_screening_worker(request: Request):
 
 
 @app.get("/api/screen/session")
-# [STUDY NOTE — screening_session]: Checks whether the current Agent/Manager holds a verified private screening session token.
 def screening_session(request: Request):
     try:
         _auth.require_screening_staff(request.headers.get("authorization", ""))
@@ -178,7 +159,6 @@ def screening_session(request: Request):
 
 @app.post("/api/screen")
 @app.post("/screen")
-# [STUDY NOTE — screen_document]: On-demand staff screening endpoint that runs the 4-stage conditional pipeline in a background threadpool.
 async def screen_document(
     id_front: UploadFile = File(...),
     id_back: Optional[UploadFile] = File(default=None),
@@ -239,7 +219,6 @@ def document_screening_async_notice():
 
 @app.post("/api/notify")
 @app.post("/notify")
-# [STUDY NOTE — send_notification]: Dispatches transactional HTML emails through Gmail SMTP (Port 465 SSL / Port 587 STARTTLS fallback).
 def send_notification(data: EmailRequest, user=Depends(_auth.require_login)):
     return _mailer.send(
         to=data.to,
@@ -253,6 +232,5 @@ def send_notification(data: EmailRequest, user=Depends(_auth.require_login)):
 
 @app.post("/api/polite-remark")
 @app.post("/polite-remark")
-# [STUDY NOTE — generate_polite_remark]: Uses GPT-5.4 to turn rough Agent notes into a polite, clear customer correction message.
 def generate_polite_remark(data: PoliteRemarkRequest, user=Depends(_auth.require_screening_staff)):
     return _ai.write_polite_remark(data.raw_remark, data.chosen_field or "auto")

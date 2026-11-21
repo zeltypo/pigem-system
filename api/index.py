@@ -1,12 +1,15 @@
 from hmac import compare_digest
 from uuid import uuid4
 from os import getenv
+import json
+from urllib.parse import quote
 from pathlib import Path
 import sys
 from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
@@ -59,6 +62,23 @@ class PoliteRemarkRequest(BaseModel):
     chosen_field: Optional[str] = "auto"
 
 
+@app.get("/api/config.js")
+def browser_config():
+    values = {key: (getenv(key) or "").strip() for key in (
+        "SUPABASE_URL", "SUPABASE_ANON_KEY", "RECAPTCHA_SITE_KEY", "LOCATIONIQ_API_KEY"
+    )}
+    return Response("window.PIGEM_CONFIG = " + json.dumps(values) + ";",
+                    media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/assets/{asset_path:path}")
+def website_asset(asset_path: str):
+    base = (getenv("SUPABASE_URL") or "").rstrip("/")
+    if not base or any(part in ("", ".", "..") for part in asset_path.split("/")):
+        raise HTTPException(404, "Asset unavailable")
+    return RedirectResponse(base + "/storage/v1/object/public/website-assets/" + quote(asset_path, safe="/"))
+
+
 @app.get("/api/health")
 @app.get("/health")
 def health():
@@ -78,7 +98,7 @@ def health():
         "idp_provider": _idp.provider_name(),
         "opencv": True,
         "ocr": idp_ok,
-        "auto_screening_ready": idp_ok and openai_ok,
+        "auto_screening_ready": idp_ok and openai_ok and _screening_queue.enabled(),
         "recaptcha": recaptcha_ok,
         "recaptcha_site_key": (getenv("RECAPTCHA_SITE_KEY") or "").strip(),
         "smtp": smtp_ok,
@@ -103,8 +123,6 @@ def enqueue_screening(data: ScreeningIntake):
     if not _screening_queue.enabled():
         raise HTTPException(status_code=503, detail="Background screening is not configured.")
     ticket_str = (data.ticket or "").strip()
-    if data.resubmission and not ticket_str:
-        ticket_str = _screening_queue.intake_ticket()
     if len(ticket_str) > 150 or not _screening_queue.valid_ticket(ticket_str):
         raise HTTPException(status_code=403, detail="Application verification expired.")
     queued = False
@@ -114,16 +132,8 @@ def enqueue_screening(data: ScreeningIntake):
             "intake_ticket": ticket_str.split(".")[1],
         }))
     except Exception:
-        queued = False
-    # Kick off one background pass immediately, and also directly screen this application if the SQL queue skipped it
-    # (e.g. on customer Needs Correction resubmissions or Under Agent Review status).
-    try:
-        if queued:
-            _screening_queue.run_one()
-        _screening_queue.ensure_application_screened(data.application_id)
-    except Exception:
-        pass
-    return {"queued": True}
+        raise HTTPException(503, "Could not read the document queue.") from None
+    return {"queued": queued}
 
 
 @app.post("/api/screen/worker")

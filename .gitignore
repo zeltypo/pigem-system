@@ -11,3 +11,7 @@ Thumbs.db
 /tmp/
 /node_modules/
 /pigem-system/
+/pigem-system-duplicate/
+/pigem-duplicate/
+/.vercel/
+*.log

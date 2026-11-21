@@ -34,6 +34,12 @@ window.addEventListener("DOMContentLoaded", async function () {
   populateReportStatusFilter("api");
   await refreshAdminData();
   initDashUI(currentAdmin, adminApps, function () { showTab("reports"); });
+  setInterval(async function () {
+    if (document.hidden || !["overview", "ai"].includes(activeAdminTab)) return;
+    var tag = document.activeElement && document.activeElement.tagName;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+    try { await refreshAdminData(); } catch (error) {}
+  }, 10000);
 });
 
 async function refreshAdminData() {
@@ -164,7 +170,8 @@ async function renderAiState() {
     var queueApps = adminApps.filter(function (app) { return app.screening?.background_state; });
     queue.innerHTML = queueApps.length ? queueApps.map(function (app) {
       return '<p><b>' + escapeHtml(app.reference_no || app.ref_no) + '</b> · ' +
-        escapeHtml({queued:"Queued", running:"Checking", completed:"Completed", failed:"Failed"}[app.screening.background_state] || "Unknown") + '</p>';
+        escapeHtml({queued:"Queued", running:"Checking", completed:"Completed", failed:"Failed"}[app.screening.background_state] || "Unknown") +
+        (["queued", "running"].includes(app.screening.background_state) ? " · " + escapeHtml(screeningTimeLabel(app.screening)) : "") + '</p>';
     }).join("") : '<p class="muted">No background checks yet.</p>';
   }
 

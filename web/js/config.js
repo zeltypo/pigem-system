@@ -1,18 +1,44 @@
 var ROOT = window.ROOT || "";
 
+function screeningTimeLabel(screening) {
+  var stamp = screening.background_state === "running" ? screening.started_at : screening.queued_at;
+  if (!stamp || !Number.isFinite(Date.parse(stamp))) return "Waiting for update";
+  var seconds = Math.max(0, Math.floor((Date.now() - Date.parse(stamp)) / 1000));
+  var label = Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
+  if (screening.background_state !== "running") return "Waiting " + label;
+  var deadline = Date.parse(screening.deadline_at || "");
+  if (!Number.isFinite(deadline)) return "Elapsed " + label;
+  var remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+  if (remaining === 0) return "Elapsed " + label + " · waiting for worker update";
+  return "Elapsed " + label + " · retry window " + Math.floor(remaining / 60) + "m " + (remaining % 60) + "s";
+}
+
+function canChangeApplicationStatus(current, next) {
+  if (current === next) return true;
+  var steps = {
+    "Pending Review": ["Under Agent Review"],
+    "Under Agent Review": ["Encoding", "Needs Correction"],
+    "Encoding": ["Approved", "Rejected", "Needs Correction"],
+    "Needs Correction": ["Pending Review", "Under Agent Review", "Rejected"],
+    "Approved": [],
+    "Rejected": []
+  };
+  return (steps[current] || []).includes(next);
+}
+
 var CONFIG = {
 
-  SUPABASE_URL: "https://wuunqfxyejxwrawtjdrf.supabase.co",
-  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g",
+  SUPABASE_URL: (window.PIGEM_CONFIG || {}).SUPABASE_URL || "",
+  SUPABASE_ANON_KEY: (window.PIGEM_CONFIG || {}).SUPABASE_ANON_KEY || "",
 
-  PUBLIC_URL: "https://pigem-system-web.vercel.app",
+  PUBLIC_URL: window.location.origin,
   API_URL: "/api",
 
   ASSET_SOURCE: "supabase",
 
-  LOCATIONIQ_API_KEY: "pk.3597a6e1a756561513401f40ea9ee840",
+  LOCATIONIQ_API_KEY: (window.PIGEM_CONFIG || {}).LOCATIONIQ_API_KEY || "",
 
-  RECAPTCHA_SITE_KEY: "6LfLGBQuAAAAAP3l2jkVbG41srUfH3mv2io15vXD",
+  RECAPTCHA_SITE_KEY: (window.PIGEM_CONFIG || {}).RECAPTCHA_SITE_KEY || "",
 
   PLANS: [
     { id: "1000", name: "Plan 1000", speed: 100, price: 1000, tag: "Fiber for your home", featured: false },
@@ -135,9 +161,10 @@ var DEFAULT_CONTENT = {
 
 function getImageUrl(filePath) {
   if (!filePath) return "";
+  if (filePath.indexOf("/api/assets/") === 0) return filePath;
   if (filePath.indexOf("data:") === 0 || filePath.indexOf("http://") === 0 || filePath.indexOf("https://") === 0) return filePath;
   var clean = String(filePath).replace(/^\/+/, "").replace(/^assets\/images\//, "");
-  var base = (CONFIG.SUPABASE_URL || "https://wuunqfxyejxwrawtjdrf.supabase.co").replace(/\/+$/, "");
+  var base = CONFIG.SUPABASE_URL;
   return base + "/storage/v1/object/public/website-assets/" + clean;
 }
 
@@ -924,7 +951,7 @@ function renderMaintenanceScreenHtml(titleText, msgText) {
   closePopup();
   var logoSrc = (typeof getImageUrl === "function" && typeof getActiveThemeLogoFilename === "function")
     ? getImageUrl(getActiveThemeLogoFilename())
-    : "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
+    : "/api/assets/black-logo-white-mode.png";
   document.body.innerHTML =
     '<main class="auth-page">' +
       '<div class="card auth-card center" style="max-width:520px">' +

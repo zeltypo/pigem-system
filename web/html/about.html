@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
+  <link rel="icon" href="/api/assets/black-logo-white-mode.png">
   <title>About Us | Combined Facilities Support Services</title>
 
   <link rel="stylesheet" href="../style.css">
@@ -16,7 +16,7 @@
   <header class="site-header">
     <div class="container">
       <div class="logo">
-        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo">
+        <img data-img="black-logo-white-mode.png" src="/api/assets/black-logo-white-mode.png" alt="Logo">
         <span style="cursor:default; user-select:none;">Combined Facilities Support Services</span>
       </div>
 
@@ -39,7 +39,7 @@
   <aside id="public-mobile-menu" class="side-menu" aria-label="Website menu" inert>
     <div class="row between" style="padding-bottom:12px; border-bottom:1px solid var(--line); align-items:center;">
       <div style="display:flex; align-items:center; gap:10px;">
-        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo">
+        <img data-img="black-logo-white-mode.png" src="/api/assets/black-logo-white-mode.png" alt="Logo">
       </div>
       <button class="btn btn-small" onclick="toggleMenu()" aria-label="Close Menu">&#10005;</button>
     </div>
@@ -80,9 +80,9 @@
       <div class="container center">
         <h2>Clients and Partners</h2>
         <div class="logos">
-          <img data-img="Clients/client-infus8.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/Clients/client-infus8.png" alt="Client Partner" onclick="previewImage('Clients/client-infus8.png', '')">
-          <img data-img="Clients/client-radius.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/Clients/client-radius.png" alt="Client Partner" onclick="previewImage('Clients/client-radius.png', '')">
-          <img data-img="Clients/client-maxcyc.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/Clients/client-maxcyc.png" alt="Client Partner" onclick="previewImage('Clients/client-maxcyc.png', '')">
+          <img data-img="Clients/client-infus8.png" src="/api/assets/Clients/client-infus8.png" alt="Client Partner" onclick="previewImage('Clients/client-infus8.png', '')">
+          <img data-img="Clients/client-radius.png" src="/api/assets/Clients/client-radius.png" alt="Client Partner" onclick="previewImage('Clients/client-radius.png', '')">
+          <img data-img="Clients/client-maxcyc.png" src="/api/assets/Clients/client-maxcyc.png" alt="Client Partner" onclick="previewImage('Clients/client-maxcyc.png', '')">
         </div>
       </div>
     </section>
@@ -135,6 +135,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <script src="/api/config.js"></script>
   <script src="../js/config.js"></script>
 
   <script src="../js/db.js"></script>

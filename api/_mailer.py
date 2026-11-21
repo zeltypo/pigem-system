@@ -56,10 +56,10 @@ def _get_app_base_url() -> str:
     prod_domain = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or "").strip()
     if prod_domain:
         return f"https://{prod_domain}"
-    return (os.getenv("APP_BASE_URL") or "https://pigem-seven.vercel.app").strip().rstrip("/")
+    return (os.getenv("APP_BASE_URL") or "").strip().rstrip("/")
 
 def _get_supabase_logo_url() -> str:
-    base = (os.getenv("SUPABASE_URL") or "https://wuunqfxyejxwrawtjdrf.supabase.co").strip().rstrip("/")
+    base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
     return f"{base}/storage/v1/object/public/website-assets/black-logo-white-mode.png"
 
 def _generate_ref_tag(existing_tag: str = "") -> str:

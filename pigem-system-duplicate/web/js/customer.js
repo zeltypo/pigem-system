@@ -1,19 +1,3 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/customer.js (Customer Portal & Needs Correction Flow)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Powers `web/html/customer.html`:
- *   - Displays simplified 3-stage customer status tracker (Processing, Approved, Rejected).
- *   - When an Agent marks an application as `Needs Correction`, displays the
- *     targeted correction form highlighting only the fields/IDs requested by the Agent.
- *   - Includes desktop-only "Continue on Phone (QR Code)" (`openCustQrUploadModal`)
- *     so customers on a PC/laptop can scan a QR code to upload replacement ID photos
- *     from their phone camera.
- *   - Allows non-blocking re-upload and resubmission even if a replacement photo
- *     triggers an early quality warning, and automatically re-enqueues background
- *     AI screening (`resubmission: true`) upon saving.
- * ============================================================================ */
-
 function previousCustomerSubmissions(latest, currentScreening) {
   if (!latest || !latest.submitted_at) return [];
   var history = Array.isArray(latest.previous_submissions) ? latest.previous_submissions : [];
@@ -32,10 +16,8 @@ function previousCustomerSubmissions(latest, currentScreening) {
 var currentCustomer = null;
 var myApps = [];
 var selectedAppId = null;
-var hasShownCorrectionLoginPopup = false;
 
 var _custQrPollTimer = null;
-var _custQrActiveSid = "";
 var _custQrLoadedUrls = { front: "", back: "" };
 var custQrFrontFile = null;
 var custQrBackFile = null;
@@ -102,50 +84,54 @@ async function applyCustomerQrRemoteFile(side, url) {
   } catch (e) {}
 }
 
-function openCustomerPhoneQrModal() {
+async function openCustomerPhoneQrModal() {
+  var button = document.getElementById("btn-cust-phone-qr");
+  var status = document.getElementById("cust-phone-status");
+  var applicationId = selectedAppId;
+  var session = getActiveSessionPair(["customer"]);
+  button.disabled = true;
+  status.textContent = "Creating phone link…";
   stopCustomerPhoneQrPolling();
-  if (!_custQrActiveSid) {
-    _custQrActiveSid = "QR-FIX-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
+  try {
+    var link = await phoneTransfer("create", { mode: "correction", customer_id: session.id, credential: session.tok });
+    if (selectedAppId !== applicationId || !button.isConnected) return;
+    status.textContent = "";
+    var qr = document.getElementById("cust-phone-transfer");
+    qr.innerHTML = phoneTransferLinkContent(link, "Send ID photos from your phone", "Scan to upload the requested ID photos. The photos will appear here.");
+    qr.hidden = false;
+    document.getElementById("phone-transfer-link").focus();
+    var modal = document.getElementById("popup-modal");
+    var receiving = false;
+    _custQrPollTimer = setInterval(async function () {
+      if (!modal.isConnected || selectedAppId !== applicationId) {
+        stopCustomerPhoneQrPolling();
+        return;
+      }
+      if (receiving) return;
+      receiving = true;
+      try {
+        var photos = await phoneTransfer("receive", { token: link.receiver });
+        if (!modal.isConnected || selectedAppId !== applicationId) return;
+        if (!photos.front && !photos.back) return;
+        if (photos.front) await applyCustomerQrRemoteFile("front", photos.front);
+        if (photos.back) await applyCustomerQrRemoteFile("back", photos.back);
+        if ((photos.front && !custQrFrontFile) || (photos.back && !custQrBackFile)) return;
+        stopCustomerPhoneQrPolling();
+        document.getElementById("phone-transfer-status").textContent = "Photos received. Review them below, then resubmit your application.";
+        phoneTransfer("finish", { token: link.receiver }).catch(function () {});
+      } catch (error) {
+        var message = document.getElementById("phone-transfer-status");
+        if (message && modal.isConnected) message.textContent = error.message || "Waiting to reconnect…";
+        if (error.message && error.message.includes("expired")) stopCustomerPhoneQrPolling();
+      } finally {
+        receiving = false;
+      }
+    }, 3000);
+  } catch (error) {
+    status.textContent = error.message || "Could not create a phone link. Try again.";
+  } finally {
+    button.disabled = false;
   }
-  var baseOrigin = (typeof _getPortalBaseUrl === "function")
-    ? _getPortalBaseUrl()
-    : window.location.origin;
-  var mobileUploadUrl = baseOrigin.replace(/\/$/, "") + "/apply.html?qr_upload=1&sid=" + encodeURIComponent(_custQrActiveSid);
-  var qrImgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(mobileUploadUrl);
-
-  var hasFrontNow = Boolean(custQrFrontFile || document.getElementById("fix-file")?.files?.length);
-  var hasBackNow = Boolean(custQrBackFile || document.getElementById("fix-file-back")?.files?.length);
-
-  openPopup(
-    '<div class="center">' +
-      '<h3>Continue ID Correction Upload on Phone</h3>' +
-      '<p class="small muted mt">Scan this QR code with your phone to capture or upload clear Front and Back photos of your Valid ID. Uploaded photos sync directly back to this correction form.</p>' +
-      '<div class="mt-big" style="background:#fff; padding:16px; border-radius:12px; display:inline-block; border:1px solid var(--line);">' +
-        '<img src="' + qrImgUrl + '" alt="Scan with Phone" style="width:180px; height:180px; display:block;" />' +
-      '</div>' +
-      '<div class="notice mt" style="text-align:left;font-size:13px;">' +
-        '<div>Front ID Status: <span id="cust-qr-sync-front-state">' + (hasFrontNow ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
-        '<div class="mt">Back ID Status: <span id="cust-qr-sync-back-state">' + (hasBackNow ? "<b style='color:var(--good)'>Received!</b>" : "<span class='muted'>Waiting for phone...</span>") + '</span></div>' +
-      '</div>' +
-      '<div class="small muted mt">Or open this link on your mobile browser:</div>' +
-      '<input type="text" readonly value="' + escapeHtml(mobileUploadUrl) + '" style="font-size:12px; text-align:center; margin-top:6px;" onclick="this.select()" />' +
-      '<div class="row mt-big" style="justify-content:center">' +
-        '<button type="button" class="btn btn-red" onclick="stopCustomerPhoneQrPolling(); closePopup()">Done / Close</button>' +
-      '</div>' +
-    '</div>',
-    { showCloseX: true, closeOnBackdrop: true, onClose: stopCustomerPhoneQrPolling }
-  );
-
-  _custQrPollTimer = setInterval(async function () {
-    if (!document.getElementById("popup-modal")) {
-      stopCustomerPhoneQrPolling();
-      return;
-    }
-    if (typeof dbListQrSessionFiles !== "function") return;
-    var files = await dbListQrSessionFiles(_custQrActiveSid);
-    if (files.frontUrl) await applyCustomerQrRemoteFile("front", files.frontUrl);
-    if (files.backUrl) await applyCustomerQrRemoteFile("back", files.backUrl);
-  }, 2500);
 }
 
 async function checkCustomerFixPhotoQuality(side, file) {
@@ -175,6 +161,18 @@ async function checkCustomerFixPhotoQuality(side, file) {
   box.textContent = result.passed
     ? "Photo quality check passed. Check that all printed details are visible."
     : "Early quality warning: " + result.issues.join(" ") + " You can upload a clearer photo now or continue resubmitting.";
+  var front = custQrFrontFile || document.getElementById("fix-file")?.files?.[0];
+  var back = custQrBackFile || document.getElementById("fix-file-back")?.files?.[0];
+  var duplicateBox = document.getElementById("fix-duplicate-warning");
+  if (!duplicateBox) {
+    duplicateBox = document.createElement("div");
+    duplicateBox.id = "fix-duplicate-warning";
+    duplicateBox.className = "notice warn mt";
+    duplicateBox.setAttribute("role", "status");
+    box.insertAdjacentElement("afterend", duplicateBox);
+  }
+  duplicateBox.hidden = !(await sameIdPhotoFiles(front, back));
+  duplicateBox.textContent = "Warning: The selected ID photos are identical. You can upload separate photos or continue; another correction may be requested.";
 }
 
 function onCustomerLocalFixFileChange(side, inputEl) {
@@ -224,16 +222,13 @@ window.addEventListener("DOMContentLoaded", async function () {
   currentCustomer = await requireLogin(["customer"]);
   if (!currentCustomer) return;
 
-  var custNameEl = document.getElementById("cust-name");
-  if (custNameEl) custNameEl.textContent = currentCustomer.full_name || currentCustomer.username || currentCustomer.email || "Customer";
-
-
   initDashUI(currentCustomer, myApps, function (id) { selectMyApp(id, true); });
   window.addEventListener("resize", updateCustomerQrButtonVisibility);
 
   await loadMyApplications();
 
   setInterval(async function () {
+    if (document.hidden || navigator.onLine === false || document.getElementById("popup-modal")) return;
     var activeTag = document.activeElement ? document.activeElement.tagName : "";
 
     if (custQrFrontFile ||
@@ -242,60 +237,27 @@ window.addEventListener("DOMContentLoaded", async function () {
         document.getElementById("fix-file")?.files?.length ||
         document.getElementById("fix-file-back")?.files?.length ||
         document.getElementById("btn-fix")?.disabled) return;
-    if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") return;
-    await loadMyApplications(true);
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(activeTag) || document.activeElement?.closest("#my-applications, #profile-drawer, #notif-modal")) return;
+    await loadMyApplications();
     if (typeof refreshNotifBell === "function") refreshNotifBell(currentCustomer);
   }, 8000);
 });
 
-function promptCustomerCorrectionReminder(apps) {
-  var pendingFixes = (apps || []).filter(function (a) {
-    return a.status === "Needs Correction" && !a.correction_declined;
-  });
-  var banner = document.getElementById("cust-correction-banner");
-  if (banner) {
-    if (pendingFixes.length === 0) {
-      banner.classList.add("hidden");
-      banner.innerHTML = "";
-    } else {
-      var linksHtml = pendingFixes.map(function (a) {
-        return '<button type="button" class="btn btn-red btn-sm" onclick="selectMyApp(\'' + escapeHtml(a.id) + '\', true)">Open ' + escapeHtml(a.reference_no || a.ref_no) + '</button>';
-      }).join(" ");
-      banner.classList.remove("hidden");
-      banner.innerHTML =
-        '<div class="notice" style="background:#fff7ed;border:1.5px solid #fb923c;color:#7c2d12;padding:14px 16px;border-radius:12px;">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">' +
-            '<div>' +
-              '<b>Important Action Needed: ' + pendingFixes.length + ' Application(s) Require Correction</b>' +
-              '<div class="small" style="margin-top:4px;line-height:1.5;">Completing the requested update is required so your internet service application can move forward to provider encoding and installation scheduling. Automated email reminders are sent at <b>24 hours</b> (initial) and <b>72 hours</b> (final notice) if left unaddressed.</div>' +
-            '</div>' +
-            '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + linksHtml + '</div>' +
-          '</div>' +
-        '</div>';
-    }
-  }
-
-  if (!hasShownCorrectionLoginPopup && pendingFixes.length > 0 && typeof openPopup === "function") {
-    hasShownCorrectionLoginPopup = true;
-    var listItems = pendingFixes.map(function (a) {
-      return '<div style="padding:8px 10px;border:1px solid #fed7aa;background:#fffaf5;border-radius:8px;margin-bottom:8px;">' +
-        '<b>' + escapeHtml(a.reference_no || a.ref_no) + '</b> (' + escapeHtml(a.plan_name || "") + ')<br>' +
-        '<span class="small" style="color:#7c2d12;">' + escapeHtml(a.agent_remarks || "Please update the flagged details or upload clearer Front and Back Valid ID photos.") + '</span>' +
-      '</div>';
-    }).join("");
-    openPopup(
-      '<div style="padding:4px 2px;">' +
-        '<h3 style="color:#b42318;margin-bottom:6px;">Important: Application Correction Required</h3>' +
-        '<p class="small muted" style="margin-bottom:12px;">You have <b>' + pendingFixes.length + '</b> application(s) in <b>Needs Correction</b> status:</p>' +
-        listItems +
-        '<p class="small" style="margin:8px 0 14px;line-height:1.55;color:#7c2d12;background:#fff7ed;padding:8px 10px;border-radius:8px;border:1px solid #fed7aa;"><b>Why this is important:</b> Submitting the requested correction or clear Valid ID photos (Front &amp; Back) is required by the telecom provider validator before your line installation can be scheduled. Follow-up notices are sent at 24 hours and 72 hours.</p>' +
-        '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
-          '<button type="button" class="btn btn-red btn-sm" onclick="selectMyApp(\'' + escapeHtml(pendingFixes[0].id) + '\', false); closePopup();">Review &amp; Update Now</button>' +
-        '</div>' +
-      '</div>',
-      { showCloseX: true, closeOnBackdrop: true }
-    );
-  }
+function showCustomerLoginUpdates() {
+  if (!myApps.length || sessionStorage.getItem("pigem_show_application_updates") !== String(currentCustomer.id)) return;
+  if (document.getElementById("popup-modal")) return;
+  sessionStorage.removeItem("pigem_show_application_updates");
+  var items = myApps.map(function (app) {
+    return '<li><b>' + escapeHtml(app.reference_no || app.ref_no || "Application") + '</b> ' +
+      (app.status === "Needs Correction" && !app.correction_declined
+        ? '<span class="badge badge-yellow">Needs Correction</span>'
+        : customerStatusBadge(app.status === "Needs Correction" ? "Processing" : app.status)) + '</li>';
+  }).join("");
+  openPopup(
+    '<h2>Application updates</h2><ul class="customer-update-list">' + items + '</ul>' +
+    '<div class="row mt"><button class="btn btn-red" type="button" onclick="closePopup()">View applications</button></div>',
+    { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true }
+  );
 }
 
 function renderAppList() {
@@ -304,31 +266,33 @@ function renderAppList() {
   if (myApps.length === 0) {
     listEl.innerHTML =
       '<div class="muted" style="padding:18px 0; text-align:center">' +
-      'You have not submitted any applications yet.<br><br>' +
-      '<a href="apply.html" target="_blank" class="btn btn-red btn-sm">Apply Now</a>' +
+      'You have not submitted any applications yet.' +
       '</div>';
     return;
   }
 
-  var html = "";
-  for (var j = 0; j < myApps.length; j++) {
-    var a = myApps[j];
-    var isSel = a.id === selectedAppId;
-    html +=
-      '<div class="q-card" style="cursor:pointer; border-color:' + (isSel ? "#c8102e" : "var(--line)") + '" onclick="selectMyApp(\'' + escapeHtml(a.id) + '\', true)">' +
-        '<div class="q-head">' +
-          '<div>' +
-            '<div class="q-name">' + escapeHtml(a.reference_no) + ' - ' + escapeHtml(a.plan_name) + '</div>' +
-            '<div class="q-sub">' + customerStatusBadge(a.status) + ' - Submitted ' + formatDate(a.created_at) + '</div>' +
-          '</div>' +
-          '<span class="btn btn-outline btn-sm">View -></span>' +
-        '</div>' +
-      '</div>';
-  }
+  var html = myApps.map(function (app) {
+    var ref = escapeHtml(app.reference_no || app.ref_no);
+    var id = escapeHtml(app.id);
+    var needsFix = app.status === "Needs Correction" && !app.correction_declined;
+    return '<div class="q-card customer-application-row">' +
+      '<div class="q-head"><div><div class="q-name">' + ref + ' · ' + escapeHtml(app.plan_name) + '</div>' +
+      '<div class="q-sub">' + customerStatusBadge(app.status === "Needs Correction" ? "Processing" : app.status) + '</div></div>' +
+      '<div class="row customer-application-actions">' +
+      '<button type="button" class="btn btn-outline" data-view="' + id + '">View</button>' +
+      (needsFix ? '<button type="button" class="btn btn-red" data-correct="' + id + '">Correct</button>' : '') +
+      '</div></div></div>';
+  }).join("");
   listEl.innerHTML = html;
+  listEl.querySelectorAll("[data-view]").forEach(function (button) {
+    button.onclick = function () { selectMyApp(button.dataset.view, true); };
+  });
+  listEl.querySelectorAll("[data-correct]").forEach(function (button) {
+    button.onclick = function () { openCustomerCorrection(button.dataset.correct); };
+  });
 }
 
-async function loadMyApplications(backgroundRefresh) {
+async function loadMyApplications() {
   try {
     myApps = await dbListApplicationsForCustomer(currentCustomer || "");
   } catch (e) {
@@ -338,36 +302,8 @@ async function loadMyApplications(backgroundRefresh) {
     updateDashSearchApps(myApps);
   }
 
-  var proc = 0, done = 0, rej = 0;
-  for (var i = 0; i < myApps.length; i++) {
-    var vis = getCustomerStatus(myApps[i].status);
-    if (vis === "Approved") done++;
-    else if (vis === "Rejected") rej++;
-    else proc++;
-  }
-  var totalEl = document.getElementById("st-total");
-  var procEl = document.getElementById("st-proc");
-  var doneEl = document.getElementById("st-done");
-  var rejEl = document.getElementById("st-rej");
-  if (totalEl) totalEl.textContent = myApps.length;
-  if (procEl) procEl.textContent = proc;
-  if (doneEl) doneEl.textContent = done;
-  if (rejEl) rejEl.textContent = rej;
-
-  promptCustomerCorrectionReminder(myApps);
-
-  if (myApps.length === 0) {
-    renderAppList();
-    return;
-  }
-
-  if (!selectedAppId || !findMyApp(selectedAppId)) {
-    selectedAppId = myApps[0].id;
-  }
-
   renderAppList();
-
-  if (!backgroundRefresh || !document.getElementById("btn-fix")) renderSelectedApp();
+  showCustomerLoginUpdates();
 }
 
 function findMyApp(id) {
@@ -380,14 +316,11 @@ function findMyApp(id) {
 function selectMyApp(id, showModal) {
   if (selectedAppId !== id) {
     stopCustomerPhoneQrPolling();
-    _custQrActiveSid = "";
     _custQrLoadedUrls = { front: "", back: "" };
     custQrFrontFile = null;
     custQrBackFile = null;
   }
   selectedAppId = id;
-  renderAppList();
-  renderSelectedApp();
   var app = findMyApp(id);
   if (showModal && app && typeof openPopup === "function") {
     var displayEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email || "-";
@@ -414,6 +347,8 @@ function selectMyApp(id, showModal) {
           '<div><span>Nearest Landmark</span><b>' + escapeHtml(app.landmark || "-") + '</b></div>' +
           '<div><span>Submitted Date</span><b>' + formatDate(app.created_at) + '</b></div>' +
         '</div>' +
+        (app.status === "Approved" && !app.agent_remarks ? '<p class="notice good mt">Please wait 3–5 business days for installation scheduling.</p>' : '') +
+        (app.status === "Rejected" && !app.agent_remarks ? '<p class="notice bad mt">Your application could not be approved. Contact PIGEM for help.</p>' : '') +
         (app.agent_remarks
           ? '<div class="msg info show" style="margin-bottom:12px;"><b>Verification Team Note:</b><br>' + escapeHtml(app.agent_remarks) + '</div>'
           : '') +
@@ -424,197 +359,118 @@ function selectMyApp(id, showModal) {
             '</div>'
           : '') +
         '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
-          (app.status === "Needs Correction"
-            ? '<button type="button" class="btn btn-red btn-sm" onclick="proceedToCustomerCorrectionForm()">Proceed to Correction Form</button>'
-            : '') +
           '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
         '</div>' +
       '</div>';
-    openPopup(modalHtml, { showCloseX: true, closeOnBackdrop: true });
+    openPopup(modalHtml, { closeOnBackdrop: true, closeOnEscape: true });
   }
 }
 
-function proceedToCustomerCorrectionForm() {
-  if (typeof closePopup === "function") closePopup();
-  var box = document.getElementById("cust-detail-box");
-  if (box) box.scrollIntoView({ behavior: "smooth" });
-}
-
-function renderSelectedApp() {
-  var box = document.getElementById("cust-detail-box");
-  var app = findMyApp(selectedAppId);
-  if (!app) {
-    box.innerHTML = '<p class="muted">Select an application on the left to view its details.</p>';
-    return;
-  }
-
-  var visStatus = getCustomerStatus(app.status);
-  var needsFix = (app.status === "Needs Correction");
+function openCustomerCorrection(id) {
+  var app = findMyApp(id);
+  if (!app || app.status !== "Needs Correction" || app.correction_declined) return;
+  selectMyApp(id, false);
+  stopCustomerPhoneQrPolling();
+  _custQrLoadedUrls = { front: "", back: "" };
+  custQrFrontFile = null;
+  custQrBackFile = null;
   var fields = app.correction_fields || [];
+  var html = '<h2>Correct application</h2><p class="small muted mt">' +
+    escapeHtml(app.reference_no || app.ref_no) + '</p><p class="notice warn mt">' +
+    escapeHtml(app.agent_remarks || "Update the requested details or ID photos.") + '</p>';
 
-  var fieldLabelsMap = {
-    name: "Applicant Name",
-    birth_date: "Birth Date",
-    email: "Email Address",
-    phone: "Mobile Number",
-    id_photo: "Valid ID Photo",
-    id_number: "Primary ID Number",
-    address: "Installation Address"
-  };
-  var flaggedBadges = fields.map(function (f) {
-    return '<span class="badge badge-red" style="margin-right:6px">Update Required: ' + escapeHtml(fieldLabelsMap[f] || f) + '</span>';
-  }).join("");
+  var hiName  = fields.indexOf("name") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+  var hiBdate = fields.indexOf("birth_date") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+  var hiEmail = fields.indexOf("email") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+  var hiPhone = fields.indexOf("phone") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+  var hiIdNo  = fields.indexOf("id_number") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+  var hiAddr  = fields.indexOf("address") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
+  var photoSides = (app.screening && app.screening.correction_photo_sides) || [];
+  var needsFront = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("front"));
+  var needsBack = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("back"));
+  var hiPhoto = fields.indexOf("id_photo") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430; padding:8px; border-radius:8px"' : '';
 
-  var guideBox = "";
-  if (visStatus === "Approved") {
-    guideBox =
-      '<div class="msg ok show" style="margin-bottom:16px">' +
-        '<b>Application Approved!</b><br>' +
-        'Your application has been approved. <b>Please wait 3-5 business days</b> for installation scheduling and dispatch coordination.' +
-        (app.agent_remarks ? '<div style="margin-top:6px">Note: ' + escapeHtml(app.agent_remarks) + '</div>' : '') +
-      '</div>';
-  } else if (visStatus === "Rejected") {
-    guideBox =
-      '<div class="msg error show" style="margin-bottom:16px">' +
-        '<b>Application Rejected:</b><br>' +
-        escapeHtml(app.agent_remarks || "Your application could not be approved. Please review the note above or contact PIGEM support.") +
-      '</div>';
-  } else {
+  var cleanExistingMid = (app.middle_name && String(app.middle_name).toUpperCase() !== "N/A") ? app.middle_name : "";
 
-    if (needsFix) {
-      guideBox =
-        '<div class="msg info show" style="margin-bottom:10px">' +
-          '<b>Status: Processing (Needs Correction)</b> &mdash; Completing the requested update below is <b>essential</b> so our verification team can encode your application with the provider and schedule your fiber installation. Automated reminders are sent at <b>24 hours</b> and <b>72 hours</b> if left unaddressed.' +
-        '</div>' +
-        '<div class="msg error show" style="margin-bottom:16px">' +
-          '<b>Update Requested by Verification Team:</b><br>' +
-          escapeHtml(app.agent_remarks || "Please update the highlighted information or upload clearer Front and Back Valid ID photos below and click Resubmit Application.") +
-          (flaggedBadges ? '<div style="margin-top:8px">' + flaggedBadges + '</div>' : '') +
-        '</div>';
-    } else {
-      guideBox =
-        '<div class="msg info show" style="margin-bottom:16px">' +
-          '<b>Application Processing:</b><br>' +
-          'Your application is currently being reviewed and processed. You will receive an email notification once there is an update.' +
-        '</div>';
-    }
-  }
-
-  var displayEmail = (app.corrected_copy && app.corrected_copy.contact_email) || app.email;
-
-  var html =
-    '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px">' +
-      '<div>' +
-        '<div class="muted" style="font-size:12px">Reference Number</div>' +
-        '<h2 style="font-size:20px">' + escapeHtml(app.reference_no) + '</h2>' +
-      '</div>' +
-      '<div>' + customerStatusBadge(app.status) + '</div>' +
-    '</div>' +
-    guideBox +
-    '<div class="kv">' +
-      '<div><span>Selected Plan</span><b>' + escapeHtml(app.plan_name) + '</b></div>' +
-      '<div><span>Applicant Name</span><b>' + escapeHtml(app.full_name) + '</b></div>' +
-      '<div><span>Birth Date</span><b>' + escapeHtml(app.birth_date || "-") + '</b></div>' +
-      '<div><span>Application Email</span><b>' + escapeHtml(displayEmail) + '</b></div>' +
-      '<div><span>Mobile Number</span><b>' + escapeHtml(app.phone) + '</b></div>' +
-      '<div><span>Primary ID</span><b>' + escapeHtml(app.id_type) + ' - ' + escapeHtml(app.id_number) + '</b></div>' +
-      '<div><span>Service Address</span><b>' + escapeHtml((app.street || "") + ", " + (app.barangay || "") + ", " + (app.city || "") + ", " + (app.province || "")) + '</b></div>' +
-      '<div><span>Nearest Landmark</span><b>' + escapeHtml(app.landmark || "-") + '</b></div>' +
-    '</div>';
-
-  if (needsFix) {
-    var hiName  = fields.indexOf("name") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
-    var hiBdate = fields.indexOf("birth_date") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
-    var hiEmail = fields.indexOf("email") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
-    var hiPhone = fields.indexOf("phone") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
-    var hiIdNo  = fields.indexOf("id_number") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
-    var hiAddr  = fields.indexOf("address") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
-    var photoSides = (app.screening && app.screening.correction_photo_sides) || [];
-    var needsFront = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("front"));
-    var needsBack = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("back"));
-    var hiPhoto = fields.indexOf("id_photo") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430; padding:8px; border-radius:8px"' : '';
-
-    var cleanExistingMid = (app.middle_name && String(app.middle_name).toUpperCase() !== "N/A") ? app.middle_name : "";
-
-    html +=
-      '<div style="margin-top:18px; padding-top:16px; border-top:2px solid #c8102e">' +
-        '<h3 style="margin-bottom:6px; color:#c8102e">Needs Correction - Submit Updated Details</h3>' +
-        '<p class="muted" style="font-size:13px; margin-bottom:12px">Please update the requested field(s) or upload clear <b>Front and Back</b> photos of your Valid ID below and click <b>Resubmit Application</b> so your application can proceed to approval and installation.</p>' +
-        '<div id="fix-msg" class="msg"></div>' +
-        '<div class="grid-3">' +
-          '<div class="field">' +
-            '<label>First Name ' + (fields.indexOf("name") !== -1 ? '<span class="badge badge-red">Update</span>' : '') + '</label>' +
-            '<input id="fix-fname" type="text" ' + hiName + ' value="' + escapeHtml(app.first_name || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
-          '</div>' +
-          '<div class="field">' +
-            '<label>Middle Name <span class="muted">(Optional)</span></label>' +
-            '<input id="fix-mname" type="text" ' + hiName + ' placeholder="Optional" value="' + escapeHtml(cleanExistingMid) + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
-          '</div>' +
-          '<div class="field">' +
-            '<label>Last Name ' + (fields.indexOf("name") !== -1 ? '<span class="badge badge-red">Update</span>' : '') + '</label>' +
-            '<input id="fix-lname" type="text" ' + hiName + ' value="' + escapeHtml(app.last_name || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
-          '</div>' +
-        '</div>' +
-        '<div class="grid-2">' +
-          '<div class="field">' +
-            '<label>Birth Date ' + (fields.indexOf("birth_date") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-            '<input id="fix-bdate" type="date" ' + hiBdate + ' value="' + escapeHtml(app.birth_date || "") + '" onchange="showSelectedPhotoQuality(this)" />' +
-          '</div>' +
-          '<div class="field">' +
-            '<label>Primary ID Number (' + escapeHtml(app.id_type) + ') ' + (fields.indexOf("id_number") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-            '<input id="fix-idno" type="text" ' + hiIdNo + ' value="' + escapeHtml(app.id_number || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
-          '</div>' +
-        '</div>' +
-        '<div class="grid-2">' +
-          '<div class="field">' +
-            '<label>Application Email Address ' + (fields.indexOf("email") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-            '<input id="fix-email" type="email" ' + hiEmail + ' value="' + escapeHtml(displayEmail || "") + '" placeholder="Enter an alternate email if requested..." oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
-          '</div>' +
-          '<div class="field">' +
-            '<label>Mobile Number ' + (fields.indexOf("phone") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-            '<input id="fix-phone" type="text" ' + hiPhone + ' value="' + escapeHtml(app.phone || "") + '" placeholder="09XXXXXXXXX" maxlength="11" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
-          '</div>' +
+  html +=
+    '<div style="margin-top:18px; padding-top:16px; border-top:2px solid #c8102e">' +
+      '<h3 style="margin-bottom:6px; color:#c8102e">Needs Correction - Submit Updated Details</h3>' +
+      '<p class="muted" style="font-size:13px; margin-bottom:12px">Please update the requested field(s) or upload clear <b>Front and Back</b> photos of your Valid ID below and click <b>Resubmit Application</b> so your application can proceed to approval and installation.</p>' +
+      '<div id="fix-msg" class="msg"></div>' +
+      '<div class="grid-3">' +
+        '<div class="field">' +
+          '<label>First Name ' + (fields.indexOf("name") !== -1 ? '<span class="badge badge-red">Update</span>' : '') + '</label>' +
+          '<input id="fix-fname" type="text" ' + hiName + ' value="' + escapeHtml(app.first_name || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
         '<div class="field">' +
-          '<label>Street / Barangay / City ' + (fields.indexOf("address") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-          '<input id="fix-street" type="text" ' + hiAddr + ' value="' + escapeHtml(app.street || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+          '<label>Middle Name <span class="muted">(Optional)</span></label>' +
+          '<input id="fix-mname" type="text" ' + hiName + ' placeholder="Optional" value="' + escapeHtml(cleanExistingMid) + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
-        '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px">' +
-          '<div>' +
-            '<b style="font-size:13.5px">Valid ID Photos (Front &amp; Back)</b>' +
-            '<div class="tiny muted">Upload clear photos from this computer or scan the QR code to capture with your phone.</div>' +
+        '<div class="field">' +
+          '<label>Last Name ' + (fields.indexOf("name") !== -1 ? '<span class="badge badge-red">Update</span>' : '') + '</label>' +
+          '<input id="fix-lname" type="text" ' + hiName + ' value="' + escapeHtml(app.last_name || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+        '</div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="field">' +
+          '<label>Birth Date ' + (fields.indexOf("birth_date") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
+          '<input id="fix-bdate" type="date" ' + hiBdate + ' value="' + escapeHtml(app.birth_date || "") + '" onchange="showSelectedPhotoQuality(this)" />' +
+        '</div>' +
+        '<div class="field">' +
+          '<label>Primary ID Number (' + escapeHtml(app.id_type) + ') ' + (fields.indexOf("id_number") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
+          '<input id="fix-idno" type="text" ' + hiIdNo + ' value="' + escapeHtml(app.id_number || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+        '</div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="field">' +
+          '<label>Application Email Address ' + (fields.indexOf("email") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
+          '<input id="fix-email" type="email" ' + hiEmail + ' value="' + escapeHtml(displayEmail || "") + '" placeholder="Enter an alternate email if requested..." oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+        '</div>' +
+        '<div class="field">' +
+          '<label>Mobile Number ' + (fields.indexOf("phone") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
+          '<input id="fix-phone" type="text" ' + hiPhone + ' value="' + escapeHtml(app.phone || "") + '" placeholder="09XXXXXXXXX" maxlength="11" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+        '</div>' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>Street / Barangay / City ' + (fields.indexOf("address") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
+        '<input id="fix-street" type="text" ' + hiAddr + ' value="' + escapeHtml(app.street || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+      '</div>' +
+      '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px">' +
+        '<div>' +
+          '<b style="font-size:13.5px">Valid ID Photos (Front &amp; Back)</b>' +
+          '<div class="tiny muted">Upload clear photos from this computer or scan the QR code to capture with your phone.</div>' +
+        '</div>' +
+        '<button type="button" id="btn-cust-phone-qr" class="btn btn-red btn-sm" style="display:' + (isCustomerDesktopMode() ? 'inline-flex' : 'none') + '; align-items:center; gap:6px" onclick="openCustomerPhoneQrModal()">' +
+          '<img data-img="icons/qr-phone.png" src="/api/assets/icons/qr-phone.png" alt="" class="icon-img" style="width:16px;height:16px" /> Upload ID photos from phone' +
+        '</button>' +
+      '</div>' +
+      '<p id="cust-phone-status" class="small muted" role="status"></p><div id="cust-phone-transfer" class="notice mt" hidden></div>' +
+      '<div class="grid-2" ' + hiPhoto + '>' +
+        '<div class="field" style="margin-bottom:0">' +
+          '<label for="fix-file">Front of Valid ID Photo ' + (needsFront ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
+          '<input id="fix-file" type="file" accept="image/*" onchange="onCustomerLocalFixFileChange(\'front\', this)" />' +
+          '<div id="fix-front-qr-status" class="small" style="margin-top:4px"></div>' +
+          '<div id="fix-front-preview-box" class="mt" hidden>' +
+            '<img id="fix-front-preview" alt="Front ID Preview" style="max-height:110px; border-radius:6px; border:1px solid var(--line); object-fit:contain" />' +
           '</div>' +
-          '<button type="button" id="btn-cust-phone-qr" class="btn btn-outline btn-sm" style="display:' + (isCustomerDesktopMode() ? 'inline-flex' : 'none') + '; align-items:center; gap:6px" onclick="openCustomerPhoneQrModal()">' +
-            '<img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="Phone QR" class="icon-img" style="width:16px;height:16px" /> Continue on Phone (QR Code)' +
-          '</button>' +
+          '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Front side showing your name, photo, and ID number.</div>' +
         '</div>' +
-        '<div class="grid-2" ' + hiPhoto + '>' +
-          '<div class="field" style="margin-bottom:0">' +
-            '<label>Front of Valid ID Photo ' + (needsFront ? '<span class="badge badge-red">Upload Clear Front</span>' : '(Optional)') + '</label>' +
-            '<input id="fix-file" type="file" accept="image/*" onchange="onCustomerLocalFixFileChange(\'front\', this)" />' +
-            '<div id="fix-front-qr-status" class="small" style="margin-top:4px"></div>' +
-            '<div id="fix-front-preview-box" class="mt" hidden>' +
-              '<img id="fix-front-preview" alt="Front ID Preview" style="max-height:110px; border-radius:6px; border:1px solid var(--line); object-fit:contain" />' +
-            '</div>' +
-            '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Front side showing your name, photo, and ID number.</div>' +
+        '<div class="field" style="margin-bottom:0">' +
+          '<label for="fix-file-back">Back of Valid ID Photo ' + (needsBack ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
+          '<input id="fix-file-back" type="file" accept="image/*" onchange="onCustomerLocalFixFileChange(\'back\', this)" />' +
+          '<div id="fix-back-qr-status" class="small" style="margin-top:4px"></div>' +
+          '<div id="fix-back-preview-box" class="mt" hidden>' +
+            '<img id="fix-back-preview" alt="Back ID Preview" style="max-height:110px; border-radius:6px; border:1px solid var(--line); object-fit:contain" />' +
           '</div>' +
-          '<div class="field" style="margin-bottom:0">' +
-            '<label>Back of Valid ID Photo ' + (needsBack ? '<span class="badge badge-red">Upload Clear Back</span>' : '(Optional)') + '</label>' +
-            '<input id="fix-file-back" type="file" accept="image/*" onchange="onCustomerLocalFixFileChange(\'back\', this)" />' +
-            '<div id="fix-back-qr-status" class="small" style="margin-top:4px"></div>' +
-            '<div id="fix-back-preview-box" class="mt" hidden>' +
-              '<img id="fix-back-preview" alt="Back ID Preview" style="max-height:110px; border-radius:6px; border:1px solid var(--line); object-fit:contain" />' +
-            '</div>' +
-            '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Back side of the same Valid ID card.</div>' +
-          '</div>' +
+          '<div class="tiny muted" style="margin-top:3px">Clear, well-lit photo of the Back side of the same Valid ID card.</div>' +
         '</div>' +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
-          '<button id="btn-fix" type="button" class="btn btn-red" style="flex:1;min-width:220px;" onclick="submitCustomerCorrection(\'' + escapeHtml(app.id) + '\')">Resubmit Application</button>' +
-        '</div>' +
-      '</div>';
-  }
+      '</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">' +
+        '<button id="btn-fix" type="button" class="btn btn-red" style="flex:1;min-width:220px;" onclick="submitCustomerCorrection(\'' + escapeHtml(app.id) + '\')">Resubmit Application</button>' +
+      '</div>' +
+    '</div>';
 
-  box.innerHTML = html;
+  openPopup(html, { wide: true, showCloseX: true, closeOnBackdrop: false, closeOnEscape: true });
   updateCustomerQrButtonVisibility();
 }
 
@@ -741,12 +597,9 @@ async function submitCustomerCorrection(appId) {
       setFieldError("fix-file", "Please upload a clearer Front and/or Back photo of your Valid ID before resubmitting.");
       hasErr = true;
     }
-    if (file && fileBack && file.name === fileBack.name && file.size === fileBack.size) {
-      setFieldError("fix-file-back", "Front ID and Back ID cannot be the exact same photo file. Please select the Front side and Back side separately.");
-      hasErr = true;
-    }
     if (hasErr) return;
     var earlyQualityWarnings = [];
+    if (await sameIdPhotoFiles(file, fileBack)) earlyQualityWarnings.push("Front and back ID photos are identical. Separate photos are recommended.");
     for (var item of [{ file: file, side: "Front", id: "fix-file" }, { file: fileBack, side: "Back", id: "fix-file-back" }]) {
       if (!item.file || typeof analyzeClientIdQuality !== "function") continue;
       var quality = await analyzeClientIdQuality(item.file);
@@ -855,8 +708,8 @@ async function submitCustomerCorrection(appId) {
     var updatedScreening = {
       state: "queued",
       background_state: "queued",
-      phase: "Stage 1 Image Quality Assessment (gpt-6.2-sol)",
-      eta_seconds: 25,
+      phase: "Waiting for document check",
+      eta_seconds: 0,
       fallback_original_only: false,
       upload_photo_warning: earlyQualityWarnings.length > 0,
       early_quality_warnings: earlyQualityWarnings,
@@ -926,16 +779,7 @@ async function submitCustomerCorrection(appId) {
     });
 
     await dbAddLog(currentCustomer.email, "Customer submitted update (" + changedList.join(", ") + ") for " + app.reference_no);
-    try {
-      fetch(_apiEndpoint("/screen/queue"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ application_id: app.id, resubmission: true }),
-        keepalive: true
-      }).catch(function () {});
-    } catch (e) {}
     stopCustomerPhoneQrPolling();
-    _custQrActiveSid = "";
     _custQrLoadedUrls = { front: "", back: "" };
     custQrFrontFile = null;
     custQrBackFile = null;

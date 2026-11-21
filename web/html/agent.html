@@ -6,14 +6,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PIGEM Application Management System</title>
 
-  <link rel="icon" type="image/png" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" />
+  <link rel="icon" type="image/png" href="/api/assets/black-logo-white-mode.png" />
 
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
 
   <div id="splash" class="splash">
-    <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
+    <img data-img="black-logo-white-mode.png" src="/api/assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
     <b>Application Management System</b>
     <span class="muted" style="font-size:13px">Combined Facilities Support Services</span>
   </div>
@@ -27,7 +27,7 @@
           <span class="bar"></span>
         </button>
         <div class="brand">
-          <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" />
+          <img data-img="black-logo-white-mode.png" src="/api/assets/black-logo-white-mode.png" alt="PIGEM" />
           <div>
             <b>Combined Facilities Support Services</b>
             <span>Application Management System</span>
@@ -43,7 +43,7 @@
       <div class="top-actions">
         <span id="top-user-name" class="topbar-user-pill"></span>
         <button id="notif-btn" type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()" title="Notifications">
-          <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+          <img data-img="icons/bell.png" src="/api/assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
         </button>
         <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">AG</button>
       </div>
@@ -58,11 +58,11 @@
       <div class="dash-side-label">Workspace Navigation</div>
 
       <button id="nav-overview" data-nav-label="Overview" data-nav-target="overview" class="active" onclick="showTab('overview')">
-        <span><img data-img="icons/overview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/overview.png" alt="Overview" class="icon-img" />Overview</span>
+        <span><img data-img="icons/overview.png" src="/api/assets/icons/overview.png" alt="Overview" class="icon-img" />Overview</span>
       </button>
 
       <button type="button" onclick="toggleNavGroup(this)">
-        <span><img data-img="icons/application.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/application.png" alt="Applications" class="icon-img" />Applications</span>
+        <span><img data-img="icons/application.png" src="/api/assets/icons/application.png" alt="Applications" class="icon-img" />Applications</span>
         <span class="chev">v</span>
       </button>
       <div class="nav-sub">
@@ -95,15 +95,15 @@
       </div>
 
       <button id="nav-links" data-nav-label="Application Links" data-nav-target="links" onclick="showTab('links')">
-        <span><img data-img="icons/link.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/link.png" alt="Links" class="icon-img" />Application Links</span>
+        <span><img data-img="icons/link.png" src="/api/assets/icons/link.png" alt="Links" class="icon-img" />Application Links</span>
       </button>
 
       <button id="nav-reports" data-nav-label="Reports and Export" data-nav-target="reports" onclick="showTab('reports')">
-        <span><img data-img="icons/report.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/report.png" alt="Reports" class="icon-img" />Reports</span>
+        <span><img data-img="icons/report.png" src="/api/assets/icons/report.png" alt="Reports" class="icon-img" />Reports</span>
       </button>
 
       <button type="button" data-nav-label="Settings and Theme" data-nav-target="settings" onclick="toggleProfileDrawer()">
-        <span><img data-img="icons/setting.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/setting.png" alt="Settings" class="icon-img" />Settings</span>
+        <span><img data-img="icons/setting.png" src="/api/assets/icons/setting.png" alt="Settings" class="icon-img" />Settings</span>
       </button>
 
       <div class="side-foot">© 2026 All Rights Reserved</div>
@@ -332,6 +332,7 @@ window.SYSTEM = "staff";
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <script src="/api/config.js"></script>
   <script src="../js/config.js"></script>
 
   <script src="../js/db.js"></script>

@@ -1,13 +1,3 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/pdf-export.js (Application & Report PDF Generator)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Generates printable PDF summaries for individual fiber applications and
- *   tabular management reports using jsPDF.
- *   - Ends each single-application PDF cleanly with `Remarks: "<remark>"` as the
- *     final line (no internal AI logs or raw JSON dumps).
- * ============================================================================ */
-
 function savePigemExport(blob, filename) {
   var url = URL.createObjectURL(blob);
   var link = document.createElement("a");

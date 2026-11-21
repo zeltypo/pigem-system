@@ -27,6 +27,8 @@ window.openDashTabById = function (tabId, targetId) {
   }
 };
 var activeCopyMode = "latest";
+var activePhotoCopyMode = "latest";
+var activePersonalCopyMode = "latest";
 var activeIdImgMode = "cropped";
 var pendingProofDataUrl = "";
 var pendingProofFile = null;
@@ -55,7 +57,7 @@ function agentScreeningAvailable() {
 
 async function checkAgentScreeningService() {
   var health = navigator.onLine !== false && isAiEnabled() ? await apiCheckHealth() : null;
-  isScreeningServiceOnline = Boolean(health?.idp && health?.openai);
+  isScreeningServiceOnline = Boolean(health?.auto_screening_ready);
   if (health) backgroundScreeningEnabled = health.background_screening === true;
   if (!agentScreeningAvailable()) activeScreeningJob?.cancel();
   var available = agentScreeningAvailable();
@@ -174,23 +176,14 @@ function isScreeningActiveOnApp(app) {
   var check = typeof getAgentAppIdCheck === "function" ? getAgentAppIdCheck(app, true) : null;
   if (check) return !check.result;
   var bgState = scr.background_state || "";
-  if (bgState === "queued" || bgState === "running") {
-    var stamp = (app.corrected_copy && app.corrected_copy.submitted_at) || app.updated_at || app.created_at;
-    var ageMs = stamp ? (Date.now() - new Date(stamp).getTime()) : 0;
-    if (ageMs > 25000) return false;
-    return true;
-  }
+  if (bgState === "queued" || bgState === "running") return true;
   if (bgState === "completed" || scr.state === "completed") return false;
   return ["pending_agent", "checking", "layer1_running", "layer2_running"].includes(scr.state) || visualScreeningRunningAppId === app.id;
 }
 
 function getScreeningEtaLabel(app) {
   var scr = (app && app.screening) || {};
-  var sec = Number(scr.eta_seconds || 0);
-  if (!sec || sec <= 0) {
-    sec = scr.background_state === "running" || scr.state === "layer2_running" ? 12 : 25;
-  }
-  return "Screening will finish in ~" + sec + "s";
+  return screeningTimeLabel(scr);
 }
 
 function formatEtaLabel(seconds) {
@@ -326,8 +319,9 @@ async function refreshAgentData(silent) {
     var a = allApps[i];
     var st = a.status || "Pending Review";
 
-    if (!a.assigned_agent && isAgentClaimable(a)) unclaimed++;
+    if (!a.assigned_agent && st === "Pending Review") unclaimed++;
     if (isAssignedToStaff(a.assigned_agent, currentAgent) && (isAgentClaimable(a) || st === "Under Agent Review")) myClaimed++;
+    if (!isAssignedToStaff(a.assigned_agent, currentAgent) && !(st === "Needs Correction" && !a.assigned_agent && a.screening?.auto_correction_sent)) continue;
     if (st === "Encoding") encodingCount++;
     if (st === "Needs Correction") fix++;
     if (st === "Approved") approvedCount++;
@@ -385,17 +379,12 @@ async function refreshAgentData(silent) {
       { label: "Plan 1400", value: planCounts["1400"], color: "#0f172a" },
       { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
     ], "Plans");
-    renderCalendar("agent-calendar", allApps);
+    renderCalendar("agent-calendar", allApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, currentAgent); }));
     await renderAgentLinks();
   }
 
   renderAgentCards();
   if (activeBranch === "reports") renderAgentReport();
-  if (isScreeningServiceOnline) {
-    checkPendingDocuments(allApps, async function (appId) {
-      await refreshAgentData(true);
-    });
-  }
 }
 
 function showTab(branch) {
@@ -461,7 +450,7 @@ function getScreeningCardBadge(app) {
     return '<span class="badge badge-yellow">Manual Review Fallback</span>';
   }
   if (isScreeningActiveOnApp(app)) {
-    var eta = formatEtaLabel(scr.eta_seconds);
+    var eta = screeningTimeLabel(scr);
     if (state === "layer2_running") {
       return '<span class="badge badge-blue">Cropping and Verifying' + (eta ? " (" + escapeHtml(eta) + ")" : "") + '</span>';
     }
@@ -494,8 +483,8 @@ function agentBackgroundStatus(app) {
     return "Manual Review Fallback — Automated screening is offline or unavailable. Compare the ID photos and applicant details manually below.";
   }
   var states = {
-    queued: "Stage 1 Image Quality Assessment (gpt-6.2-sol) queued — " + getScreeningEtaLabel(app) + ".",
-    running: "Checking ID quality and details in the background — " + getScreeningEtaLabel(app) + ".",
+    queued: "Waiting for document check — " + getScreeningEtaLabel(app) + ".",
+    running: (app?.screening?.phase || "Checking ID quality and details") + " — " + getScreeningEtaLabel(app) + ".",
     failed: "Manual Review Fallback — Automated document check could not finish. Inspect the ID photos and details manually."
   };
   return states[app?.screening?.background_state] || "Click Check documents to inspect the ID photos and run verification.";
@@ -536,7 +525,6 @@ async function checkAgentQueueDocument(appId, button) {
   if (node) node.textContent = getScreeningEtaLabel(app) + "…";
   renderAgentCards();
   var result = await check.pending;
-  await saveAgentFindings(app, result);
   var summary = result.queueSummary || summarizeAgentIdFindings(result);
   node = document.getElementById("check-note-" + appId);
   if (node) node.textContent = summary;
@@ -545,12 +533,13 @@ async function checkAgentQueueDocument(appId, button) {
 }
 
 function isAgentClaimable(app) {
-  return app.status === "Pending Review" || (app.status === "Needs Correction" && app.screening?.auto_correction_sent);
+  return app.status === "Pending Review" && !isScreeningActiveOnApp(app);
 }
 
 function getAgentQueueTone(app) {
   var dup = detectClientSideDuplicateId(app);
-  if (dup.isDup) return "red";
+  if (dup.isDup && app.screening?.auto_correction_sent) return "red";
+  if (dup.isDup) return "yellow";
   var saved = getSavedAgentFindings(app);
   if (saved && saved.triage) return saved.triage;
   if (app && app.screening && app.screening.triage) return app.screening.triage;
@@ -576,7 +565,7 @@ function openTriageQuestionPopup(appId) {
   var sentMsg = app.agent_remarks || saved.suggestedPoliteRemark || (app.screening && app.screening.Suggested_remark) || "";
   var id = escapeHtml(app.id);
 
-  if (tone === "red") {
+  if (tone === "red" && app.screening?.auto_correction_sent) {
     openPopup(
       '<div style="border-left:4px solid #dc2626; padding-left:12px">' +
         '<span class="badge badge-red" style="margin-bottom:6px">Automatic Needs Correction (PIGEM Screening)</span>' +
@@ -584,7 +573,7 @@ function openTriageQuestionPopup(appId) {
         '<p class="mt" style="font-size:13.5px; line-height:1.5"><b>Screening Summary:</b> ' + escapeHtml(summary) + '</p>' +
         (finalRec ? '<p class="small muted mt"><b>Final Recommendation:</b> ' + escapeHtml(finalRec) + '</p>' : '') +
         (sentMsg ? '<div class="notice warn mt" style="font-size:12.5px"><b>Automatic Instruction Sent to Customer:</b><br>' + escapeHtml(sentMsg) + '</div>' : '') +
-        '<p class="tiny muted mt">Because the Stage 1 Quality Gate (gpt-6.2-sol) or core ID rules detected a major issue (such as severe blur/score &lt; 20%, expired ID, wrong ID type, or 2+ mismatched fields), the system automatically notified the customer for correction.</p>' +
+        '<p class="tiny muted mt">The system confirmed an objective upload problem, such as identical, blank, tiny or unreadable photos. No provider decision has been made. Wait for the customer to upload a replacement.</p>' +
       '</div>' +
       '<div class="row mt" style="gap:8px; justify-content:flex-end; flex-wrap:wrap">' +
         '<button type="button" class="btn btn-outline" onclick="closePopup()">Close</button>' +
@@ -625,7 +614,8 @@ function renderAgentCards() {
     var a = allApps[i];
     var st = a.status || "Pending Review";
 
-    if (activeBranch === "queue" && (a.assigned_agent || !isAgentClaimable(a))) continue;
+    if (activeBranch === "queue" && (a.assigned_agent || st !== "Pending Review")) continue;
+    if (activeBranch !== "queue" && !isAssignedToStaff(a.assigned_agent, currentAgent) && !(activeBranch === "correction" && !a.assigned_agent && a.screening?.auto_correction_sent)) continue;
     if (activeBranch === "claimed" && !(isAssignedToStaff(a.assigned_agent, currentAgent) && (isAgentClaimable(a) || st === "Under Agent Review"))) continue;
     if (activeBranch === "encoding" && st !== "Encoding") continue;
     if (activeBranch === "correction" && st !== "Needs Correction") continue;
@@ -665,7 +655,7 @@ function renderAgentCards() {
       var qStyle = tone === "red"
         ? "background:#fee2e2; color:#b91c1c; border:1.5px solid #dc2626; font-weight:800; border-radius:999px; width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; cursor:pointer"
         : "background:#fef3c7; color:#b45309; border:1.5px solid #d97706; font-weight:800; border-radius:999px; width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; cursor:pointer";
-      var qTitle = tone === "red"
+      var qTitle = tone === "red" && app.screening?.auto_correction_sent
         ? "Automatic Needs Correction sent — click to view details"
         : "Review needed before claiming — click to view findings";
       qMarkBtn = '<button type="button" aria-label="' + qTitle + '" title="' + qTitle + '" style="' + qStyle + '" data-id="' + id + '" onclick="openTriageQuestionPopup(this.dataset.id)">?</button>';
@@ -732,7 +722,7 @@ function confirmAgentClaim(appId) {
   var app = findAppById(appId);
   if (!app || app.assigned_agent || !isAgentClaimable(app)) return;
   if (isScreeningActiveOnApp(app)) {
-    showAlert("Screening in progress", getScreeningEtaLabel(app) + ". Please wait for the Stage 1 Quality Gate and initial NLP check to finish before claiming.");
+    showAlert("Document check in progress", getScreeningEtaLabel(app) + ". Please wait for the preliminary findings before claiming.");
     return;
   }
   var tone = getAgentQueueTone(app);
@@ -753,7 +743,7 @@ function confirmAgentClaim(appId) {
 
 async function claimApplication(appId) {
   var app = findAppById(appId);
-  if (!app) return;
+  if (!app || !isAgentClaimable(app)) return;
   var staffId = getStaffIdentifier(currentAgent);
   try {
     var claimed = await dbClaimApplication(appId, staffId, app.assigned_agent, app.status);
@@ -789,8 +779,10 @@ async function openAppDetail(appId, mode, requestedStatus) {
   lastDetectedFields = null;
   activeDetailAppId = appId;
   activeCopyMode = "latest";
+  activePhotoCopyMode = "latest";
+  activePersonalCopyMode = "latest";
   var app = findAppById(appId);
-  activeIdImgMode = "raw";
+  activeIdImgMode = "cropped";
   pendingProofDataUrl = "";
   pendingProofFile = null;
   await renderDetailModalContent();
@@ -809,9 +801,15 @@ function closeDetailModal() {
   document.getElementById("app-detail-modal").classList.add("hidden");
 }
 
-function switchCopyMode(mode) {
-  activeCopyMode = mode;
-  activeIdImgMode = "raw";
+function switchCopyMode(mode, section) {
+  if (section === "photo") activePhotoCopyMode = mode;
+  else if (section === "personal") activePersonalCopyMode = mode;
+  else {
+    activeCopyMode = mode;
+    activePhotoCopyMode = mode;
+    activePersonalCopyMode = mode;
+  }
+  activeIdImgMode = activePhotoCopyMode === "original" ? "raw" : "cropped";
   renderDetailModalContent();
 }
 
@@ -1234,75 +1232,19 @@ function prepareAgentIdPhoto(url, photo) {
   return agentPreparedPhotos.get(url);
 }
 
-async function showAgentPreparedPhoto(container) {
+function showAgentPreparedPhoto(container) {
   var image = container.querySelector("img");
   var status = container.querySelector("[data-photo-status]");
   var url = container.dataset.photo;
   if (!image || !status || !url) return;
-
-  // Original copy must ALWAYS display the untouched original upload without OpenCV modification
-  if (activeCopyMode === "original") {
-    image.src = url;
-    status.textContent = "Original uploaded photo (untouched).";
-    return;
-  }
-
   var app = findAppById(activeDetailAppId);
-  var saved = (app && activeCopyMode === "latest") ? getSavedAgentFindings(app) : null;
-  var check = (app && activeCopyMode === "latest") ? (getAgentAppIdCheck(app, true) && getAgentAppIdCheck(app, true).result) : null;
-  var res = saved || check || null;
-  var route = (res && res.route) || (app && activeCopyMode === "latest" && app.screening && app.screening.route) || "";
-
-  var sideKey = container.dataset.photoSide || ((container.textContent || "").indexOf("BACK") !== -1 ? "back" : "front");
-  var prepSide = res && res.stages && res.stages.photoPreparation && res.stages.photoPreparation[sideKey];
-  var appliedOps = (prepSide && Array.isArray(prepSide.applied_ops)) ? prepSide.applied_ops : [];
-  var serverPreviewUrl = (activeCopyMode === "latest" && prepSide && prepSide.preview_data_url) ? prepSide.preview_data_url : "";
-
-  // 1) If the server already cropped this side on the Latest copy, show it immediately
-  if (serverPreviewUrl && prepSide && prepSide.cropped) {
-    if (!container.isConnected) return;
-    image.src = serverPreviewUrl;
-    status.textContent = "OpenCV cropped & enhanced (" + (appliedOps.join(", ") || "deskew_crop, clahe, sharpen") + ").";
-    return;
-  }
-
-  // 2) Run browser OpenCV on this side's URL (crops + CLAHE contrast + lighting + unsharp mask sharpening)
-  var prepared = await prepareAgentIdPhoto(url);
-  if (!container.isConnected) return;
-
-  if (route === "unfixable") {
-    status.textContent = "Unfixable image quality — OpenCV bypassed (early stop).";
-    return;
-  }
-
-  if (prepared && prepared.cropped) {
-    image.src = prepared.canvas.toDataURL("image/jpeg", 0.92);
-    var opsLabel = appliedOps.length ? " (" + appliedOps.join(", ") + ")" : " (deskew_crop, clahe, sharpen)";
-    status.textContent = "OpenCV cropped & straightened" + opsLabel + ".";
-    return;
-  }
-
-  if (serverPreviewUrl) {
-    image.src = serverPreviewUrl;
-    status.textContent = "OpenCV enhanced (" + (appliedOps.join(", ") || "clahe, sharpen") + ").";
-    return;
-  }
-
-  if (prepared && prepared.canvas) {
-    image.src = prepared.canvas.toDataURL("image/jpeg", 0.92);
-    var featList = [];
-    if (prepared.lightingAdjusted) featList.push("brighten/deglare");
-    featList.push("clahe", "sharpen");
-    var mergedOps = appliedOps.length ? appliedOps : featList;
-    status.textContent = "OpenCV enhanced (" + mergedOps.join(", ") + ").";
-    return;
-  }
-
-  if (appliedOps.length) {
-    status.textContent = "Targeted OpenCV applied (" + appliedOps.join(", ") + ").";
-  } else {
-    status.textContent = "";
-  }
+  var current = getAgentPreviewCopy(app, activePhotoCopyMode);
+  var findings = activePhotoCopyMode === "latest" ? getSavedAgentFindings(app) : current.screening_findings;
+  var side = container.dataset.photoSide || "front";
+  var preparation = findings && findings.stages && findings.stages.photoPreparation && findings.stages.photoPreparation[side];
+  var preview = preparation && preparation.preview_data_url;
+  image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
+  status.textContent = image.src === preview ? "Enhanced reading copy — original preserved" : "Original uploaded photo";
 }
 
 var agentDocumentTypes = [
@@ -1373,7 +1315,6 @@ async function collectAgentIdFindings(sources, expected, job) {
     var frontUpload = frontRaw;
     var backUpload = (!duplicatePhotos && backRaw) ? backRaw : null;
 
-    // Conditional Pipeline on Server: Stage 1 gpt-6.2-sol Quality Gate -> Conditional Targeted OpenCV -> Azure DI IDP -> NLP Rules -> GPT-5.4 Remarks
     var screenData = await withAgentReadTimeout(
       apiRunScreening(frontUpload, {
         full_name: expected.name || "",
@@ -1786,7 +1727,6 @@ async function saveAgentFindings(app, result) {
         ai_log: aiLog
       };
 
-      // Automatic RED Needs Correction if triggered during on-demand check on an unencoded application
       if (triage === "red" && result.autoNeedsCorrection && (latest.status === "Pending Review" || latest.status === "Under Agent Review")) {
         var autoMsg = politeMsg || "Hello! Thank you for applying with PIGEM. Please sign in to your Customer Account to update your highlighted details or upload a clearer Valid ID photo.";
         var targetFields = (result.targetFields && result.targetFields.length) ? result.targetFields : ["id_photo"];
@@ -1845,31 +1785,12 @@ async function saveAgentFindings(app, result) {
 }
 
 function getAgentAppIdCheck(app, existingOnly) {
-  if (!agentScreeningAvailable() || !app) return null;
   var saved = getSavedAgentFindings(app);
-  if (saved) return { result: saved, pending: Promise.resolve(saved) };
-  var bgState = app.screening && app.screening.background_state;
-  var isModalOpenOnApp = activeDetailAppId === app.id;
-  if (backgroundScreeningEnabled && (bgState === "queued" || bgState === "running") && !isModalOpenOnApp) {
-    var stamp = (app.corrected_copy && app.corrected_copy.submitted_at) || app.updated_at || app.created_at;
-    var ageMs = stamp ? (Date.now() - new Date(stamp).getTime()) : 0;
-    if (ageMs < 15000) return null;
-  }
-  var latestCopy = (app.corrected_copy && app.corrected_copy.submitted_at) ? app.corrected_copy : app;
-  var frontUrl = latestCopy.id_image_url || latestCopy.id_front_path || app.id_image_url || app.id_front_path || "";
-  var backUrl = latestCopy.id_back_image_url || latestCopy.id_back_path || app.id_back_image_url || app.id_back_path || "";
-  return getAgentIdCheck(frontUrl, backUrl, {
-    name: latestCopy.full_name || app.full_name || "",
-    birth: latestCopy.birth_date || app.birth_date || "",
-    number: latestCopy.id_number || app.id_number || "",
-    type: latestCopy.id_type || app.id_type || "",
-    previous_response_id: ""
-  }, existingOnly, app.id + "|" + agentScreeningRevision(app));
+  return saved ? { result: saved, pending: Promise.resolve(saved) } : null;
 }
 
 async function showAgentIdFindings(panel, app, copySnapshot) {
   if (!panel) return;
-  // If viewing Original copy or an earlier resubmission copy that already has preserved findings, display those directly
   if (!app && copySnapshot && (copySnapshot.screening_findings || copySnapshot.reviewed_findings)) {
     var histResult = copySnapshot.screening_findings || copySnapshot.reviewed_findings;
     panel._documentFindings = histResult;
@@ -1884,7 +1805,7 @@ async function showAgentIdFindings(panel, app, copySnapshot) {
     panel.textContent = histLines.join("\n");
     return;
   }
-  if (!agentScreeningAvailable()) {
+  if (!agentScreeningAvailable() && !(app && getSavedAgentFindings(app))) {
     panel.textContent = "Manual Review Fallback Active: Automated AI screening is currently offline or paused. Please visually compare the applicant's Front & Back Valid ID photos below against the submitted Name, Birth Date, and ID Number, then proceed with your Agent decision.";
     return;
   }
@@ -1895,13 +1816,12 @@ async function showAgentIdFindings(panel, app, copySnapshot) {
     type: panel.dataset.type || "",
     previous_response_id: ""
   };
-  var check = app ? getAgentAppIdCheck(app) : getAgentIdCheck(panel.dataset.front, panel.dataset.back, expected, false, "copy|" + (panel.dataset.front || "") + "|" + (panel.dataset.name || ""));
+  var check = app ? getAgentAppIdCheck(app) : null;
   if (!check) {
-    if (backgroundScreeningEnabled) panel.textContent = agentBackgroundStatus(app);
+    panel.textContent = app ? agentBackgroundStatus(app) : "No saved findings for this copy. Review the original photo manually.";
     return;
   }
   var result = await check.pending;
-  if (app) await saveAgentFindings(app, result);
   if (panel.isConnected === false) return;
   panel._documentFindings = result;
 
@@ -1988,6 +1908,8 @@ async function renderDetailModalContent(updateResultsOnly) {
 
   document.getElementById("det-title").textContent = app.reference_no + " - " + app.full_name;
   var viewData = getAgentPreviewCopy(app);
+  var photoData = getAgentPreviewCopy(app, activePhotoCopyMode);
+  var personalData = getAgentPreviewCopy(app, activePersonalCopyMode);
   var scr = app.screening || {};
   var res = app.ai_result || {};
   var dupCheck = detectClientSideDuplicateId(app);
@@ -1998,10 +1920,10 @@ async function renderDetailModalContent(updateResultsOnly) {
 
   var copySwitcher = renderAgentSubmissionPicker(app);
 
-  var frontIdPhotoUrl = viewData.id_image_url || viewData.id_front_path || "";
-  var rawFrontUrl = frontIdPhotoUrl || "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
+  var frontIdPhotoUrl = photoData.id_image_url || photoData.id_front_path || "";
+  var rawFrontUrl = frontIdPhotoUrl || "/api/assets/black-logo-white-mode.png";
   var displayedFrontUrl = rawFrontUrl;
-  var idBackPhotoUrl = viewData.id_back_image_url || viewData.id_back_path || "";
+  var idBackPhotoUrl = photoData.id_back_image_url || photoData.id_back_path || "";
   var displayedBackUrl = idBackPhotoUrl;
 
   var currentSt = app.status || "Under Agent Review";
@@ -2035,8 +1957,8 @@ async function renderDetailModalContent(updateResultsOnly) {
     : (dupCheck.isDup
       ? dupPoliteDefault
       : (hasPrelimConcern ? (cleanSuggestedRemark || "") : ""));
-  var displayEmail = viewData.contact_email || viewData.email || app.email;
-  var displayPhone = viewData.phone || app.phone;
+  var displayEmail = personalData.contact_email || personalData.email || app.email;
+  var displayPhone = personalData.phone || app.phone;
   var emailContact = displayEmail ? '<a href="mailto:' + escapeHtml(encodeURIComponent(displayEmail)) + '">' + escapeHtml(displayEmail) + '</a>' : "-";
   var phoneContact = displayPhone ? '<a href="tel:' + escapeHtml(String(displayPhone).replace(/[^+\d]/g, "")) + '">' + escapeHtml(displayPhone) + '</a>' : "-";
 
@@ -2044,30 +1966,30 @@ async function renderDetailModalContent(updateResultsOnly) {
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">3</span>Applicant Details</div>' +
-        copySwitcher +
+        renderAgentSubmissionPicker(app, "personal") +
       '</div>' +
       '<div class="grid-2" style="align-items:start">' +
         '<div>' +
           '<div class="tiny muted" style="font-weight:700; text-transform:uppercase; margin-bottom:6px">Personal and ID Details</div>' +
           '<div class="kv">' +
-            '<div><span>Full Name</span><b>' + escapeHtml(viewData.full_name || app.full_name) + '</b></div>' +
-            '<div><span>Birth Date</span><b>' + escapeHtml(viewData.birth_date || app.birth_date || "-") + '</b></div>' +
+            '<div><span>Full Name</span><b>' + escapeHtml(personalData.full_name || app.full_name) + '</b></div>' +
+            '<div><span>Birth Date</span><b>' + escapeHtml(personalData.birth_date || app.birth_date || "-") + '</b></div>' +
             '<div><span>Email Address</span><b>' + emailContact + '</b></div>' +
             '<div><span>Mobile Number</span><b>' + phoneContact + '</b></div>' +
             '<div><span>Plan</span><b>' + escapeHtml(app.plan_name || '-') + '</b></div>' +
             '<div><span>Status</span><b>' + escapeHtml(app.status || '-') + '</b></div>' +
-            '<div><span>Valid ID Type</span><b>' + escapeHtml(viewData.id_type || app.id_type || "-") + '</b></div>' +
-            '<div><span>Primary ID Number</span><b>' + escapeHtml(viewData.id_number || app.id_number || "-") + '</b></div>' +
+            '<div><span>Valid ID Type</span><b>' + escapeHtml(personalData.id_type || app.id_type || "-") + '</b></div>' +
+            '<div><span>Primary ID Number</span><b>' + escapeHtml(personalData.id_number || app.id_number || "-") + '</b></div>' +
           '</div>' +
         '</div>' +
         '<div>' +
           '<div class="tiny muted" style="font-weight:700; text-transform:uppercase; margin-bottom:6px">Installation Location</div>' +
           '<div class="kv">' +
-            '<div><span>House / Bldg / Street</span><b>' + escapeHtml(((viewData.house_no ? viewData.house_no + " " : "") + (viewData.building_name && viewData.building_name !== "N/A" ? viewData.building_name + " " : "") + (viewData.street || app.street || "")).trim() || "-") + '</b></div>' +
-            '<div><span>Subdivision and Brgy</span><b>' + escapeHtml([viewData.subdivision, viewData.barangay].filter(Boolean).join(", ") || "-") + '</b></div>' +
-            '<div><span>City and Province</span><b>' + escapeHtml([viewData.city, viewData.province].filter(Boolean).join(", ") || "-") + '</b></div>' +
-            '<div><span>Nearest Landmark</span><b>' + escapeHtml(viewData.landmark || "-") + '</b></div>' +
-            '<div><span>Pinned Coordinates</span><b>' + escapeHtml((viewData.latitude != null ? viewData.latitude : "-") + ", " + (viewData.longitude != null ? viewData.longitude : "-")) + '</b></div>' +
+            '<div><span>House / Bldg / Street</span><b>' + escapeHtml(((personalData.house_no ? personalData.house_no + " " : "") + (personalData.building_name && personalData.building_name !== "N/A" ? personalData.building_name + " " : "") + (personalData.street || app.street || "")).trim() || "-") + '</b></div>' +
+            '<div><span>Subdivision and Brgy</span><b>' + escapeHtml([personalData.subdivision, personalData.barangay].filter(Boolean).join(", ") || "-") + '</b></div>' +
+            '<div><span>City and Province</span><b>' + escapeHtml([personalData.city, personalData.province].filter(Boolean).join(", ") || "-") + '</b></div>' +
+            '<div><span>Nearest Landmark</span><b>' + escapeHtml(personalData.landmark || "-") + '</b></div>' +
+            '<div><span>Pinned Coordinates</span><b>' + escapeHtml((personalData.latitude != null ? personalData.latitude : "-") + ", " + (personalData.longitude != null ? personalData.longitude : "-")) + '</b></div>' +
             '<div><span>Service Coverage</span><b>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : "-") + '</b></div>' +
           '</div>' +
         '</div>' +
@@ -2077,8 +1999,9 @@ async function renderDetailModalContent(updateResultsOnly) {
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos</div>' +
-        copySwitcher +
+        renderAgentSubmissionPicker(app, "photo") +
       '</div>' +
+      '<div class="row" style="margin-bottom:12px"><label for="photo-display-mode">Photo view</label><select id="photo-display-mode" onchange="switchIdImgMode(this.value)"><option value="cropped"' + (activeIdImgMode === "cropped" ? " selected" : "") + '>Enhanced reading copy (if available)</option><option value="raw"' + (activeIdImgMode === "raw" ? " selected" : "") + '>Original image</option></select></div>' +
       '<div class="grid-2" style="margin-bottom:12px">' +
         '<div data-photo-container data-photo-side="front" data-photo="' + escapeHtml(frontIdPhotoUrl) + '" style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + "FRONT ID" + '</div>' +
@@ -2231,7 +2154,7 @@ async function renderDetailModalContent(updateResultsOnly) {
   }
   var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
   if (findings) showAgentIdFindings(findings, activeCopyMode === "latest" ? app : null, viewData);
-  if (!updateResultsOnly && document.querySelectorAll) {
+  if (document.querySelectorAll) {
     document.querySelectorAll("#det-body [data-photo-container]").forEach(showAgentPreparedPhoto);
   }
 
@@ -2306,6 +2229,10 @@ function onEncodingProofPick(inputEl) {
 async function saveAgentDecision(newStatus) {
   var app = findAppById(activeDetailAppId);
   if (!app || !isAssignedToStaff(app.assigned_agent, currentAgent)) return;
+  if (!canChangeApplicationStatus(app.status, newStatus)) {
+    showAlert("Check the current step", "Review the application before encoding. Record a validator decision only after encoding.");
+    return;
+  }
 
   var rawValidator = document.getElementById("det-validator-raw") ? document.getElementById("det-validator-raw").value.trim() : "";
   var chosenField = document.getElementById("det-correction-field") ? document.getElementById("det-correction-field").value : "auto";
@@ -2313,7 +2240,7 @@ async function saveAgentDecision(newStatus) {
   var corrRemarks = document.getElementById("det-correction-message") ? document.getElementById("det-correction-message").value.trim() : "";
   var remarks = newStatus === "Needs Correction" ? (corrRemarks || statusRemarks) : statusRemarks;
   var providerRef = document.getElementById("det-provider-ref") ? document.getElementById("det-provider-ref").value.trim() : (app.provider_ref || "");
-  var isEncoded = (newStatus === "Encoding" || newStatus === "Approved");
+  var isEncoded = Boolean(app.encoded || newStatus === "Encoding" || newStatus === "Approved");
 
   var targetFields = lastDetectedFields || [];
   if (chosenField === "email") targetFields = ["email"];
@@ -2382,13 +2309,15 @@ async function saveAgentDecision(newStatus) {
     assigned_agent: staffId,
     agent_remarks: remarks,
     correction_note: remarks,
+    correction_fields: newStatus === "Needs Correction" ? targetFields : [],
+    validator_raw_remark: rawValidator,
     customer_instruction: remarks,
     screening: updatedScreening,
     has_correction: newStatus === "Needs Correction" ? false : app.has_correction,
     encoded: isEncoded,
     provider_ref: providerRef,
     encoding_proof_url: proofUrl
-  });
+  }, app.updated_at);
 
   if (typeof dbRecordProviderUpdate === "function" && (newStatus === "Encoding" || newStatus === "Approved" || newStatus === "Rejected" || providerRef)) {
     await dbRecordProviderUpdate(app.id, providerRef, newStatus, rawValidator || remarks, remarks);
@@ -2453,7 +2382,7 @@ function getAgentSubmissionCopies(app) {
     : app;
 
   if (!latest || !latest.submitted_at) return [
-    { key: "latest", label: "Latest copy (OpenCV enhanced)", data: app },
+    { key: "latest", label: "Latest copy", data: app },
     { key: "original", label: "Original submission (untouched)", data: origData }
   ];
   var earlier = Array.isArray(latest.previous_submissions) ? latest.previous_submissions : [];
@@ -2483,31 +2412,25 @@ function getAgentSubmissionCopies(app) {
   return copies;
 }
 
-function renderAgentSubmissionPicker(app) {
+function renderAgentSubmissionPicker(app, section) {
   var copies = getAgentSubmissionCopies(app);
-  var buttons = copies.filter(function (copy) { return copy.key === "latest" || copy.key === "original"; });
-  var earlier = copies.filter(function (copy) { return copy.key !== "latest" && copy.key !== "original"; });
-  return '<div class="agent-copy-controls" role="group" aria-label="Application copy">' +
-    buttons.map(function (copy) {
-      return '<button type="button" class="btn btn-sm ' + (copy.key === activeCopyMode ? 'btn-red' : 'btn-outline') +
-        '" aria-pressed="' + (copy.key === activeCopyMode) + '" title="' + escapeHtml(copy.label) +
-        '" onclick="switchCopyMode(\'' + copy.key + '\')">' + (copy.key === "latest" ? "Latest copy" : "Original copy") + '</button>';
-    }).join("") + (earlier.length ? '<select aria-label="Other copies" onchange="if(this.value) switchCopyMode(this.value)">' +
-      '<option value="">Other copies</option>' + earlier.map(function (copy) {
-        return '<option value="' + escapeHtml(copy.key) + '"' + (copy.key === activeCopyMode ? ' selected' : '') + '>' + escapeHtml(copy.label) + '</option>';
-      }).join("") + '</select>' : '') + '</div>';
+  var currentMode = section === "photo" ? activePhotoCopyMode : section === "personal" ? activePersonalCopyMode : activeCopyMode;
+  return '<div class="agent-copy-controls"><select aria-label="' + escapeHtml(section || "All") + ' copy history" onchange="switchCopyMode(this.value,\'' + (section || "all") + '\')">' +
+      copies.map(function (copy) {
+        return '<option value="' + escapeHtml(copy.key) + '"' + (copy.key === currentMode ? ' selected' : '') + '>' + escapeHtml(copy.label) + '</option>';
+      }).join("") + '</select></div>';
 }
 
-function getAgentPreviewCopy(app) {
-  var chosen = getAgentSubmissionCopies(app).find(function (copy) { return copy.key === activeCopyMode; });
+function getAgentPreviewCopy(app, mode) {
+  var chosen = getAgentSubmissionCopies(app).find(function (copy) { return copy.key === (mode || activeCopyMode); });
   return chosen ? chosen.data : app;
 }
 
 async function downloadAgentIdPhoto(side) {
   var app = findAppById(activeDetailAppId);
   if (!app) return;
-  var copy = getAgentPreviewCopy(app);
-  var version = activeCopyMode;
+  var copy = getAgentPreviewCopy(app, activePhotoCopyMode);
+  var version = activePhotoCopyMode;
   var container = document.querySelector('#det-body [data-photo-container][data-photo-side="' + side + '"]');
   var imgEl = container ? container.querySelector("img") : null;
   var url = (imgEl && imgEl.src) ? imgEl.src : (side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path);

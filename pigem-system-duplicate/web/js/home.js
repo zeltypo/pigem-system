@@ -1,13 +1,3 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/home.js (Public Landing Page & Plan Showcase)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Powers `web/html/index.html` and `web/html/about.html`:
- *   - Loads dynamic fiber plans (`Plan 1000`, `Plan 1400`, `Plan 1900`) from Supabase
- *   - Renders CMS hero banners, announcements, and partner/client logos from
- *     the `website-assets` storage bucket.
- * ============================================================================ */
-
 var pendingApplyPlanId = null;
 
 function openApplyFromHome(planId) {

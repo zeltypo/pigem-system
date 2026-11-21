@@ -1,19 +1,3 @@
-# ============================================================================
-# PIGEM STUDY DUPLICATE — api/_mailer.py (Gmail SMTP Transactional Email Service)
-# ============================================================================
-# ROLE IN ARCHITECTURE:
-#   Formats and sends all customer transactional emails (Account Activation OTP,
-#   Application Reference Number, Needs Correction Notice, 24h/72h Reminders,
-#   Approved/Installed Notice, Rejected Notice, and Password Reset Codes).
-#
-# DUAL-PORT SMTP RESILIENCE:
-#   - Automatically tries both Port 465 (`SMTP_SSL`) and Port 587 (`SMTP` + `STARTTLS`)
-#     against `smtp.gmail.com` so transient port blocks never break email delivery.
-#   - Aligns the `From` address with `SMTP_USER` to prevent Gmail DMARC rejections.
-#   - Enforces RA 10173 (Data Privacy Act of 2012) by never embedding sensitive
-#     ID images or ID numbers inside email bodies.
-# ============================================================================
-
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 import html
@@ -72,10 +56,10 @@ def _get_app_base_url() -> str:
     prod_domain = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL") or "").strip()
     if prod_domain:
         return f"https://{prod_domain}"
-    return (os.getenv("APP_BASE_URL") or "https://pigem-seven.vercel.app").strip().rstrip("/")
+    return (os.getenv("APP_BASE_URL") or "").strip().rstrip("/")
 
 def _get_supabase_logo_url() -> str:
-    base = (os.getenv("SUPABASE_URL") or "https://wuunqfxyejxwrawtjdrf.supabase.co").strip().rstrip("/")
+    base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
     return f"{base}/storage/v1/object/public/website-assets/black-logo-white-mode.png"
 
 def _generate_ref_tag(existing_tag: str = "") -> str:
@@ -469,7 +453,6 @@ class CustomerEmailRenderer(BaseEmailTemplateRenderer):
 
         )
 
-# [STUDY NOTE — send]: Builds the branded HTML email template (RA 10173 compliant) and sends it to the recipient's @gmail.com address.
 def send(
 
     to: str = "",

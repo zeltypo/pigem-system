@@ -22,6 +22,7 @@ DROP FUNCTION IF EXISTS public.pigem_screening_session(text, boolean);
 DROP FUNCTION IF EXISTS public.pigem_enqueue_screening(text, text);
 DROP FUNCTION IF EXISTS public.pigem_claim_screening();
 DROP FUNCTION IF EXISTS public.pigem_finish_screening(uuid, integer, jsonb);
+DROP FUNCTION IF EXISTS public.pigem_screening_progress(uuid, integer, text);
 
 -- 2. Drop private security & background queue tables (in pigem_private schema).
 DROP TABLE IF EXISTS

@@ -46,23 +46,12 @@ def _id_analyzer_key() -> str:
 
 
 def is_configured() -> bool:
-    return bool(
-        (_azure_endpoint() and _azure_key())
-        or _nanonets_key()
-        or _id_analyzer_key()
-        or _openai_client.is_configured()
-    )
+    return bool(_azure_endpoint() and _azure_key())
 
 
 def provider_name() -> str:
     if _azure_endpoint() and _azure_key():
         return "azure_document_intelligence"
-    if _nanonets_key():
-        return "nanonets_ocr3"
-    if _id_analyzer_key():
-        return "id_analyzer"
-    if _openai_client.is_configured():
-        return "gpt-5.4-idp"
     return "unconfigured"
 
 
@@ -671,24 +660,7 @@ def extract_id_document(
             front_parsed = front.result()
             back_parsed = back.result() if back else None
 
-    if not front_parsed and _nanonets_key():
-        front_parsed = _analyze_bytes_nanonets(front_bytes)
-        if front_parsed:
-            used_provider = "nanonets_ocr3"
-            if back_bytes:
-                back_parsed = _analyze_bytes_nanonets(back_bytes)
-
-    if not front_parsed and _id_analyzer_key():
-        front_parsed = _analyze_bytes_id_analyzer(front_bytes, back_bytes)
-        if front_parsed:
-            used_provider = "id_analyzer"
-
-    if not front_parsed and not (_azure_endpoint() and _azure_key()) and _openai_client.is_configured():
-        front_parsed = _analyze_bytes_gpt_idp(front_bytes, back_bytes, declared_id_type)
-        if front_parsed:
-            used_provider = "gpt-5.4-idp"
-
-    if not front_parsed or (back_bytes and not back_parsed and used_provider != "id_analyzer"):
+    if not front_parsed or (back_bytes and not back_parsed):
         return {
             "available": False,
             "provider": used_provider,

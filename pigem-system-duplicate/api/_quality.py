@@ -1,20 +1,3 @@
-# ============================================================================
-# PIGEM STUDY DUPLICATE — api/_quality.py (Stage 1 Quality Gate & OpenCV Planner)
-# ============================================================================
-# ROLE IN ARCHITECTURE:
-#   Combines local OpenCV numeric diagnostics (Laplacian sharpness, brightness,
-#   glare %, contrast, SHA-256 duplicate front/back check) with the Stage 1
-#   `gpt-6.2-sol` Quality Gate to route each ID upload into one of 3 routes:
-#
-# THE 3 CONDITIONAL ROUTES:
-#   1. Route A (`good`):    ID is clear and upright -> light OpenCV crop + directly to Azure DI.
-#   2. Route B (`fixable`): ID is tilted, dim, slightly blurry, or has minor glare ->
-#                           runs targeted OpenCV actions (`deskew_crop`, `clahe`, `sharpen`,
-#                           `deglare`, `brighten`) -> proceeds to Azure DI.
-#   3. Route C (`bad`):     ID is severely unreadable, wrong document, or duplicate front/back ->
-#                           still runs best-effort OpenCV preview + flags Red/Yellow triage.
-# ============================================================================
-
 """Stage 1 Image Quality Assessment Gate (`gpt-6.2-sol`) + OpenCV sanity metrics.
 
 Inspects raw ID images BEFORE OpenCV or Azure IDP runs.
@@ -95,7 +78,6 @@ _QUALITY_SCHEMA = {
                     "deskew_crop",
                     "clahe",
                     "brighten",
-                    "deglare",
                     "denoise",
                     "sharpen",
                 ],
@@ -106,7 +88,11 @@ _QUALITY_SCHEMA = {
 }
 
 _QUALITY_SYSTEM_PROMPT = (
-    "You are the Stage 1 Image Quality Assessment Gate for PIGEM Fiber Internet ID verification. "
+    "<role>Stage 1 application and ID photo quality reviewer for PIGEM Fiber Internet.</role> "
+    "<task>Assess only evidence supplied for this side, classify its recoverability, and select the minimum safe "
+    "image processing operations from the schema. Application field checks are presence/format facts, not identity matches.</task> "
+    "<authority>Do not decide authenticity, send customer requests, or change applicant details. "
+    "Only the server's independent physical checks can confirm defects for automatic correction.</authority> "
     "ANTI-HALLUCINATION RULE: Evaluate ONLY the exact image bytes provided in this single request. "
     "Do NOT carry over, assume, or remember defects, text, or orientations from any earlier upload or turn. "
     "Do NOT transcribe or repeat personal names, ID numbers, or birth dates. "
@@ -116,7 +102,7 @@ _QUALITY_SYSTEM_PROMPT = (
     "Only request rotation if the printed text itself is sideways (90/270) or upside-down (180). "
     "Classify into one of three verdicts:\n"
     "1. 'good': The ID card text is right-side-up (rotation 0), well-framed, well-lit, sharp, and all printed text regions "
-    "(Name, Birth Date, ID Number) are clearly legible as-is. `targeted_opencv_ops` MUST be empty `[]` so OpenCV is bypassed.\n"
+    "that actually appear on this side are clearly legible as-is. `targeted_opencv_ops` MUST be empty `[]` so OpenCV is bypassed.\n"
     "2. 'fixable': All key printed fields are present and not cut off, but the photo has recoverable defects such as "
     "sideways/upside-down text needing 90/180/270 degree rotation, tilted card with wide table background needing `deskew_crop`, "
     "dim lighting (`brighten`), flat contrast (`clahe`), mild glare not erasing text (`deglare`), sensor noise (`denoise`), "
@@ -124,7 +110,10 @@ _QUALITY_SYSTEM_PROMPT = (
     "3. 'unfixable': Key printed text (Name, Birth Date, or ID Number) is blurred beyond human legibility (`severe_blur`), "
     "washed out by a flash hotspot directly over key text (`severe_glare_over_text`), covered by a finger/object, "
     "cut off at the edges, or the image is not an ID card (`is_id_document=false`). Set `quality_score` < 20 when severely unusable. "
-    "Provide a clear, polite 1-sentence `customer_issue_summary` when verdict is 'unfixable' or 'fixable' (empty string if 'good')."
+    "Never reconstruct missing characters or remove glare by filling pixels. Never judge authenticity, approve or reject. For uncertain defects, describe uncertainty. "
+    "Provide a clear, polite 1-sentence `customer_issue_summary` when verdict is 'unfixable' or 'fixable' (empty string if 'good'). "
+    "Examples: upright clear portrait -> good, no operations; dim but readable -> fixable, brighten; missing text due to crop -> unfixable, no operations. "
+    "If uncertain, state the uncertainty rather than guessing. Return the supplied structured schema only."
 )
 
 
@@ -139,7 +128,7 @@ def _detect_mime(image_bytes: bytes) -> str:
 def _compute_cv_metrics(image_bytes: bytes) -> Dict[str, Any]:
     """Deterministic OpenCV signal check (resolution, Laplacian sharpness, brightness, glare ratio, card boundary)."""
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR) if arr.size else None
     if img is None:
         return {
             "valid": False,
@@ -199,9 +188,12 @@ def assess_single_side(
     side_label: str = "FRONT",
     declared_id_type: str = "",
     previous_response_id: str = "",
+    form_quality: Optional[dict] = None,
+    precomputed_metrics: Optional[dict] = None,
+    physical_only: bool = False,
 ) -> Dict[str, Any]:
     """Assess a single ID side using `gpt-6.2-sol` + OpenCV physical metrics."""
-    metrics = _compute_cv_metrics(image_bytes)
+    metrics = precomputed_metrics if precomputed_metrics is not None else _compute_cv_metrics(image_bytes)
     if not metrics.get("valid"):
         return {
             "side": side_label,
@@ -234,6 +226,11 @@ def assess_single_side(
             "model": _openai_client.configured_quality_model(),
             "response_id": "",
         }
+
+    if physical_only:
+        return {"side": side_label, "verdict": "good", "quality_score": 85, "issues": [],
+                "targeted_opencv_ops": [], "customer_issue_summary": "", "metrics": metrics,
+                "model": "physical_checks", "response_id": ""}
 
     quality_model = _openai_client.configured_quality_model()
     effort = (os.getenv("OPENAI_QUALITY_EFFORT", "") or "medium").strip().lower()
@@ -272,7 +269,7 @@ def assess_single_side(
     meta = _openai_client.complete_with_meta(
         parts=parts,
         expect_json=True,
-        max_tokens=450,
+        max_tokens=6000,
         response_schema=_QUALITY_SCHEMA,
         system_instruction=_QUALITY_SYSTEM_PROMPT,
         effort_override=effort,
@@ -280,12 +277,12 @@ def assess_single_side(
         previous_response_id="",
         store_response=False,
         image_detail="high",
-        retries=1,
-    )
+        retries=0,
+    ) if os.getenv("OPENAI_QUALITY_IMAGE_ENABLED", "false").lower() == "true" else {}
 
     raw_text = meta.get("text") or ""
     resp_id = meta.get("response_id") or ""
-    used_model = meta.get("model") or quality_model
+    used_model = meta.get("model") or "opencv"
 
     if raw_text:
         try:
@@ -362,68 +359,6 @@ def assess_single_side(
         except Exception:
             pass
 
-    # Deterministic OpenCV fallback only if OpenAI is unreachable
-    issues: List[str] = []
-    ops: List[str] = []
-    score = 88
-    verdict = "good"
-
-    if metrics["blur_score"] < 18.0:
-        verdict = "unfixable"
-        score = 15
-        issues.append("severe_blur")
-    elif metrics["blur_score"] < 42.0:
-        verdict = "fixable"
-        score = 62
-        issues.append("mild_blur")
-        ops.append("sharpen")
-
-    if verdict != "unfixable":
-        if metrics.get("has_crop_background"):
-            verdict = "fixable"
-            issues.append("tilted_or_wide_background")
-            if "deskew_crop" not in ops:
-                ops.insert(0, "deskew_crop")
-        if metrics["brightness"] < 70.0:
-            verdict = "fixable"
-            score = min(score, 65)
-            issues.append("too_dark")
-            ops.extend(["brighten", "clahe"])
-        elif metrics["glare_pct"] > 22.0:
-            verdict = "fixable"
-            score = min(score, 60)
-            issues.append("mild_glare")
-            ops.append("deglare")
-
-        if "deskew_crop" not in ops:
-            ops.insert(0, "deskew_crop")
-        if "clahe" not in ops:
-            ops.append("clahe")
-        if "sharpen" not in ops:
-            ops.append("sharpen")
-
-    summary = ""
-    if verdict == "unfixable":
-        summary = f"The uploaded {side_label.lower()} ID photo is too blurry or unclear to read the printed text."
-    elif verdict == "fixable":
-        summary = f"The {side_label.lower()} ID photo needed minor lighting or sharpness enhancement."
-
-    return {
-        "side": side_label,
-        "verdict": verdict,
-        "quality_score": score,
-        "is_id_document": True,
-        "side_matches_expected": True,
-        "rotation_degrees": 0,
-        "issues": issues,
-        "targeted_opencv_ops": ops if verdict != "unfixable" else [],
-        "customer_issue_summary": summary,
-        "metrics": metrics,
-        "model": used_model,
-        "response_id": resp_id,
-    }
-
-
 def assess_document_uploads(
     front_bytes: bytes,
     back_bytes: Optional[bytes] = None,
@@ -435,21 +370,20 @@ def assess_document_uploads(
     back_sha = hashlib.sha256(back_bytes).hexdigest() if back_bytes else ""
     duplicate_front_back = bool(front_sha and back_sha and front_sha == back_sha)
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        fut_front = executor.submit(
-            assess_single_side,
-            front_bytes,
-            "FRONT",
-            declared_id_type,
-            previous_response_id,
-        )
-        fut_back = (
-            executor.submit(assess_single_side, back_bytes, "BACK", declared_id_type, "")
-            if back_bytes and not duplicate_front_back
-            else None
-        )
-        front_assessment = fut_front.result()
-        back_assessment = fut_back.result() if fut_back else None
+    front_metrics = _compute_cv_metrics(front_bytes)
+    back_metrics = _compute_cv_metrics(back_bytes) if back_bytes else None
+    front_physical = assess_single_side(front_bytes, "FRONT", precomputed_metrics=front_metrics, physical_only=True)
+    back_physical = assess_single_side(back_bytes, "BACK", precomputed_metrics=back_metrics, physical_only=True) if back_bytes else None
+    confirmed = duplicate_front_back or front_physical.get("confirmed_defect") or (back_physical or {}).get("confirmed_defect")
+
+    if confirmed:
+        front_assessment, back_assessment = front_physical, back_physical
+    else:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            fut_front = executor.submit(assess_single_side, front_bytes, "FRONT", declared_id_type, "", form_quality, front_metrics)
+            fut_back = executor.submit(assess_single_side, back_bytes, "BACK", declared_id_type, "", form_quality, back_metrics) if back_bytes else None
+            front_assessment = fut_front.result()
+            back_assessment = fut_back.result() if fut_back else None
 
     if duplicate_front_back:
         back_assessment = {

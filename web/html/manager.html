@@ -6,14 +6,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PIGEM Application Management System</title>
 
-  <link rel="icon" type="image/png" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" />
+  <link rel="icon" type="image/png" href="/api/assets/black-logo-white-mode.png" />
 
   <link rel="stylesheet" href="../style.css" />
 </head>
 <body>
 
   <div id="splash" class="splash">
-    <img src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
+    <img src="/api/assets/black-logo-white-mode.png" alt="PIGEM" onclick="window.location.reload();" style="cursor:pointer;" title="Click logo to refresh page" />
     <b>Application Management System</b>
     <span class="muted" style="font-size:13px">Combined Facilities Support Services</span>
   </div>
@@ -27,7 +27,7 @@
           <span class="bar"></span>
         </button>
         <div class="brand">
-          <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" />
+          <img data-img="black-logo-white-mode.png" src="/api/assets/black-logo-white-mode.png" alt="PIGEM" />
           <div>
             <b>Combined Facilities Support Services</b>
             <span>Application Management System</span>
@@ -43,7 +43,7 @@
       <div class="top-actions">
         <span id="top-user-name" class="topbar-user-pill"></span>
         <button id="notif-btn" type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()" title="Notifications">
-          <img data-img="icons/bell.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
+          <img data-img="icons/bell.png" src="/api/assets/icons/bell.png" alt="Notifications" class="icon-img" /> <span id="notif-count" class="badge badge-red hidden">0</span>
         </button>
         <button id="avatar-btn" type="button" class="avatar-btn" onclick="toggleProfileDrawer()" title="Account and Theme">MG</button>
       </div>
@@ -58,11 +58,11 @@
       <div class="dash-side-label">Manager Navigation</div>
 
       <button id="nav-overview" data-nav-label="Manager Overview" data-nav-target="overview" class="active" onclick="showTab('overview')">
-        <span><img data-img="icons/overview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/overview.png" alt="Overview" class="icon-img" />Manager Overview</span>
+        <span><img data-img="icons/overview.png" src="/api/assets/icons/overview.png" alt="Overview" class="icon-img" />Manager Overview</span>
       </button>
 
       <button type="button" onclick="toggleNavGroup(this)">
-        <span><img data-img="icons/application.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/application.png" alt="Application" class="icon-img" />Application</span>
+        <span><img data-img="icons/application.png" src="/api/assets/icons/application.png" alt="Application" class="icon-img" />Application</span>
         <span class="chev">&gt;</span>
       </button>
       <div class="nav-sub hidden">
@@ -84,7 +84,7 @@
       </div>
 
       <button type="button" onclick="toggleNavGroup(this)">
-        <span><img data-img="icons/user.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/user.png" alt="Agent" class="icon-img" />Agent</span>
+        <span><img data-img="icons/user.png" src="/api/assets/icons/user.png" alt="Agent" class="icon-img" />Agent</span>
         <span class="chev">&gt;</span>
       </button>
       <div class="nav-sub hidden">
@@ -97,7 +97,7 @@
       </div>
 
       <button type="button" onclick="toggleNavGroup(this)">
-        <span><img data-img="icons/content.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/content.png" alt="CMS" class="icon-img" />Website Content (CMS)</span>
+        <span><img data-img="icons/content.png" src="/api/assets/icons/content.png" alt="CMS" class="icon-img" />Website Content (CMS)</span>
         <span class="chev">&gt;</span>
       </button>
       <div class="nav-sub hidden">
@@ -119,7 +119,7 @@
       </div>
 
       <button type="button" onclick="toggleNavGroup(this)">
-        <span><img data-img="icons/mail.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/mail.png" alt="Promos" class="icon-img" />Promos and Broadcast</span>
+        <span><img data-img="icons/mail.png" src="/api/assets/icons/mail.png" alt="Promos" class="icon-img" />Promos and Broadcast</span>
         <span class="chev">&gt;</span>
       </button>
       <div class="nav-sub hidden">
@@ -129,11 +129,11 @@
       </div>
 
       <button id="nav-reports" data-nav-label="Reports and Analytics" data-nav-target="reports" onclick="showTab('reports')">
-        <span><img data-img="icons/report.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/report.png" alt="Reports" class="icon-img" />Reports</span>
+        <span><img data-img="icons/report.png" src="/api/assets/icons/report.png" alt="Reports" class="icon-img" />Reports</span>
       </button>
 
       <button type="button" data-nav-label="Settings and Theme" data-nav-target="settings" onclick="toggleProfileDrawer()">
-        <span><img data-img="icons/setting.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/setting.png" alt="Settings" class="icon-img" />Settings</span>
+        <span><img data-img="icons/setting.png" src="/api/assets/icons/setting.png" alt="Settings" class="icon-img" />Settings</span>
       </button>
 
       <div class="side-foot">© 2026 All Rights Reserved</div>
@@ -271,7 +271,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px">
           <div>
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-              <b><img data-img="icons/content.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/content.png" alt="CMS" class="icon-img" />Content Management System (CMS)</b>
+              <b><img data-img="icons/content.png" src="/api/assets/icons/content.png" alt="CMS" class="icon-img" />Content Management System (CMS)</b>
               <span id="cms-maint-badge" class="badge badge-green">Website Status: LIVE</span>
             </div>
             <p class="muted" style="font-size:12.5px; margin-top:4px">
@@ -279,7 +279,7 @@
             </p>
           </div>
           <div style="display:flex; gap:8px; flex-wrap:wrap">
-            <a href="index.html?preview_cms=1" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/preview.png" alt="Preview" class="icon-img" />Preview Live Website</a>
+            <a href="index.html?preview_cms=1" target="_blank" class="btn btn-outline btn-sm"><img data-img="icons/preview.png" src="/api/assets/icons/preview.png" alt="Preview" class="icon-img" />Preview Live Website</a>
             <button type="button" id="cms-maint-toggle-btn" class="btn btn-outline btn-sm" onclick="finishCmsAndDisableMaintenance()">Enable Maintenance Mode</button>
           </div>
         </div>
@@ -289,7 +289,7 @@
         <div class="card" style="margin-bottom:16px">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
             <div>
-              <h3 style="font-size:16px"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload" class="icon-img" />Upload New Banner (<code>Banners</code> Library)</h3>
+              <h3 style="font-size:16px"><img data-img="icons/upload.png" src="/api/assets/icons/upload.png" alt="Upload" class="icon-img" />Upload New Banner (<code>Banners</code> Library)</h3>
               <p class="muted" style="font-size:12px">Upload custom promotional banners here. All uploaded banners stay saved in the media library for your hero slides.</p>
             </div>
             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
@@ -350,14 +350,14 @@
             </div>
             <div class="grid-2" style="margin-top:10px">
               <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
-                <img id="cms-logo-preview" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Light Mode Logo" style="height:54px; width:auto; border:1px solid var(--line); border-radius:8px; padding:4px; background:#fff" />
+                <img id="cms-logo-preview" src="/api/assets/black-logo-white-mode.png" alt="Light Mode Logo" style="height:54px; width:auto; border:1px solid var(--line); border-radius:8px; padding:4px; background:#fff" />
                 <div class="field" style="flex:1; min-width:200px; margin:0">
                   <label>Light Mode Logo (White Mode)</label>
                   <select id="cms-active-logo" aria-label="Select active light mode logo" onchange="document.getElementById('cms-logo-preview').src = getImageUrl(this.value)"></select>
                 </div>
               </div>
               <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
-                <img id="cms-dark-logo-preview" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/white-logo-dark-mode.png" alt="Dark Mode Logo" style="height:54px; width:auto; border:1px solid var(--line); border-radius:8px; padding:4px; background:#111827" />
+                <img id="cms-dark-logo-preview" src="/api/assets/white-logo-dark-mode.png" alt="Dark Mode Logo" style="height:54px; width:auto; border:1px solid var(--line); border-radius:8px; padding:4px; background:#111827" />
                 <div class="field" style="flex:1; min-width:200px; margin:0">
                   <label>Dark Mode Logo</label>
                   <select id="cms-active-dark-logo" aria-label="Select active dark mode logo" onchange="document.getElementById('cms-dark-logo-preview').src = getImageUrl(this.value)"></select>
@@ -499,7 +499,7 @@
           <div class="row" style="justify-content:flex-end; gap:10px; flex-wrap:wrap">
             <button type="button" class="btn btn-outline" onclick="clearSiteAnnouncement()">Clear Website Banner</button>
             <button type="button" class="btn btn-red" id="btn-send-promo" onclick="sendManagerPromoBroadcast()">
-              <img data-img="icons/mail.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/mail.png" alt="Send" class="icon-img" />Publish and Dispatch Announcement
+              <img data-img="icons/mail.png" src="/api/assets/icons/mail.png" alt="Send" class="icon-img" />Publish and Dispatch Announcement
             </button>
           </div>
         </div>
@@ -544,10 +544,10 @@
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
               <button type="button" class="btn btn-outline btn-sm" onclick="printActiveDashboardReport()">
-                <img data-img="icons/printer.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/printer.png" alt="Print" class="icon-img" />Print Report
+                <img data-img="icons/printer.png" src="/api/assets/icons/printer.png" alt="Print" class="icon-img" />Print Report
               </button>
               <button type="button" class="btn btn-dark btn-sm" onclick="downloadFormattedMgrReport()">
-                <img data-img="icons/downloads.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/downloads.png" alt="Download" class="icon-img" />Download Report
+                <img data-img="icons/downloads.png" src="/api/assets/icons/downloads.png" alt="Download" class="icon-img" />Download Report
               </button>
             </div>
           </div>
@@ -612,6 +612,7 @@ window.SYSTEM = "staff";
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <script src="/api/config.js"></script>
   <script src="../js/config.js"></script>
 
   <script src="../js/db.js"></script>

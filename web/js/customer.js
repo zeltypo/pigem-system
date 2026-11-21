@@ -161,6 +161,18 @@ async function checkCustomerFixPhotoQuality(side, file) {
   box.textContent = result.passed
     ? "Photo quality check passed. Check that all printed details are visible."
     : "Early quality warning: " + result.issues.join(" ") + " You can upload a clearer photo now or continue resubmitting.";
+  var front = custQrFrontFile || document.getElementById("fix-file")?.files?.[0];
+  var back = custQrBackFile || document.getElementById("fix-file-back")?.files?.[0];
+  var duplicateBox = document.getElementById("fix-duplicate-warning");
+  if (!duplicateBox) {
+    duplicateBox = document.createElement("div");
+    duplicateBox.id = "fix-duplicate-warning";
+    duplicateBox.className = "notice warn mt";
+    duplicateBox.setAttribute("role", "status");
+    box.insertAdjacentElement("afterend", duplicateBox);
+  }
+  duplicateBox.hidden = !(await sameIdPhotoFiles(front, back));
+  duplicateBox.textContent = "Warning: The selected ID photos are identical. You can upload separate photos or continue; another correction may be requested.";
 }
 
 function onCustomerLocalFixFileChange(side, inputEl) {
@@ -429,7 +441,7 @@ function openCustomerCorrection(id) {
           '<div class="tiny muted">Upload clear photos from this computer or scan the QR code to capture with your phone.</div>' +
         '</div>' +
         '<button type="button" id="btn-cust-phone-qr" class="btn btn-red btn-sm" style="display:' + (isCustomerDesktopMode() ? 'inline-flex' : 'none') + '; align-items:center; gap:6px" onclick="openCustomerPhoneQrModal()">' +
-          '<img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img" style="width:16px;height:16px" /> Upload ID photos from phone' +
+          '<img data-img="icons/qr-phone.png" src="/api/assets/icons/qr-phone.png" alt="" class="icon-img" style="width:16px;height:16px" /> Upload ID photos from phone' +
         '</button>' +
       '</div>' +
       '<p id="cust-phone-status" class="small muted" role="status"></p><div id="cust-phone-transfer" class="notice mt" hidden></div>' +
@@ -585,12 +597,9 @@ async function submitCustomerCorrection(appId) {
       setFieldError("fix-file", "Please upload a clearer Front and/or Back photo of your Valid ID before resubmitting.");
       hasErr = true;
     }
-    if (file && fileBack && file.name === fileBack.name && file.size === fileBack.size) {
-      setFieldError("fix-file-back", "Front ID and Back ID cannot be the exact same photo file. Please select the Front side and Back side separately.");
-      hasErr = true;
-    }
     if (hasErr) return;
     var earlyQualityWarnings = [];
+    if (await sameIdPhotoFiles(file, fileBack)) earlyQualityWarnings.push("Front and back ID photos are identical. Separate photos are recommended.");
     for (var item of [{ file: file, side: "Front", id: "fix-file" }, { file: fileBack, side: "Back", id: "fix-file-back" }]) {
       if (!item.file || typeof analyzeClientIdQuality !== "function") continue;
       var quality = await analyzeClientIdQuality(item.file);
@@ -699,8 +708,8 @@ async function submitCustomerCorrection(appId) {
     var updatedScreening = {
       state: "queued",
       background_state: "queued",
-      phase: "Stage 1 Image Quality Assessment (gpt-6.2-sol)",
-      eta_seconds: 25,
+      phase: "Waiting for document check",
+      eta_seconds: 0,
       fallback_original_only: false,
       upload_photo_warning: earlyQualityWarnings.length > 0,
       early_quality_warnings: earlyQualityWarnings,
@@ -770,14 +779,6 @@ async function submitCustomerCorrection(appId) {
     });
 
     await dbAddLog(currentCustomer.email, "Customer submitted update (" + changedList.join(", ") + ") for " + app.reference_no);
-    try {
-      fetch(_apiEndpoint("/screen/queue"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ application_id: app.id, resubmission: true }),
-        keepalive: true
-      }).catch(function () {});
-    } catch (e) {}
     stopCustomerPhoneQrPolling();
     _custQrLoadedUrls = { front: "", back: "" };
     custQrFrontFile = null;

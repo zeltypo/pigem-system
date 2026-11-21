@@ -1,17 +1,3 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/admin.js (Technical Admin Console & Queue Monitor)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Powers `web/html/admin.html`:
- *   - Manages staff accounts (creates verified Agent & Manager credentials via
- *     `pigem_create_screening_staff`), customer accounts, and fiber plans.
- *   - Controls system-wide switches (`ai_enabled` master toggle and maintenance mode).
- *   - Displays the Background AI Screening Monitor (Queued, Running, Completed,
- *     and Incomplete jobs with Green/Yellow/Red triage badges).
- *   - Manages website CMS content (logos, hero slides, client showcases, announcements)
- *     and system audit/login logs.
- * ============================================================================ */
-
 var currentAdmin = null;
 var adminApps = [];
 var adminUsers = [];
@@ -48,6 +34,12 @@ window.addEventListener("DOMContentLoaded", async function () {
   populateReportStatusFilter("api");
   await refreshAdminData();
   initDashUI(currentAdmin, adminApps, function () { showTab("reports"); });
+  setInterval(async function () {
+    if (document.hidden || !["overview", "ai"].includes(activeAdminTab)) return;
+    var tag = document.activeElement && document.activeElement.tagName;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+    try { await refreshAdminData(); } catch (error) {}
+  }, 10000);
 });
 
 async function refreshAdminData() {
@@ -178,7 +170,8 @@ async function renderAiState() {
     var queueApps = adminApps.filter(function (app) { return app.screening?.background_state; });
     queue.innerHTML = queueApps.length ? queueApps.map(function (app) {
       return '<p><b>' + escapeHtml(app.reference_no || app.ref_no) + '</b> · ' +
-        escapeHtml({queued:"Queued", running:"Checking", completed:"Completed", failed:"Failed"}[app.screening.background_state] || "Unknown") + '</p>';
+        escapeHtml({queued:"Queued", running:"Checking", completed:"Completed", failed:"Failed"}[app.screening.background_state] || "Unknown") +
+        (["queued", "running"].includes(app.screening.background_state) ? " · " + escapeHtml(screeningTimeLabel(app.screening)) : "") + '</p>';
     }).join("") : '<p class="muted">No background checks yet.</p>';
   }
 
@@ -426,6 +419,9 @@ function renderAdminUsers() {
         '<button type="button" class="btn btn-outline btn-sm" onclick="openEditStaffModal(\'' + escapeHtml(u.id) + '\')">Edit</button>' +
         '<button type="button" class="btn btn-outline btn-sm" onclick="adminOpenResetPasswordModal(\'' + escapeHtml(u.id) + '\', \'' + escapeHtml(displayRef) + '\')">Reset Password</button>';
     }
+    if (isCustomer && u.active && !u.activated && u.email) {
+      actionBtns += '<button type="button" class="btn btn-outline btn-sm" onclick="adminSendActivation(this, &quot;' + escapeHtml(u.id) + '&quot;)">Send Activation Link</button>';
+    }
     if (!isSoleAdmin) {
       actionBtns +=
         '<button type="button" class="btn btn-outline btn-sm" onclick="adminToggleActive(\'' + escapeHtml(u.id) + '\', ' + (!u.active) + ')">' +
@@ -595,6 +591,23 @@ async function submitEditStaffModal(event, userId) {
     else setFieldError("edit-acc-username", msg);
     btn.disabled = false;
     btn.textContent = "Save Changes";
+  }
+}
+
+async function adminSendActivation(button, userId) {
+  var user = adminUsers.find(function (account) { return account.id === userId; });
+  if (!currentAdmin || !user || user.role !== "customer" || user.activated || !user.active || button.disabled) return;
+  button.disabled = true;
+  try {
+    var info = await dbResendCustomerActivationCode(user.email);
+    var result = await apiSendApplicationConfirmationEmail(info.email, info.full_name, info.ref_no,
+      { name: info.plan_name }, "", { status: "pending", code: info.code, user: { username: info.username } });
+    if (!result?.sent) throw new Error("Could not send the email. Try sending another link.");
+    showAlert("Activation link sent", "The new link was sent to the customer’s Gmail.", "good");
+  } catch (error) {
+    showAlert("Could not send activation link", escapeHtml(error.message), "warn");
+  } finally {
+    button.disabled = false;
   }
 }
 

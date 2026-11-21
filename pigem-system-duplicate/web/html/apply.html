@@ -1,4 +1,3 @@
-<!-- PIGEM STUDY DUPLICATE — web/html/apply.html (Annotated Reference Copy; 0% effect on live deployment) -->
 <!DOCTYPE html>
 
 <html lang="en">
@@ -6,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
+  <link rel="icon" href="/api/assets/black-logo-white-mode.png">
   <title>Application Form | Combined Facilities Support Services</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -15,28 +14,32 @@
 
   <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
-<body>
+<body class="apply-page">
 
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="simple-bar">
-    <div class="container" style="justify-content:space-between;">
+    <div class="container apply-header">
       <div style="display:flex; align-items:center; gap:12px;">
-        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="Logo" onclick="window.location.reload();" style="cursor:pointer; height:38px; width:auto;" title="Click logo to refresh page">
+        <img data-img="black-logo-white-mode.png" src="/api/assets/black-logo-white-mode.png" alt="PIGEM" width="38" height="38">
         <span style="font-weight:700; font-size:18px; cursor:default; user-select:none;">Application Form</span>
       </div>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <a href="index.html" class="btn btn-small">&#8592; Back</a>
+      <div class="apply-header-actions">
+        <a id="btn-back-website" href="index.html" class="btn btn-small" onclick="return leaveApplicationForm(event)">&#8592; Back</a>
+        <button type="button" id="btn-return-desktop" class="btn btn-small btn-outline" hidden onclick="returnApplicationToDesktop()">Back to desktop</button>
+        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" hidden onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="/api/assets/icons/qr-phone.png" alt="" class="icon-img"> Continue on another device</button>
       </div>
     </div>
+    <p id="apply-phone-status" class="container small muted" role="status"></p>
   </header>
 
-  <main class="form-wrap">
+  <main id="main-content" class="form-wrap">
 
-    <div class="card" style="margin-bottom:18px;">
+    <div id="apply-step-progress" class="card" style="margin-bottom:18px;">
       <div class="row between">
-        <b id="section-title">Select Your Plan</b>
+        <b id="section-title" aria-live="polite">Select Your Plan</b>
         <span id="section-pct" class="small muted">17%</span>
       </div>
-      <div class="progress mt">
+      <div class="progress mt" role="progressbar" aria-label="Application progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="17">
         <div id="section-bar" style="width:17%"></div>
       </div>
       <div id="agent-ref-banner" class="notice good mt" hidden></div>
@@ -46,7 +49,7 @@
       <h3>Select Your Plan <span class="req-mark">*</span></h3>
       <p class="small muted">Choose the monthly Red Fiber internet plan for your home. Fields marked <span class="req-mark">*</span> are required.</p>
 
-      <div id="plan-choice-box" class="plan-choice mt"></div>
+      <div id="plan-choice-box" class="plan-choice mt" role="radiogroup" aria-label="Internet plan"></div>
 
       <div class="row between mt-big">
         <span></span>
@@ -61,7 +64,7 @@
       <div class="form-grid mt">
         <div>
           <label for="first_name">First Name <span class="req-mark">*</span></label>
-          <input id="first_name" type="text" placeholder="Juan">
+          <input id="first_name" type="text" autocomplete="given-name" placeholder="Juan">
         </div>
         <div>
           <label for="middle_name">Middle Name</label>
@@ -69,11 +72,11 @@
         </div>
         <div>
           <label for="last_name">Last Name <span class="req-mark">*</span></label>
-          <input id="last_name" type="text" placeholder="Dela Cruz">
+          <input id="last_name" type="text" autocomplete="family-name" placeholder="Dela Cruz">
         </div>
         <div>
           <label for="birth_date">Birth Date <span class="req-mark">*</span></label>
-          <input id="birth_date" type="date">
+          <input id="birth_date" type="date" autocomplete="bday">
         </div>
       </div>
 
@@ -85,16 +88,17 @@
 
     <section id="panel-2" class="card panel" hidden>
       <h3>Contact Information</h3>
-      <p class="small muted">Provide your active Gmail and primary mobile number for application updates and one-time OTP verification. (<span class="req-mark">*</span> Required)</p>
+      <p class="small muted">Enter your Gmail username or full Gmail address and the mobile number where you want to receive updates. (<span class="req-mark">*</span> Required)</p>
 
       <div class="form-grid mt">
         <div class="full">
           <label for="email">Email Address (Gmail) <span class="req-mark">*</span></label>
           <div class="email-otp-inline">
-            <input id="email" type="email" placeholder="juandelacruz@gmail.com">
-            <button type="button" id="btn-send-otp" class="btn btn-small btn-red" style="white-space:nowrap;" onclick="sendContactOtp()">Send Email OTP</button>
+            <input id="email" type="text" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Gmail username or address">
+            <button type="button" id="btn-send-otp" class="btn btn-small btn-red" style="white-space:nowrap;" onclick="sendContactOtp()">Send code</button>
           </div>
-          <div id="email-otp-inline-status" class="small mt" style="display:none;"></div>
+          <div id="email-otp-inline-status" class="small mt" role="status" style="display:none;"></div>
+
         </div>
         <div>
           <label for="phone">Primary Mobile Number <span class="req-mark">*</span></label>
@@ -119,14 +123,15 @@
       <div class="row mt" style="margin-bottom:10px; flex-wrap:wrap; gap:8px;">
         <input id="map-search" aria-label="Search street, barangay, or city on map" type="text" placeholder="Search street, barangay, or city (e.g. Burol Main, Dasmariñas)" style="flex:1; min-width:210px;">
         <button type="button" class="btn btn-small" onclick="searchMapAddress()">Search Map</button>
-        <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location" class="icon-img"> Use My Location</button>
+        <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img data-img="icons/location.png" src="/api/assets/icons/location.png" alt="Location" class="icon-img"> Use My Location</button>
       </div>
 
-      <div id="map"></div>
-      <p id="map-status" class="small muted mt">Click anywhere on the map or drag the marker to auto-fill your address below.</p>
+      <div id="map" tabindex="0" aria-label="Installation location map"></div>
+      <p id="map-status" class="small muted mt" role="status">Tap the map, drag the pin, or move the map with the arrow keys and select its center.</p>
+      <button type="button" class="btn btn-small mt" onclick="useMapCenter()">Place pin at map center</button>
       <div id="map-coverage-banner" class="notice mt" hidden></div>
-      <input id="lat" type="hidden" value="14.3294">
-      <input id="lng" type="hidden" value="120.9367">
+      <input id="lat" type="hidden">
+      <input id="lng" type="hidden">
 
       <h4 class="mt-big">Installation Address Details <span class="small muted" style="font-weight:400;">(<span class="req-mark">*</span> Required)</span></h4>
       <div class="form-grid three mt">
@@ -202,13 +207,12 @@
       <div class="row between" style="align-items:flex-start; flex-wrap:wrap; gap:10px;">
         <div>
           <h3>Valid ID Photos</h3>
-          <p class="small muted">Upload clear, distinct photos of both the <b>Front</b> and <b>Back</b> of your valid government-issued ID.</p>
+          <p class="small muted">Upload a clear photo of the front of your ID. Add the back if it has printed details.</p>
         </div>
-        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="Phone QR" class="icon-img"> Continue on Phone (QR Code)</button>
       </div>
 
-      <div class="notice mt" style="background:var(--bg-soft); border:1px solid var(--line);">
-        <b>Document Upload Instructions</b>
+      <details class="notice mt upload-instructions" open>
+        <summary>How to take a clear ID photo</summary>
         <ul style="margin:8px 0 10px 18px; font-size:13.5px; color:var(--muted); line-height:1.5;">
           <li>Place your physical ID flat on a well-lit surface. Do not upload photocopies or digital screenshots.</li>
           <li>Make sure your <b>Full Name, Birth Date, ID Number, Photo, and Barcode/Signature</b> are sharp and readable.</li>
@@ -253,7 +257,7 @@
             </svg>
           </div>
         </div>
-      </div>
+      </details>
 
       <div class="form-grid mt">
         <div>
@@ -301,8 +305,8 @@
             <input id="id_front" aria-label="Upload front of valid ID photo" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('front', this)">
             <input id="id_front_cam" aria-label="Capture front of valid ID photo with camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('front', this)">
             <div class="upload-btns">
-              <button type="button" class="btn btn-small" onclick="document.getElementById('id_front').click()"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
-              <button type="button" id="btn-front-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_front_cam').click()"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
+              <button type="button" class="btn btn-small" onclick="document.getElementById('id_front').click()"><img data-img="icons/upload.png" src="/api/assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
+              <button type="button" id="btn-front-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_front_cam').click()"><img data-img="icons/camera.png" src="/api/assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
             </div>
             <div id="id-front-preview-box" class="mt" hidden>
               <img id="id-front-preview" class="id-preview" alt="Front ID Preview">
@@ -318,8 +322,8 @@
             <input id="id_back" aria-label="Upload back of valid ID photo" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('back', this)">
             <input id="id_back_cam" aria-label="Capture back of valid ID photo with camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('back', this)">
             <div class="upload-btns">
-              <button type="button" class="btn btn-small" onclick="document.getElementById('id_back').click()"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
-              <button type="button" id="btn-back-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_back_cam').click()"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
+              <button type="button" class="btn btn-small" onclick="document.getElementById('id_back').click()"><img data-img="icons/upload.png" src="/api/assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
+              <button type="button" id="btn-back-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_back_cam').click()"><img data-img="icons/camera.png" src="/api/assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
             </div>
             <div id="id-back-preview-box" class="mt" hidden>
               <img id="id-back-preview" class="id-preview" alt="Back ID Preview">
@@ -328,7 +332,7 @@
         </div>
       </div>
 
-      <div id="id-screen-warn" class="notice bad mt" hidden></div>
+      <div id="id-screen-warn" class="notice warn mt" role="status" aria-live="polite" hidden></div>
 
       <div class="row between mt-big">
         <button type="button" class="btn" onclick="prevPanel()">&larr; Back</button>
@@ -394,12 +398,25 @@
       </div>
     </section>
 
-    <section id="panel-qr-mobile" class="card panel" hidden>
-      <div class="center">
-        <h3>Mobile Valid ID Capture or Upload</h3>
-        <p class="small muted mt">Take camera photos or upload existing gallery a photo of the front of your ID and the back if it has printed details. Uploaded photos sync directly back to your computer application session.</p>
-        <div id="qr-mobile-session-badge" class="badge mt">Session Ready</div>
+    <section id="application-handoff" class="card panel" hidden>
+      <h2 id="application-handoff-title" tabindex="-1">Continue on another device</h2>
+      <p id="application-handoff-status" class="muted mt" role="status"></p>
+      <div id="application-handoff-progress" class="mt" hidden>
+        <label for="application-handoff-percent">Application progress <span id="application-handoff-percent-text"></span></label>
+        <progress id="application-handoff-percent" max="100" value="0" style="width:100%"></progress>
       </div>
+      <div id="application-handoff-qr" class="mt" hidden>
+        <img id="application-handoff-code" class="phone-transfer-code" alt="Scan this code with your phone or tablet">
+        <label for="application-handoff-link">Or copy this link to your other device</label>
+        <input id="application-handoff-link" type="url" readonly onclick="this.select()">
+      </div>
+      <button type="button" id="application-handoff-cancel" class="btn btn-outline mt" hidden onclick="cancelApplicationHandoff()">Resume on desktop</button>
+    </section>
+
+    <section id="panel-qr-mobile" class="card panel" hidden>
+      <h3>Upload ID photos for your correction</h3>
+      <p id="phone-mobile-status" class="small muted mt" role="status"></p>
+      <div id="phone-mobile-fields" hidden>
       <div class="form-grid mt-big">
         <div class="upload-box">
           <div style="font-weight:700;margin-bottom:6px;">Front of Valid ID</div>
@@ -428,8 +445,7 @@
           </div>
         </div>
       </div>
-      <div id="qr-mobile-done-note" class="notice ok mt-big" hidden>
-        <b>Synced!</b> Your front ID photo has been uploaded. Add the back if it has printed details, or return to your computer to continue.
+      <button type="button" class="btn btn-red mt" onclick="sendMobileCorrectionPhotos(this)">Send photos</button>
       </div>
     </section>
   </main>
@@ -438,12 +454,14 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <script src="/api/config.js"></script>
   <script src="../js/config.js"></script>
 
   <script src="../js/db.js"></script>
 
   <script src="../js/api.js"></script>
 
+  <script src="../js/phone-transfer.js"></script>
   <script src="../js/apply.js"></script>
   <script src="../js/back-to-top.js" data-phone-only></script>
 </body>

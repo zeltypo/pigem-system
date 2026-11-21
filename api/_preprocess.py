@@ -87,7 +87,6 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
                     quad = cv2.approxPolyDP(src, tol * perimeter, True)
                     if len(quad) == 4 and cv2.isContourConvex(quad):
                         candidate_quads.append(quad)
-                # Fallback for rounded-corner Philippine IDs using minAreaRect when contour is rectangular
                 if not candidate_quads and 0.06 * frame_area <= area <= 0.90 * frame_area:
                     rect = cv2.minAreaRect(src)
                     rw, rh = rect[1]
@@ -145,7 +144,6 @@ def _deskew_and_crop(image: np.ndarray) -> Tuple[np.ndarray, bool]:
     h = max(80, int(found["height"]))
     target = np.float32([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]])
     warped = cv2.warpPerspective(image, cv2.getPerspectiveTransform(found["points"], target), (w, h))
-    # Preserve portrait vs landscape orientation so upright portrait IDs stay upright and readable
     return warped, True
 
 
@@ -222,7 +220,6 @@ def enhance_targeted(data: bytes, ops: Optional[List[str]] = None) -> Tuple[byte
     applied: List[str] = []
     cropped = False
 
-    # 1. Orientation fixes first
     if "rotate_90_cw" in requested:
         image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
         applied.append("rotate_90_cw")
@@ -233,28 +230,26 @@ def enhance_targeted(data: bytes, ops: Optional[List[str]] = None) -> Tuple[byte
         image = cv2.rotate(image, cv2.ROTATE_180)
         applied.append("rotate_180")
 
-    # 2. Geometric perspective / boundary crop
     if "deskew_crop" in requested:
         image, did_crop = _deskew_and_crop(image)
         cropped = did_crop
         if did_crop:
             applied.append("deskew_crop")
 
-    # 3. Radiometric & noise adjustments
     if "deglare" in requested:
         image = _apply_deglare(image)
         applied.append("deglare")
     if "brighten" in requested:
         image = _apply_brighten(image)
         applied.append("brighten")
-    if "clahe" in requested or cropped:
+    if "clahe" in requested:
         image = _apply_clahe(image)
         if "clahe" not in applied:
             applied.append("clahe")
     if "denoise" in requested:
         image = _apply_denoise(image)
         applied.append("denoise")
-    if "sharpen" in requested or cropped:
+    if "sharpen" in requested:
         image = _apply_sharpen(image)
         if "sharpen" not in applied:
             applied.append("sharpen")

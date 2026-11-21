@@ -1,23 +1,3 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/db.js (Supabase Data Access & Multi-Bucket Storage)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Central database & storage layer used by all 4 portals (Customer, Agent,
- *   Manager, Admin) and the public application form.
- *
- * KEY FEATURES TO STUDY FOR DEFENSE:
- *   1. Multi-Bucket Automatic Failover (`DOCUMENT_BUCKETS`):
- *      Loops through `['documents', 'documents-1', ..., 'documents-10']` during
- *      file upload (`dbUploadDocument` and `dbUploadQrSessionFile`). If bucket 1
- *      is full or returns an error, it automatically uploads to the next bucket,
- *      and falls back to a Base64 Data URL if all 11 buckets are full.
- *   2. Customer & Staff Authentication (`dbLogin`, `dbVerifyStaffScreeningPassword`,
- *      `dbActivateCustomerAccount`, `dbResendActivationCode`).
- *   3. Application Lifecycle CRUD (`dbCreateApplication`, `dbUpdateApplication`,
- *      `dbSubmitCustomerCorrection`, `dbRecordProviderUpdate`).
- *   4. QR Code Phone Upload Sync (`dbUploadQrSessionFile`, `dbListQrSessionFiles`).
- * ============================================================================ */
-
 var SYSTEM = window.SYSTEM || "customer";
 
 var SYSTEM_ROLES = {
@@ -31,14 +11,25 @@ var SESSION_TOKEN_KEY = SESSION_KEY + "_tok";
 
 var sessionStore = SYSTEM === "staff" ? sessionStorage : localStorage;
 
-var IS_DEMO_MODE = (CONFIG.SUPABASE_URL === "" || CONFIG.SUPABASE_ANON_KEY === "");
+var IS_DEMO_MODE = false;
 var supabaseClient = null;
 
-if (!IS_DEMO_MODE && window.supabase) {
+if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase) {
 
   supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
     auth: { storageKey: "pigem-" + SYSTEM, storage: sessionStore }
   });
+} else {
+  document.addEventListener("DOMContentLoaded", function () {
+    var main = document.querySelector("main") || document.body;
+    main.replaceChildren();
+    var notice = document.createElement("p");
+    notice.className = "notice";
+    notice.setAttribute("role", "alert");
+    notice.textContent = "PIGEM cannot connect. Check the project environment settings and reload.";
+    main.appendChild(notice);
+  });
+  throw new Error("Missing Supabase configuration");
 }
 
 function generateSessionToken() {
@@ -240,7 +231,13 @@ async function dbVerifyActiveSession(expectedUserId, allowedRoles, verifiedPair)
     if (!userRow) return { valid: false, reason: "missing" };
   } else {
     if (!supabaseClient) return { valid: !verifiedPair };
-    var res = await supabaseClient.from("users").select("id,active,session_token,role,email,username").eq("id", currentId).maybeSingle();
+    var res;
+    try {
+      res = await supabaseClient.from("users").select("id,active,session_token,role,email,username").eq("id", currentId).maybeSingle();
+    } catch (error) {
+      if (SYSTEM === "customer") return { valid: !verifiedPair };
+      throw error;
+    }
     if (res.error) return { valid: !verifiedPair };
     if (!res.data && !verifiedPair && SYSTEM === "admin") {
       var targetRole = (allowedRoles && allowedRoles[0]) ? String(allowedRoles[0]).toLowerCase() : (SYSTEM === "customer" ? "customer" : "");
@@ -653,7 +650,7 @@ async function dbSignIn(identifier, password) {
         throw new Error("Internal accounts must sign in on the Staff or Admin Login page.");
       }
       if (rowData.role === "customer" && (!rowData.activated || !rowData.password_hash)) {
-        throw new Error("Please create your password first using the one-time activation link sent to your Gmail (or open activate.html?email=" + encodeURIComponent(cleanEmail) + " and click Send / Resend Code).");
+        throw new Error("Open the activation link sent to your Gmail and set your password first.");
       }
       if (rowData.active === false) throw new Error("This account is disabled. Please contact PIGEM.");
 
@@ -787,7 +784,20 @@ async function checkPageAccess(allowedRoles) {
       return null;
     }
   }
-  var user = await dbGetCurrentUser();
+  var user;
+  try {
+    user = await dbGetCurrentUser();
+  } catch (error) {
+    if (SYSTEM !== "customer" || !pair.id) throw error;
+  }
+  if (!user && SYSTEM === "customer" && pair.id) {
+    var main = document.querySelector("main");
+    if (main) main.innerHTML = '<p class="notice" role="status">We couldn’t check your session. Reconnect and try again.</p><button class="btn btn-outline mt" type="button" onclick="window.location.reload()">Try again</button>';
+    var nav = document.querySelector(".customer-nav");
+    if (nav) nav.hidden = true;
+    window.addEventListener("online", function () { window.location.reload(); }, { once: true });
+    return null;
+  }
   if (!user) {
     window.location.replace(getLoginPage());
     return null;
@@ -868,20 +878,21 @@ async function dbCreateAccountFromApplication(fullName, email, preferredUsername
 async function dbCheckActivationLinkStatus(email, code) {
   var cleanEmail = String(email || "").trim().toLowerCase();
   var cleanCode = String(code || "").trim();
-  if (!cleanEmail) {
+  if (!cleanEmail || !/^\d{6}$/.test(cleanCode)) {
     return { valid: false, alreadyActivated: false, reason: "Missing customer email in activation link." };
   }
   var record = null;
   if (IS_DEMO_MODE) {
     record = findDemoUserByEmail(cleanEmail);
   } else if (supabaseClient) {
-    var res = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
+    var res = await supabaseClient.from("users").select("active,activated,activation_code,role").eq("email", cleanEmail).maybeSingle();
+    if (res.error) throw new Error("Could not check the activation link.");
     record = res.data || null;
   }
-  if (!record) {
+  if (!record || record.role !== "customer" || record.active === false) {
     return { valid: false, alreadyActivated: false, reason: "No pending customer application was found for " + cleanEmail + "." };
   }
-  if (record.activated && record.password_hash) {
+  if (record.activated) {
     return {
       valid: false,
       alreadyActivated: true,
@@ -890,19 +901,16 @@ async function dbCheckActivationLinkStatus(email, code) {
       reason: "This one-time activation link has already been used and your account is active. Please sign in on the Customer Login page."
     };
   }
-  if (cleanCode && record.activation_code && String(record.activation_code || "").trim() !== cleanCode) {
+  if (!record.activation_code || String(record.activation_code).trim() !== cleanCode) {
     return {
       valid: false,
       alreadyActivated: false,
-      reason: "This activation link or code is no longer valid or has expired. Click Resend Activation Code below to receive a fresh 6-digit code."
+      reason: "Open the latest activation email or contact PIGEM for a new link."
     };
   }
   return {
     valid: true,
-    alreadyActivated: false,
-    username: record.username || "",
-    full_name: record.full_name || "",
-    code: record.activation_code || ""
+    alreadyActivated: false
   };
 }
 
@@ -951,8 +959,8 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
   }
 
   var existing = await supabaseClient.from("users").select("*").eq("email", cleanEmail).maybeSingle();
-  if (!existing.data) throw new Error("No application was found for this email.");
-  if (existing.data.activated && existing.data.password_hash) {
+  if (!existing.data || existing.data.role !== "customer" || existing.data.active === false) throw new Error("No customer application was found for this email.");
+  if (existing.data.activated) {
     throw new Error("This one-time activation link has already been used. Please log in instead.");
   }
   if (!existing.data.activation_code || String(existing.data.activation_code || "").trim() !== code.trim()) {
@@ -969,14 +977,6 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     finalUsername = await dbGenerateUniqueUsername(existing.data.full_name, cleanEmail);
   }
 
-  try {
-    await supabaseClient.auth.signUp({
-      email: cleanEmail,
-      password: newPassword,
-      options: { data: { full_name: existing.data.full_name, username: finalUsername } }
-    });
-  } catch (authErr) {}
-
   var upPayload = {
     username: finalUsername,
     password_hash: pwHash,
@@ -985,24 +985,25 @@ async function dbActivateCustomerAccount(email, code, newPassword, chosenUsernam
     activated: true,
     activation_code: null
   };
-  var upRes = await supabaseClient.from("users").update(upPayload).eq("email", cleanEmail).select("*").maybeSingle();
-  if (upRes.error) {
-    upRes = await supabaseClient.from("users").update({
-      username: finalUsername,
-      password_hash: pwHash,
-      activated: true,
-      activation_code: null
-    }).eq("email", cleanEmail).select("*").maybeSingle();
-  }
-  if (upRes.error) {
-    throw new Error(upRes.error.message);
-  }
+  var upRes = await supabaseClient.from("users").update(upPayload)
+    .eq("id", existing.data.id).eq("role", "customer").eq("active", true).eq("activated", false)
+    .eq("activation_code", code.trim()).select("*").maybeSingle();
+  if (upRes.error) throw new Error(upRes.error.message);
+  if (!upRes.data) throw new Error("This activation code has already been used or replaced.");
+
+  try {
+    await supabaseClient.auth.signUp({
+      email: cleanEmail,
+      password: newPassword,
+      options: { data: { full_name: existing.data.full_name, username: finalUsername } }
+    });
+  } catch (authErr) {}
 
   try {
     await supabaseClient.auth.signInWithPassword({ email: cleanEmail, password: newPassword });
   } catch (e) {}
 
-  var user = (upRes.data) || existing.data || (await dbGetCurrentUser(true));
+  var user = upRes.data;
   if (user) {
     user.activated = true;
     user.username = finalUsername;
@@ -1027,7 +1028,7 @@ async function dbResendCustomerActivationCode(email) {
   if (!cleanEmail || (typeof isCustomerGmail === "function" && !isCustomerGmail(cleanEmail))) {
     throw new Error("Please enter a valid @gmail.com email address.");
   }
-  var newCode = String(Math.floor(100000 + Math.random() * 900000));
+  var newCode = String(100000 + crypto.getRandomValues(new Uint32Array(1))[0] % 900000);
   var fullName = "Valued Subscriber";
   var username = "";
   var refNo = "PENDING";
@@ -1068,16 +1069,15 @@ async function dbResendCustomerActivationCode(email) {
       refNo = latestApp.reference_no || latestApp.ref_no || refNo;
       planName = latestApp.plan_name || latestApp.plan || planName;
     }
-    await supabaseClient.from("users").upsert({
-      id: (existing.data && existing.data.id) || ("cust-" + Date.now()),
-      username: username,
-      email: cleanEmail,
-      full_name: fullName,
-      role: "customer",
-      active: true,
-      activated: false,
-      activation_code: newCode
-    }, { onConflict: "email" });
+    if (!existing.data || existing.data.role !== "customer" || existing.data.active === false) {
+      throw new Error("No pending customer account is available.");
+    }
+    if (newCode === existing.data.activation_code) newCode = newCode === "999999" ? "100000" : String(Number(newCode) + 1);
+    var updated = await supabaseClient.from("users").update({ activation_code: newCode })
+      .eq("id", existing.data.id).eq("role", "customer").eq("active", true)
+      .eq("activated", false).select("id").maybeSingle();
+    if (updated.error) throw new Error(updated.error.message);
+    if (!updated.data) throw new Error("This account has already been activated.");
   }
 
   return {
@@ -1149,64 +1149,93 @@ async function dbGetApplication(appId) {
   return res.data;
 }
 
+async function dbCheckExistingContactInSystem(email, phone) {
+  var cleanEmail = String(email || "").trim().toLowerCase();
+  var cleanPhone = String(phone || "").replace(/\D/g, "");
+  var result = {
+    emailTaken: false,
+    phoneTaken: false,
+    existingEmailRef: "",
+    existingPhoneRef: ""
+  };
+  if (!cleanEmail && !cleanPhone) return result;
+
+  try {
+    var existingApps = await dbListAllApplications();
+    if (Array.isArray(existingApps)) {
+      for (var i = 0; i < existingApps.length; i++) {
+        var a = existingApps[i];
+        if (!a || String(a.status || "") === "Rejected") continue;
+        var aEmail = String((a.corrected_copy && a.corrected_copy.contact_email) || a.email || "").trim().toLowerCase();
+        var aOrigEmail = String(a.email || "").trim().toLowerCase();
+        var aPhone = String((a.corrected_copy && a.corrected_copy.phone) || a.phone || "").replace(/\D/g, "");
+        var aOrigPhone = String(a.phone || "").replace(/\D/g, "");
+        var refLabel = a.reference_no || a.ref_no || "EXISTING";
+
+        if (cleanEmail && (cleanEmail === aEmail || cleanEmail === aOrigEmail)) {
+          result.emailTaken = true;
+          result.existingEmailRef = refLabel;
+        }
+        if (cleanPhone && cleanPhone.length >= 10 && (cleanPhone === aPhone || cleanPhone === aOrigPhone)) {
+          result.phoneTaken = true;
+          result.existingPhoneRef = refLabel;
+        }
+      }
+    }
+  } catch (e) {}
+
+  if (!IS_DEMO_MODE && supabaseClient && (!result.emailTaken || !result.phoneTaken)) {
+    try {
+      if (cleanEmail && !result.emailTaken) {
+        var uEmailRes = await supabaseClient.from("users").select("id,email").ilike("email", cleanEmail).limit(1);
+        if (!uEmailRes.error && Array.isArray(uEmailRes.data) && uEmailRes.data.length > 0) {
+          result.emailTaken = true;
+        }
+      }
+      if (cleanPhone && cleanPhone.length >= 10 && !result.phoneTaken) {
+        var uPhoneRes = await supabaseClient.from("users").select("id,phone").eq("phone", cleanPhone).limit(1);
+        if (!uPhoneRes.error && Array.isArray(uPhoneRes.data) && uPhoneRes.data.length > 0) {
+          result.phoneTaken = true;
+        }
+      }
+    } catch (e) {}
+  }
+
+  return result;
+}
+
 async function dbFindDuplicateCustomerApplication(email, appData) {
   var cleanEmail = String(email || (appData && appData.email) || "").trim().toLowerCase();
   var payload = appData || (typeof email === "object" ? email : {}) || {};
   if (!cleanEmail && payload.email) cleanEmail = String(payload.email || "").trim().toLowerCase();
+  var newPhoneKey = String(payload.phone || "").replace(/\D/g, "");
 
   var existingApps = await dbListAllApplications();
   if (!existingApps || existingApps.length === 0) return { isDuplicate: false };
 
-  var normStr = function (v) {
-    return String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  };
-  var normPhone = function (v) {
-    return String(v || "").replace(/\D/g, "");
-  };
-
-  var newNameKey = normStr(payload.full_name);
-  var newPhoneKey = normPhone(payload.phone);
-  var newIdNumKey = normStr(payload.id_number);
-  var newAddrKey = normStr((payload.house_no || "") + (payload.street || "") + (payload.barangay || "") + (payload.city || ""));
-  var newLat = Number(payload.lat != null ? payload.lat : payload.latitude);
-  var newLng = Number(payload.lng != null ? payload.lng : payload.longitude);
-  var hasNewCoords = !isNaN(newLat) && !isNaN(newLng) && newLat !== 0 && newLng !== 0;
-
+  // A user can apply multiple times as long as they use a different Gmail address and a different mobile number.
   for (var i = 0; i < existingApps.length; i++) {
     var a = existingApps[i];
     if (!a || String(a.status || "") === "Rejected") continue;
     var oldEmail = String(a.email || "").trim().toLowerCase();
-    var oldNameKey = normStr(a.full_name);
-    var oldPhoneKey = normPhone(a.phone);
-    var oldIdNumKey = normStr(a.id_number);
-    var oldAddrKey = normStr((a.house_no || "") + (a.street || "") + (a.barangay || "") + (a.city || ""));
-    var oldLat = Number(a.lat != null ? a.lat : a.latitude);
-    var oldLng = Number(a.lng != null ? a.lng : a.longitude);
+    var oldCorrEmail = String((a.corrected_copy && a.corrected_copy.contact_email) || "").trim().toLowerCase();
+    var oldPhoneKey = String(a.phone || "").replace(/\D/g, "");
+    var oldCorrPhoneKey = String((a.corrected_copy && a.corrected_copy.phone) || "").replace(/\D/g, "");
 
-    var sameEmail = Boolean(cleanEmail && oldEmail && cleanEmail === oldEmail);
-    var sameName = Boolean(newNameKey && oldNameKey && newNameKey === oldNameKey);
-    var samePhone = Boolean(newPhoneKey && oldPhoneKey && newPhoneKey.length >= 10 && newPhoneKey === oldPhoneKey);
-    var sameIdNumber = Boolean(newIdNumKey && oldIdNumKey && newIdNumKey.length >= 5 && newIdNumKey === oldIdNumKey);
-    var sameCoords = hasNewCoords && !isNaN(oldLat) && !isNaN(oldLng) &&
-      Math.abs(newLat - oldLat) < 0.00045 && Math.abs(newLng - oldLng) < 0.00045 && (sameEmail || sameName);
-    var sameAddress = Boolean(newAddrKey && oldAddrKey && newAddrKey.length > 8 && newAddrKey === oldAddrKey && (sameEmail || sameName));
-    var samePersonEmail = Boolean(sameName && sameEmail);
-    var samePersonPhone = Boolean(sameName && samePhone);
-    var sameEmailPhone = Boolean(sameEmail && samePhone);
-    var samePersonPlan = Boolean(sameEmail && String(a.plan || a.plan_id || "") === String(payload.plan || payload.plan_id || ""));
+    var sameEmail = Boolean(cleanEmail && (cleanEmail === oldEmail || cleanEmail === oldCorrEmail));
+    var samePhone = Boolean(newPhoneKey && newPhoneKey.length >= 10 && (newPhoneKey === oldPhoneKey || newPhoneKey === oldCorrPhoneKey));
 
-    if (samePersonEmail || samePersonPhone || sameEmailPhone || sameIdNumber || sameCoords || sameAddress || samePersonPlan) {
+    if (sameEmail || samePhone) {
       var refLabel = a.reference_no || a.ref_no || "EXISTING";
-      var locText = (typeof formatAddress === "function" ? formatAddress(a) : "") || a.address_line || "the same installation location";
-      var reasonDetail = sameIdNumber
-        ? "Duplicate Primary ID Number: An active application (" + refLabel + ", Status: " + a.status + ") is already registered under ID Number " + (payload.id_number || a.id_number) + "."
-        : (samePersonEmail || samePersonPhone || sameEmailPhone)
-          ? "Duplicate Applicant Record: An active application (" + refLabel + ", Status: " + a.status + ") already exists for " + (a.full_name || payload.full_name) + " with the same email or mobile number."
-          : (sameCoords || sameAddress)
-            ? "Duplicate Application at Same Location: This customer account already has an active application (" + refLabel + ", Status: " + a.status + ") registered at " + locText + "."
-            : "Duplicate Application Under Same Account: This customer account already has an active application (" + refLabel + ", Status: " + a.status + ").";
+      var reasonDetail = (sameEmail && samePhone)
+        ? "This Gmail address and mobile number are already registered in application " + refLabel + " (Status: " + a.status + "). Please use a different Gmail address and mobile number."
+        : (sameEmail
+          ? "This Gmail address (" + cleanEmail + ") is already registered in application " + refLabel + " (Status: " + a.status + "). Please use a different @gmail.com address."
+          : "This mobile number (" + (payload.phone || a.phone) + ") is already registered in application " + refLabel + " (Status: " + a.status + "). Please use a different mobile number.");
       return {
         isDuplicate: true,
+        sameEmail: sameEmail,
+        samePhone: samePhone,
         existingApp: a,
         existingRef: refLabel,
         existingStatus: a.status || "Pending Review",
@@ -1271,6 +1300,7 @@ function _stripOptionalAppColumns(payload) {
 }
 
 function _saveLocalAppMirror(appRow) {
+  if (!IS_DEMO_MODE) return;
   if (!appRow || !appRow.id) return;
   try {
     var all = readSaved("pigem_applications", []);
@@ -1290,7 +1320,7 @@ function _saveLocalAppMirror(appRow) {
 
 async function dbCreateApplication(appData) {
   var now = new Date().toISOString();
-  var refNo = "PIGEM-" + String(Date.now()).slice(-6) + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+  var refNo = appData.ref_no || generateApplicationReference();
 
   var row = Object.assign({}, appData, {
     ref_no: refNo,
@@ -1311,10 +1341,6 @@ async function dbCreateApplication(appData) {
     return row;
   }
   var res = await supabaseClient.from("applications").insert(row).select("*").single();
-  if (res.error) {
-    var cleanRow = _stripOptionalAppColumns(row);
-    res = await supabaseClient.from("applications").insert(cleanRow).select("*").single();
-  }
   if (res.error) throw new Error(res.error.message);
   if (res.data) {
     _saveLocalAppMirror(res.data);
@@ -1391,19 +1417,16 @@ async function dbUpdateApplication(appId, changes, expectedUpdatedAt) {
     }
     throw new Error("Application not found.");
   }
-  function updateMatchingRow(payload) {
+  function updateMatchingRow(payload, useExpectedTimestamp) {
     var query = supabaseClient.from("applications").update(payload).eq("id", appId);
-    if (expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
+    if (useExpectedTimestamp && expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
     return query.select("*").maybeSingle();
   }
-  var res = await updateMatchingRow(changes);
-  if (res.error) {
-    var cleanChanges = _stripOptionalAppColumns(changes);
-    res = await updateMatchingRow(cleanChanges);
-  }
+  var res = await updateMatchingRow(changes, true);
+  if (!res.error && !res.data && expectedUpdatedAt) throw new Error("This application changed. Reopen it and try again.");
   if (res.error) throw new Error(res.error.message);
   if (!res.data) {
-    throw new Error(expectedUpdatedAt ? "This application changed while you were editing. Reopen it and try again." : "Application not found.");
+    throw new Error("Application not found.");
   }
   if (res.data) {
     _saveLocalAppMirror(res.data);
@@ -1411,36 +1434,28 @@ async function dbUpdateApplication(appId, changes, expectedUpdatedAt) {
   return res.data;
 }
 
-async function dbAddAiLog(appId, who, text) {
+async function dbAddAiLog(appId, who, text, message) {
+  if (message !== undefined) { who = text; text = message; }
   var app = await dbGetApplication(appId);
   if (!app) return;
   var log = app.ai_log || [];
   log.push({ at: new Date().toISOString(), who: who, text: text });
-  await dbUpdateApplication(appId, { ai_log: log });
+  await dbUpdateApplication(appId, { ai_log: log }, app.updated_at);
 }
 
-var DOCUMENT_BUCKETS = [
-  "documents",
-  "documents-1",
-  "documents-2",
-  "documents-3",
-  "documents-4",
-  "documents-5",
-  "documents-6",
-  "documents-7",
-  "documents-8",
-  "documents-9",
-  "documents-10"
-];
+var DOCUMENT_BUCKETS = ["documents"];
 
-// [STUDY NOTE — dbUploadDocument]: Uploads a document across DOCUMENT_BUCKETS ('documents', 'documents-1'..'documents-10') with automatic bucket failover and Base64 fallback.
+function generateApplicationReference() {
+  return "PIGEM-" + String(Date.now()).slice(-8) + "-" + crypto.randomUUID().slice(0, 8).toUpperCase();
+}
+
 async function dbUploadDocument(file, folder, label) {
   if (!file) return null;
-  var cleanFolder = String(folder || "applications/uploads").replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9_/-]/g, "_");
+  var cleanFolder = String(folder || "application").replace(/[^a-zA-Z0-9_-]/g, "_");
   var cleanLabel = String(label || "doc").replace(/[^a-zA-Z0-9_-]/g, "_");
   var ext = ((file.name && file.name.split(".").pop()) || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-  var fileName = Date.now() + "-" + cleanLabel + "." + ext;
-  var path = cleanFolder + "/" + fileName;
+  var path = cleanFolder + "_" + cleanLabel + "_" + crypto.randomUUID() + "." + ext;
+  if (file.size > 12000000) throw new Error("Choose a document smaller than 12 MB.");
 
   if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
     for (var b = 0; b < DOCUMENT_BUCKETS.length; b++) {
@@ -1448,7 +1463,7 @@ async function dbUploadDocument(file, folder, label) {
       try {
         var res = await supabaseClient.storage.from(bucketName).upload(path, file, {
           cacheControl: "3600",
-          upsert: true,
+          upsert: false,
           contentType: file.type || "image/jpeg"
         });
         if (!res.error) {
@@ -1465,15 +1480,9 @@ async function dbUploadDocument(file, folder, label) {
     }
   }
 
-  return await new Promise(function (resolve, reject) {
-    var reader = new FileReader();
-    reader.onload = function () { resolve(reader.result); };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+  throw new Error("Document could not be saved. Please check your connection and try again.");
 }
 
-// [STUDY NOTE — dbGetDocumentLink]: Creates a signed or public URL for a stored document path across the 11 document buckets.
 async function dbGetDocumentLink(path) {
   if (!path) return null;
   if (path.indexOf("data:") === 0 || path.indexOf("http") === 0 || IS_DEMO_MODE) return path;
@@ -1743,7 +1752,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09171234567",
     id_type: "Philippine Driver's License",
     id_number: "N01-23-456789",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
+    id_image_url: "/api/assets/black-logo-white-mode.png",
     building_name: "Greenwoods Subd.",
     street: "Blk 4 Lot 12 Sampaguita St.",
     subdivision: "Greenwoods Executive",
@@ -1785,7 +1794,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09189876543",
     id_type: "National ID",
     id_number: "1234-5678-9012-3456",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
+    id_image_url: "/api/assets/black-logo-white-mode.png",
     building_name: "Villa Luisa",
     street: "24 Mabini St.",
     subdivision: "Villa Luisa Homes",
@@ -1829,7 +1838,7 @@ var DEFAULT_DEMO_APPS = [
     phone: "09223334455",
     id_type: "Philippine Passport",
     id_number: "P1234567A",
-    id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png",
+    id_image_url: "/api/assets/black-logo-white-mode.png",
     building_name: "St. Charbel",
     street: "88 Aguinaldo Hwy",
     subdivision: "St. Charbel South",
@@ -1850,7 +1859,7 @@ var DEFAULT_DEMO_APPS = [
       id_type: "Philippine Passport",
       id_number: "P1234567",
       street: "Aguinaldo Hwy",
-      id_image_url: "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png"
+      id_image_url: "/api/assets/black-logo-white-mode.png"
     },
     ai_result: {
       overall_status: "Verified",
@@ -1939,7 +1948,7 @@ function normalizeAppRecord(a) {
     }
   }
   if (!a.original_submission && a.original_copy) a.original_submission = a.original_copy;
-  if (!a.correction_fields && a.screening && a.screening.correction_fields) {
+  if ((!a.correction_fields || !a.correction_fields.length) && a.screening && a.screening.correction_fields) {
     a.correction_fields = a.screening.correction_fields;
   }
   if (!a.validator_raw_remark && a.screening && a.screening.validator_raw_remark) {
@@ -2144,6 +2153,10 @@ function generateSecuredOtp(targetKey) {
     randArr[0] = Math.floor(Math.random() * 900000) + 100000;
   }
   var code = String(100000 + (randArr[0] % 900000));
+  try {
+    var previous = JSON.parse(sessionStorage.getItem(key));
+    if (previous?.code === code) code = String(100000 + ((Number(code) - 99999) % 900000));
+  } catch (error) {}
   var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   var refTag = "";
   for (var i = 0; i < 4; i++) {
@@ -2171,7 +2184,7 @@ function verifySecuredOtp(targetKey, enteredCode) {
     if (rec.used) {
       return { valid: false, reason: "This OTP has already been used. Please request a new code." };
     }
-    if (Date.now() > Number(rec.expiresAt || 0)) {
+    if (Date.now() >= Number(rec.expiresAt || 0)) {
       sessionStorage.removeItem(key);
       return { valid: false, reason: "This OTP code has expired (valid for 5 minutes). Please click Resend OTP." };
     }
@@ -2415,7 +2428,7 @@ async function dbListApplicationsForCustomer(customerOrEmail) {
   }
 
 
-  var localApps = readSaved("pigem_applications", []) || [];
+  var localApps = IS_DEMO_MODE ? (readSaved("pigem_applications", []) || []) : [];
   for (var li = 0; li < localApps.length; li++) {
     var la = localApps[li];
     if (!la) continue;
@@ -2471,8 +2484,7 @@ async function dbListApplicationsForCustomer(customerOrEmail) {
 }
 
 async function dbUploadIdPhoto(file, label, customerId) {
-  var safeOwner = String(customerId || "customer").replace(/[^a-zA-Z0-9_-]/g, "_");
-  return await dbUploadDocument(file, "applications/" + safeOwner + "/corrections", label || "id-update");
+  return await dbUploadDocument(file, "corrected", label || "id-update");
 }
 
 async function dbListNotifications(emailOrUser, role) {
@@ -3358,93 +3370,8 @@ if (typeof apiSendStatusEmail === "undefined") {
         status: custSt,
         remarks: remarks || "",
         target_summary: targetSummary || "Information / Document Clarification Required",
-        portal_link: (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0 ? window.location.origin : (CONFIG.PUBLIC_URL || "https://pigem-seven.vercel.app")) + "/customer.html"
+        portal_link: (typeof window !== "undefined" && window.location && window.location.origin && window.location.origin.indexOf("http") === 0 ? window.location.origin : (CONFIG.PUBLIC_URL || "")) + "/customer.html"
       }
     });
   };
-}
-
-// [STUDY NOTE — dbUploadQrSessionFile]: Uploads a phone-captured QR session ID image across DOCUMENT_BUCKETS with automatic bucket failover.
-async function dbUploadQrSessionFile(sid, side, file) {
-  var cleanSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
-  if (!cleanSid || !file) throw new Error("Missing QR upload session or file.");
-  var cleanSide = side === "back" ? "back" : "front";
-  var ext = (file.name && file.name.split(".").pop()) || "jpg";
-  var url = "";
-
-  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
-    var storagePath = "qr_sessions/" + cleanSid + "/" + cleanSide + "-" + Date.now() + "." + ext;
-    for (var qb = 0; qb < DOCUMENT_BUCKETS.length; qb++) {
-      var qBucket = DOCUMENT_BUCKETS[qb];
-      try {
-        var upRes = await supabaseClient.storage.from(qBucket).upload(storagePath, file, {
-          cacheControl: "60",
-          upsert: true,
-          contentType: file.type || "image/jpeg"
-        });
-        if (!upRes.error) {
-          var pub = supabaseClient.storage.from(qBucket).getPublicUrl(storagePath);
-          if (pub && pub.data && pub.data.publicUrl) {
-            url = pub.data.publicUrl;
-            break;
-          }
-        }
-      } catch (err) {}
-    }
-  }
-
-  if (!url) {
-    url = await new Promise(function (resolve, reject) {
-      var reader = new FileReader();
-      reader.onload = function () { resolve(reader.result); };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  var cached = readSaved("pigem_qr_" + cleanSid, {});
-  if (cleanSide === "front") cached.frontUrl = url;
-  else cached.backUrl = url;
-  cached.updatedAt = Date.now();
-  writeSaved("pigem_qr_" + cleanSid, cached);
-  return url;
-}
-
-// [STUDY NOTE — dbListQrSessionFiles]: Polls DOCUMENT_BUCKETS to retrieve Front and Back ID photos uploaded from the applicant's phone via QR code.
-async function dbListQrSessionFiles(sid) {
-  var cleanSid = String(sid || "").replace(/[^a-zA-Z0-9_-]/g, "");
-  if (!cleanSid) return { frontUrl: "", backUrl: "" };
-  var result = { frontUrl: "", backUrl: "" };
-
-  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
-    for (var lb = 0; lb < DOCUMENT_BUCKETS.length; lb++) {
-      var listBucket = DOCUMENT_BUCKETS[lb];
-      if (result.frontUrl && result.backUrl) break;
-      try {
-        var res = await supabaseClient.storage.from(listBucket).list("qr_sessions/" + cleanSid, {
-          limit: 20,
-          sortBy: { column: "created_at", order: "desc" }
-        });
-        if (!res.error && Array.isArray(res.data)) {
-          for (var i = 0; i < res.data.length; i++) {
-            var item = res.data[i];
-            if (!item || !item.name) continue;
-            if (!result.frontUrl && item.name.indexOf("front-") === 0) {
-              var p1 = supabaseClient.storage.from(listBucket).getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
-              if (p1 && p1.data) result.frontUrl = p1.data.publicUrl;
-            }
-            if (!result.backUrl && item.name.indexOf("back-") === 0) {
-              var p2 = supabaseClient.storage.from(listBucket).getPublicUrl("qr_sessions/" + cleanSid + "/" + item.name);
-              if (p2 && p2.data) result.backUrl = p2.data.publicUrl;
-            }
-          }
-        }
-      } catch (e) {}
-    }
-  }
-
-  var local = readSaved("pigem_qr_" + cleanSid, {});
-  if (!result.frontUrl && local.frontUrl) result.frontUrl = local.frontUrl;
-  if (!result.backUrl && local.backUrl) result.backUrl = local.backUrl;
-  return result;
 }

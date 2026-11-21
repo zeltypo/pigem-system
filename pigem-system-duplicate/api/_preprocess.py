@@ -1,24 +1,3 @@
-# ============================================================================
-# PIGEM STUDY DUPLICATE — api/_preprocess.py (100% OpenCV Image Enhancement)
-# ============================================================================
-# ROLE IN ARCHITECTURE:
-#   Performs ALL pixel-level image processing using OpenCV (`cv2`) and NumPy.
-#   AI models NEVER alter or generate image pixels—only deterministic OpenCV
-#   operations modify the working copy sent to Azure Document Intelligence.
-#
-# SUPPORTED OPENCV ACTIONS (Stage 2 Targeted Pipeline):
-#   - `rotate_90_cw` / `rotate_90_ccw` / `rotate_180`: Fixes upside-down or sideways IDs.
-#   - `deskew_crop`: Finds the 4-corner ID card boundary (`detect_card_quad`) using
-#     multi-pass Canny + Adaptive Threshold + ConvexHull and applies a 4-point
-#     perspective warp (`cv2.getPerspectiveTransform` + `cv2.warpPerspective`).
-#     * Portrait IDs are preserved upright (never forcibly rotated to landscape).
-#   - `deglare`: Suppresses bright specular flash/hologram hotspots before contrast boost.
-#   - `brighten`: Applies gamma correction (< 1.0) when an image is underexposed.
-#   - `clahe`: Contrast Limited Adaptive Histogram Equalization on the L-channel (LAB color space).
-#   - `denoise`: Fast Non-Local Means Denoising (`cv2.fastNlMeansDenoisingColored`).
-#   - `sharpen`: Unsharp mask (`cv2.addWeighted`) to crisp up printed ID text for OCR.
-# ============================================================================
-
 """Targeted OpenCV image enhancement engine.
 
 IMPORTANT:
@@ -70,7 +49,6 @@ def _boundary_gradient_support(gray: np.ndarray, ordered: np.ndarray, w: float, 
     return support, center
 
 
-# [STUDY NOTE — detect_card_quad]: Multi-pass OpenCV contour detector (Canny + Adaptive Threshold + ConvexHull) that locates the 4 corners of portrait or landscape IDs.
 def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
     """Multi-pass OpenCV contour & boundary detector for Front and Back ID cards (both Portrait and Landscape)."""
     height, width = image.shape[:2]
@@ -159,7 +137,6 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
     return best
 
 
-# [STUDY NOTE — _deskew_and_crop]: Applies a 4-point perspective warp to crop the ID card while preserving portrait orientation for portrait IDs.
 def _deskew_and_crop(image: np.ndarray) -> Tuple[np.ndarray, bool]:
     found = detect_card_quad(image)
     if not found:
@@ -270,14 +247,14 @@ def enhance_targeted(data: bytes, ops: Optional[List[str]] = None) -> Tuple[byte
     if "brighten" in requested:
         image = _apply_brighten(image)
         applied.append("brighten")
-    if "clahe" in requested or cropped:
+    if "clahe" in requested:
         image = _apply_clahe(image)
         if "clahe" not in applied:
             applied.append("clahe")
     if "denoise" in requested:
         image = _apply_denoise(image)
         applied.append("denoise")
-    if "sharpen" in requested or cropped:
+    if "sharpen" in requested:
         image = _apply_sharpen(image)
         if "sharpen" not in applied:
             applied.append("sharpen")

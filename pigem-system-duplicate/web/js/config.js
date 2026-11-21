@@ -1,30 +1,44 @@
-/* ============================================================================
- * PIGEM STUDY DUPLICATE — web/js/config.js (Global Config, Validators & Modals)
- * ============================================================================
- * ROLE IN ARCHITECTURE:
- *   Loaded first on every HTML page. Defines:
- *   - Supabase Project URL & Anon Key + Storage Asset URL helpers (`getStorageAssetUrl`)
- *   - Philippine Government ID types, regex format rules, and field validators
- *   - Cavite municipality/city & barangay lists + map boundary coordinates
- *   - Shared custom modal dialogs (`showPopup`, `showConfirm`, `showToast`)
- *   - Theme switcher (Light / Dark mode) and 15-minute idle session auto-logout.
- * ============================================================================ */
-
 var ROOT = window.ROOT || "";
+
+function screeningTimeLabel(screening) {
+  var stamp = screening.background_state === "running" ? screening.started_at : screening.queued_at;
+  if (!stamp || !Number.isFinite(Date.parse(stamp))) return "Waiting for update";
+  var seconds = Math.max(0, Math.floor((Date.now() - Date.parse(stamp)) / 1000));
+  var label = Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
+  if (screening.background_state !== "running") return "Waiting " + label;
+  var deadline = Date.parse(screening.deadline_at || "");
+  if (!Number.isFinite(deadline)) return "Elapsed " + label;
+  var remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+  if (remaining === 0) return "Elapsed " + label + " · waiting for worker update";
+  return "Elapsed " + label + " · retry window " + Math.floor(remaining / 60) + "m " + (remaining % 60) + "s";
+}
+
+function canChangeApplicationStatus(current, next) {
+  if (current === next) return true;
+  var steps = {
+    "Pending Review": ["Under Agent Review"],
+    "Under Agent Review": ["Encoding", "Needs Correction"],
+    "Encoding": ["Approved", "Rejected", "Needs Correction"],
+    "Needs Correction": ["Pending Review", "Under Agent Review", "Rejected"],
+    "Approved": [],
+    "Rejected": []
+  };
+  return (steps[current] || []).includes(next);
+}
 
 var CONFIG = {
 
-  SUPABASE_URL: "https://wuunqfxyejxwrawtjdrf.supabase.co",
-  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1dW5xZnh5ZWp4d3Jhd3RqZHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNTE3MTEsImV4cCI6MjEwNzcyNzcxMX0.4Wt-6pJpLS4OUf_93bFn1513omGESvMn_E0ulnONf2g",
+  SUPABASE_URL: (window.PIGEM_CONFIG || {}).SUPABASE_URL || "",
+  SUPABASE_ANON_KEY: (window.PIGEM_CONFIG || {}).SUPABASE_ANON_KEY || "",
 
-  PUBLIC_URL: "https://pigem-system-web.vercel.app",
+  PUBLIC_URL: window.location.origin,
   API_URL: "/api",
 
   ASSET_SOURCE: "supabase",
 
-  LOCATIONIQ_API_KEY: "pk.3597a6e1a756561513401f40ea9ee840",
+  LOCATIONIQ_API_KEY: (window.PIGEM_CONFIG || {}).LOCATIONIQ_API_KEY || "",
 
-  RECAPTCHA_SITE_KEY: "6LfLGBQuAAAAAP3l2jkVbG41srUfH3mv2io15vXD",
+  RECAPTCHA_SITE_KEY: (window.PIGEM_CONFIG || {}).RECAPTCHA_SITE_KEY || "",
 
   PLANS: [
     { id: "1000", name: "Plan 1000", speed: 100, price: 1000, tag: "Fiber for your home", featured: false },
@@ -147,9 +161,10 @@ var DEFAULT_CONTENT = {
 
 function getImageUrl(filePath) {
   if (!filePath) return "";
+  if (filePath.indexOf("/api/assets/") === 0) return filePath;
   if (filePath.indexOf("data:") === 0 || filePath.indexOf("http://") === 0 || filePath.indexOf("https://") === 0) return filePath;
   var clean = String(filePath).replace(/^\/+/, "").replace(/^assets\/images\//, "");
-  var base = (CONFIG.SUPABASE_URL || "https://wuunqfxyejxwrawtjdrf.supabase.co").replace(/\/+$/, "");
+  var base = CONFIG.SUPABASE_URL;
   return base + "/storage/v1/object/public/website-assets/" + clean;
 }
 
@@ -452,7 +467,40 @@ function openPopup(htmlContent, isWideOrOpts) {
     ? '<button type="button" class="popup-close-x" id="popup-close-x-btn" aria-label="Close">&times;</button>'
     : '';
   back.innerHTML = '<div class="popup' + (opts.wide ? " wide" : "") + '">' + closeBtnHtml + htmlContent + "</div>";
+  var previousFocus = document.activeElement;
   document.body.appendChild(back);
+  if (document.body.matches(".customer-portal, .customer-login, .apply-page")) {
+    var dialog = back.querySelector(".popup");
+    var title = dialog.querySelector("h2, h3");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.tabIndex = -1;
+    if (title) {
+      title.id = title.id || "popup-title";
+      dialog.setAttribute("aria-labelledby", title.id);
+    }
+    dialog.focus({ preventScroll: true });
+    back.restoreFocus = previousFocus;
+    back.addEventListener("keydown", function (event) {
+      if (event.key !== "Tab") return;
+      var controls = Array.from(dialog.querySelectorAll("button, a[href], input, select, textarea, [tabindex='0']")).filter(function (el) {
+        return !el.disabled && el.tabIndex >= 0 && el.getClientRects().length;
+      });
+      if (!controls.length) {
+        event.preventDefault();
+        return;
+      }
+      var first = controls[0];
+      var last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
   var handleClose = function () {
     closePopup();
     if (typeof opts.onClose === "function") opts.onClose();
@@ -471,7 +519,10 @@ function openPopup(htmlContent, isWideOrOpts) {
 
 function closePopup() {
   var existing = document.getElementById("popup-modal");
-  if (existing) existing.remove();
+  if (existing) {
+    existing.remove();
+    if (existing.restoreFocus?.isConnected) existing.restoreFocus.focus({ preventScroll: true });
+  }
 }
 
 function showAlert(title, message, type) {
@@ -494,7 +545,15 @@ function previewImage(filePath, titleText) {
 }
 
 function toggleMenu() {
-  document.body.classList.toggle("menu-open");
+  var open = document.body.classList.toggle("menu-open");
+  var button = document.querySelector(".menu-toggle");
+  var menu = document.getElementById("public-mobile-menu");
+  if (button && menu) {
+    button.setAttribute("aria-expanded", String(open));
+    menu.inert = !open;
+    if (open) menu.querySelector("button")?.focus();
+    else button.focus();
+  }
 }
 
 var sliderTimers = {};
@@ -733,6 +792,9 @@ function setFieldError(inputOrId, message) {
     if (anchor.nextSibling) parent.insertBefore(errEl, anchor.nextSibling);
     else parent.appendChild(errEl);
   }
+  el.setAttribute("aria-invalid", "true");
+  var describedBy = (el.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+  if (!describedBy.includes(errEl.id)) el.setAttribute("aria-describedby", describedBy.concat(errEl.id).join(" "));
   errEl.textContent = String(message || "Invalid value.");
   errEl.style.display = "block";
 }
@@ -741,6 +803,7 @@ function clearFieldError(inputOrId) {
   var el = typeof inputOrId === "string" ? document.getElementById(inputOrId) : inputOrId;
   if (!el) return;
   el.classList.remove("input-invalid");
+  el.removeAttribute("aria-invalid");
   var anchor = el.closest(".email-otp-inline") || el.closest(".pw-wrap") || el;
   var parent = anchor.parentNode;
   if (!parent) return;
@@ -763,6 +826,7 @@ function clearAllFieldErrors(rootEl) {
   var invs = scope.querySelectorAll(".input-invalid");
   for (var j = 0; j < invs.length; j++) {
     invs[j].classList.remove("input-invalid");
+    invs[j].removeAttribute("aria-invalid");
   }
 }
 
@@ -855,10 +919,8 @@ async function setupPublicHeader() {
   } catch (error) {}
   if (check !== publicHeaderCheck) return;
   accountButtons.forEach(function (button) {
-    button.textContent = signedIn ? "Apply" : "Customer Login";
-    button.href = ROOT + (signedIn ? "apply.html" : "login.html");
-    if (signedIn) button.target = "_blank";
-    else button.removeAttribute("target");
+    button.hidden = signedIn;
+    button.href = ROOT + "login.html";
   });
   document.querySelectorAll(".customer-only").forEach(function (link) {
     link.hidden = !signedIn;
@@ -889,7 +951,7 @@ function renderMaintenanceScreenHtml(titleText, msgText) {
   closePopup();
   var logoSrc = (typeof getImageUrl === "function" && typeof getActiveThemeLogoFilename === "function")
     ? getImageUrl(getActiveThemeLogoFilename())
-    : "https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png";
+    : "/api/assets/black-logo-white-mode.png";
   document.body.innerHTML =
     '<main class="auth-page">' +
       '<div class="card auth-card center" style="max-width:520px">' +
@@ -1010,6 +1072,7 @@ window.addEventListener("DOMContentLoaded", async function () {
 
 window.addEventListener("keydown", function (e) {
   var popup = document.getElementById("popup-modal");
+  if (e.key === "Escape" && !popup && document.body.classList.contains("menu-open")) toggleMenu();
   if (e.key === "Escape" && popup) {
     if (popup.closeFromEscape) popup.closeFromEscape();
     else closePopup();
@@ -1380,13 +1443,13 @@ function openConfirmPopup(title, messageHtml, confirmLabel, onConfirm, isDanger)
   openPopup(
     '<div class="row between" style="margin-bottom:8px;">' +
       '<h3>' + title + '</h3>' +
-      '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Cancel</button>' +
     '</div>' +
     '<div class="notice ' + (isDanger ? "warn" : "") + ' mt" style="font-size:13.5px;line-height:1.55;">' + messageHtml + '</div>' +
     '<div class="row mt" style="justify-content:flex-end;gap:8px;">' +
       '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
       '<button type="button" class="' + btnClass + '" onclick="runPendingConfirmAction()">' + (confirmLabel || "Confirm") + '</button>' +
-    '</div>'
+    '</div>',
+    { closeOnBackdrop: true, closeOnEscape: true }
   );
 }
 

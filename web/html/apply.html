@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <link rel="icon" href="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png">
+  <link rel="icon" href="/api/assets/black-logo-white-mode.png">
   <title>Application Form | Combined Facilities Support Services</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -20,13 +20,13 @@
   <header class="simple-bar">
     <div class="container apply-header">
       <div style="display:flex; align-items:center; gap:12px;">
-        <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" width="38" height="38">
+        <img data-img="black-logo-white-mode.png" src="/api/assets/black-logo-white-mode.png" alt="PIGEM" width="38" height="38">
         <span style="font-weight:700; font-size:18px; cursor:default; user-select:none;">Application Form</span>
       </div>
       <div class="apply-header-actions">
         <a id="btn-back-website" href="index.html" class="btn btn-small" onclick="return leaveApplicationForm(event)">&#8592; Back</a>
         <button type="button" id="btn-return-desktop" class="btn btn-small btn-outline" hidden onclick="returnApplicationToDesktop()">Back to desktop</button>
-        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" hidden onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img"> Continue on another device</button>
+        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" hidden onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="/api/assets/icons/qr-phone.png" alt="" class="icon-img"> Continue on another device</button>
       </div>
     </div>
     <p id="apply-phone-status" class="container small muted" role="status"></p>
@@ -123,7 +123,7 @@
       <div class="row mt" style="margin-bottom:10px; flex-wrap:wrap; gap:8px;">
         <input id="map-search" aria-label="Search street, barangay, or city on map" type="text" placeholder="Search street, barangay, or city (e.g. Burol Main, Dasmariñas)" style="flex:1; min-width:210px;">
         <button type="button" class="btn btn-small" onclick="searchMapAddress()">Search Map</button>
-        <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location" class="icon-img"> Use My Location</button>
+        <button type="button" id="btn-use-loc" class="btn btn-small btn-red" onclick="useCurrentLocation()"><img data-img="icons/location.png" src="/api/assets/icons/location.png" alt="Location" class="icon-img"> Use My Location</button>
       </div>
 
       <div id="map" tabindex="0" aria-label="Installation location map"></div>
@@ -305,8 +305,8 @@
             <input id="id_front" aria-label="Upload front of valid ID photo" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('front', this)">
             <input id="id_front_cam" aria-label="Capture front of valid ID photo with camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('front', this)">
             <div class="upload-btns">
-              <button type="button" class="btn btn-small" onclick="document.getElementById('id_front').click()"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
-              <button type="button" id="btn-front-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_front_cam').click()"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
+              <button type="button" class="btn btn-small" onclick="document.getElementById('id_front').click()"><img data-img="icons/upload.png" src="/api/assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
+              <button type="button" id="btn-front-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_front_cam').click()"><img data-img="icons/camera.png" src="/api/assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
             </div>
             <div id="id-front-preview-box" class="mt" hidden>
               <img id="id-front-preview" class="id-preview" alt="Front ID Preview">
@@ -322,8 +322,8 @@
             <input id="id_back" aria-label="Upload back of valid ID photo" type="file" accept="image/*" style="display:none" onchange="handleIdFileSelect('back', this)">
             <input id="id_back_cam" aria-label="Capture back of valid ID photo with camera" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleIdFileSelect('back', this)">
             <div class="upload-btns">
-              <button type="button" class="btn btn-small" onclick="document.getElementById('id_back').click()"><img data-img="icons/upload.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
-              <button type="button" id="btn-back-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_back_cam').click()"><img data-img="icons/camera.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
+              <button type="button" class="btn btn-small" onclick="document.getElementById('id_back').click()"><img data-img="icons/upload.png" src="/api/assets/icons/upload.png" alt="Upload" class="icon-img"> Choose from Files</button>
+              <button type="button" id="btn-back-cam" class="btn btn-small btn-red phone-only-btn" onclick="document.getElementById('id_back_cam').click()"><img data-img="icons/camera.png" src="/api/assets/icons/camera.png" alt="Camera" class="icon-img"> Take Photo (Camera)</button>
             </div>
             <div id="id-back-preview-box" class="mt" hidden>
               <img id="id-back-preview" class="id-preview" alt="Back ID Preview">
@@ -332,7 +332,7 @@
         </div>
       </div>
 
-      <div id="id-screen-warn" class="notice bad mt" hidden></div>
+      <div id="id-screen-warn" class="notice warn mt" role="status" aria-live="polite" hidden></div>
 
       <div class="row between mt-big">
         <button type="button" class="btn" onclick="prevPanel()">&larr; Back</button>
@@ -454,6 +454,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <script src="/api/config.js"></script>
   <script src="../js/config.js"></script>
 
   <script src="../js/db.js"></script>
