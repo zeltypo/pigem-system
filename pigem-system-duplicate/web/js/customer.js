@@ -424,7 +424,7 @@ function openCustomerCorrection(id) {
       '<div class="grid-2">' +
         '<div class="field">' +
           '<label>Application Email Address ' + (fields.indexOf("email") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-          '<input id="fix-email" type="email" ' + hiEmail + ' value="' + escapeHtml(displayEmail || "") + '" placeholder="Enter an alternate email if requested..." oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+          '<input id="fix-email" type="text" inputmode="email" ' + hiEmail + ' value="' + escapeHtml(displayEmail || "") + '" placeholder="Gmail username or address" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
         '<div class="field">' +
           '<label>Mobile Number ' + (fields.indexOf("phone") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
@@ -542,7 +542,10 @@ async function submitCustomerCorrection(appId) {
     var cleanMid = (mname && mname.toUpperCase() !== "N/A") ? mname : "";
     var fullName = [fname, cleanMid, lname].filter(Boolean).join(" ").trim();
     var bdate = document.getElementById("fix-bdate") ? document.getElementById("fix-bdate").value : oldBdate;
-    var newEmail = document.getElementById("fix-email").value.trim().toLowerCase() || oldEmail;
+    var emailInput = document.getElementById("fix-email");
+    var newEmail = emailInput.value.trim().toLowerCase() || oldEmail;
+    if (/^[a-z0-9][a-z0-9._+-]*$/.test(newEmail)) newEmail += "@gmail.com";
+    emailInput.value = newEmail;
     var phone = document.getElementById("fix-phone").value.trim() || app.phone;
     var idNo = document.getElementById("fix-idno").value.trim() || app.id_number;
     var street = document.getElementById("fix-street").value.trim() || app.street;

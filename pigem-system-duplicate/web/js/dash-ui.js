@@ -30,42 +30,9 @@ function confirmDashboardSignOut() {
 function startDashSecurityWatchers() {
   if (_dashSecurityStarted || !dashCurrentUser) return;
   _dashSecurityStarted = true;
-  if (dashCurrentUser.role !== "customer") {
-    var session = getActiveSessionPair();
-    var activityKey = "pigem_activity_" + (session.tok || dashCurrentUser.id);
-    var lastActivity = Date.now();
-    var lastSaved = 0;
-
-    function touchActivity() {
-      lastActivity = Date.now();
-      if (lastActivity - lastSaved >= 10000) {
-        lastSaved = lastActivity;
-        try { localStorage.setItem(activityKey, String(lastSaved)); } catch (error) {}
-      }
-    }
-
-    touchActivity();
-    ["pointerdown", "keydown", "scroll", "touchstart"].forEach(function (event) {
-      window.addEventListener(event, touchActivity, { passive: true });
-    });
-
-    _dashIdleTimer = setInterval(function () {
-      if (_dashSessionRedirecting) return;
-      var sharedActivity = 0;
-      try { sharedActivity = Number(localStorage.getItem(activityKey)) || 0; } catch (error) {}
-      if (Date.now() - Math.max(lastActivity, sharedActivity) < DASH_IDLE_TIMEOUT_MS) return;
-      _dashSessionRedirecting = true;
-      clearInterval(_dashIdleTimer);
-      clearInterval(_dashSessionTimer);
-      try { localStorage.removeItem(activityKey); } catch (error) {}
-      signOutAndGoLogin("idle", true);
-    }, 15000);
-
-  }
-
   var verifySingleDevice = async function () {
     if (!dashCurrentUser || _dashSessionRedirecting || typeof dbVerifyActiveSession !== "function") return;
-    if (dashCurrentUser.role === "customer" && navigator.onLine === false) return;
+    if (navigator.onLine === false) return;
     try {
       var chk = await dbVerifyActiveSession(dashCurrentUser.id, window.PORTAL_ALLOWED_ROLES || null);
       if (chk && chk.valid === false) {
@@ -91,7 +58,7 @@ function startDashSecurityWatchers() {
 
   _dashSessionTimer = setInterval(verifySingleDevice, 8000);
   window.addEventListener("focus", verifySingleDevice);
-  if (dashCurrentUser.role === "customer") window.addEventListener("online", verifySingleDevice);
+  window.addEventListener("online", verifySingleDevice);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) verifySingleDevice();
   });
@@ -510,7 +477,7 @@ function renderProfileDrawer(user) {
         '<div id="prof-pw-msg" class="msg"></div>' +
         '<div class="field"><label for="prof-pw-current">Current Password</label><input id="prof-pw-current" type="password" autocomplete="current-password" required placeholder="Enter current password" /></div>' +
         '<div class="field"><label for="prof-pw-new">New Password</label><input id="prof-pw-new" type="password" autocomplete="new-password" required data-pw-check="1" placeholder="Strong new password" /></div>' +
-        (user.role === "customer" ? '<div class="field"><label for="prof-pw-confirm">Confirm New Password</label><input id="prof-pw-confirm" type="password" autocomplete="new-password" required placeholder="Enter new password again"></div>' : '') +
+        '<div class="field"><label for="prof-pw-confirm">Confirm New Password</label><input id="prof-pw-confirm" type="password" autocomplete="new-password" required placeholder="Enter new password again"></div>' +
         '<button type="button" class="btn btn-red btn-sm" style="width:100%" onclick="confirmDirectProfilePassword()">Update Password</button>' +
       '</div>';
 
@@ -976,6 +943,7 @@ function exportPigemCalendarReport(boxId, action) {
 function renderCalendar(boxId, apps) {
   var box = document.getElementById(boxId);
   if (!box) return;
+  var simple = ["agent-calendar", "mgr-calendar", "admin-overview-calendar"].includes(boxId);
   var st = _getPigemCalendarState(boxId, apps);
   var now = new Date();
   var year = st.year;
@@ -1023,6 +991,10 @@ function renderCalendar(boxId, apps) {
       '<span class="muted" style="font-size:12px">Today: ' + monthNames[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear() + '</span>' +
     '</div>';
 
+  if (simple) html = '<div class="row between" style="align-items:center;margin-bottom:10px">' +
+    '<button type="button" class="btn btn-outline btn-sm" aria-label="Previous month" onclick="changePigemCalendarMonth(\'' + safeBoxId + '\', -1)">&larr; Prev</button>' +
+    '<b>' + monthNames[month] + ' ' + year + '</b>' +
+    '<button type="button" class="btn btn-outline btn-sm" aria-label="Next month" onclick="changePigemCalendarMonth(\'' + safeBoxId + '\', 1)">Next &rarr;</button></div>';
   html += '<div class="calendar">';
   var dows = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   for (var w = 0; w < 7; w++) {
@@ -1038,13 +1010,14 @@ function renderCalendar(boxId, apps) {
     var selStyle = isSelected
       ? "cursor:pointer;outline:2px solid #c8102e;background:rgba(200,16,46,0.07);"
       : "cursor:pointer;";
-    html += '<div class="day' + (isToday ? ' today' : '') + '" style="' + selStyle + '" title="Click to view Daily Report for ' + monthNames[month] + ' ' + day + ', ' + year + '" onclick="selectPigemCalendarDay(\'' + safeBoxId + '\', ' + day + ')">' +
+    html += '<div class="day' + (isToday ? ' today' : '') + '"' + (simple ? '' : ' style="' + selStyle + '" title="View daily report" onclick="selectPigemCalendarDay(\'' + safeBoxId + '\', ' + day + ')"') + '>' +
       '<b>' + day + '</b>' +
       (count > 0 ? '<div class="dot">' + count + ' app' + (count > 1 ? 's' : '') + '</div>' : '') +
       '</div>';
   }
   html += '</div>';
 
+  if (simple) { box.innerHTML = html; return; }
   var rep = _buildPigemCalendarReportPayload(boxId);
   var mode = rep.mode;
 

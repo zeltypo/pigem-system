@@ -112,8 +112,9 @@ async function refreshAdminData() {
 }
 
 function showTab(tab) {
+  if (tab === "calendar") tab = "reports";
   activeAdminTab = tab;
-  var tabs = ["overview", "maintenance", "ai", "apis", "accounts", "logs", "calendar", "reports"];
+  var tabs = ["overview", "maintenance", "ai", "apis", "accounts", "logs", "reports"];
   for (var i = 0; i < tabs.length; i++) {
     var btn = document.getElementById("nav-" + tabs[i]);
     if (btn) btn.classList.toggle("active", tabs[i] === tab);
@@ -263,7 +264,7 @@ async function checkApiHealth() {
     },
     {
       name: "LocationIQ + OpenStreetMap Geocoding",
-      status: locationIqOk ? "Online (Dual-Source)" : "Fallback Only",
+      status: locationIqOk ? "Configured" : "Location service key missing",
       badge: locationIqOk ? "badge-green" : "badge-yellow",
       healthy: locationIqOk,
       checked_at: nowIso,

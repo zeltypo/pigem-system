@@ -7,6 +7,8 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 import httpx
+import cv2
+import numpy as np
 
 import _openai_client
 
@@ -135,28 +137,57 @@ def _extract_labeled_fallbacks(lines: List[str]) -> Dict[str, Any]:
     return out
 
 
+def _azure_reading_bytes(image_bytes: bytes) -> bytes:
+    # Prepare a separate API transport copy: F0 accepts up to 4 MB per document.
+    image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError("Invalid image")
+    h, w = image.shape[:2]
+    if min(h, w) < 50:
+        raise ValueError("Image dimensions are too small")
+    if max(h, w) > 3000:
+        scale = 3000 / max(h, w)
+        image = cv2.resize(image, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+    for quality in (95, 88, 80):
+        ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        if ok and len(encoded) <= 3_800_000:
+            return encoded.tobytes()
+    raise ValueError("Image exceeds Azure reading limit")
+
+
+def _azure_error_code(response):
+    try:
+        error = response.json().get("error") or {}
+        inner = error.get("innererror") or error.get("innerError") or {}
+        # Log only machine codes; Azure error messages may contain private data.
+        return re.sub(r"[^A-Za-z0-9_.-]", "", str(inner.get("code") or error.get("code") or "unknown"))[:80]
+    except Exception:
+        return "unknown"
+
+
 def _analyze_bytes_azure(image_bytes: bytes, model="prebuilt-idDocument") -> Optional[Dict[str, Any]]:
     endpoint = _azure_endpoint()
     key = _azure_key()
     if not endpoint or not key or not image_bytes:
         return None
 
-    b64_source = base64.b64encode(image_bytes).decode("ascii")
-    api_paths = [
-        (f"{endpoint}/documentintelligence/documentModels/{model}:analyze?api-version=2024-11-30", {"base64Source": b64_source}),
-        (f"{endpoint}/formrecognizer/documentModels/{model}:analyze?api-version=2023-07-31", {"base64Source": b64_source}),
-    ]
+    try:
+        reading_bytes = _azure_reading_bytes(image_bytes)
+    except (ValueError, cv2.error):
+        print(f"azure_idp model={model} input_invalid", flush=True)
+        return None
+    url = f"{endpoint}/documentintelligence/documentModels/{model}:analyze?api-version=2024-11-30"
     headers = {
         "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": "application/json",
+        "Content-Type": "application/octet-stream",
     }
 
     with httpx.Client(timeout=25.0) as client:
         op_location = ""
-        for url, payload in api_paths:
+        for attempt in range(2):
             try:
-                resp = client.post(url, headers=headers, json=payload)
-                print(f"azure_idp model={model} status={resp.status_code}", flush=True)
+                resp = client.post(url, headers=headers, content=reading_bytes)
+                print(f"azure_idp model={model} status={resp.status_code} bytes={len(reading_bytes)}", flush=True)
                 if resp.status_code in (200, 202):
                     if resp.status_code == 200:
                         return resp.json()
@@ -167,6 +198,11 @@ def _analyze_bytes_azure(image_bytes: bytes, model="prebuilt-idDocument") -> Opt
                     )
                     if op_location:
                         break
+                if resp.status_code == 429 and attempt == 0:
+                    time.sleep(2)
+                    continue
+                print(f"azure_idp model={model} error_code={_azure_error_code(resp)}", flush=True)
+                break
             except Exception:
                 continue
 
@@ -174,7 +210,7 @@ def _analyze_bytes_azure(image_bytes: bytes, model="prebuilt-idDocument") -> Opt
             return None
 
         poll_headers = {"Ocp-Apim-Subscription-Key": key}
-        deadline = time.time() + 24.0
+        deadline = time.time() + 45.0
         while time.time() < deadline:
             time.sleep(0.9)
             try:
@@ -186,6 +222,7 @@ def _analyze_bytes_azure(image_bytes: bytes, model="prebuilt-idDocument") -> Opt
                 if status == "succeeded":
                     return data
                 if status in ("failed", "canceled"):
+                    print(f"azure_idp model={model} poll_error_code={_azure_error_code(poll_resp)}", flush=True)
                     return None
             except Exception:
                 break
@@ -654,13 +691,13 @@ def extract_id_document(
                 return read_azure_side(image, "prebuilt-read")
             return None
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            front = executor.submit(read_azure_side, front_bytes, "prebuilt-idDocument")
-            back = executor.submit(read_azure_side, back_bytes, "prebuilt-read") if back_bytes else None
-            front_parsed = front.result()
-            back_parsed = back.result() if back else None
+        # F0 has a low request rate; process sides sequentially.
+        front_parsed = read_azure_side(front_bytes, "prebuilt-idDocument")
+        if back_bytes:
+            time.sleep(1.1)
+            back_parsed = read_azure_side(back_bytes, "prebuilt-read")
 
-    if not front_parsed or (back_bytes and not back_parsed):
+    if not front_parsed:
         return {
             "available": False,
             "provider": used_provider,
@@ -776,5 +813,5 @@ def extract_id_document(
         "authenticity_flags": authenticity_flags,
         "lines": combined_lines,
         "front_readable": bool(primary.get("front_readable", len(primary.get("lines") or []) >= 1 or bool(full_name or id_number))),
-        "back_readable": True if not back_bytes else bool(secondary.get("back_readable", True) if secondary else primary.get("back_readable", True)),
+        "back_readable": True if not back_bytes else bool(back_parsed and secondary.get("back_readable", True)),
     }

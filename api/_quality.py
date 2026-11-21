@@ -308,6 +308,8 @@ def assess_single_side(
 
             if verdict != "fixable":
                 ops = []
+            if verdict == "unfixable":
+                score = min(score, 19)
             if not metrics.get("has_crop_background"):
                 ops = [op for op in ops if op != "deskew_crop"]
 

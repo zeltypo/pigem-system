@@ -555,7 +555,11 @@ async function dbSignIn(identifier, password) {
       });
       if (verified.error) throw new Error("Internal sign-in is temporarily unavailable. Please try again.");
       if (verified.data?.enrolled) {
-        if (verified.data.reason === "locked") throw new Error("Too many attempts. Try your screening password again in five minutes.");
+        if (verified.data.reason === "locked") {
+          var locked = new Error("Too many attempts. Please wait 30 minutes.");
+          locked.lockedUntil = Date.parse(verified.data.locked_until) || Date.now() + 30 * 60 * 1000;
+          throw locked;
+        }
         if (verified.data.reason === "disabled") throw new Error("Your screening account is disabled. Contact the administrator.");
         throw new Error("Use the password issued when your username was enrolled for screening.");
       }
@@ -1392,9 +1396,9 @@ async function dbClaimApplication(appId, staffId, expectedAssignee, expectedStat
     writeSaved("pigem_applications", apps);
     return true;
   }
-  if (expectedAssignee) return false;
+  if (expectedAssignee && String(expectedAssignee).toLowerCase() !== String(staffId).toLowerCase()) return false;
   var claim = supabaseClient.from("applications").update(changes).eq("id", appId).eq("status", status);
-  claim = expectedAssignee == null ? claim.is("assigned_agent", null) : claim.eq("assigned_agent", "");
+  claim = expectedAssignee == null ? claim.is("assigned_agent", null) : claim.eq("assigned_agent", expectedAssignee);
   var result = await claim.select("id").maybeSingle();
   if (result.error) throw result.error;
   return Boolean(result.data);
@@ -2701,11 +2705,43 @@ async function dbConsumeAgentInviteLink(code, registeredAgentEmail) {
 async function dbListAgentLinks() {
   if (!IS_DEMO_MODE && supabaseClient) {
     var res = await supabaseClient.from("agent_links").select("*").order("created_at", { ascending: false });
-    if (res.data && res.data.length > 0) return res.data;
+    if (res.error) throw res.error;
+    return (res.data || []).filter(function (l) { return l.code !== "REF-CAV01" || l.agent_email !== "agent@demo.test"; });
   }
-  return readSaved("pigem_agent_links", [
-    { code: "REF-CAV01", agent_email: "agent@demo.test", note: "Dasmariñas Walk-in Desk", created_at: new Date(Date.now() - 86400000).toISOString() }
-  ]);
+  return readSaved("pigem_agent_links", []).filter(function (l) { return l.code !== "REF-CAV01" || l.agent_email !== "agent@demo.test"; });
+}
+
+function agentOwnsLink(link, agent) {
+  return String(link.code || "").startsWith("REF-") &&
+    (String(link.agent_id || "") === String(agent.id || "") && Boolean(agent.id) || isAssignedToStaff(link.agent_email, agent));
+}
+
+async function dbRequestAgentLink(agent) {
+  var res = await supabaseClient.rpc("pigem_request_referral", {
+    verified_token: sessionStorage.getItem("pigem_verified_screening_token") || "",
+    portal_token: getActiveSessionPair().tok || ""
+  });
+  if (res.error) throw res.error;
+  return res.data;
+}
+
+async function dbActivateAgentLink(code) {
+  if (!String(code).startsWith("REF-")) throw new Error("Invalid application link.");
+  var res = await supabaseClient.rpc("pigem_approve_referral", {
+    referral_code: code,
+    verified_token: sessionStorage.getItem("pigem_verified_screening_token") || "",
+    portal_token: getActiveSessionPair().tok || ""
+  });
+  if (res.error) throw res.error;
+  return res.data;
+}
+
+async function dbResolveAgentLink(code) {
+  code = String(code || "").trim().toUpperCase();
+  if (!/^REF-[A-Z0-9]+$/.test(code)) return null;
+  var result = await supabaseClient.rpc("pigem_resolve_referral", {referral_code: code});
+  if (result.error) throw result.error;
+  return result.data || null;
 }
 
 async function dbListUsers() {
@@ -2975,6 +3011,15 @@ async function dbChangeStaffPasswordDirect(userId, currentPassword, newPassword)
   if (typeof validatePasswordStrength === "function") {
     var pwCheck = validatePasswordStrength(newPassword);
     if (!pwCheck.valid) throw new Error(pwCheck.message);
+  }
+  var verifiedToken = sessionStorage.getItem("pigem_verified_screening_token");
+  if (!IS_DEMO_MODE && supabaseClient && verifiedToken) {
+    var result = await supabaseClient.rpc("pigem_change_verified_password", {
+      verified_token: verifiedToken, current_password: currentPassword, new_password: newPassword
+    });
+    if (result.error) throw new Error(result.error.message);
+    await dbAddActivity("password_changed_self", "Staff password updated");
+    return true;
   }
   var userObj = null;
   if (IS_DEMO_MODE) {

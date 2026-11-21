@@ -463,13 +463,11 @@ function openPopup(htmlContent, isWideOrOpts) {
   var back = document.createElement("div");
   back.id = "popup-modal";
   back.className = "popup-back";
-  var closeBtnHtml = opts.showCloseX
-    ? '<button type="button" class="popup-close-x" id="popup-close-x-btn" aria-label="Close">&times;</button>'
-    : '';
+  var closeBtnHtml = '<button type="button" class="popup-close-x" id="popup-close-x-btn" aria-label="Close">&times;</button>';
   back.innerHTML = '<div class="popup' + (opts.wide ? " wide" : "") + '">' + closeBtnHtml + htmlContent + "</div>";
   var previousFocus = document.activeElement;
   document.body.appendChild(back);
-  if (document.body.matches(".customer-portal, .customer-login, .apply-page")) {
+  {
     var dialog = back.querySelector(".popup");
     var title = dialog.querySelector("h2, h3");
     dialog.setAttribute("role", "dialog");
@@ -505,14 +503,8 @@ function openPopup(htmlContent, isWideOrOpts) {
     closePopup();
     if (typeof opts.onClose === "function") opts.onClose();
   };
-  if (opts.closeOnEscape) back.closeFromEscape = handleClose;
   var xBtn = document.getElementById("popup-close-x-btn");
   if (xBtn) xBtn.addEventListener("click", handleClose);
-  if (opts.closeOnBackdrop !== false) {
-    back.addEventListener("click", function (ev) {
-      if (ev.target === back) handleClose();
-    });
-  }
   if (typeof initPasswordEyeToggles === "function") initPasswordEyeToggles(back);
   if (typeof attachEnterKeyNavigation === "function") attachEnterKeyNavigation(back);
 }
@@ -1074,8 +1066,7 @@ window.addEventListener("keydown", function (e) {
   var popup = document.getElementById("popup-modal");
   if (e.key === "Escape" && !popup && document.body.classList.contains("menu-open")) toggleMenu();
   if (e.key === "Escape" && popup) {
-    if (popup.closeFromEscape) popup.closeFromEscape();
-    else closePopup();
+    e.preventDefault();
   }
 });
 

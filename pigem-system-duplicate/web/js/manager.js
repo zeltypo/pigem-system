@@ -193,6 +193,7 @@ async function refreshManagerData() {
     { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
   ]);
   renderCalendar("mgr-calendar", mgrApps);
+  renderCalendar("mgr-report-calendar", mgrApps);
   renderMgrRecentActivities();
 
   renderManagerApps();
@@ -785,15 +786,15 @@ function managerDeleteAgent(userId, label) {
 function openManagerInviteModal() {
   openPopup(
     '<div class="row between" style="margin-bottom:8px;">' +
-      '<h3>Generate Private Agent Registration Link</h3>' +
+      '<h3>Create Agent Registration Link</h3>' +
       '<button type="button" class="btn btn-outline btn-sm" onclick="closePopup()">Close</button>' +
     '</div>' +
-    '<p class="small muted">Generate a one-time URL (<code>agent-register.html?invite=INV-...</code>) so an Agent can self-register their Name, Username, and Password.</p>' +
+    '<p class="small muted">Create a one-time link for a new agent to register their account.</p>' +
     '<div class="field mt"><label>Assigned Agent Note / Label</label><input id="mgr-invite-note" type="text" placeholder="e.g. Verification Agent - Cavite Team" /></div>' +
-    '<button type="button" class="btn btn-red" style="width:100%" onclick="generateManagerAgentInvite()">Generate Private Registration Link</button>' +
+    '<button type="button" class="btn btn-red" style="width:100%" onclick="generateManagerAgentInvite()">Create Registration Link</button>' +
     '<div id="mgr-invite-msg" class="msg mt"></div>' +
     '<div id="mgr-invite-output-wrap" class="hidden" style="margin-top:12px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--soft)">' +
-      '<div class="tiny muted" style="font-weight:700; margin-bottom:4px">Private One-Time Registration URL:</div>' +
+      '<div class="tiny muted" style="font-weight:700; margin-bottom:4px">Registration link:</div>' +
       '<input id="mgr-invite-url" type="text" readonly style="margin-bottom:8px; font-size:12px" />' +
       '<button type="button" class="btn btn-outline btn-sm" onclick="copyManagerInviteUrl()">Copy Registration Link</button>' +
     '</div>'
@@ -811,7 +812,7 @@ async function generateManagerAgentInvite() {
     if (inp) inp.value = url;
     if (wrap) wrap.classList.remove("hidden");
     if (noteEl) noteEl.value = "";
-    showMsg("mgr-invite-msg", "ok", "Private Agent Registration Link (" + res.code + ") created! Share the URL below with your new agent.");
+    showMsg("mgr-invite-msg", "ok", "Registration link created. Share it with your new agent.");
     await renderManagerLinks();
   } catch (err) {
     showMsg("mgr-invite-msg", "error", err.message || "Could not generate private registration link.");
@@ -830,41 +831,41 @@ function copyManagerInviteUrl() {
   showAlert("Copied", "Private Agent Registration Link copied to clipboard.");
 }
 
+async function approveAgentApplicationLink(code, button) {
+  if (button) button.disabled = true;
+  try {
+    await dbActivateAgentLink(code);
+    await renderManagerLinks();
+  } catch (e) {
+    showAlert("Could not approve link", "Please try again.");
+    if (button) button.disabled = false;
+  }
+}
+
 async function renderManagerLinks() {
   var body = document.getElementById("mgr-links-body");
   if (!body) return;
-  var links = await dbListAgentLinks();
-  if (links.length === 0) {
-    body.innerHTML = '<tr><td colspan="5" class="muted">No agent registration invites or referral links created yet.</td></tr>';
-    return;
-  }
-  var html = "";
-  for (var i = 0; i < links.length; i++) {
-    var l = links[i];
-    var isInvite = String(l.code || "").indexOf("INV-") === 0;
-    var typeBadge = "";
-    var noteCol = escapeHtml(l.note || "");
-    if (isInvite) {
-      if (l.active !== false) {
-        typeBadge = '<span class="badge badge-green">Private Agent Invite (Active)</span>';
-        var inviteUrl = getSiteBaseUrl() + "/agent-register.html?invite=" + encodeURIComponent(l.code);
-        noteCol += '<div class="tiny" style="margin-top:4px"><a href="' + escapeHtml(inviteUrl) + '" target="_blank" style="color:#175cd3; text-decoration:underline">' + escapeHtml(inviteUrl) + '</a></div>';
-      } else {
-        typeBadge = '<span class="badge badge-gray">Private Agent Invite (Used)</span>';
-      }
-    } else {
-      typeBadge = '<span class="badge badge-blue">Customer Referral Link</span>';
+  try {
+    var links = await dbListAgentLinks();
+    if (!links.length) {
+      body.innerHTML = '<tr><td colspan="5" class="muted">No requests or registration links yet.</td></tr>';
+      return;
     }
-    html +=
-      '<tr>' +
-        '<td><b>' + escapeHtml(l.code) + '</b></td>' +
-        '<td>' + typeBadge + '</td>' +
-        '<td>' + escapeHtml(l.agent_email) + '</td>' +
-        '<td>' + noteCol + '</td>' +
-        '<td>' + formatDate(l.created_at) + '</td>' +
-      '</tr>';
-  }
-  body.innerHTML = html;
+    body.innerHTML = links.map(function(l) {
+      var invite = String(l.code || "").startsWith("INV-");
+      var agent = mgrUsers.find(function(u) {return u.role === "agent" && agentOwnsLink(l,u);});
+      var label = invite ? "Agent registration" : "Personal application link";
+      var status = invite ? (l.active ? "Ready" : "Used") : (l.active ? "Active" : "Waiting for approval");
+      var action = "";
+      if (!invite && !l.active) {
+        action = '<button type="button" class="btn btn-red btn-sm" data-code="' + escapeHtml(l.code) + '" onclick="approveAgentApplicationLink(this.dataset.code,this)">Approve Link</button>';
+      } else if (l.active) {
+        var url = getSiteBaseUrl() + (invite ? "/agent-register.html?invite=" : "/apply.html?agent=") + encodeURIComponent(l.code);
+        action = '<button type="button" class="btn btn-outline btn-sm" data-url="' + escapeHtml(url) + '" onclick="navigator.clipboard.writeText(this.dataset.url).then(function(){showAlert(\'Copied\',\'Link copied.\')})">Copy Link</button>';
+      }
+      return '<tr><td>' + label + '</td><td><span class="badge ' + (l.active ? "badge-green" : "badge-yellow") + '">' + status + '</span></td><td>' + escapeHtml(agent ? agent.full_name : (l.agent_name || l.agent_email || "Manager")) + '</td><td>' + action + '</td><td>' + formatDate(l.created_at) + '</td></tr>';
+    }).join("");
+  } catch (e) { body.innerHTML = '<tr><td colspan="5">Unable to load links. Please refresh.</td></tr>'; }
 }
 
 function ensureFourSlides(slides, fallbackSlides) {
@@ -1060,15 +1061,18 @@ function toggleAllCmsAssets(groupName) {
 
 async function uploadNewBucketAsset(category, fileInputId, msgId) {
   var inp = document.getElementById(fileInputId);
-  var file = inp && inp.files ? inp.files[0] : null;
-  if (!file) {
+  var files = inp && inp.files ? Array.from(inp.files) : [];
+  if (!files.length) {
     showMsg(msgId, "error", "Please choose an image file from your computer first.");
     return;
   }
   try {
-    showMsg(msgId, "info", "Uploading " + file.name + " to Supabase " + category + " folder...");
-    var savedPath = await dbUploadWebsiteAsset(file, category);
     var c = getSiteContent();
+    var uploaded = 0;
+    for (var file of files) {
+    showMsg(msgId, "info", "Uploading image " + (uploaded + 1) + " of " + files.length + "...");
+    var savedPath = await dbUploadWebsiteAsset(file, category);
+    uploaded++;
     if (category === "Banners") {
       var slots = ensureFourSlides(c.home_slides, DEFAULT_CONTENT.hero_slides);
       var assigned = false;
@@ -1096,11 +1100,13 @@ async function uploadNewBucketAsset(category, fileInputId, msgId) {
     if (typeof dbSaveLiveWebsiteContent === "function") {
       await dbSaveLiveWebsiteContent(getWebsiteContent());
     }
+    }
     inp.value = "";
     loadAllCmsEditors();
-    showMsg(msgId, "ok", "Uploaded to Supabase Storage (" + savedPath + ")! Ready to select and preview.");
+    showMsg(msgId, "ok", uploaded + " image(s) uploaded. Ready to select and preview.");
   } catch (e) {
-    showMsg(msgId, "error", e.message || "Upload failed.");
+    loadAllCmsEditors();
+    showMsg(msgId, "error", "Upload stopped. Images already uploaded are saved. Please try again.");
   }
 }
 

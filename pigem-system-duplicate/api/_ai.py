@@ -524,7 +524,7 @@ class FieldComparisonEngine(BaseTextMatcher):
 
         is_expired = False
         expiry_iso = ""
-        expiry_note = "No expiration date printed or non-expiring ID."
+        expiry_note = "No expiry date was extracted. Confirm on the ID."
         if exp_dates:
             expiry_iso = sorted(exp_dates)[-1]
             try:
@@ -536,6 +536,13 @@ class FieldComparisonEngine(BaseTextMatcher):
                     expiry_note = f"ID is valid until {expiry_iso}."
             except ValueError:
                 pass
+
+        if not ocr_payload.get("extracted_birth_date") and age_years is not None:
+            age_note = f"Age based on the entered birth date: {age_years} years. Confirm against the ID."
+        if not ocr_payload.get("extracted_id_number") and checksum_valid:
+            checksum_note = "The entered ID number matches the expected format; the ID itself is not verified."
+        if not ocr_payload.get("available"):
+            expiry_note = "ID expiration could not be checked because the document could not be read."
 
         return {
             "id_format_valid": checksum_valid,
@@ -773,7 +780,7 @@ class OpenAIScreeningService:
                 "reasons": reasons,
             }
 
-        is_yellow = bool(not all_core_matched or q_verdict == "unfixable" or q_score < 20 or is_expired or doc_type_mismatch or core_mismatches or partials or not format_ok or not age_ok or not nlp_rules.get("mrz_valid", True) or not ocr_payload.get("is_valid_government_id") or ocr_payload.get("confidence") != "high" or ocr_payload.get("authenticity_flags"))
+        is_yellow = bool(not all_core_matched or not ocr_payload.get("front_readable") or not ocr_payload.get("back_readable") or q_verdict == "unfixable" or q_score < 20 or is_expired or doc_type_mismatch or core_mismatches or partials or not format_ok or not age_ok or not nlp_rules.get("mrz_valid", True) or not ocr_payload.get("is_valid_government_id") or ocr_payload.get("confidence") != "high" or ocr_payload.get("authenticity_flags"))
         if is_yellow:
             for p in partials:
                 if p.get("note"):
@@ -1328,8 +1335,8 @@ def run_conditional_screening_pipeline(
         ai_reasoning = {
             "available": False, "triage": "yellow", "auto_needs_correction": False,
             "correction_type": "agent_review", "target_fields": [],
-            "recommendation": "", "queue_summary": "Automated recommendation unavailable. Review manually.",
-            "final_recommendation": "Inspect the uploaded ID and application details manually.",
+            "recommendation": "", "queue_summary": "Document check could not finish. Please review the application.",
+            "final_recommendation": "Compare the ID photos and application details.",
             "findings": [], "tampering_flags": [], "suggested_polite_remark": "",
         }
     print(

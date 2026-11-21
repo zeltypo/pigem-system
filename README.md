@@ -2,7 +2,7 @@
 
 This is the replacement source copy for the existing PIGEM system. The stack stays the same: HTML, CSS, vanilla JavaScript, Supabase (Postgres and Storage), Python FastAPI on Vercel, OpenCV, Azure Document Intelligence, OpenAI and Gmail SMTP. It does not connect to Radius/RED Fiber; staff manually record the real validator's decisions.
 
-**Read this first:** this archive has been revised by source inspection only. No local tests, deployment, live database query, or external API calls were performed. You must complete the manual checks below before your evaluation. The existing direct-browser database architecture uses broad access policies and public document URLs. It is not appropriate for real customer identification documents or production use without an authorization/storage redesign. Use fictional IDs and test data for the defense.
+**Read this first:** see REFINEMENT_NOTES.md for this update. JavaScript/Python syntax and local calendar rendering checks passed. No full functional testing, deployment, live database execution, or live provider calls were performed. The existing direct-browser database architecture uses broad access policies and public document URLs. It is not appropriate for real customer identification documents or production use without an authorization/storage redesign. Use fictional IDs and test data for the defense.
 
 ## 1. What to copy
 
@@ -69,6 +69,7 @@ SCREENING_WORKER_CONCURRENCY, SCREENING_AUTO_CORRECTION and OPENAI_QUALITY_IMAGE
 
 - In a new Supabase project, run root schema.sql in SQL Editor.
 - If the previous rebuilt schema is already installed and has records you need, run screening-update.sql instead. It replaces only the screening functions and status validation; it does not drop application data. Back up first and apply before deploying the matching source.
+- If you already applied the previous screening update, run only refinement-update.sql before deploying this version. It preserves applications and documents.
 - To deliberately reset the old project, optionally run schema-drop.sql first, then run schema.sql. The full schema already includes its own reset.
 - Save the one-time admin_setup_code returned by the SQL editor. Open /setup-accounts.html on the deployed site and create the Admin with a username and password. Alternatively use the SQL function pigem_provision_admin with the code and your chosen account details from the SQL editor. The code is a bootstrap safeguard, not a customer activation or employee enrollment. It expires in 24 hours, is consumed on success, and does not require email.
 - Admin creates an Agent and a Manager using the Admin portal. They immediately sign in with their assigned username and password. They should not need a separate screening enrollment.

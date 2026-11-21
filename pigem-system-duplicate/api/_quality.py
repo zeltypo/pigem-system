@@ -317,30 +317,10 @@ def assess_single_side(
                 verdict = "unfixable"
                 score = min(score, 18)
                 ops = []
-                if metrics["blur_score"] < 14.0 and "severe_blur" not in issues:
-                    issues.insert(0, "severe_blur")
-            else:
-                # 2) Always run deskew_crop when a card boundary is detected, and ensure OpenCV
-                #    contrast/sharpness enhancement runs on the working copy for Latest Copy & OCR.
-                if metrics.get("has_crop_background"):
-                    if "deskew_crop" not in ops:
-                        ops.insert(0, "deskew_crop")
-                    if "tilted_or_wide_background" not in issues:
-                        issues.append("tilted_or_wide_background")
-                    verdict = "fixable"
-                elif "deskew_crop" not in ops:
-                    ops.insert(0, "deskew_crop")
-
-                if "too_dark" in issues or metrics["brightness"] < 105.0:
-                    if "brighten" not in ops:
-                        ops.append("brighten")
-                if "mild_glare" in issues or metrics["glare_pct"] > 10.0:
-                    if "deglare" not in ops:
-                        ops.append("deglare")
-                if "clahe" not in ops:
-                    ops.append("clahe")
-                if "sharpen" not in ops:
-                    ops.append("sharpen")
+            if verdict == "unfixable":
+                score = min(score, 19)
+            if not metrics.get("has_crop_background"):
+                ops = [op for op in ops if op != "deskew_crop"]
 
             return {
                 "side": side_label,

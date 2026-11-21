@@ -15,7 +15,7 @@ window.openDashTabById = function (tabId, targetId) {
     else if (st === "Needs Correction") cleanTab = "correction";
     else if (st === "Approved" || st === "Submitted to Provider") cleanTab = "approved";
     else if (st === "Rejected") cleanTab = "rejected";
-    else if (targetApp.assigned_agent && isAssignedToStaff(targetApp.assigned_agent, currentAgent)) cleanTab = "claimed";
+    else if (targetApp.assigned_agent && isAssignedToStaff(targetApp.assigned_agent, currentAgent)) cleanTab = targetApp.status === "Pending Review" ? "myqueue" : "claimed";
     else cleanTab = "queue";
   }
   if (cleanTab) {
@@ -309,6 +309,7 @@ async function refreshAgentData(silent) {
 
   var unclaimed = 0;
   var myClaimed = 0;
+  var myQueue = 0;
   var encodingCount = 0;
   var fix = 0;
   var approvedCount = 0;
@@ -320,7 +321,8 @@ async function refreshAgentData(silent) {
     var st = a.status || "Pending Review";
 
     if (!a.assigned_agent && st === "Pending Review") unclaimed++;
-    if (isAssignedToStaff(a.assigned_agent, currentAgent) && (isAgentClaimable(a) || st === "Under Agent Review")) myClaimed++;
+    if (isAssignedToStaff(a.assigned_agent, currentAgent) && st === "Pending Review") myQueue++;
+    if (isAssignedToStaff(a.assigned_agent, currentAgent) && st === "Under Agent Review") myClaimed++;
     if (!isAssignedToStaff(a.assigned_agent, currentAgent) && !(st === "Needs Correction" && !a.assigned_agent && a.screening?.auto_correction_sent)) continue;
     if (st === "Encoding") encodingCount++;
     if (st === "Needs Correction") fix++;
@@ -339,6 +341,7 @@ async function refreshAgentData(silent) {
   };
 
   setTxt("cnt-queue", unclaimed);
+  setTxt("cnt-myqueue", myQueue);
   setTxt("cnt-claimed", myClaimed);
   setTxt("cnt-encoding", encodingCount);
   setTxt("cnt-correction", fix);
@@ -346,6 +349,7 @@ async function refreshAgentData(silent) {
   setTxt("cnt-rejected", rejectedCount);
 
   setTxt("st-unclaimed", unclaimed);
+  setTxt("st-myqueue", myQueue);
   setTxt("st-myclaimed", myClaimed);
   setTxt("st-encoding", encodingCount);
   setTxt("st-fix", fix);
@@ -380,8 +384,9 @@ async function refreshAgentData(silent) {
       { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
     ], "Plans");
     renderCalendar("agent-calendar", allApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, currentAgent); }));
-    await renderAgentLinks();
   }
+  renderCalendar("agent-report-calendar", allApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, currentAgent); }));
+  if (!silent || activeBranch === "myqueue" || activeBranch === "reports") await renderAgentLinks();
 
   renderAgentCards();
   if (activeBranch === "reports") renderAgentReport();
@@ -389,8 +394,9 @@ async function refreshAgentData(silent) {
 
 function showTab(branch) {
   if (branch === "encoded") branch = "encoding";
+  if (branch === "links") branch = "myqueue";
   activeBranch = branch;
-  var navIds = ["overview", "queue", "claimed", "encoding", "correction", "approved", "rejected", "links", "reports"];
+  var navIds = ["overview", "queue", "myqueue", "claimed", "encoding", "correction", "approved", "rejected", "reports"];
   for (var i = 0; i < navIds.length; i++) {
     var btn = document.getElementById("nav-" + navIds[i]);
     if (btn) btn.classList.toggle("active", navIds[i] === branch);
@@ -408,12 +414,13 @@ function showTab(branch) {
   }
 
   document.getElementById("tab-overview").classList.toggle("hidden", branch !== "overview");
-  document.getElementById("tab-links").classList.toggle("hidden", branch !== "links");
+  document.getElementById("agent-personal-link").classList.toggle("hidden", branch !== "myqueue");
+  if (branch === "myqueue") renderAgentLinks();
   var repTabEl = document.getElementById("tab-reports");
   if (repTabEl) repTabEl.classList.toggle("hidden", branch !== "reports");
 
   var isAppBranch = (
-    branch === "queue" ||
+    branch === "queue" || branch === "myqueue" ||
     branch === "claimed" ||
     branch === "encoding" ||
     branch === "correction" ||
@@ -426,7 +433,8 @@ function showTab(branch) {
 
   if (isAppBranch) {
     var titles = {
-      queue: ["Shared Queue", "Unclaimed applications, including referrals, are available for any Agent to claim."],
+      queue: ["Public Queue", "Unassigned applications available to any agent."],
+      myqueue: ["My Queue", "Applications received through your personal link or assigned to you."],
       claimed: ["My Claimed Applications", "Applications claimed by you for Valid ID review and provider encoding."],
       encoding: ["Encoding Queue", "Verified applications forwarded to the provider portal and awaiting validator decision."],
       correction: ["Needs Correction", "Applications awaiting customer updates for an unclear ID or field discrepancy."],
@@ -578,7 +586,7 @@ function openTriageQuestionPopup(appId) {
       '<div class="row mt" style="gap:8px; justify-content:flex-end; flex-wrap:wrap">' +
         '<button type="button" class="btn btn-outline" onclick="closePopup()">Close</button>' +
         '<button type="button" class="btn btn-outline" data-id="' + id + '" onclick="closePopup(); openAppDetail(this.dataset.id, \'documents\')">Check documents</button>' +
-        (!app.assigned_agent && isAgentClaimable(app)
+        ((!app.assigned_agent || isAssignedToStaff(app.assigned_agent, currentAgent)) && isAgentClaimable(app)
           ? '<button type="button" class="btn btn-red" data-id="' + id + '" onclick="closePopup(); claimApplication(this.dataset.id)">Claim anyway</button>'
           : '') +
       '</div>'
@@ -597,7 +605,7 @@ function openTriageQuestionPopup(appId) {
     '<div class="row mt" style="gap:8px; justify-content:flex-end; flex-wrap:wrap">' +
       '<button type="button" class="btn btn-outline" onclick="closePopup()">Cancel</button>' +
       '<button type="button" class="btn btn-outline" data-id="' + id + '" onclick="closePopup(); openAppDetail(this.dataset.id, \'documents\')">Check documents first</button>' +
-      (!app.assigned_agent && isAgentClaimable(app)
+      ((!app.assigned_agent || isAssignedToStaff(app.assigned_agent, currentAgent)) && isAgentClaimable(app)
         ? '<button type="button" class="btn btn-red" data-id="' + id + '" onclick="closePopup(); claimApplication(this.dataset.id)">Proceed &amp; Claim</button>'
         : '') +
     '</div>'
@@ -616,7 +624,8 @@ function renderAgentCards() {
 
     if (activeBranch === "queue" && (a.assigned_agent || st !== "Pending Review")) continue;
     if (activeBranch !== "queue" && !isAssignedToStaff(a.assigned_agent, currentAgent) && !(activeBranch === "correction" && !a.assigned_agent && a.screening?.auto_correction_sent)) continue;
-    if (activeBranch === "claimed" && !(isAssignedToStaff(a.assigned_agent, currentAgent) && (isAgentClaimable(a) || st === "Under Agent Review"))) continue;
+    if (activeBranch === "myqueue" && st !== "Pending Review") continue;
+    if (activeBranch === "claimed" && st !== "Under Agent Review") continue;
     if (activeBranch === "encoding" && st !== "Encoding") continue;
     if (activeBranch === "correction" && st !== "Needs Correction") continue;
     if (activeBranch === "approved" && st !== "Approved") continue;
@@ -638,7 +647,7 @@ function renderAgentCards() {
 
   var html = filtered.map(function (app) {
     var id = escapeHtml(app.id);
-    var shared = activeBranch === "queue";
+    var shared = activeBranch === "queue" || activeBranch === "myqueue";
     var owned = isAssignedToStaff(app.assigned_agent, currentAgent);
     var place = [app.barangay, app.city, app.province].filter(Boolean).join(", ");
     var tone = getAgentQueueTone(app);
@@ -720,7 +729,7 @@ function runAgentQueueAction(select) {
 
 function confirmAgentClaim(appId) {
   var app = findAppById(appId);
-  if (!app || app.assigned_agent || !isAgentClaimable(app)) return;
+  if (!app || (app.assigned_agent && !isAssignedToStaff(app.assigned_agent, currentAgent)) || !isAgentClaimable(app)) return;
   if (isScreeningActiveOnApp(app)) {
     showAlert("Document check in progress", getScreeningEtaLabel(app) + ". Please wait for the preliminary findings before claiming.");
     return;
@@ -743,7 +752,7 @@ function confirmAgentClaim(appId) {
 
 async function claimApplication(appId) {
   var app = findAppById(appId);
-  if (!app || !isAgentClaimable(app)) return;
+  if (!app || (app.assigned_agent && !isAssignedToStaff(app.assigned_agent, currentAgent)) || !isAgentClaimable(app)) return;
   var staffId = getStaffIdentifier(currentAgent);
   try {
     var claimed = await dbClaimApplication(appId, staffId, app.assigned_agent, app.status);
@@ -1850,7 +1859,7 @@ async function showAgentIdFindings(panel, app, copySnapshot) {
     var nlpLines = [];
     if (result.nlpValidation.age_note) nlpLines.push("Age check: " + result.nlpValidation.age_note);
     if (result.nlpValidation.expiry_note) nlpLines.push("Validity: " + result.nlpValidation.expiry_note);
-    if (result.nlpValidation.id_format_note) nlpLines.push("ID format/checksum: " + result.nlpValidation.id_format_note);
+    if (result.nlpValidation.id_format_note) nlpLines.push("ID number format: " + result.nlpValidation.id_format_note);
     if (nlpLines.length) linesOut.push(nlpLines.join("\n"));
   }
   panel.textContent = linesOut.join("\n");
@@ -2026,7 +2035,7 @@ async function renderDetailModalContent(updateResultsOnly) {
   var recommendation = '<section id="document-check-results">' +
       ((frontIdPhotoUrl || idBackPhotoUrl)
         ? '<div class="agent-screening-note"><b>' + (agentScreeningAvailable() ? 'Screening recommendation' : 'Manual Review Mode (Fallback Active)') + '</b><div class="small muted">' +
-          (agentScreeningAvailable() ? 'Review the findings before sending a correction request.' : 'Automated screening is offline or paused. Compare the ID photos and applicant details manually below.') + '</div>' +
+          (agentScreeningAvailable() ? 'Check the findings before requesting a correction.' : 'Automated screening is offline or paused. Compare the ID photos and applicant details manually below.') + '</div>' +
           '<div class="small" data-id-text-result role="status" style="white-space:pre-wrap; overflow-wrap:anywhere" data-front="' + escapeHtml(frontIdPhotoUrl) +
           '" data-back="' + escapeHtml(idBackPhotoUrl) + '" data-name="' + escapeHtml(viewData.full_name || app.full_name || "") +
           '" data-birth="' + escapeHtml(viewData.birth_date || "") + '" data-number="' + escapeHtml(viewData.id_number || "") +
@@ -2495,41 +2504,36 @@ function exportApplicantCopy(print) {
   }, "PIGEM-" + app.reference_no + (activeCopyMode === "latest" ? "" : "-" + activeCopyMode) + ".pdf", print);
 }
 
-async function createNewAgentLink() {
-  var note = document.getElementById("link-note").value.trim() || "Walk-in / Assisted Customer";
-  await dbCreateAgentLink(getStaffIdentifier(currentAgent), note);
-  document.getElementById("link-note").value = "";
-  await renderAgentLinks();
+async function createNewAgentLink(button) {
+  if (button) button.disabled = true;
+  try {
+    await dbRequestAgentLink(currentAgent);
+    await renderAgentLinks();
+  } catch (error) {
+    showAlert("Request not sent", "Please try again.");
+    if (button) button.disabled = false;
+  }
 }
 
 async function renderAgentLinks() {
-  var body = document.getElementById("agent-links-body");
-  if (!body) return;
-  var links = await dbListAgentLinks();
-  agentLinks = links || [];
-  var referralOnly = agentLinks.filter(function (link) {
-    return !String(link.code || "").startsWith("INV-") && isAssignedToStaff(link.agent_email || link.agent_id, currentAgent);
-  });
-  if (referralOnly.length === 0) {
-    body.innerHTML = '<tr><td colspan="6" class="muted">No links generated yet.</td></tr>';
-    return;
+  var box = document.getElementById("agent-personal-link");
+  if (!box || !currentAgent) return;
+  try {
+    agentLinks = await dbListAgentLinks();
+    var matches = agentLinks.filter(function(l) { return agentOwnsLink(l, currentAgent); });
+    var link = matches.find(function(l) {return l.active !== false;}) || matches[0];
+    var heading = '<h3>My Application Link</h3>';
+    if (!link) {
+      box.innerHTML = heading + '<p class="muted">Request your personal application link from your manager.</p><button type="button" class="btn btn-red btn-sm" onclick="createNewAgentLink(this)">Request Application Link</button>';
+    } else if (link.active === false) {
+      box.innerHTML = heading + '<span class="badge badge-yellow">Waiting for manager approval</span>';
+    } else {
+      var url = _getPortalBaseUrl() + "/apply.html?agent=" + encodeURIComponent(link.code);
+      box.innerHTML = heading + '<p class="muted">Share this link. Applications submitted through it will appear in My Queue.</p><input readonly aria-label="My application link" value="' + escapeHtml(url) + '"><button type="button" class="btn btn-red btn-sm" data-url="' + escapeHtml(url) + '" onclick="navigator.clipboard.writeText(this.dataset.url).then(function(){showAlert(\'Copied\',\'Application link copied.\')})">Copy Application Link</button>';
+    }
+  } catch (error) {
+    box.innerHTML = '<p>Application link unavailable. Please refresh.</p>';
   }
-  var baseUrl = _getPortalBaseUrl() + "/apply.html";
-  var html = "";
-  for (var i = 0; i < referralOnly.length; i++) {
-    var l = referralOnly[i];
-    var fullUrl = baseUrl + "?agent=" + encodeURIComponent(l.code);
-    html +=
-      '<tr>' +
-        '<td><b>' + escapeHtml(l.code) + '</b></td>' +
-        '<td>' + escapeHtml(l.note) + '</td>' +
-        '<td><input type="text" readonly value="' + escapeHtml(fullUrl) + '" style="font-size:12px; padding:5px 8px" /></td>' +
-        '<td>' + formatDate(l.created_at) + '</td>' +
-        '<td>' + allApps.filter(function (app) { return app.agent_link_code === l.code; }).length + '</td>' +
-        '<td><button type="button" class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(\'' + escapeHtml(fullUrl) + '\'); showAlert(\'Copied\', \'Application link copied to clipboard!\')">Copy URL</button></td>' +
-      '</tr>';
-  }
-  body.innerHTML = html;
 }
 
 function setAgentReportSubTab(subTab) {
@@ -2583,7 +2587,7 @@ function getAgentReportData() {
 
   if (activeAgentReportTab === "links") {
     var referralOnly = (agentLinks || []).filter(function (l) {
-      return String(l.code || "").indexOf("INV-") !== 0 && matchesReportTimeframeValue(l.created_at, tfMode, exactDate, monthStr);
+      return agentOwnsLink(l, currentAgent) && l.active !== false && matchesReportTimeframeValue(l.created_at, tfMode, exactDate, monthStr);
     });
     var codeAppCounts = {};
     for (var ai = 0; ai < allApps.length; ai++) {

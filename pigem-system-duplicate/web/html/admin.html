@@ -75,9 +75,7 @@
       <button id="nav-logs" data-nav-label="Audit and Login Logs" data-nav-target="logs" onclick="showTab('logs')">
         <span><img data-img="icons/logs.png" src="/api/assets/icons/logs.png" alt="Logs" class="icon-img" />Logs</span>
       </button>
-      <button id="nav-calendar" data-nav-label="System Calendar" data-nav-target="calendar" onclick="showTab('calendar')">
-        <span><img data-img="icons/calendar.png" src="/api/assets/icons/calendar.png" alt="Calendar" class="icon-img" />Calendar</span>
-      </button>
+
       <button id="nav-reports" data-nav-label="Reports and Export" data-nav-target="reports" onclick="showTab('reports')">
         <span><img data-img="icons/report.png" src="/api/assets/icons/report.png" alt="Reports" class="icon-img" />Reports</span>
       </button>
@@ -105,18 +103,7 @@
           <div class="stat"><div class="num" id="st-maint">OFF</div><div class="lbl">Maintenance Mode</div></div>
         </div>
 
-        <div class="report-charts-grid" style="margin-bottom:20px">
-          <div class="card">
-            <h3 style="margin-bottom:12px">Accounts Distribution</h3>
-            <div id="chart-admin-role-pie" style="margin-bottom:14px"></div>
-            <div id="chart-admin-bars"></div>
-          </div>
-          <div class="card">
-            <h3 style="margin-bottom:12px">Application Status Overview</h3>
-            <div id="chart-admin-app-pie" style="margin-bottom:14px"></div>
-            <div id="chart-admin-app-bars"></div>
-          </div>
-        </div>
+
 
         <div class="card">
           <h3 style="margin-bottom:12px">Monthly Activity Calendar</h3>
@@ -312,15 +299,24 @@
         </div>
       </section>
 
-      <section id="tab-calendar" class="hidden">
+      <section id="tab-reports" class="hidden">
+        <div class="report-charts-grid" style="margin-bottom:20px">
+          <div class="card">
+            <h3 style="margin-bottom:12px">Accounts Distribution</h3>
+            <div id="chart-admin-role-pie" style="margin-bottom:14px"></div>
+            <div id="chart-admin-bars"></div>
+          </div>
+          <div class="card">
+            <h3 style="margin-bottom:12px">Application Status Overview</h3>
+            <div id="chart-admin-app-pie" style="margin-bottom:14px"></div>
+            <div id="chart-admin-app-bars"></div>
+          </div>
+        </div>
         <div class="card">
           <h2 style="font-size:20px; margin-bottom:12px">System Application Calendar</h2>
           <div id="admin-full-calendar"></div>
         </div>
-      </section>
-
-      <section id="tab-reports" class="hidden">
-        <div class="card" style="margin-bottom:18px">
+        <div class="card" style="margin-bottom:18px;margin-top:18px">
           <div class="row between" style="align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px">
             <div>
               <h2 style="font-size:20px; margin-bottom:4px">System Reports and Analytics</h2>
@@ -394,21 +390,21 @@
     </div>
   </div>
 
-  <div id="notif-modal" class="modal hidden" onclick="if(event.target===this) toggleNotifModal()">
+  <div id="notif-modal" class="modal hidden">
     <div class="modal-box">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
         <h3>System Notifications</h3>
-        <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()">Close</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="toggleNotifModal()" aria-label="Close">&times;</button>
       </div>
       <div id="notif-list"></div>
     </div>
   </div>
 
-  <div id="profile-drawer" class="drawer hidden" onclick="if(event.target===this) toggleProfileDrawer()">
+  <div id="profile-drawer" class="drawer hidden">
     <div class="drawer-panel">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
         <b>Admin Account and Theme</b>
-        <button type="button" class="btn btn-outline btn-sm" onclick="toggleProfileDrawer()">Close</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="toggleProfileDrawer()" aria-label="Close">&times;</button>
       </div>
       <div id="profile-drawer-body"></div>
     </div>

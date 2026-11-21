@@ -183,11 +183,18 @@ async function initApplyPage() {
 
   if (urlPlan) selectedPlanId = String(urlPlan);
   if (urlAgent) {
-    referralAgentId = urlAgent;
+    referralAgentId = String(urlAgent).trim().toUpperCase();
     var banner = document.getElementById("agent-ref-banner");
     if (banner) {
       banner.hidden = false;
-      banner.innerHTML = "<b>Agent Referral Active:</b> Your application is linked to Agent ID <b>" + escapeHtml(referralAgentId) + "</b>.";
+      banner.textContent = "Checking your agent's application link...";
+      try {
+        var link = await dbResolveAgentLink(referralAgentId);
+        banner.textContent = link ? "You are applying through an agent's personal link." : "This agent link is unavailable. You can use the regular application form.";
+        if (!link) referralAgentId = "";
+      } catch (error) {
+        banner.textContent = "Your agent link could not be checked. It will be checked again before submission.";
+      }
     }
   }
 
@@ -1402,7 +1409,10 @@ async function mapGeocoding(path, params) {
     var timer = setTimeout(function () { controller.abort(); }, 4500);
     try {
       var response = await fetch(url, { signal: controller.signal, headers: { "Accept-Language": "en" } });
-      if (!response.ok) continue;
+      if (!response.ok) {
+        if (url.indexOf("locationiq.com") !== -1) console.warn("Location lookup unavailable (HTTP " + response.status + "); trying the alternative service.");
+        continue;
+      }
       var data = await response.json();
       if (path === "search" ? Array.isArray(data) && data.length : data?.address) return data;
     } catch (error) {
@@ -1777,6 +1787,8 @@ async function performApplicationSubmission() {
       return;
     }
 
+    var referral = referralAgentId ? await dbResolveAgentLink(referralAgentId) : null;
+    if (referralAgentId && !referral) throw new Error("Your agent's application link is unavailable. Please reopen the link or use the regular application form.");
     var accountInfo = await dbCreateAccountFromApplication(fullName, email);
     var applicationRef = generateApplicationReference();
     var appFolder = applicationRef + "_original";
@@ -1787,8 +1799,9 @@ async function performApplicationSubmission() {
     var baseAppPayload = Object.assign({}, addrData, {
       ref_no: applicationRef,
       customer_id: accountInfo.user.id,
-      agent_id: referralAgentId,
-      agent_link_code: referralAgentId,
+      agent_id: referral ? referral.agent_id : null,
+      agent_link_code: referral ? referral.code : null,
+      assigned_agent: referral ? referral.assigned_agent : null,
       plan: selectedPlanId,
       first_name: first,
       middle_name: middle,

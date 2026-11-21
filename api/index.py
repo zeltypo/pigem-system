@@ -98,6 +98,7 @@ def health():
         "idp_provider": _idp.provider_name(),
         "opencv": True,
         "ocr": idp_ok,
+        "locationiq_configured": bool((getenv("LOCATIONIQ_API_KEY") or "").strip()),
         "auto_screening_ready": idp_ok and openai_ok and _screening_queue.enabled(),
         "recaptcha": recaptcha_ok,
         "recaptcha_site_key": (getenv("RECAPTCHA_SITE_KEY") or "").strip(),

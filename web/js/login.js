@@ -3,6 +3,39 @@ var loginCaptchaVersion = 0;
 var loginCaptchaWidget;
 var loginAttempts = 0;
 var MAX_ATTEMPTS = 5;
+var LOCKOUT_MS = 30 * 60 * 1000;
+var lockoutTimer = null;
+var lockoutUntil = 0;
+function loginAttemptKey(identifier) {
+  return "pigem_login_attempts_" + window.SYSTEM + "_" + String(identifier).trim().toLowerCase();
+}
+function getLoginAttemptState(identifier) {
+  var state = readSaved(loginAttemptKey(identifier), { attempts: 0, until: 0 });
+  if (state.until && state.until <= Date.now()) {
+    state = { attempts: 0, until: 0 };
+    writeSaved(loginAttemptKey(identifier), state);
+  }
+  return state;
+}
+function showLoginLockout(until, popup) {
+  lockoutUntil = until;
+  clearInterval(lockoutTimer);
+  function tick() {
+    var remaining = Math.max(0, Math.ceil((lockoutUntil - Date.now()) / 1000));
+    var banner = document.getElementById("login-attempt-banner");
+    var countdown = document.getElementById("login-lockout-countdown");
+    var label = Math.floor(remaining / 60) + ":" + String(remaining % 60).padStart(2, "0");
+    if (banner) {
+      banner.hidden = remaining === 0;
+      banner.textContent = remaining ? "Sign-in temporarily locked. Try again in " + label + "." : "";
+    }
+    if (countdown) countdown.textContent = remaining ? label : "You may sign in again.";
+    if (!remaining) clearInterval(lockoutTimer);
+  }
+  if (popup) showLockoutPopup();
+  tick();
+  lockoutTimer = setInterval(tick, 1000);
+}
 
 var _recoveryState = {
   tab: "password",
@@ -113,7 +146,7 @@ function showSessionReasonBanner() {
   if (!banner) return true;
   if (reason === "idle") {
     banner.hidden = false;
-    banner.innerHTML = "<b>Session Ended:</b> You were signed out after 15 minutes without activity. Sign in again to continue.";
+    banner.innerHTML = "<b>Session Ended:</b> Please sign in again to continue.";
   } else if (reason === "other_device") {
     banner.hidden = false;
     banner.innerHTML = "<b>Signed Out:</b> Another browser or device recently logged into this account, so this session was automatically signed out.";
@@ -141,14 +174,26 @@ window.addEventListener("DOMContentLoaded", function () {
   var idEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
   if (idEl && typeof clearFieldError === "function") idEl.addEventListener("input", function () { clearFieldError("email"); });
+  if (idEl) {
+    var refreshLockout = function () {
+      var value = idEl.value.trim().replace(/^@/, "");
+      var state = getLoginAttemptState(value);
+      if (state.until > Date.now()) showLoginLockout(state.until, false);
+      else if (lockoutTimer) {
+        clearInterval(lockoutTimer); lockoutTimer = null; lockoutUntil = 0;
+        var banner = document.getElementById("login-attempt-banner");
+        if (banner) banner.hidden = true;
+      }
+    };
+    idEl.addEventListener("input", refreshLockout);
+    refreshLockout();
+  }
   if (pwEl && typeof clearFieldError === "function") pwEl.addEventListener("input", function () { clearFieldError("password"); });
 });
 
 function showLockoutPopup() {
   var isCustomer = (window.SYSTEM === "customer");
-  var msgHtml = isCustomer
-    ? "You have reached " + MAX_ATTEMPTS + " failed login attempts. Please use Account Recovery to verify your identity via OTP."
-    : "You have reached " + MAX_ATTEMPTS + " failed login attempts.<br><br><b>Need Help Signing In?</b><br>Contact the System Administrator at Tel: <b>(046) 458-0908</b> or Hotline: <b>101-733</b>, or submit a Password Reset Request below.";
+  var msgHtml = "You have reached five failed sign-in attempts. Please wait 30 minutes before trying again.<br><b id='login-lockout-countdown'></b>";
   var actionBtn = isCustomer
     ? '<button class="btn btn-red" onclick="closePopup(); openForgotModal();">Recover Account</button>'
     : '<button class="btn btn-red" onclick="closePopup(); openStaffResetRequestModal();">Request Password Reset</button>';
@@ -260,11 +305,6 @@ async function handleLogin(event) {
   var isAdmin = (window.SYSTEM === "admin");
   var isStaff = (window.SYSTEM === "staff");
 
-  if (!isAdmin && loginAttempts >= MAX_ATTEMPTS) {
-    showLockoutPopup();
-    return;
-  }
-
   var emailEl = document.getElementById("email");
   var pwEl = document.getElementById("password");
   var login = validateLoginIdentifier(emailEl ? emailEl.value : "", isAdmin || isStaff);
@@ -272,6 +312,11 @@ async function handleLogin(event) {
   if (login.error) setFieldError("email", login.error);
   if (!password) setFieldError("password", "Enter your password.");
   if (login.error || !password) return;
+  var attemptState = getLoginAttemptState(login.value);
+  if (attemptState.until > Date.now()) {
+    showLoginLockout(attemptState.until, true);
+    return;
+  }
 
   if (!loginCaptchaVerified) {
     var captchaStatus = document.getElementById("login-captcha-status");
@@ -306,6 +351,7 @@ async function handleLogin(event) {
       else localStorage.setItem("pigem_login_name_" + window.SYSTEM, login.value);
     } catch (error) {}
     loginAttempts = 0;
+    writeSaved(loginAttemptKey(login.value), { attempts: 0, until: 0 });
     var bannerEl = document.getElementById("login-attempt-banner");
     if (bannerEl) bannerEl.hidden = true;
     window.location.replace(getHomeForRole(user.role));
@@ -316,24 +362,14 @@ async function handleLogin(event) {
     btn.textContent = oldText;
 
     var banner = document.getElementById("login-attempt-banner");
-    if (isAdmin) {
-      if (typeof setFieldError === "function") setFieldError("password", err.message || "Invalid Administrator username or password.");
-      if (banner) {
-        banner.hidden = false;
-        banner.innerHTML = "<b>Sign In Failed:</b> " + escapeHtml(err.message || "Invalid Administrator username or password.");
-      }
-      return;
-    }
-
-    loginAttempts++;
+    loginAttempts = attemptState.attempts + 1;
+    if (err.lockedUntil) loginAttempts = MAX_ATTEMPTS;
     if (loginAttempts >= MAX_ATTEMPTS) {
-      if (banner) {
-        banner.hidden = false;
-        banner.innerHTML = "<b>Account Temporarily Locked:</b> 5 failed attempts reached. Contact System Admin at Tel: <b>(046) 458-0908</b>" +
-          (isStaff ? ' or <a href="#" onclick="openStaffResetRequestModal(); return false;">Request Password Reset</a>.' : ".");
-      }
-      showLockoutPopup();
+      var until = err.lockedUntil || Date.now() + LOCKOUT_MS;
+      writeSaved(loginAttemptKey(login.value), { attempts: MAX_ATTEMPTS, until: until });
+      showLoginLockout(until, true);
     } else {
+      writeSaved(loginAttemptKey(login.value), { attempts: loginAttempts, until: 0 });
       var remaining = MAX_ATTEMPTS - loginAttempts;
       var msgText = (err.message || "Invalid username or password.") + " (Failed attempt " + loginAttempts + " of " + MAX_ATTEMPTS + ", " + remaining + " remaining)";
       if (window.SYSTEM === "customer") {
@@ -342,7 +378,7 @@ async function handleLogin(event) {
         if (message.includes("activate.html") || message.toLowerCase().includes("activate your account")) {
           message = "Open the activation email we sent after you applied and set your password.";
         }
-        setFieldError("password", message);
+        setFieldError("password", message + " (" + remaining + " attempts remaining)");
         return;
       }
       if (typeof setFieldError === "function") setFieldError("password", msgText);
@@ -423,6 +459,8 @@ async function startRecoveryVerification() {
   if (typeof clearFieldError === "function") clearFieldError("recovery-query-input");
   var inp = document.getElementById("recovery-query-input");
   var query = inp ? inp.value.trim() : "";
+  if (/^[a-z0-9][a-z0-9._+-]*$/i.test(query)) query = query.toLowerCase() + "@gmail.com";
+  if (inp) inp.value = query;
   if (!query) {
     if (typeof setFieldError === "function") setFieldError("recovery-query-input", "Please enter your registered @gmail.com email address.");
     return;
