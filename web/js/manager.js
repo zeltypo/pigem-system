@@ -152,20 +152,15 @@ async function refreshManagerData() {
   mgrLogs = typeof dbListLogs === "function" ? await dbListLogs() : [];
   updateDashSearchApps(mgrApps);
 
-  var pending = 0, fix = 0, approved = 0, rejected = 0;
-  var planCounts = { "1000": 0, "1400": 0, "1900": 0 };
-
-  for (var i = 0; i < mgrApps.length; i++) {
-    var a = mgrApps[i];
-    if (a.status === "Pending Review" || a.status === "Under Agent Review" || a.status === "Encoding") pending++;
-    else if (a.status === "Needs Correction") fix++;
-    else if (a.status === "Approved" || a.status === "Submitted to Provider") approved++;
-    else if (a.status === "Rejected") rejected++;
-
-    if (String(a.plan_name).indexOf("1000") !== -1) planCounts["1000"]++;
-    else if (String(a.plan_name).indexOf("1400") !== -1) planCounts["1400"]++;
-    else if (String(a.plan_name).indexOf("1900") !== -1) planCounts["1900"]++;
-  }
+  var { pending, fix, approved, rejected } = getOverviewStatusCounts(mgrApps);
+  var planCounts = new Map(getActivePlans().map(function (plan) {
+    return [String(plan.id), { label: plan.name, value: 0 }];
+  }));
+  mgrApps.forEach(function (app) {
+    var key = String(app.plan_id || app.plan || app.plan_name || "Unknown");
+    if (!planCounts.has(key)) planCounts.set(key, { label: app.plan_name || key, value: 0 });
+    planCounts.get(key).value++;
+  });
 
   document.getElementById("st-total").textContent = mgrApps.length;
   document.getElementById("st-pending").textContent = pending;
@@ -187,11 +182,8 @@ async function refreshManagerData() {
     { label: "Approved", value: approved, color: "#15803d" },
     { label: "Rejected", value: rejected, color: "#dc2626" }
   ]);
-  renderColumns("chart-mgr-cols", [
-    { label: "Plan 1000", value: planCounts["1000"], color: "#c8102e" },
-    { label: "Plan 1400", value: planCounts["1400"], color: "#0f172a" },
-    { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
-  ]);
+  renderBars("chart-mgr-cols", Array.from(planCounts.values()));
+  renderOverviewIntake("chart-mgr-intake", mgrApps);
   renderCalendar("mgr-calendar", mgrApps);
   renderCalendar("mgr-report-calendar", mgrApps);
   renderMgrRecentActivities();

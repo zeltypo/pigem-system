@@ -1388,7 +1388,7 @@ async function collectAgentIdFindings(sources, expected, job) {
     var aiObj = screenData.ai || {};
     var nlpObj = screenData.nlp_validation || {};
     var qualObj = screenData.quality || {};
-    if (Array.isArray(qualObj.issues) && qualObj.issues.length && qualObj.verdict !== "good") {
+    if (Array.isArray(qualObj.issues) && qualObj.issues.length && (qualObj.verdict !== "good" || qualObj.upload_review)) {
       photoIssues = qualObj.issues.slice();
     }
 
@@ -1407,6 +1407,7 @@ async function collectAgentIdFindings(sources, expected, job) {
       failedReads: failedReads,
       duplicatePhotos: Boolean(duplicatePhotos || qualObj.duplicate_front_back),
       photoIssues: photoIssues,
+      uploadReview: qualObj.upload_review || null,
       detectedOtherType: detectedOtherType,
       stages: {
         checkId: screenData.check_id || "",
@@ -1532,6 +1533,7 @@ function summarizeAgentIdFindings(result) {
   }
   if (result.timedOut) return "The document check took too long. Reopen this application to try again, or check the original photos.";
   if (result.failed) return "The IDP screening service could not finish. Refresh and reopen the application, or check the original photos.";
+  if (result.uploadReview?.finding) return result.uploadReview.finding + " Check the original uploads before requesting a correction.";
   var notes = [];
   var unclear = result.unclearSides || [];
   var differences = result.fields.filter(function (field) { return field.status === "difference"; });
@@ -1644,6 +1646,7 @@ function buildSavedAgentFindings(result) {
     duplicatePhotos: Boolean(result.duplicatePhotos),
     detectedOtherType: result.detectedOtherType || "",
     photoIssues: result.photoIssues || [],
+    uploadReview: result.uploadReview || null,
     stages: result.stages || null,
     nlpValidation: result.nlpValidation || null,
     aiRecommendation: result.aiRecommendation || "",
@@ -1884,6 +1887,9 @@ function getFindingCorrectionDraft(result) {
   if (!result || result.failed || result.unavailableSides?.length || result.failedReads?.length) return null;
   if (result.duplicatePhotos) {
     return { fields: ["id_photo"], sides: ["back"], message: "Hello! The front and back uploads show the same photo. Please sign in and upload a separate photo of the back of your ID." };
+  }
+  if (result.uploadReview?.sides?.length && result.uploadReview.instruction) {
+    return { fields: ["id_photo"], sides: result.uploadReview.sides, message: result.uploadReview.instruction };
   }
   if (result.detectedOtherType) {
     return { fields: ["id_photo"], message: "Hello! Please sign in and upload a clear photo of the ID type selected on your application." };

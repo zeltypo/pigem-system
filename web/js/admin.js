@@ -62,14 +62,7 @@ async function refreshAdminData() {
     rCounts[r] = (rCounts[r] || 0) + 1;
   }
 
-  var pending = 0, fix = 0, approved = 0, rejected = 0;
-  for (var j = 0; j < adminApps.length; j++) {
-    var st = adminApps[j].status;
-    if (st === "Pending Review" || st === "Under Agent Review" || st === "Encoding") pending++;
-    else if (st === "Needs Correction") fix++;
-    else if (st === "Approved" || st === "Submitted to Provider") approved++;
-    else if (st === "Rejected") rejected++;
-  }
+  var { pending, fix, approved, rejected } = getOverviewStatusCounts(adminApps);
 
   if (typeof renderPieChart === "function") {
     renderPieChart("chart-admin-role-pie", [
@@ -100,6 +93,7 @@ async function refreshAdminData() {
     { label: "Rejected", value: rejected, color: "#dc2626" }
   ]);
 
+  renderOverviewIntake("chart-admin-intake", adminApps);
   renderCalendar("admin-overview-calendar", adminApps);
   renderCalendar("admin-full-calendar", adminApps);
 

@@ -112,6 +112,7 @@ class ScreeningWorker:
             "failedReads": [],
             "duplicatePhotos": bool(quality.get("duplicate_front_back")),
             "photoIssues": quality.get("issues") or [],
+            "uploadReview": quality.get("upload_review"),
             "detectedOtherType": extraction.get("detected_document_type", "") if extraction.get("id_type_matches_declared") is False else "",
             "nlpValidation": result["nlp_validation"],
             "aiRecommendation": guidance.get("recommendation", ""),

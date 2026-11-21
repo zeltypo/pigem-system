@@ -803,6 +803,22 @@ class OpenAIScreeningService:
         ocr_payload: dict,
         quality_report: Optional[dict] = None,
     ) -> dict:
+        upload_review = (quality_report or {}).get("upload_review")
+        if upload_review:
+            return {
+                "available": True,
+                "model": (quality_report or {}).get("model", ""),
+                "triage": "yellow",
+                "auto_needs_correction": False,
+                "correction_type": "agent_review",
+                "target_fields": ["id_photo"],
+                "recommendation": "manual_review",
+                "queue_summary": upload_review["finding"],
+                "final_recommendation": "Check the uploaded sides before asking the customer for a correction.",
+                "findings": [upload_review["finding"]],
+                "tampering_flags": [],
+                "suggested_polite_remark": upload_review["instruction"],
+            }
         triage_info = self._evaluate_triage(comparisons, nlp_rules, ocr_payload, quality_report)
         triage = triage_info["triage"]
 
@@ -1146,7 +1162,8 @@ def run_conditional_screening_pipeline(
     2. Conditional Routing:
        - GOOD: Bypass OpenCV completely; keep original ID untouched; run Azure IDP + NLP rules + GPT-5.4 summary.
        - FIXABLE: Run targeted OpenCV enhancement only for detected defects; then Azure IDP + NLP rules + GPT-5.4 remarks.
-       - UNFIXABLE: Stop early (`NEEDS_CORRECTION`, RED triage); skip OpenCV and Azure IDP; generate clear customer remarks via GPT-5.4.
+       - CONFIRMED DEFECT: Stop early and request replacement of the affected photo.
+       - SUSPECTED WRONG SIDE OR NON-ID: Stop before field comparison and ask staff to confirm the upload.
     """
     declared_type = str(entered.get("id_type") or "")
     print(f"screening check={check_id} stage=quality_gate started model={_openai_client.configured_quality_model()}", flush=True)
@@ -1187,8 +1204,10 @@ def run_conditional_screening_pipeline(
         "back": {"bypassed": True, "enhanced": False, "cropped": False, "applied_ops": []} if back_bytes else None,
     }
 
-    if quality_report.get("confirmed_defects"):
-        print(f"screening check={check_id} stage=early_stop reason=unfixable_quality", flush=True)
+    upload_review = quality_report.get("upload_review")
+    if quality_report.get("confirmed_defects") or upload_review:
+        reason = "check_upload_sides" if upload_review else "unfixable_quality"
+        print(f"screening check={check_id} stage=early_stop reason={reason}", flush=True)
         empty_ocr = {
             "available": True,
             "early_stopped": True,
@@ -1207,7 +1226,7 @@ def run_conditional_screening_pipeline(
             "unreadable_or_occluded_fields": ["name", "birth_date", "id_number"],
             "confidence": "low",
             "field_confidences": {},
-            "authenticity_flags": list(quality_report.get("issues") or ["Unfixable image quality."]),
+            "authenticity_flags": [],
             "lines": [],
             "front_readable": quality_report["front"]["verdict"] != "unfixable",
             "back_readable": (
@@ -1224,7 +1243,7 @@ def run_conditional_screening_pipeline(
                 "found_on_id": "",
                 "status": "unverified",
                 "matched": False,
-                "note": "Skipped OCR because the uploaded ID photo failed the image quality gate.",
+                "note": "ID details were not compared. Review the uploaded photos first.",
             },
             {
                 "key": "birth_date",
@@ -1233,7 +1252,7 @@ def run_conditional_screening_pipeline(
                 "found_on_id": "",
                 "status": "unverified",
                 "matched": False,
-                "note": "Skipped OCR because the uploaded ID photo failed the image quality gate.",
+                "note": "ID details were not compared. Review the uploaded photos first.",
             },
             {
                 "key": "id_number",
@@ -1242,7 +1261,7 @@ def run_conditional_screening_pipeline(
                 "found_on_id": "",
                 "status": "unverified",
                 "matched": False,
-                "note": "Skipped OCR because the uploaded ID photo failed the image quality gate.",
+                "note": "ID details were not compared. Review the uploaded photos first.",
             },
         ]
         nlp_rules = {
@@ -1260,15 +1279,16 @@ def run_conditional_screening_pipeline(
         # Verified physical defects must not depend on an external model or OCR.
         ai_reasoning = _ai_service._build_rule_guidance(comparisons, nlp_rules, empty_ocr, quality_report)
         return {
-            "route": "unfixable",
-            "triage": "red",
+            "route": verdict,
+            "triage": ai_reasoning["triage"],
             "ocr": empty_ocr,
             "comparisons": comparisons,
             "nlp_validation": nlp_rules,
             "ai": ai_reasoning,
             "quality": {
                 "available": True,
-                "verdict": "unfixable",
+                "verdict": verdict,
+                "upload_review": upload_review,
                 "quality_score": quality_report.get("quality_score", 0),
                 "model": quality_report.get("model", _openai_client.configured_quality_model()),
                 "duplicate_front_back": quality_report.get("duplicate_front_back", False),

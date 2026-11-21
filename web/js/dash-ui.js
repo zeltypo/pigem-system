@@ -713,6 +713,35 @@ function renderPieChart(boxId, slices, centerTitle) {
     '</div>';
 }
 
+function getOverviewStatusCounts(apps) {
+  var counts = { pending: 0, fix: 0, approved: 0, rejected: 0 };
+  apps.forEach(function (app) {
+    if (app.status === "Needs Correction") counts.fix++;
+    else if (["Approved", "Installed"].includes(app.status)) counts.approved++;
+    else if (app.status === "Rejected") counts.rejected++;
+    else counts.pending++;
+  });
+  return counts;
+}
+
+function renderOverviewIntake(boxId, apps) {
+  var keyFormat = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "numeric", day: "numeric" });
+  var labelFormat = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric" });
+  var days = new Map();
+  var now = Date.now();
+  for (var offset = 6; offset >= 0; offset--) {
+    var date = new Date(now - offset * 86400000);
+    days.set(keyFormat.format(date), { label: labelFormat.format(date), value: 0, color: "#2563eb" });
+  }
+  apps.forEach(function (app) {
+    var date = new Date(app.created_at);
+    if (!app.created_at || Number.isNaN(date.getTime())) return;
+    var day = days.get(keyFormat.format(date));
+    if (day) day.value++;
+  });
+  renderBars(boxId, Array.from(days.values()));
+}
+
 function renderBars(boxId, rows) {
   var box = document.getElementById(boxId);
   if (!box) return;
