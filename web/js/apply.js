@@ -56,12 +56,12 @@ function setupDeviceUploadUI() {
     for (var i = 0; i < camBtns.length; i++) {
       camBtns[i].style.display = "none";
     }
-    if (qrBtn) qrBtn.style.display = "inline-flex";
+    if (qrBtn) qrBtn.hidden = false;
   } else {
     for (var j = 0; j < camBtns.length; j++) {
       camBtns[j].style.display = "inline-flex";
     }
-    if (qrBtn) qrBtn.style.display = "none";
+    if (qrBtn) qrBtn.hidden = true;
   }
 }
 
@@ -71,6 +71,8 @@ var phoneCorrectionPreviews = {};
 
 var APPLY_DRAFT_KEY = "pigem_apply_wizard_draft";
 var APPLY_PHONE_TICKET_KEY = "pigem_apply_phone_ticket";
+var APPLY_CONTACT_OTP_KEY = "pigem_apply_pending_email_otp";
+var sendingContactOtp = false;
 var APPLY_DRAFT_FIELDS = [
   "first_name", "middle_name", "last_name", "birth_date", "email", "phone", "phone_alt",
   "house_no", "house_suffix", "unit_no", "unit_type", "floor_no", "building_name", "street", "subdivision",
@@ -195,6 +197,7 @@ async function initApplyPage() {
   setupDeviceUploadUI();
   attachApplyLiveValidation();
   restoreApplyDraftState(Boolean(urlPlan));
+  updateContactOtpButton(document.getElementById("email").value.trim().toLowerCase());
 
   document.addEventListener("input", function (ev) {
     if (ev && ev.target && ev.target.id) saveApplyDraftState();
@@ -291,11 +294,7 @@ function attachApplyLiveValidation() {
         isContactOtpVerified = false;
         var st = document.getElementById("email-otp-inline-status");
         if (st) st.style.display = "none";
-        var btn = document.getElementById("btn-send-otp");
-        if (btn) {
-          btn.textContent = "Send code";
-          btn.disabled = false;
-        }
+        updateContactOtpButton(emailEl.value.trim().toLowerCase());
       }
     });
   }
@@ -445,6 +444,7 @@ function exitApplicationForm(save) {
     sessionStorage.removeItem(APPLY_DRAFT_KEY);
     sessionStorage.removeItem("pigem_selected_plan");
     sessionStorage.removeItem(APPLY_PHONE_TICKET_KEY);
+    sessionStorage.removeItem(APPLY_CONTACT_OTP_KEY);
   }
   window.location.assign("index.html");
 }
@@ -569,6 +569,7 @@ var applicationScreeningTicket = "";
 var applyCaptchaWidget;
 
 async function openPhoneQrModal() {
+  if (!requireApplyCaptcha()) return;
   var button = document.getElementById("btn-phone-qr");
   var status = document.getElementById("apply-phone-status");
   button.disabled = true;
@@ -582,7 +583,9 @@ async function openPhoneQrModal() {
     draft.agree_tu = false;
     var link = await phoneTransfer("create", { mode: "application", credential: applicationScreeningTicket, draft: draft, path: location.pathname });
     status.textContent = "";
-    showPhoneTransferLink(link, "Continue application on your phone", "Scan the code to continue from this step on your phone. Your filled-in details and verified email will carry over.");
+    var instructions = "Scan the code to continue from this step on your phone. Your filled-in details will carry over.";
+    if (isContactOtpVerified) instructions += " Your email is already verified.";
+    showPhoneTransferLink(link, "Continue application on your phone", instructions);
   } catch (error) {
     status.textContent = error.message || "Could not create a phone link. Try again.";
   } finally {
@@ -598,72 +601,132 @@ function normalizeApplyGmail() {
   return value;
 }
 
-async function sendContactOtp() {
-  if (typeof clearFieldError === "function") clearFieldError("email");
-  var email = normalizeApplyGmail();
+function pendingContactOtp(email) {
+  try {
+    var pending = JSON.parse(sessionStorage.getItem(APPLY_CONTACT_OTP_KEY));
+    return pending?.email === email && Number.isFinite(pending.expiresAt) ? pending : null;
+  } catch (error) {
+    return null;
+  }
+}
 
-  if (!email || !isCustomerGmail(email)) {
+function updateContactOtpButton(email) {
+  var button = document.getElementById("btn-send-otp");
+  button.disabled = isContactOtpVerified || sendingContactOtp;
+  button.textContent = isContactOtpVerified ? "Email verified" :
+    (sendingContactOtp ? "Sending code…" : (pendingContactOtp(email) ? "Enter code" : "Send code"));
+}
+
+function openContactOtpPopup(pending) {
+  openPopup(
+    '<h2>Verify your email</h2><p class="muted mt">Enter the 6-digit code sent to ' + escapeHtml(pending.email) + '.</p>' +
+    '<div class="mt"><label for="contact-otp-code">Email verification code</label>' +
+    '<input id="contact-otp-code" class="apply-otp-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" aria-describedby="contact-otp-timer"></div>' +
+    '<p id="contact-otp-timer" class="small muted mt" role="timer"></p>' +
+    '<p id="contact-otp-status" class="small mt" role="status"></p>' +
+    '<div class="row between mt"><button type="button" id="contact-otp-resend" class="btn btn-outline" onclick="sendContactOtp(true)">Resend code</button>' +
+    '<button type="button" id="contact-otp-verify" class="btn btn-red" onclick="verifyContactOtp()">Verify email</button></div>',
+    { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true }
+  );
+  var input = document.getElementById("contact-otp-code");
+  var timer = document.getElementById("contact-otp-timer");
+  var resend = document.getElementById("contact-otp-resend");
+  var verify = document.getElementById("contact-otp-verify");
+  var interval = setInterval(tick, 250);
+  function tick() {
+    if (!timer.isConnected) {
+      clearInterval(interval);
+      return;
+    }
+    var seconds = Math.max(0, Math.ceil((pending.expiresAt - Date.now()) / 1000));
+    if (seconds) {
+      var text = "Resend available in " + Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+      if (timer.textContent !== text) timer.textContent = text;
+      resend.disabled = true;
+      return;
+    }
+    timer.textContent = "";
+    document.getElementById("contact-otp-status").textContent = "This code expired. Request a new one.";
+    input.disabled = true;
+    verify.disabled = true;
+    resend.disabled = false;
+    clearInterval(interval);
+  }
+  input.addEventListener("input", function () {
+    input.value = input.value.replace(/[^0-9]/g, "").slice(0, 6);
+    clearFieldError(input);
+  });
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      verifyContactOtp();
+    }
+  });
+  tick();
+  (input.disabled ? resend : input).focus();
+}
+
+async function sendContactOtp(resend) {
+  if (sendingContactOtp || isContactOtpVerified) return;
+  clearFieldError("email");
+  var email = normalizeApplyGmail();
+  if (!isCustomerGmail(email)) {
     flashErrorBubble("email", "Gmail Address", "Please enter a valid @gmail.com address first.");
     document.getElementById("email").focus();
     return;
   }
-
-  var btn = document.getElementById("btn-send-otp");
-  btn.disabled = true;
-  btn.textContent = "Sending OTP...";
-
-  var otpRec = typeof generateSecuredOtp === "function"
-    ? generateSecuredOtp("apply_email_" + email)
-    : { code: String(Math.floor(100000 + Math.random() * 900000)), refTag: "VSCF" };
-
-  isContactOtpVerified = false;
-  var first = (document.getElementById("first_name").value || "").trim();
-  var last = (document.getElementById("last_name").value || "").trim();
-  var applicantName = [first, last].filter(Boolean).join(" ") || "Applicant";
-
-  var emailRes = await apiSendOtpEmail(
-    email,
-    otpRec.code,
-    "verify your email address for your internet service application",
-    applicantName,
-    otpRec.refTag
-  );
-
-  btn.disabled = false;
-  btn.textContent = "Resend code";
-
-  if (document.getElementById("email").value.trim().toLowerCase() !== email) return;
-  if (emailRes && emailRes.sent === false) {
-    setFieldError("email", "Could not send the code. Select Resend code to try again.");
+  var pending = pendingContactOtp(email);
+  if (pending && (!resend || Date.now() < pending.expiresAt)) {
+    openContactOtpPopup(pending);
     return;
   }
-  openPopup(
-    '<h2>Verify your email</h2><p class="muted mt">Enter the 6-digit code sent to ' + escapeHtml(email) + '. It expires in 5 minutes.</p>' +
-    '<div class="mt"><label for="contact-otp-code">Email verification code</label>' +
-    '<input id="contact-otp-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>' +
-    '<div class="row between mt"><button type="button" class="btn btn-outline" onclick="sendContactOtp()">Resend code</button>' +
-    '<button type="button" class="btn btn-red" onclick="verifyContactOtp()">Verify email</button></div>',
-    { showCloseX: true, closeOnBackdrop: true, closeOnEscape: true }
-  );
-  document.getElementById("contact-otp-code").focus();
+
+  sendingContactOtp = true;
+  updateContactOtpButton(email);
+  var resendButton = document.getElementById("contact-otp-resend");
+  if (resendButton) resendButton.disabled = true;
+  try {
+    var otp = generateSecuredOtp("apply_email_" + email);
+    var first = document.getElementById("first_name").value.trim();
+    var last = document.getElementById("last_name").value.trim();
+    var result = await apiSendOtpEmail(email, otp.code, "verify your email address for your internet service application",
+      [first, last].filter(Boolean).join(" ") || "Applicant", otp.refTag);
+    if (!result?.sent) throw new Error("Couldn’t send the code. Try again.");
+    pending = { email: email, expiresAt: otp.expiresAt };
+    sessionStorage.setItem(APPLY_CONTACT_OTP_KEY, JSON.stringify(pending));
+    if (currentPanel === 2 && document.getElementById("email").value.trim().toLowerCase() === email) openContactOtpPopup(pending);
+  } catch (error) {
+    var status = document.getElementById("contact-otp-status");
+    if (status) status.textContent = "Couldn’t send the code. Try again.";
+    else if (document.getElementById("email").value.trim().toLowerCase() === email) setFieldError("email", "Couldn’t send the code. Try again.");
+  } finally {
+    sendingContactOtp = false;
+    if (resendButton?.isConnected) resendButton.disabled = false;
+    updateContactOtpButton(document.getElementById("email").value.trim().toLowerCase());
+  }
 }
 
 function verifyContactOtp() {
-  if (typeof clearFieldError === "function") clearFieldError("contact-otp-code");
-  var email = document.getElementById("email").value.trim().toLowerCase();
-  var codeInp = document.getElementById("contact-otp-code");
-  var entered = (codeInp ? codeInp.value : "").trim();
-  var check = typeof verifySecuredOtp === "function"
-    ? verifySecuredOtp("apply_email_" + email, entered)
-    : { valid: false, reason: "Please request an OTP first." };
-
+  var input = document.getElementById("contact-otp-code");
+  if (!input || input.disabled || sendingContactOtp) return;
+  clearFieldError(input);
+  var email = normalizeApplyGmail();
+  var pending = pendingContactOtp(email);
+  if (!pending || Date.now() >= pending.expiresAt) {
+    setFieldError(input, "This code expired. Request a new one.");
+    return;
+  }
+  if (!/^\d{6}$/.test(input.value)) {
+    setFieldError(input, "Enter all 6 digits.");
+    return;
+  }
+  var check = verifySecuredOtp("apply_email_" + email, input.value);
   if (!check.valid) {
-    if (typeof setFieldError === "function" && codeInp) {
-      setFieldError("contact-otp-code", check.reason || "Incorrect 6-digit OTP code.");
-    }
+    setFieldError(input, check.reason);
     return;
   }
 
+  sessionStorage.removeItem(APPLY_CONTACT_OTP_KEY);
   isContactOtpVerified = true;
   verifiedEmailAddress = email;
   closePopup();
@@ -1431,6 +1494,7 @@ function resetApplyWizardToStep1() {
   try {
     sessionStorage.removeItem(APPLY_DRAFT_KEY);
     sessionStorage.removeItem(APPLY_PHONE_TICKET_KEY);
+    sessionStorage.removeItem(APPLY_CONTACT_OTP_KEY);
   } catch (e) {}
   resetInstallationPin();
   selectedIdChecks = { front: null, back: null };

@@ -2076,3 +2076,22 @@ textarea.input-invalid {
   .side-menu { width: min(270px, 90vw); height: 100dvh; overflow-y: auto; }
   .customer-application-row .q-head { flex-wrap: wrap; gap: 10px; }
 }
+
+.apply-page .simple-bar .apply-header {
+  height: auto;
+  min-height: 62px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding-block: 8px;
+}
+.apply-header-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.apply-page #apply-phone-status { display: block; height: auto; padding-bottom: 8px; }
+.apply-page #apply-phone-status:empty { display: none; }
+.apply-page input.apply-otp-input {
+  font-size: 1.375rem;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: .45em;
+  font-variant-numeric: tabular-nums;
+}
+.apply-header-actions .icon-img { width: 16px; height: 16px; }

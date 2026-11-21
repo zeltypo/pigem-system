@@ -18,15 +18,17 @@
 
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="simple-bar">
-    <div class="container" style="justify-content:space-between;">
+    <div class="container apply-header">
       <div style="display:flex; align-items:center; gap:12px;">
         <img data-img="black-logo-white-mode.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/black-logo-white-mode.png" alt="PIGEM" width="38" height="38">
         <span style="font-weight:700; font-size:18px; cursor:default; user-select:none;">Application Form</span>
       </div>
-      <div style="display:flex; align-items:center; gap:8px;">
+      <div class="apply-header-actions">
         <a href="index.html" class="btn btn-small" onclick="return leaveApplicationForm(event)">&#8592; Back</a>
+        <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" hidden onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img"> Continue on phone</button>
       </div>
     </div>
+    <p id="apply-phone-status" class="container small muted" role="status"></p>
   </header>
 
   <main id="main-content" class="form-wrap">
@@ -198,14 +200,10 @@
         <button type="button" class="btn btn-small" onclick="updatePinFromAddress()">Update pin from address</button>
         <button type="button" class="btn btn-small" onclick="confirmCurrentMapPin()">Use current pin</button>
       </div>
-      <div class="row between mt-big" style="flex-wrap:wrap;gap:8px">
-        <div class="row" style="flex-wrap:wrap;gap:8px">
-          <button type="button" class="btn" onclick="prevPanel()">&larr; Back</button>
-          <button type="button" id="btn-phone-qr" class="btn btn-outline" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img"> Continue on phone</button>
-        </div>
+      <div class="row between mt-big">
+        <button type="button" class="btn" onclick="prevPanel()">&larr; Back</button>
         <button type="button" class="btn btn-red" onclick="nextPanel()">Next</button>
       </div>
-      <p id="apply-phone-status" class="small muted" role="status"></p>
     </section>
 
     <section id="panel-4" class="card panel" hidden>

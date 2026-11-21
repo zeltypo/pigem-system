@@ -2131,6 +2131,10 @@ function generateSecuredOtp(targetKey) {
     randArr[0] = Math.floor(Math.random() * 900000) + 100000;
   }
   var code = String(100000 + (randArr[0] % 900000));
+  try {
+    var previous = JSON.parse(sessionStorage.getItem(key));
+    if (previous?.code === code) code = String(100000 + ((Number(code) - 99999) % 900000));
+  } catch (error) {}
   var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
   var refTag = "";
   for (var i = 0; i < 4; i++) {
@@ -2158,7 +2162,7 @@ function verifySecuredOtp(targetKey, enteredCode) {
     if (rec.used) {
       return { valid: false, reason: "This OTP has already been used. Please request a new code." };
     }
-    if (Date.now() > Number(rec.expiresAt || 0)) {
+    if (Date.now() >= Number(rec.expiresAt || 0)) {
       sessionStorage.removeItem(key);
       return { valid: false, reason: "This OTP code has expired (valid for 5 minutes). Please click Resend OTP." };
     }
