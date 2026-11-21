@@ -124,11 +124,11 @@
       </div>
 
       <div id="map" tabindex="0" aria-label="Installation location map"></div>
-      <p id="map-status" class="small muted mt">Tap the map, drag the pin, or move the map with the arrow keys and select its center.</p>
+      <p id="map-status" class="small muted mt" role="status">Tap the map, drag the pin, or move the map with the arrow keys and select its center.</p>
       <button type="button" class="btn btn-small mt" onclick="useMapCenter()">Place pin at map center</button>
       <div id="map-coverage-banner" class="notice mt" hidden></div>
-      <input id="lat" type="hidden" value="14.3294">
-      <input id="lng" type="hidden" value="120.9367">
+      <input id="lat" type="hidden">
+      <input id="lng" type="hidden">
 
       <h4 class="mt-big">Installation Address Details <span class="small muted" style="font-weight:400;">(<span class="req-mark">*</span> Required)</span></h4>
       <div class="form-grid three mt">
@@ -194,10 +194,18 @@
         </div>
       </div>
 
-      <div class="row between mt-big">
-        <button type="button" class="btn" onclick="prevPanel()">&larr; Back</button>
+      <div class="row mt" style="flex-wrap:wrap;gap:8px">
+        <button type="button" class="btn btn-small" onclick="updatePinFromAddress()">Update pin from address</button>
+        <button type="button" class="btn btn-small" onclick="confirmCurrentMapPin()">Use current pin</button>
+      </div>
+      <div class="row between mt-big" style="flex-wrap:wrap;gap:8px">
+        <div class="row" style="flex-wrap:wrap;gap:8px">
+          <button type="button" class="btn" onclick="prevPanel()">&larr; Back</button>
+          <button type="button" id="btn-phone-qr" class="btn btn-outline" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img"> Continue on phone</button>
+        </div>
         <button type="button" class="btn btn-red" onclick="nextPanel()">Next</button>
       </div>
+      <p id="apply-phone-status" class="small muted" role="status"></p>
     </section>
 
     <section id="panel-4" class="card panel" hidden>
@@ -206,10 +214,8 @@
           <h3>Valid ID Photos</h3>
           <p class="small muted">Upload a clear photo of the front of your ID. Add the back if it has printed details.</p>
         </div>
-        <button type="button" id="btn-phone-qr" class="btn btn-red" onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img"> Continue application on phone</button>
       </div>
 
-      <p id="apply-phone-status" class="small muted" role="status"></p>
       <details class="notice mt upload-instructions" open>
         <summary>How to take a clear ID photo</summary>
         <ul style="margin:8px 0 10px 18px; font-size:13.5px; color:var(--muted); line-height:1.5;">

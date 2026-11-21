@@ -70,6 +70,7 @@ var phoneCorrectionFiles = {};
 var phoneCorrectionPreviews = {};
 
 var APPLY_DRAFT_KEY = "pigem_apply_wizard_draft";
+var APPLY_PHONE_TICKET_KEY = "pigem_apply_phone_ticket";
 var APPLY_DRAFT_FIELDS = [
   "first_name", "middle_name", "last_name", "birth_date", "email", "phone", "phone_alt",
   "house_no", "house_suffix", "unit_no", "unit_type", "floor_no", "building_name", "street", "subdivision",
@@ -92,6 +93,7 @@ function saveApplyDraftState() {
       isContactOtpVerified: isContactOtpVerified,
       verifiedEmailAddress: verifiedEmailAddress,
       pinLocationState: _pinLocationState,
+      addressNeedsPin: _addressNeedsPin,
       agree_sub: agree1 ? agree1.checked : false,
       agree_tu: agree2 ? agree2.checked : false,
       values: vals
@@ -113,15 +115,18 @@ function restoreApplyDraftState(hasExplicitUrlPlan) {
     for (var i = 0; i < APPLY_DRAFT_FIELDS.length; i++) {
       var fid = APPLY_DRAFT_FIELDS[i];
       var el = document.getElementById(fid);
-      if (el && typeof vals[fid] === "string" && vals[fid] !== "") {
+      if (el && typeof vals[fid] === "string") {
         el.value = vals[fid];
       }
     }
     if (draft.isContactOtpVerified && draft.verifiedEmailAddress) {
       var curEm = (document.getElementById("email") ? document.getElementById("email").value : "").trim().toLowerCase();
-      if (!curEm || curEm === String(draft.verifiedEmailAddress).toLowerCase()) {
+      if (curEm && curEm === String(draft.verifiedEmailAddress).toLowerCase()) {
         isContactOtpVerified = true;
-        verifiedEmailAddress = draft.verifiedEmailAddress;
+        verifiedEmailAddress = curEm;
+        var otpButton = document.getElementById("btn-send-otp");
+        otpButton.textContent = "Email verified";
+        otpButton.disabled = true;
         var st = document.getElementById("email-otp-inline-status");
         if (st) {
           st.style.display = "block";
@@ -134,6 +139,7 @@ function restoreApplyDraftState(hasExplicitUrlPlan) {
       document.getElementById("lat").value = _pinLocationState.lat;
       document.getElementById("lng").value = _pinLocationState.lng;
     }
+    _addressNeedsPin = draft.addressNeedsPin === true;
     if (!referralAgentId && draft.referralAgentId) referralAgentId = draft.referralAgentId;
     var agree1 = document.getElementById("agree_sub");
     var agree2 = document.getElementById("agree_tu");
@@ -179,6 +185,12 @@ async function initApplyPage() {
     }
   }
 
+  var phoneTicket = sessionStorage.getItem(APPLY_PHONE_TICKET_KEY);
+  var ticketAge = phoneTicket ? Date.now() / 1000 - Number(phoneTicket.split(".")[0]) : Infinity;
+  if (ticketAge >= 0 && ticketAge < 7200) {
+    applicationScreeningTicket = phoneTicket;
+    applyCaptchaVerified = true;
+  }
   renderPlanChoices();
   setupDeviceUploadUI();
   attachApplyLiveValidation();
@@ -335,6 +347,8 @@ async function openMobilePhoneTransfer(token) {
     if (transfer.mode === "application") {
       sessionStorage.removeItem("pigem_phone_correction");
       sessionStorage.setItem(APPLY_DRAFT_KEY, JSON.stringify(transfer.draft));
+      sessionStorage.setItem("pigem_selected_plan", transfer.draft.selectedPlanId);
+      sessionStorage.setItem(APPLY_PHONE_TICKET_KEY, transfer.screening_ticket || "");
       window.location.replace(window.location.pathname);
       return true;
     }
@@ -430,6 +444,7 @@ function exitApplicationForm(save) {
   else {
     sessionStorage.removeItem(APPLY_DRAFT_KEY);
     sessionStorage.removeItem("pigem_selected_plan");
+    sessionStorage.removeItem(APPLY_PHONE_TICKET_KEY);
   }
   window.location.assign("index.html");
 }
@@ -559,17 +574,15 @@ async function openPhoneQrModal() {
   button.disabled = true;
   status.textContent = "Creating phone link…";
   try {
+    if (_pinLookupPromise) await _pinLookupPromise;
     saveApplyDraftState();
     var draft = JSON.parse(sessionStorage.getItem(APPLY_DRAFT_KEY));
     draft.referralAgentId = referralAgentId;
-    draft.isContactOtpVerified = false;
-    draft.verifiedEmailAddress = "";
     draft.agree_sub = false;
     draft.agree_tu = false;
-    if (draft.currentPanel > 2) draft.currentPanel = 2;
     var link = await phoneTransfer("create", { mode: "application", credential: applicationScreeningTicket, draft: draft, path: location.pathname });
     status.textContent = "";
-    showPhoneTransferLink(link, "Continue application on your phone", "Scan the code to open your saved details. Verify your email on your phone, then add your ID photos and submit there.");
+    showPhoneTransferLink(link, "Continue application on your phone", "Scan the code to continue from this step on your phone. Your filled-in details and verified email will carry over.");
   } catch (error) {
     status.textContent = error.message || "Could not create a phone link. Try again.";
   } finally {
@@ -915,6 +928,12 @@ function validateCurrentPanel() {
       return false;
     }
 
+    if (_addressNeedsPin) {
+      setFieldError("map", "The address changed. Update the map pin or place it manually before continuing.");
+      document.getElementById("map").focus();
+      return false;
+    }
+
     if (!house) markInvalid("house_no", "House No.", "Enter house, block, or lot number.");
     if (!bldg) markInvalid("building_name", "Building Name", "Enter building name or N/A.");
     if (!street) markInvalid("street", "Street Name", "Enter your street name.");
@@ -994,7 +1013,8 @@ var _pinLocationState = {
 };
 var _pinSeq = 0;
 var _pinLookupPromise = null;
-var _pinLookupResolve = null;
+var _addressNeedsPin = false;
+var MAP_ADDRESS_FIELDS = ["street", "subdivision", "barangay", "city", "province"];
 var _mapInputsBound = false;
 
 function renderCoverageBannerBox(banner, bg, border, color, title, body) {
@@ -1019,7 +1039,11 @@ function refreshCoverageBanner() {
   if (!banner) return;
   var latVal = parseFloat((document.getElementById("lat") || {}).value);
   var lngVal = parseFloat((document.getElementById("lng") || {}).value);
-  var boundsOk = !isNaN(latVal) && !isNaN(lngVal) && isWithinPhilippinesBounds(latVal, lngVal);
+  if (!Number.isFinite(latVal) || !Number.isFinite(lngVal)) {
+    banner.hidden = true;
+    return;
+  }
+  var boundsOk = isWithinPhilippinesBounds(latVal, lngVal);
   if (!boundsOk || (_pinLocationState.resolved && !_pinLocationState.inPhilippines)) {
     var foreignLabel = _pinLocationState.displayName || _pinLocationState.country || "Outside Philippines";
     renderCoverageBannerBox(
@@ -1084,9 +1108,27 @@ function refreshCoverageBanner() {
 function bindMapFieldListeners() {
   if (_mapInputsBound) return;
   _mapInputsBound = true;
-  ["barangay", "city", "province"].forEach(function (id) {
-    var el = document.getElementById(id);
-    if (el) el.addEventListener("input", refreshCoverageBanner);
+  MAP_ADDRESS_FIELDS.forEach(function (id) {
+    var field = document.getElementById(id);
+    var originalValue = "";
+    field.addEventListener("focus", function () { originalValue = field.value; });
+    field.addEventListener("input", function () {
+      _addressNeedsPin = true;
+      _pinSeq++;
+      _pinLookupPromise = null;
+      document.getElementById("map-status").textContent = "Address changed. The pin updates after you finish editing, or you can move it yourself.";
+      refreshCoverageBanner();
+    });
+    field.addEventListener("change", function () {
+      var locality = MAP_ADDRESS_FIELDS.indexOf(id);
+      if (locality >= 2 && originalValue.trim() && normalizeGeoText(originalValue) !== normalizeGeoText(field.value)) {
+        clearPreviousAddress(MAP_ADDRESS_FIELDS.slice(0, locality));
+      }
+      if (["city", "province", "barangay"].every(function (key) {
+        return document.getElementById(key).value.trim();
+      })) updatePinFromAddress();
+      saveApplyDraftState();
+    });
   });
   var searchEl = document.getElementById("map-search");
   if (searchEl) {
@@ -1121,22 +1163,10 @@ async function enforceLiveMaintenanceOnStep() {
 async function nextPanel() {
   if (!requireApplyCaptcha()) return;
   if (await enforceLiveMaintenanceOnStep()) return;
-  if (currentPanel === 3) {
-    var latVal = parseFloat(document.getElementById("lat").value);
-    var lngVal = parseFloat(document.getElementById("lng").value);
-    if (!isNaN(latVal) && !isNaN(lngVal)) {
-      if (_pinLookupPromise) {
-        await Promise.race([
-          _pinLookupPromise,
-          new Promise(function (resolve) { setTimeout(resolve, 4500); })
-        ]);
-      } else if (!_pinLocationState.resolved || Math.abs(_pinLocationState.lat - latVal) > 0.0001 || Math.abs(_pinLocationState.lng - lngVal) > 0.0001) {
-        await Promise.race([
-          updatePinAndAddress(latVal, lngVal),
-          new Promise(function (resolve) { setTimeout(resolve, 4500); })
-        ]);
-      }
-    }
+  if (currentPanel === 3 && _pinLookupPromise) {
+    var lookup = _pinLookupPromise;
+    await lookup;
+    if (currentPanel !== 3 || (_pinLookupPromise && _pinLookupPromise !== lookup)) return;
   }
   if (!validateCurrentPanel()) return;
   if (currentPanel === 4 && !(await validateSelectedIdQuality())) return;
@@ -1153,264 +1183,227 @@ async function prevPanel() {
   }
 }
 
+function resetInstallationPin() {
+  _pinSeq++;
+  _pinLookupPromise = null;
+  _addressNeedsPin = false;
+  _pinLocationState = {};
+  document.getElementById("lat").value = "";
+  document.getElementById("lng").value = "";
+  if (leafletMarker) leafletMarker.remove();
+  leafletMarker = null;
+  if (leafletMap) leafletMap.setView(CONFIG.MAP_CENTER, 15);
+  document.getElementById("map-status").textContent = "Search for your address or place the pin on the map.";
+  document.getElementById("map-search").value = "";
+  document.getElementById("map-coverage-banner").hidden = true;
+}
+
 function useMapCenter() {
-  if (!leafletMap || !leafletMarker) return;
+  if (!leafletMap) return;
   var center = leafletMap.getCenter();
-  leafletMarker.setLatLng(center);
-  updatePinAndAddress(center.lat, center.lng);
+  chooseInstallationPin(center.lat, center.lng);
+}
+
+function showInstallationMarker(lat, lng, zoom) {
+  if (zoom) leafletMap.setView([lat, lng], zoom);
+  if (leafletMarker) {
+    leafletMarker.setLatLng([lat, lng]);
+    return;
+  }
+  leafletMarker = L.marker([lat, lng], { draggable: true }).addTo(leafletMap);
+  leafletMarker.on("dragend", function () {
+    var position = leafletMarker.getLatLng();
+    chooseInstallationPin(position.lat, position.lng);
+  });
 }
 
 function initMapPin() {
   bindMapFieldListeners();
   if (!leafletMap) {
-    var lat = parseFloat(document.getElementById("lat").value) || CONFIG.MAP_CENTER[0];
-    var lng = parseFloat(document.getElementById("lng").value) || CONFIG.MAP_CENTER[1];
-
-    leafletMap = L.map("map", { tap: false }).setView([lat, lng], 15);
+    var lat = Number(_pinLocationState.lat);
+    var lng = Number(_pinLocationState.lng);
+    var hasPin = Boolean(_pinLocationState.lat && _pinLocationState.lng);
+    leafletMap = L.map("map", { tap: false }).setView(hasPin ? [lat, lng] : CONFIG.MAP_CENTER, 15);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap"
     }).addTo(leafletMap);
-
-    leafletMarker = L.marker([lat, lng], { draggable: true }).addTo(leafletMap);
-
-    leafletMarker.on("dragend", function () {
-      var pos = leafletMarker.getLatLng();
-      updatePinAndAddress(pos.lat, pos.lng);
-    });
-
+    if (hasPin) showInstallationMarker(lat, lng);
     leafletMap.on("click", function (event) {
-      leafletMarker.setLatLng(event.latlng);
-      updatePinAndAddress(event.latlng.lat, event.latlng.lng);
+      chooseInstallationPin(event.latlng.lat, event.latlng.lng);
     });
   }
-  setTimeout(function () {
-    if (leafletMap) leafletMap.invalidateSize();
-    var curLat = parseFloat(document.getElementById("lat").value);
-    var curLng = parseFloat(document.getElementById("lng").value);
-    if (isNaN(curLat) || isNaN(curLng)) {
-      curLat = CONFIG.MAP_CENTER[0];
-      curLng = CONFIG.MAP_CENTER[1];
-    }
-    if (!_pinLocationState.resolved && !_pinLookupPromise) {
-      updatePinAndAddress(curLat, curLng);
-    } else {
-      refreshCoverageBanner();
-    }
-  }, 150);
+  leafletMap.invalidateSize();
+  if (!_pinLookupPromise) refreshCoverageBanner();
 }
 
-async function updatePinAndAddress(lat, lng) {
-  clearFieldError("map");
-  var mySeq = ++_pinSeq;
-  if (_pinLookupResolve) {
-    try { _pinLookupResolve(); } catch (_err) {}
+async function mapGeocoding(path, params) {
+  var endpoints = [];
+  if (CONFIG.LOCATIONIQ_API_KEY) {
+    var query = new URLSearchParams(params);
+    query.set("key", CONFIG.LOCATIONIQ_API_KEY);
+    endpoints.push("https://us1.locationiq.com/v1/" + path + "?" + query);
   }
-  _pinLookupPromise = new Promise(function (resolve) {
-    _pinLookupResolve = resolve;
-  });
-  _pinLocationState.lat = lat;
-  _pinLocationState.lng = lng;
-  _pinLocationState.resolved = false;
+  endpoints.push("https://nominatim.openstreetmap.org/" + path + "?" + new URLSearchParams(params));
+  for (var url of endpoints) {
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 4500);
+    try {
+      var response = await fetch(url, { signal: controller.signal, headers: { "Accept-Language": "en" } });
+      if (!response.ok) continue;
+      var data = await response.json();
+      if (path === "search" ? Array.isArray(data) && data.length : data?.address) return data;
+    } catch (error) {
+      continue;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
+function applyInstallationPin(lat, lng, data, useTypedAddress, zoom) {
+  var location = evaluateMapLocation(lat, lng, data);
+  _pinLocationState = Object.assign({ lat: lat, lng: lng, resolved: true }, location);
+  _addressNeedsPin = false;
   document.getElementById("lat").value = lat.toFixed(6);
   document.getElementById("lng").value = lng.toFixed(6);
-  var statusEl = document.getElementById("map-status");
-  statusEl.style.color = "";
-  statusEl.textContent = "Looking up address for pinned location...";
+  showInstallationMarker(lat, lng, zoom);
+  clearFieldError("map");
+
+  if (!useTypedAddress && data?.address && location.inPhilippines) {
+    var address = data.address;
+    document.getElementById("street").value = address.road || address.pedestrian || address.footway || address.street || "";
+    document.getElementById("subdivision").value = address.neighbourhood || address.residential || address.hamlet || address.subdivision || "N/A";
+    document.getElementById("barangay").value = location.barangay;
+    document.getElementById("city").value = location.city;
+    document.getElementById("province").value = location.province;
+  }
+  document.getElementById("map-status").textContent = !location.inPhilippines
+    ? "Choose an installation location in the Philippines."
+    : (useTypedAddress ? "Map pin updated. Check that it marks your exact installation address."
+      : (location.displayName ? "Pinned location: " + location.displayName : "Location pinned. Fill in the address details below."));
   refreshCoverageBanner();
-
-  var data = null;
-  if (CONFIG.LOCATIONIQ_API_KEY) {
-    try {
-      var liqUrl =
-        "https://us1.locationiq.com/v1/reverse?key=" +
-        encodeURIComponent(CONFIG.LOCATIONIQ_API_KEY) +
-        "&lat=" + lat +
-        "&lon=" + lng +
-        "&format=json&normalizeaddress=1";
-      var liqRes = await fetch(liqUrl, { headers: { "Accept-Language": "en" } });
-      if (liqRes.ok) {
-        data = await liqRes.json();
-      }
-    } catch (liqErr) {
-      data = null;
-    }
-  }
-
-  if (!data) {
-    try {
-      var nomUrl = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + lat + "&lon=" + lng;
-      var nomRes = await fetch(nomUrl, { headers: { "Accept-Language": "en" } });
-      if (nomRes.ok) {
-        data = await nomRes.json();
-      }
-    } catch (nomErr) {
-      data = null;
-    }
-  }
-
-  if (mySeq !== _pinSeq) return;
-  if (data && data.address) {
-    var addr = data.address || {};
-    var locEval = evaluateMapLocation(lat, lng, data);
-    _pinLocationState = {
-      lat: lat,
-      lng: lng,
-      resolved: true,
-      inPhilippines: locEval.inPhilippines,
-      boundsOk: locEval.boundsOk,
-      country: locEval.country,
-      countryCode: locEval.countryCode,
-      barangay: locEval.barangay,
-      city: locEval.city,
-      province: locEval.province,
-      displayName: locEval.displayName,
-      isServiceableArea: locEval.isServiceableArea,
-      reverseData: data
-    };
-    if (!locEval.inPhilippines) {
-      statusEl.style.color = "#b91c1c";
-      statusEl.textContent = "Pinned outside the Philippines: " + (locEval.displayName || locEval.country || "Outside PH") + ". Installation is available in the Philippines only.";
-    } else {
-      var road = addr.road || addr.pedestrian || addr.footway || addr.street || "";
-      var subd = addr.neighbourhood || addr.residential || addr.hamlet || addr.subdivision || "";
-      if (road) document.getElementById("street").value = road;
-      if (subd) document.getElementById("subdivision").value = subd;
-      else if (!document.getElementById("subdivision").value) document.getElementById("subdivision").value = "N/A";
-      if (locEval.barangay) document.getElementById("barangay").value = locEval.barangay;
-      if (locEval.city) document.getElementById("city").value = locEval.city;
-      if (locEval.province) document.getElementById("province").value = locEval.province;
-      statusEl.style.color = "";
-      statusEl.textContent = "Pinned location: " + (locEval.displayName || "Address updated");
-    }
-  } else {
-    var inBoundsOnly = isWithinPhilippinesBounds(lat, lng);
-    _pinLocationState = {
-      lat: lat,
-      lng: lng,
-      resolved: true,
-      inPhilippines: inBoundsOnly,
-      boundsOk: inBoundsOnly,
-      country: inBoundsOnly ? "Philippines" : "Outside Philippines",
-      countryCode: inBoundsOnly ? "ph" : "",
-      barangay: "",
-      city: "",
-      province: "",
-      displayName: "",
-      isServiceableArea: null,
-      reverseData: null
-    };
-    if (!inBoundsOnly) {
-      statusEl.style.color = "#b91c1c";
-      statusEl.textContent = "Pinned outside the Philippines (" + lat.toFixed(5) + ", " + lng.toFixed(5) + "). Installation is available in the Philippines only.";
-    } else {
-      statusEl.style.color = "";
-      statusEl.textContent = "Location pinned (" + lat.toFixed(5) + ", " + lng.toFixed(5) + "). You can type or edit your address fields below.";
-    }
-  }
-  if (_pinLookupResolve) {
-    var doneResolve = _pinLookupResolve;
-    _pinLookupResolve = null;
-    _pinLookupPromise = null;
-    doneResolve();
-  }
-  refreshCoverageBanner();
+  saveApplyDraftState();
 }
 
-async function searchMapAddress() {
-  var q = document.getElementById("map-search").value.trim();
-  if (!q) return;
-  initMapPin();
-  var statusEl = document.getElementById("map-status");
-  statusEl.textContent = "Searching map for '" + q + "'...";
+function clearPreviousAddress(fields) {
+  (fields || MAP_ADDRESS_FIELDS).concat(["house_no", "house_suffix", "unit_no", "floor_no", "landmark", "remarks"]).forEach(function (id) {
+    document.getElementById(id).value = "";
+    clearFieldError(id);
+  });
+  document.getElementById("building_name").value = "N/A";
+  document.getElementById("unit_type").selectedIndex = 0;
+}
 
-  var list = null;
-  if (CONFIG.LOCATIONIQ_API_KEY) {
-    try {
-      var liqSearch =
-        "https://us1.locationiq.com/v1/search?key=" +
-        encodeURIComponent(CONFIG.LOCATIONIQ_API_KEY) +
-        "&format=json&limit=1&countrycodes=ph&q=" +
-        encodeURIComponent(q);
-      var r1 = await fetch(liqSearch, { headers: { "Accept-Language": "en" } });
-      if (r1.ok) list = await r1.json();
-    } catch (e1) {
-      list = null;
-    }
-  }
-
-  if (!list || !Array.isArray(list) || list.length === 0) {
-    try {
-      var nomSearch = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ph&q=" + encodeURIComponent(q);
-      var r2 = await fetch(nomSearch, { headers: { "Accept-Language": "en" } });
-      if (r2.ok) list = await r2.json();
-    } catch (e2) {
-      list = null;
-    }
-  }
-
-  if (!list || list.length === 0) {
-    statusEl.textContent = "Place not found. Please drag the pin manually or type your address below.";
+function confirmCurrentMapPin() {
+  var status = document.getElementById("map-status");
+  if (!leafletMarker) {
+    status.textContent = "Choose a pin on the map first.";
     return;
   }
-  var lat = parseFloat(list[0].lat);
-  var lng = parseFloat(list[0].lon);
-  leafletMap.setView([lat, lng], 16);
-  leafletMarker.setLatLng([lat, lng]);
-  await updatePinAndAddress(lat, lng);
+  var city = document.getElementById("city").value;
+  var province = document.getElementById("province").value;
+  var match = doesPinMatchAddressFields(_pinLocationState, city, province);
+  if (!match.matches) {
+    status.textContent = match.reason;
+    return;
+  }
+  _pinSeq++;
+  _pinLookupPromise = null;
+  _addressNeedsPin = false;
+  clearFieldError("map");
+  status.textContent = "Map pin confirmed. Check that it marks the installation address.";
+  refreshCoverageBanner();
+  saveApplyDraftState();
+}
+
+function startMapLookup(work) {
+  var sequence = ++_pinSeq;
+  _pinLookupPromise = work(sequence).finally(function () {
+    if (sequence === _pinSeq) _pinLookupPromise = null;
+  });
+  return _pinLookupPromise;
+}
+
+function chooseInstallationPin(lat, lng, zoom) {
+  var status = document.getElementById("map-status");
+  if (_pinLocationState.lat === lat && _pinLocationState.lng === lng && !_addressNeedsPin) return;
+  return startMapLookup(async function (sequence) {
+    var moved = _pinLocationState.lat !== lat || _pinLocationState.lng !== lng;
+    if (moved) clearPreviousAddress();
+    showInstallationMarker(lat, lng, zoom);
+    _pinLocationState = { lat: lat, lng: lng, resolved: false };
+    document.getElementById("lat").value = lat.toFixed(6);
+    document.getElementById("lng").value = lng.toFixed(6);
+    _addressNeedsPin = false;
+    document.getElementById("map-coverage-banner").hidden = true;
+    status.textContent = "Looking up the pinned address…";
+    var data = await mapGeocoding("reverse", { format: "json", lat: lat, lon: lng });
+    if (sequence === _pinSeq) applyInstallationPin(lat, lng, data, !moved);
+  });
+}
+
+function lookupInstallationAddress(query, useTypedAddress) {
+  if (!query) return;
+  initMapPin();
+  var status = document.getElementById("map-status");
+  status.textContent = "Looking for the address on the map…";
+  return startMapLookup(async function (sequence) {
+    var matches = await mapGeocoding("search", {
+      format: "json", limit: "1", countrycodes: "ph", addressdetails: "1", q: query
+    });
+    if (sequence !== _pinSeq) return;
+    var match = matches?.[0];
+    if (!match || !Number.isFinite(Number(match.lat)) || !Number.isFinite(Number(match.lon))) {
+      status.textContent = "Address not found. Try the barangay and city in Search Map, or place the pin manually.";
+      return;
+    }
+    var lat = Number(match.lat);
+    var lng = Number(match.lon);
+    if (useTypedAddress) {
+      var location = evaluateMapLocation(lat, lng, match);
+      var city = document.getElementById("city").value;
+      var province = document.getElementById("province").value;
+      if (!location.inPhilippines || !doesPinMatchAddressFields(Object.assign({ resolved: true }, location), city, province).matches) {
+        status.textContent = "The map result differs from the address you entered. Place the pin manually.";
+        return;
+      }
+    } else if (_pinLocationState.lat !== lat || _pinLocationState.lng !== lng) {
+      clearPreviousAddress();
+    }
+    applyInstallationPin(lat, lng, match, useTypedAddress, 16);
+  });
+}
+
+function searchMapAddress() {
+  return lookupInstallationAddress(document.getElementById("map-search").value.trim(), false);
+}
+
+function updatePinFromAddress() {
+  var parts = MAP_ADDRESS_FIELDS.map(function (id) { return document.getElementById(id).value.trim(); });
+  return lookupInstallationAddress(parts.filter(function (value) { return value && value.toUpperCase() !== "N/A"; }).join(", "), true);
 }
 
 function useCurrentLocation() {
   initMapPin();
-  var statusEl = document.getElementById("map-status");
-  var btn = document.getElementById("btn-use-loc");
-
+  var status = document.getElementById("map-status");
   if (!navigator.geolocation) {
-    statusEl.textContent = "Browser does not support automatic location detection. Please search or drag the pin.";
+    status.textContent = "Location detection is unavailable. Search the map or choose a pin.";
     return;
   }
-
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Locating...";
-  }
-  if (statusEl) statusEl.textContent = "Detecting current GPS location...";
-
-  function onGeoSuccess(pos) {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location" class="icon-img"> Use My Location';
-    }
-    var lat = pos.coords.latitude;
-    var lng = pos.coords.longitude;
-    if (leafletMap && leafletMarker) {
-      leafletMap.invalidateSize();
-      leafletMap.setView([lat, lng], 17);
-      leafletMarker.setLatLng([lat, lng]);
-    }
-    updatePinAndAddress(lat, lng);
-  }
-
-  function onGeoError() {
-    navigator.geolocation.getCurrentPosition(
-      onGeoSuccess,
-      function () {
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = '<img data-img="icons/location.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/location.png" alt="Location" class="icon-img"> Use My Location';
-        }
-        var msg = "Location permission denied or unavailable. Please search your street/barangay in the box above.";
-        if (statusEl) statusEl.textContent = msg;
-      },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
-    );
-  }
-
-  navigator.geolocation.getCurrentPosition(
-    onGeoSuccess,
-    onGeoError,
-    { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
-  );
+  var button = document.getElementById("btn-use-loc");
+  button.disabled = true;
+  status.textContent = "Detecting your location…";
+  var sequence = ++_pinSeq;
+  _pinLookupPromise = null;
+  navigator.geolocation.getCurrentPosition(function (position) {
+    button.disabled = false;
+    if (sequence === _pinSeq) chooseInstallationPin(position.coords.latitude, position.coords.longitude, 17);
+  }, function () {
+    button.disabled = false;
+    if (sequence === _pinSeq) status.textContent = "Could not detect your location. Search the map or choose a pin.";
+  }, { timeout: 10000, enableHighAccuracy: true });
 }
 
 function advanceLoadingStep(stepNum) {
@@ -1435,7 +1428,11 @@ function resetApplyWizardToStep1() {
   applyResumePanel = 0;
   applicationScreeningTicket = "";
   applyCaptchaWidget = undefined;
-  try { sessionStorage.removeItem(APPLY_DRAFT_KEY); } catch (e) {}
+  try {
+    sessionStorage.removeItem(APPLY_DRAFT_KEY);
+    sessionStorage.removeItem(APPLY_PHONE_TICKET_KEY);
+  } catch (e) {}
+  resetInstallationPin();
   selectedIdChecks = { front: null, back: null };
   var loadingScreen = document.getElementById("panel-loading");
   if (loadingScreen) loadingScreen.hidden = true;
@@ -1459,7 +1456,10 @@ function resetApplyWizardToStep1() {
   isContactOtpVerified = false;
   verifiedEmailAddress = "";
   var otpBtn = document.getElementById("btn-send-otp");
-  if (otpBtn) otpBtn.textContent = "Send Email OTP";
+  if (otpBtn) {
+    otpBtn.textContent = "Send code";
+    otpBtn.disabled = false;
+  }
   var otpSt = document.getElementById("email-otp-inline-status");
   if (otpSt) otpSt.style.display = "none";
   var warnBox = document.getElementById("id-screen-warn");

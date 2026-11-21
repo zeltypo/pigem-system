@@ -198,7 +198,7 @@ def open_link(data: PhoneToken):
     _write(key + "-opened", b"{}", "This link has already been opened.")
     _delete(key + "-pending")
     if mode == "application":
-        return _result({"mode": mode, "draft": stored.json()})
+        return _result({"mode": mode, "draft": stored.json(), "screening_ticket": _screening_queue.intake_ticket()})
     return _result({"mode": mode, "upload": _token(stamp, key, "upload")})
 
 
