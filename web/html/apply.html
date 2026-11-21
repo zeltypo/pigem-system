@@ -25,6 +25,7 @@
       </div>
       <div class="apply-header-actions">
         <a href="index.html" class="btn btn-small" onclick="return leaveApplicationForm(event)">&#8592; Back</a>
+        <button type="button" id="btn-return-desktop" class="btn btn-small btn-outline" hidden onclick="returnApplicationToDesktop()">Back to desktop</button>
         <button type="button" id="btn-phone-qr" class="btn btn-small btn-outline" hidden onclick="openPhoneQrModal()"><img data-img="icons/qr-phone.png" src="https://wuunqfxyejxwrawtjdrf.supabase.co/storage/v1/object/public/website-assets/icons/qr-phone.png" alt="" class="icon-img"> Continue on phone</button>
       </div>
     </div>
@@ -33,7 +34,7 @@
 
   <main id="main-content" class="form-wrap">
 
-    <div class="card" style="margin-bottom:18px;">
+    <div id="apply-step-progress" class="card" style="margin-bottom:18px;">
       <div class="row between">
         <b id="section-title" aria-live="polite">Select Your Plan</b>
         <span id="section-pct" class="small muted">17%</span>
@@ -399,6 +400,21 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <section id="application-handoff" class="card panel" hidden>
+      <h2 id="application-handoff-title" tabindex="-1">Continue on your phone</h2>
+      <p id="application-handoff-status" class="muted mt" role="status"></p>
+      <div id="application-handoff-progress" class="mt" hidden>
+        <label for="application-handoff-percent">Application progress <span id="application-handoff-percent-text"></span></label>
+        <progress id="application-handoff-percent" max="100" value="0" style="width:100%"></progress>
+      </div>
+      <div id="application-handoff-qr" class="mt" hidden>
+        <img id="application-handoff-code" class="phone-transfer-code" alt="Scan this code with your phone">
+        <label for="application-handoff-link">Or copy this link to your phone</label>
+        <input id="application-handoff-link" type="url" readonly onclick="this.select()">
+      </div>
+      <button type="button" id="application-handoff-cancel" class="btn btn-outline mt" hidden onclick="cancelApplicationHandoff()">Resume on desktop</button>
     </section>
 
     <section id="panel-qr-mobile" class="card panel" hidden>

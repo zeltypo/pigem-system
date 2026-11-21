@@ -80,6 +80,7 @@ var APPLY_DRAFT_FIELDS = [
 ];
 
 function saveApplyDraftState() {
+  if (sessionStorage.getItem(APPLICATION_HANDOFF_WATCH)) return;
   try {
     var vals = {};
     for (var i = 0; i < APPLY_DRAFT_FIELDS.length; i++) {
@@ -159,6 +160,10 @@ function restoreApplyDraftState(hasExplicitUrlPlan) {
 
 async function initApplyPage() {
   var params = new URLSearchParams(window.location.search);
+  if (params.get("phone_returned") === "1") {
+    showApplicationHandoff("Returned to desktop", "Continue on your computer.", true);
+    return;
+  }
   var phoneToken = new URLSearchParams(window.location.hash.slice(1)).get("phone");
   if (phoneToken || (params.get("phone_correction") === "1" && sessionStorage.getItem("pigem_phone_correction"))) {
     if (await openMobilePhoneTransfer(phoneToken)) return;
@@ -196,7 +201,13 @@ async function initApplyPage() {
   renderPlanChoices();
   setupDeviceUploadUI();
   attachApplyLiveValidation();
-  restoreApplyDraftState(Boolean(urlPlan));
+  var desktopWatch = JSON.parse(sessionStorage.getItem(APPLICATION_HANDOFF_WATCH));
+  refreshApplicationHandoffButtons();
+  if (desktopWatch) startApplicationHandoffMonitor(desktopWatch);
+  else {
+    restoreApplyDraftState(Boolean(urlPlan));
+    await restoreApplicationHandoffPhotos();
+  }
   updateContactOtpButton(document.getElementById("email").value.trim().toLowerCase());
 
   document.addEventListener("input", function (ev) {
@@ -205,7 +216,10 @@ async function initApplyPage() {
   document.addEventListener("change", function (ev) {
     if (ev && ev.target && ev.target.id) saveApplyDraftState();
   });
-  window.addEventListener("resize", setupDeviceUploadUI);
+  window.addEventListener("resize", function () {
+    setupDeviceUploadUI();
+    refreshApplicationHandoffButtons();
+  });
 
   try {
     if (typeof dbSyncLiveSettingsAndContent === "function") {
@@ -234,7 +248,7 @@ async function initApplyPage() {
     }
     renderPlanChoices();
   } catch (e) {}
-  showApplyCaptcha();
+  if (!desktopWatch) showApplyCaptcha();
 }
 
 function attachApplyLiveValidation() {
@@ -345,11 +359,13 @@ async function openMobilePhoneTransfer(token) {
       : { mode: "correction", upload: sessionStorage.getItem("pigem_phone_correction") };
     if (transfer.mode === "application") {
       sessionStorage.removeItem("pigem_phone_correction");
-      sessionStorage.setItem(APPLY_DRAFT_KEY, JSON.stringify(transfer.draft));
-      sessionStorage.setItem("pigem_selected_plan", transfer.draft.selectedPlanId);
+      acceptApplicationSnapshot(transfer);
       sessionStorage.setItem(APPLY_PHONE_TICKET_KEY, transfer.screening_ticket || "");
-      window.location.replace(window.location.pathname);
-      return true;
+      if (transfer.edit) sessionStorage.setItem(APPLICATION_HANDOFF_EDIT, transfer.edit);
+      history.replaceState(null, "", window.location.pathname);
+      document.getElementById("panel-qr-mobile").hidden = true;
+      document.getElementById("apply-step-progress").hidden = false;
+      return false;
     }
     phoneCorrectionToken = transfer.upload;
     sessionStorage.setItem("pigem_phone_correction", phoneCorrectionToken);
@@ -420,6 +436,11 @@ async function sendMobileCorrectionPhotos(button) {
 }
 
 function leaveApplicationForm(event) {
+  if (sessionStorage.getItem(APPLICATION_HANDOFF_EDIT)) {
+    event.preventDefault();
+    returnApplicationToDesktop();
+    return false;
+  }
   if (!document.getElementById("panel-qr-mobile").hidden) return true;
   var hasDetails = APPLY_DRAFT_FIELDS.some(function (key) {
     var field = document.getElementById(key);
@@ -569,27 +590,31 @@ var applicationScreeningTicket = "";
 var applyCaptchaWidget;
 
 async function openPhoneQrModal() {
-  if (!requireApplyCaptcha()) return;
+  if (applicationHandoffBusy || applicationSubmissionRunning || !requireApplyCaptcha()) return;
   var button = document.getElementById("btn-phone-qr");
   var status = document.getElementById("apply-phone-status");
+  var main = document.querySelector("main");
+  applicationHandoffBusy = true;
   button.disabled = true;
+  main.inert = true;
   status.textContent = "Creating phone link…";
   try {
-    if (_pinLookupPromise) await _pinLookupPromise;
-    saveApplyDraftState();
-    var draft = JSON.parse(sessionStorage.getItem(APPLY_DRAFT_KEY));
-    draft.referralAgentId = referralAgentId;
-    draft.agree_sub = false;
-    draft.agree_tu = false;
-    var link = await phoneTransfer("create", { mode: "application", credential: applicationScreeningTicket, draft: draft, path: location.pathname });
+    var snapshot = await applicationHandoffSnapshot();
+    var link = await phoneTransfer("create", { mode: "application", credential: applicationScreeningTicket, path: location.pathname, ...snapshot });
+    if (!link.watch) throw new Error("Could not start monitoring the phone. Try again.");
+    var watch = { token: link.watch, url: link.url, qr: link.qr, percent: applicationHandoffPercent(snapshot.draft.currentPanel) };
+    sessionStorage.setItem(APPLICATION_HANDOFF_WATCH, JSON.stringify(watch));
+    if (applicationScreeningTicket) sessionStorage.setItem(APPLY_PHONE_TICKET_KEY, applicationScreeningTicket);
+    clearApplicationHandoffEditor();
     status.textContent = "";
-    var instructions = "Scan the code to continue from this step on your phone. Your filled-in details will carry over.";
-    if (isContactOtpVerified) instructions += " Your email is already verified.";
-    showPhoneTransferLink(link, "Continue application on your phone", instructions);
+    main.inert = false;
+    startApplicationHandoffMonitor(watch);
   } catch (error) {
     status.textContent = error.message || "Could not create a phone link. Try again.";
   } finally {
     button.disabled = false;
+    main.inert = false;
+    applicationHandoffBusy = false;
   }
 }
 
@@ -861,6 +886,7 @@ async function validateSelectedIdQuality(submitting) {
 }
 
 function showPanel(index) {
+  if (sessionStorage.getItem(APPLICATION_HANDOFF_WATCH)) return;
   if (typeof checkPublicMaintenance === "function") checkPublicMaintenance();
   var mNow = (typeof getMaintenanceBlockInfo === "function") ? getMaintenanceBlockInfo() : null;
   if (mNow && mNow.blocked && !(typeof isManagerOrAdminPreview === "function" && isManagerOrAdminPreview())) {
@@ -871,6 +897,7 @@ function showPanel(index) {
   }
   currentPanel = index;
   saveApplyDraftState();
+  sendPhoneApplicationProgress(index);
   for (var i = 0; i < TOTAL_PANELS; i++) {
     var el = document.getElementById("panel-" + i);
     if (el) el.hidden = (i !== index);
@@ -1295,6 +1322,9 @@ function initMapPin() {
     leafletMap.on("click", function (event) {
       chooseInstallationPin(event.latlng.lat, event.latlng.lng);
     });
+  }
+  if (!leafletMarker && _pinLocationState.lat && _pinLocationState.lng) {
+    showInstallationMarker(Number(_pinLocationState.lat), Number(_pinLocationState.lng), 15);
   }
   leafletMap.invalidateSize();
   if (!_pinLookupPromise) refreshCoverageBanner();
@@ -1781,6 +1811,7 @@ async function performApplicationSubmission() {
       dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")")
     ];
     void Promise.allSettled(followUp);
+    completeApplicationHandoff();
   } catch (err) {
     if (loadingScreen) loadingScreen.hidden = true;
     if (savedApplication) {

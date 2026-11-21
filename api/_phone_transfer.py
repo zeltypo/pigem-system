@@ -20,6 +20,7 @@ import _screening_queue
 router = APIRouter(prefix="/api/phone-transfer")
 BUCKET = "pigem-phone-transfers"
 LIFETIME = 15 * 60
+APPLICATION_LIFETIME = 2 * 60 * 60
 MAX_PHOTOS = 3_500_000
 
 
@@ -65,7 +66,7 @@ def _write(key, data, conflict_message):
 
 
 def _read(key):
-    response = _storage("GET", f"object/authenticated/{BUCKET}/{key}")
+    response = _storage("GET", f"object/authenticated/{BUCKET}/{key}", headers={"Cache-Control": "no-cache"})
     if response.is_success:
         return response
     if response.status_code == 404 or (
@@ -91,7 +92,7 @@ def _remove_expired_files():
             return
         for item in response.json():
             created = item.get("created_at")
-            if created and time.time() - datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp() > 2 * LIFETIME:
+            if created and time.time() - datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp() > APPLICATION_LIFETIME + LIFETIME:
                 _delete(item["name"])
     except (HTTPException, ValueError, KeyError):
         pass
@@ -116,7 +117,8 @@ def _require_token(token, modes):
     stamp, key, mode, signature = match.groups()
     if mode not in modes or not hmac.compare_digest(signature, _signature(token.rsplit(".", 1)[0])):
         raise HTTPException(403, "Invalid phone link.")
-    if not 0 <= time.time() - int(stamp) <= LIFETIME:
+    lifetime = APPLICATION_LIFETIME if mode in ("watch", "edit") else LIFETIME
+    if not 0 <= time.time() - int(stamp) <= lifetime:
         raise HTTPException(410, "This link expired. Create a new QR code on your computer.")
     return stamp, key, mode
 
@@ -144,11 +146,16 @@ def _result(payload):
     return JSONResponse(payload, headers={"Cache-Control": "no-store"})
 
 
-class PhoneLink(BaseModel):
+class ApplicationSnapshot(BaseModel):
+    draft: dict | None = None
+    front: str = ""
+    back: str = ""
+
+
+class PhoneLink(ApplicationSnapshot):
     mode: str
     credential: str
     customer_id: str = ""
-    draft: dict | None = None
     path: str = "/apply.html"
 
 
@@ -156,9 +163,34 @@ class PhoneToken(BaseModel):
     token: str
 
 
+class ApplicationUpdate(PhoneToken, ApplicationSnapshot):
+    status: str
+    percent: int = 0
+
+
 class PhonePhotos(PhoneToken):
     front: str = ""
     back: str = ""
+
+
+def _application_snapshot(data):
+    if not data.draft or len(json.dumps(data.draft).encode()) > 16000:
+        raise HTTPException(400, "The application draft could not be transferred.")
+    if len(data.front) + len(data.back) > MAX_PHOTOS:
+        raise HTTPException(400, "The ID photos are too large for this transfer.")
+    for photo in (data.front, data.back):
+        if photo and not re.fullmatch(r"data:image/jpeg;base64,/9j/[A-Za-z0-9+/=]+", photo):
+            raise HTTPException(400, "Choose a JPG photo for this transfer.")
+    return {"draft": data.draft, "front": data.front, "back": data.back}
+
+
+def _read_optional(key):
+    try:
+        return _read(key).json()
+    except HTTPException as error:
+        if error.status_code == 404:
+            return None
+        raise
 
 
 @router.post("/create")
@@ -168,9 +200,7 @@ def create_link(data: PhoneLink, request: Request):
     if data.mode == "application":
         if not _screening_queue.valid_ticket(data.credential):
             raise HTTPException(403, "Complete the security check before creating a phone link.")
-        draft = json.dumps(data.draft or {}).encode()
-        if not data.draft or len(draft) > 16000:
-            raise HTTPException(400, "The application draft could not be transferred.")
+        draft = json.dumps(_application_snapshot(data)).encode()
     elif data.mode == "correction":
         _verify_customer(data.customer_id, data.credential)
         draft = b"{}"
@@ -188,6 +218,7 @@ def create_link(data: PhoneLink, request: Request):
     return _result({
         "url": url, "qr": "data:image/svg+xml;base64," + base64.b64encode(qr).decode(),
         "receiver": _token(stamp, key, "receive") if data.mode == "correction" else "",
+        "watch": _token(stamp, key, "watch") if data.mode == "application" else "",
     })
 
 
@@ -198,8 +229,74 @@ def open_link(data: PhoneToken):
     _write(key + "-opened", b"{}", "This link has already been opened.")
     _delete(key + "-pending")
     if mode == "application":
-        return _result({"mode": mode, "draft": stored.json(), "screening_ticket": _screening_queue.intake_ticket()})
+        snapshot = stored.json()
+        if "draft" not in snapshot:
+            snapshot = {"draft": snapshot}
+        return _result({**snapshot, "mode": mode, "edit": _token(stamp, key, "edit"),
+                        "screening_ticket": _screening_queue.intake_ticket()})
     return _result({"mode": mode, "upload": _token(stamp, key, "upload")})
+
+
+@router.post("/application/state")
+def application_state(data: PhoneToken):
+    stamp, key, _ = _require_token(data.token, ("watch",))
+    result = _read_optional(key + "-result")
+    if result:
+        return _result(result)
+    progress = _read_optional(key + "-progress")
+    if progress:
+        return _result(progress)
+    opened = _read_optional(key + "-opened")
+    if opened is not None:
+        if opened.get("cancelled"):
+            return _result({"status": "cancelled", **(_read_optional(key + "-pending") or {})})
+        return _result({"status": "editing"})
+    return _result({"status": "waiting" if time.time() - int(stamp) <= LIFETIME else "expired"})
+
+
+@router.post("/application/update")
+def update_application(data: ApplicationUpdate):
+    _, key, _ = _require_token(data.token, ("edit",))
+    if data.status == "editing":
+        payload = {"status": "editing", "percent": min(99, max(0, data.percent))}
+        response = _storage("POST", _object(key + "-progress"), content=json.dumps(payload).encode(),
+                            headers={"x-upsert": "true", "Cache-Control": "max-age=0"})
+        if not response.is_success:
+            raise HTTPException(503, "Could not update the application progress.")
+    elif data.status in ("returned", "submitted"):
+        payload = {"status": data.status}
+        if data.status == "returned":
+            payload.update(_application_snapshot(data))
+        try:
+            _write(key + "-result", json.dumps(payload).encode(), "This phone transfer has already finished.")
+        except HTTPException as error:
+            if error.status_code != 409 or (_read_optional(key + "-result") or {}).get("status") != data.status:
+                raise
+    else:
+        raise HTTPException(400, "Invalid application status.")
+    return _result({"saved": True})
+
+
+@router.post("/application/cancel")
+def cancel_application(data: PhoneToken):
+    _, key, _ = _require_token(data.token, ("watch",))
+    try:
+        _write(key + "-opened", b'{"cancelled":true}', "The phone already opened this application. Return it from the phone.")
+    except HTTPException as error:
+        if error.status_code != 409 or not (_read_optional(key + "-opened") or {}).get("cancelled"):
+            raise
+    return _result(_read_optional(key + "-pending") or {})
+
+
+@router.post("/application/ack")
+def acknowledge_application(data: PhoneToken):
+    _, key, _ = _require_token(data.token, ("watch",))
+    result = _storage("PUT", _object(key + "-result"), content=b'{"status":"closed"}')
+    if not result.is_success and _read_optional(key + "-result") is not None:
+        raise HTTPException(503, "Could not clear the transferred draft.")
+    _delete(key + "-pending")
+    _delete(key + "-progress")
+    return _result({"received": True})
 
 
 @router.post("/photos")

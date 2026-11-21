@@ -35,7 +35,9 @@ project, the schema reset keeps the scheduler and Vault secret.
 ## Customer phone transfers
 
 The application QR opens the saved form at the same step on a phone. It carries
-over the existing security check and verified email. The correction QR
+over the existing security check and verified email. The desktop shows progress
+while the phone is editing. Back to desktop clears the phone form and restores
+the latest draft on the desktop, including selected ID photos. The correction QR
 only stages replacement photos for the original browser to review and submit.
 Each QR can be opened once and expires in 15 minutes. The API creates a private
 temporary Storage bucket using the existing server-side Supabase and worker
