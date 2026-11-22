@@ -670,6 +670,14 @@ function renderAgentCards() {
       qMarkBtn = '<button type="button" aria-label="' + qTitle + '" title="' + qTitle + '" style="' + qStyle + '" data-id="' + id + '" onclick="openTriageQuestionPopup(this.dataset.id)">?</button>';
     }
 
+    var publish = activeBranch === "myqueue" && owned && app.agent_link_code &&
+      String(app.agent_id) === String(currentAgent.id)
+      ? '<button type="button" class="btn btn-outline btn-sm" data-id="' + id + '" onclick="confirmReleaseReferral(this.dataset.id)">Move to Public Queue</button>' : "";
+    var review = getSavedAgentFindings(app)?.uploadReview || getAgentAppIdCheck(app, true)?.result?.uploadReview;
+    var nonIdPhoto = review?.kind === "not_id" || /does not appear to show an ID card/i.test(review?.finding || "");
+    var correctionBadge = nonIdPhoto && ["Pending Review", "Under Agent Review"].includes(app.status)
+      ? '<span class="badge badge-yellow" title="' + escapeHtml(review.finding) + '">ID photo needs correction</span>' : "";
+
     var control = "";
     if (running) {
       control = '<span class="badge badge-blue" role="status" style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px">' +
@@ -697,7 +705,7 @@ function renderAgentCards() {
     return '<div class="q-card agent-queue-item queue-tone-' + tone + '"><div class="agent-queue-header"><details class="agent-queue-toggle" data-id="' + id + '"' + (expandedSummaryCards[app.id] ? " open" : "") +
       ' ontoggle="expandedSummaryCards[this.dataset.id] = this.open; if(this.open && !getAgentAppIdCheck(findAppById(this.dataset.id), true)) checkAgentQueueDocument(this.dataset.id)">' +
       '<summary aria-controls="queue-details-' + id + '"><strong>' + escapeHtml(app.full_name) + '</strong><span>' + escapeHtml(app.reference_no) + '</span></summary></details>' +
-      '<div class="agent-queue-header-action">' + control + '</div></div>' +
+      '<div class="agent-queue-header-action">' + correctionBadge + control + publish + '</div></div>' +
       '<div class="agent-queue-details" id="queue-details-' + id + '">' +
         '<div class="agent-screening-note">' +
           '<div class="row between" style="align-items:center; gap:8px; flex-wrap:wrap">' +
@@ -768,6 +776,23 @@ async function claimApplication(appId) {
   } catch (error) {
     showAlert("Could not claim", "Refresh the queue and try again.");
   }
+}
+
+function confirmReleaseReferral(appId) {
+  var app = findAppById(appId);
+  if (!app) return;
+  openConfirmPopup("Move to Public Queue?", "Any agent will be able to claim this application.", "Move to Public Queue", async function () {
+    try {
+      if (!await dbReleaseReferralApplication(app, currentAgent)) {
+        showAlert("Application unavailable", "Refresh My Queue and try again.");
+        return;
+      }
+      await refreshAgentData();
+      showTab("queue");
+    } catch (error) {
+      showAlert("Could not move application", "Refresh My Queue and try again.");
+    }
+  });
 }
 
 function findAppById(id) {

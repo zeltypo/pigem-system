@@ -42,7 +42,6 @@
       <div class="progress mt" role="progressbar" aria-label="Application progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="17">
         <div id="section-bar" style="width:17%"></div>
       </div>
-      <div id="agent-ref-banner" class="notice good mt" hidden></div>
     </div>
 
     <section id="panel-0" class="card panel">
@@ -102,11 +101,11 @@
         </div>
         <div>
           <label for="phone">Primary Mobile Number <span class="req-mark">*</span></label>
-          <input id="phone" type="tel" placeholder="09171234567">
+          <input id="phone" type="tel" inputmode="numeric" maxlength="11" placeholder="09171234567">
         </div>
         <div>
           <label for="phone_alt">Secondary Mobile Number</label>
-          <input id="phone_alt" type="tel" maxlength="11" placeholder="Optional 11-digit number (09...)">
+          <input id="phone_alt" type="tel" inputmode="numeric" maxlength="11" placeholder="Optional 11-digit number (09...)">
         </div>
       </div>
 
@@ -293,7 +292,7 @@
         </div>
         <div>
           <label for="id_number">Primary ID Number <span class="req-mark">*</span></label>
-          <input id="id_number" type="text" placeholder="Enter ID number on card">
+          <input id="id_number" type="text" maxlength="36" placeholder="Enter ID number on card">
           <div id="id-format-hint" class="small muted mt" style="font-size:12px;"></div>
         </div>
 

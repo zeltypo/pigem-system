@@ -278,6 +278,14 @@ function getPlanById(planId) {
   return { id: planId, name: "Plan " + planId, speed: "-", price: planId };
 }
 
+function getApplicationIdNumberError(value) {
+  var number = String(value || "").trim();
+  var significantLength = number.replace(/[^a-z0-9]/gi, "").length;
+  if (number.length > 36 || significantLength > 28) return "Use at most 28 letters and digits, plus any printed separators.";
+  if (significantLength < 3) return "Enter the number printed on your ID.";
+  return "";
+}
+
 function getIdType(name) {
   for (var i = 0; i < CONFIG.ID_TYPES.length; i++) {
     if (CONFIG.ID_TYPES[i].name === name) return CONFIG.ID_TYPES[i];

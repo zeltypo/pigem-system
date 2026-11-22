@@ -263,6 +263,22 @@ async function refreshNotifBell(user) {
   var list = await dbListNotifications(user, user.role);
   var localReadMap = (typeof getLocalReadNotifMap === "function") ? getLocalReadNotifMap(user) : {};
 
+  if (user.role === "manager") {
+    var notified = new Set(list.filter(function (item) {
+      return /^New (Application|personal-link application)/i.test(item.title || "");
+    }).map(function (item) { return String(item.target_id); }));
+    var cutoff = Date.now() - 7 * 86400000;
+    dashSearchApps.filter(function (app) {
+      return app.agent_link_code && new Date(app.created_at).getTime() >= cutoff && !notified.has(String(app.id));
+    }).slice(0, 20).forEach(function (app) {
+      var id = "referral-" + app.id;
+      list.push({ id: id, title: "New personal-link application " + (app.reference_no || app.ref_no),
+        message: "An application was received through an agent link.", target_tab: "tab-app-all",
+        target_id: app.id, created_at: app.created_at, is_read: Boolean(localReadMap[id]) });
+    });
+    list.sort(function (a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+  }
+
   if (user.role === "admin" && typeof checkApiHealth === "function") {
     try {
       var health = await checkApiHealth();
@@ -341,7 +357,7 @@ function renderNotifBellState() {
 async function markAllDashNotificationsRead() {
   for (var i = 0; i < dashNotifItems.length; i++) {
     dashNotifItems[i].is_read = true;
-    if (dashNotifItems[i].id && String(dashNotifItems[i].id).indexOf("sys-api-") === 0 && typeof dbMarkNotificationRead === "function") {
+    if (dashNotifItems[i].id && /^(sys-api-|referral-)/.test(String(dashNotifItems[i].id)) && typeof dbMarkNotificationRead === "function") {
       await dbMarkNotificationRead(dashNotifItems[i].id, dashCurrentUser);
     }
   }

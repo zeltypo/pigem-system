@@ -101,7 +101,6 @@ function clearApplicationHandoffEditor() {
   isContactOtpVerified = false;
   verifiedEmailAddress = "";
   resetInstallationPin();
-  document.getElementById("agent-ref-banner").hidden = true;
   document.getElementById("id-screen-warn").hidden = true;
   clearAllFieldErrors(document.querySelector("main"));
 }

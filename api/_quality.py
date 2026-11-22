@@ -101,6 +101,8 @@ _QUALITY_SYSTEM_PROMPT = (
     "Use unknown when the card type or layout is unfamiliar, obscured, or ambiguous. A portrait, barcode, QR code, signature, "
     "or absence of a field alone cannot establish a side. Mark wrong_side_uploaded only when a clearly identified side "
     "contradicts expected_side. An uncertain side is not a photo defect. A clear photo of the wrong side may have good image quality. "
+    "If the image clearly contains only an unrelated subject (such as a computer mouse, a selfie, or a receipt) and no recognizable ID, "
+    "return is_id_document=false, detected_side=unknown, and include not_an_id_card. "
     "ORIENTATION RULE: IDs may be legitimately PORTRAIT (vertical) or LANDSCAPE (horizontal). "
     "If the printed text on the card is right-side-up and readable as-is (even in portrait mode), "
     "`rotation_degrees` MUST be 0 and do NOT request `rotate_90_cw` or `rotate_90_ccw`. "
@@ -363,7 +365,7 @@ def _review_upload_slots(front, back):
     sides = wrong_sides + unrelated
     if not sides:
         return None
-    return {"sides": sides, "finding": " ".join(findings),
+    return {"kind": "not_id" if unrelated else "wrong_side", "sides": sides, "finding": " ".join(findings),
             "instruction": f"Please upload the {' and '.join(sides)} of your ID in the correct upload field."}
 
 

@@ -260,9 +260,19 @@ function showCustomerLoginUpdates() {
   );
 }
 
+function customerApplicationStatus(app) {
+  if (app.status === "Needs Correction" && !app.correction_declined) return "Needs Correction";
+  return getCustomerStatus(app.status);
+}
+
 function renderAppList() {
   var listEl = document.getElementById("cust-app-list");
   if (!listEl) return;
+  var counts = { "Processing": 0, "Needs Correction": 0, "Approved": 0, "Rejected": 0 };
+  myApps.forEach(function (app) { counts[customerApplicationStatus(app)]++; });
+  document.getElementById("cust-app-status-counts").innerHTML = Object.entries(counts).map(function (entry) {
+    return '<div><dt>' + entry[0] + '</dt><dd>' + entry[1] + '</dd></div>';
+  }).join("");
   if (myApps.length === 0) {
     listEl.innerHTML =
       '<div class="muted" style="padding:18px 0; text-align:center">' +
@@ -274,10 +284,13 @@ function renderAppList() {
   var html = myApps.map(function (app) {
     var ref = escapeHtml(app.reference_no || app.ref_no);
     var id = escapeHtml(app.id);
-    var needsFix = app.status === "Needs Correction" && !app.correction_declined;
+    var status = customerApplicationStatus(app);
+    var needsFix = status === "Needs Correction";
+    var badge = needsFix ? '<span class="badge badge-yellow">Needs Correction</span>' : customerStatusBadge(status);
     return '<div class="q-card customer-application-row">' +
-      '<div class="q-head"><div><div class="q-name">' + ref + ' · ' + escapeHtml(app.plan_name) + '</div>' +
-      '<div class="q-sub">' + customerStatusBadge(app.status === "Needs Correction" ? "Processing" : app.status) + '</div></div>' +
+      '<div class="q-head"><div><div class="q-name">' + escapeHtml(app.plan_name || "Internet application") + '</div>' +
+      '<div class="small muted">' + ref + ' · ' + formatDate(app.created_at) + '</div>' +
+      '<div class="q-sub mt">' + badge + '</div></div>' +
       '<div class="row customer-application-actions">' +
       '<button type="button" class="btn btn-outline" data-view="' + id + '">View</button>' +
       (needsFix ? '<button type="button" class="btn btn-red" data-correct="' + id + '">Correct</button>' : '') +
@@ -375,6 +388,7 @@ function openCustomerCorrection(id) {
   custQrFrontFile = null;
   custQrBackFile = null;
   var fields = app.correction_fields || [];
+  var displayEmail = app.corrected_copy?.contact_email || app.email || "";
   var html = '<h2>Correct application</h2><p class="small muted mt">' +
     escapeHtml(app.reference_no || app.ref_no) + '</p><p class="notice warn mt">' +
     escapeHtml(app.agent_remarks || "Update the requested details or ID photos.") + '</p>';
@@ -386,8 +400,8 @@ function openCustomerCorrection(id) {
   var hiIdNo  = fields.indexOf("id_number") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
   var hiAddr  = fields.indexOf("address") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430"' : '';
   var photoSides = (app.screening && app.screening.correction_photo_sides) || [];
-  var needsFront = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("front"));
-  var needsBack = fields.includes("id_photo") && (!photoSides.length || photoSides.includes("back"));
+  var needsFront = fields.includes("id_photo") && photoSides.includes("front");
+  var needsBack = fields.includes("id_photo") && photoSides.includes("back");
   var hiPhoto = fields.indexOf("id_photo") !== -1 ? 'style="border:2px solid #c8102e; background:#fff8f8; color:#1f2430; -webkit-text-fill-color:#1f2430; padding:8px; border-radius:8px"' : '';
 
   var cleanExistingMid = (app.middle_name && String(app.middle_name).toUpperCase() !== "N/A") ? app.middle_name : "";
@@ -395,7 +409,7 @@ function openCustomerCorrection(id) {
   html +=
     '<div style="margin-top:18px; padding-top:16px; border-top:2px solid #c8102e">' +
       '<h3 style="margin-bottom:6px; color:#c8102e">Needs Correction - Submit Updated Details</h3>' +
-      '<p class="muted" style="font-size:13px; margin-bottom:12px">Please update the requested field(s) or upload clear <b>Front and Back</b> photos of your Valid ID below and click <b>Resubmit Application</b> so your application can proceed to approval and installation.</p>' +
+      '<p class="muted" style="font-size:13px; margin-bottom:12px">Update only the requested details or photos, then select <b>Resubmit Application</b>.</p>' +
       '<div id="fix-msg" class="msg"></div>' +
       '<div class="grid-3">' +
         '<div class="field">' +
@@ -414,11 +428,11 @@ function openCustomerCorrection(id) {
       '<div class="grid-2">' +
         '<div class="field">' +
           '<label>Birth Date ' + (fields.indexOf("birth_date") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-          '<input id="fix-bdate" type="date" ' + hiBdate + ' value="' + escapeHtml(app.birth_date || "") + '" onchange="showSelectedPhotoQuality(this)" />' +
+          '<input id="fix-bdate" type="date" ' + hiBdate + ' value="' + escapeHtml(app.birth_date || "") + '" />' +
         '</div>' +
         '<div class="field">' +
           '<label>Primary ID Number (' + escapeHtml(app.id_type) + ') ' + (fields.indexOf("id_number") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-          '<input id="fix-idno" type="text" ' + hiIdNo + ' value="' + escapeHtml(app.id_number || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+          '<input id="fix-idno" type="text" maxlength="36" ' + hiIdNo + ' value="' + escapeHtml(app.id_number || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
       '</div>' +
       '<div class="grid-2">' +
@@ -428,7 +442,7 @@ function openCustomerCorrection(id) {
         '</div>' +
         '<div class="field">' +
           '<label>Mobile Number ' + (fields.indexOf("phone") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
-          '<input id="fix-phone" type="text" ' + hiPhone + ' value="' + escapeHtml(app.phone || "") + '" placeholder="09XXXXXXXXX" maxlength="11" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
+          '<input id="fix-phone" type="tel" inputmode="numeric" ' + hiPhone + ' value="' + escapeHtml(app.phone || "") + '" placeholder="09XXXXXXXXX" maxlength="11" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
       '</div>' +
       '<div class="field">' +
@@ -525,6 +539,8 @@ async function submitCustomerCorrection(appId) {
   if (!app) return;
 
   var btn = document.getElementById("btn-fix");
+  if (!btn || btn.disabled || customerApplicationStatus(app) !== "Needs Correction") return;
+  btn.disabled = true;
   hideMsg("fix-msg");
   if (typeof clearAllFieldErrors === "function") clearAllFieldErrors();
 
@@ -540,13 +556,18 @@ async function submitCustomerCorrection(appId) {
     var mname = document.getElementById("fix-mname") ? document.getElementById("fix-mname").value.trim() : "";
     var lname = document.getElementById("fix-lname").value.trim();
     var cleanMid = (mname && mname.toUpperCase() !== "N/A") ? mname : "";
-    var fullName = [fname, cleanMid, lname].filter(Boolean).join(" ").trim();
+    var nameChanged = [fname, cleanMid, lname].some(function (value, index) {
+      var previous = [app.first_name, app.middle_name, app.last_name][index];
+      previous = String(previous || "").trim();
+      return value !== (index === 1 && previous.toUpperCase() === "N/A" ? "" : previous);
+    });
+    var fullName = nameChanged ? [fname, cleanMid, lname].filter(Boolean).join(" ").trim() : oldName;
     var bdate = document.getElementById("fix-bdate") ? document.getElementById("fix-bdate").value : oldBdate;
     var emailInput = document.getElementById("fix-email");
     var newEmail = emailInput.value.trim().toLowerCase() || oldEmail;
     if (/^[a-z0-9][a-z0-9._+-]*$/.test(newEmail)) newEmail += "@gmail.com";
     emailInput.value = newEmail;
-    var phone = document.getElementById("fix-phone").value.trim() || app.phone;
+    var phone = document.getElementById("fix-phone").value.replace(/\D/g, "") || oldPhone;
     var idNo = document.getElementById("fix-idno").value.trim() || app.id_number;
     var street = document.getElementById("fix-street").value.trim() || app.street;
 
@@ -556,17 +577,31 @@ async function submitCustomerCorrection(appId) {
     var fileBack = (fileBackInput && fileBackInput.files && fileBackInput.files[0]) || custQrBackFile || null;
 
     var hasErr = false;
-    var fnCheck = typeof validatePersonName === "function" ? validatePersonName(fname, "First Name", false, false) : { valid: Boolean(fname) };
-    if (!fnCheck.valid) { setFieldError("fix-fname", fnCheck.message || "First Name is required."); hasErr = true; }
-    var mnCheck = typeof validatePersonName === "function" ? validatePersonName(cleanMid, "Middle Name", false, true) : { valid: true };
-    if (!mnCheck.valid) { setFieldError("fix-mname", mnCheck.message); hasErr = true; }
-    var lnCheck = typeof validatePersonName === "function" ? validatePersonName(lname, "Last Name", false, false) : { valid: Boolean(lname) };
-    if (!lnCheck.valid) { setFieldError("fix-lname", lnCheck.message || "Last Name is required."); hasErr = true; }
-    var bdCheck = typeof validateAdultBirthDate === "function" ? validateAdultBirthDate(bdate, 18) : { valid: Boolean(bdate) };
-    if (!bdCheck.valid) { setFieldError("fix-bdate", bdCheck.message || "Applicant must be at least 18 years old."); hasErr = true; }
-    if (!/^09\d{9}$/.test(phone)) { setFieldError("fix-phone", "Mobile number must be 11 digits starting with 09."); hasErr = true; }
-
     var fields = app.correction_fields || [];
+    if (nameChanged) {
+      var fnCheck = typeof validatePersonName === "function" ? validatePersonName(fname, "First Name", false, false) : { valid: Boolean(fname) };
+      if (!fnCheck.valid) { setFieldError("fix-fname", fnCheck.message || "First Name is required."); hasErr = true; }
+      var mnCheck = typeof validatePersonName === "function" ? validatePersonName(cleanMid, "Middle Name", false, true) : { valid: true };
+      if (!mnCheck.valid) { setFieldError("fix-mname", mnCheck.message); hasErr = true; }
+      var lnCheck = typeof validatePersonName === "function" ? validatePersonName(lname, "Last Name", false, false) : { valid: Boolean(lname) };
+      if (!lnCheck.valid) { setFieldError("fix-lname", lnCheck.message || "Last Name is required."); hasErr = true; }
+    }
+    var bdCheck = typeof validateAdultBirthDate === "function" ? validateAdultBirthDate(bdate, 18) : { valid: Boolean(bdate) };
+    if (bdate !== oldBdate && !bdCheck.valid) { setFieldError("fix-bdate", bdCheck.message || "Applicant must be at least 18 years old."); hasErr = true; }
+    if (phone !== oldPhone && !/^09\d{9}$/.test(phone)) { setFieldError("fix-phone", "Mobile number must be 11 digits starting with 09."); hasErr = true; }
+
+    if (idNo !== oldIdNo) {
+      var idError = getApplicationIdNumberError(idNo);
+      if (idError) { setFieldError("fix-idno", idError); hasErr = true; }
+    }
+    if (fields.includes("id_number") && idNo === oldIdNo && !file && !fileBack) {
+      setFieldError("fix-idno", "Enter the corrected ID number.");
+      hasErr = true;
+    }
+    if (fields.includes("address") && street === oldStreet) {
+      setFieldError("fix-street", "Enter the corrected installation address.");
+      hasErr = true;
+    }
     if (fields.indexOf("name") !== -1 && fullName === oldName && !file && !fileBack) {
       setFieldError("fix-fname", "Update your Name to match your Valid ID or upload a new photo.");
       hasErr = true;
@@ -600,7 +635,12 @@ async function submitCustomerCorrection(appId) {
       setFieldError("fix-file", "Please upload a clearer Front and/or Back photo of your Valid ID before resubmitting.");
       hasErr = true;
     }
-    if (hasErr) return;
+    if (hasErr) {
+      showMsg("fix-msg", "error", "Check the highlighted fields before resubmitting.");
+      var invalid = document.querySelector("#popup-modal [aria-invalid='true']");
+      if (invalid) invalid.focus();
+      return;
+    }
     var earlyQualityWarnings = [];
     if (await sameIdPhotoFiles(file, fileBack)) earlyQualityWarnings.push("Front and back ID photos are identical. Separate photos are recommended.");
     for (var item of [{ file: file, side: "Front", id: "fix-file" }, { file: fileBack, side: "Back", id: "fix-file-back" }]) {
@@ -765,23 +805,16 @@ async function submitCustomerCorrection(appId) {
       });
     }
 
-    await dbAddAiLog(
-      app.id,
-      app.reference_no,
-      "Customer (" + fullName + ")",
-      "Submitted requested update (" + changedList.join(", ") + "). Returned to Processing."
-    );
-
-    await dbAddNotification({
-      user_id: app.assigned_agent || null,
-      role: "agent",
-      title: "Customer Update Submitted: " + app.reference_no,
-      message: fullName + " updated " + changedList.join(", ") + " for " + app.reference_no + ".",
-      target_tab: "tab-queue",
-      target_id: app.id
-    });
-
-    await dbAddLog(currentCustomer.email, "Customer submitted update (" + changedList.join(", ") + ") for " + app.reference_no);
+    void Promise.allSettled([
+      dbAddAiLog(app.id, app.reference_no, "Customer (" + fullName + ")",
+        "Submitted requested update. Returned to Processing."),
+      dbAddNotification({
+        user_id: app.assigned_agent || null, role: app.assigned_agent ? null : "agent",
+        title: "Customer Update Submitted: " + app.reference_no,
+        message: "Corrections are ready for review.", target_tab: "tab-queue", target_id: app.id
+      }),
+      dbAddLog(currentCustomer.email, "Customer submitted update for " + app.reference_no)
+    ]);
     stopCustomerPhoneQrPolling();
     _custQrLoadedUrls = { front: "", back: "" };
     custQrFrontFile = null;
@@ -790,6 +823,7 @@ async function submitCustomerCorrection(appId) {
     await loadMyApplications();
   } catch (err) {
     showMsg("fix-msg", "error", err.message || "Could not submit update.");
+  } finally {
     btn.disabled = false;
     btn.textContent = "Resubmit Application";
   }

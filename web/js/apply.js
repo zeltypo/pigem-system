@@ -93,6 +93,7 @@ function saveApplyDraftState() {
     var draft = {
       currentPanel: applyResumePanel || currentPanel,
       selectedPlanId: selectedPlanId,
+      referralAgentId: referralAgentId,
       isContactOtpVerified: isContactOtpVerified,
       verifiedEmailAddress: verifiedEmailAddress,
       pinLocationState: _pinLocationState,
@@ -182,21 +183,7 @@ async function initApplyPage() {
   var urlAgent = params.get("agent") || params.get("ref");
 
   if (urlPlan) selectedPlanId = String(urlPlan);
-  if (urlAgent) {
-    referralAgentId = String(urlAgent).trim().toUpperCase();
-    var banner = document.getElementById("agent-ref-banner");
-    if (banner) {
-      banner.hidden = false;
-      banner.textContent = "Checking your agent's application link...";
-      try {
-        var link = await dbResolveAgentLink(referralAgentId);
-        banner.textContent = link ? "You are applying through an agent's personal link." : "This agent link is unavailable. You can use the regular application form.";
-        if (!link) referralAgentId = "";
-      } catch (error) {
-        banner.textContent = "Your agent link could not be checked. It will be checked again before submission.";
-      }
-    }
-  }
+  if (urlAgent) referralAgentId = String(urlAgent).trim().toUpperCase();
 
   var phoneTicket = sessionStorage.getItem(APPLY_PHONE_TICKET_KEY);
   var ticketAge = phoneTicket ? Date.now() / 1000 - Number(phoneTicket.split(".")[0]) : Infinity;
@@ -330,6 +317,7 @@ function attachApplyLiveValidation() {
   var phoneEl = document.getElementById("phone");
   if (phoneEl) {
     phoneEl.addEventListener("input", function () {
+      phoneEl.value = phoneEl.value.replace(/\D/g, "").slice(0, 11);
       if (typeof clearFieldError === "function") clearFieldError("phone");
       var digits = phoneEl.value.trim().replace(/\D/g, "");
       if (digits.length === 11 && /^09\d{9}$/.test(digits)) {
@@ -348,6 +336,7 @@ function attachApplyLiveValidation() {
 
   var altPhoneEl = document.getElementById("phone_alt");
   if (altPhoneEl) {
+    altPhoneEl.addEventListener("input", function () { altPhoneEl.value = altPhoneEl.value.replace(/\D/g, "").slice(0, 11); });
     var checkAltPhone = function () {
       var raw = altPhoneEl.value.trim();
       if (!raw) {
@@ -1116,7 +1105,8 @@ function validateCurrentPanel() {
     var idNumber = document.getElementById("id_number").value.trim();
 
     if (!idType) markInvalid("id_type", "Valid ID Type", "Select your government ID type.");
-    if (!idNumber || idNumber.length < 4) markInvalid("id_number", "ID Number", "Enter the valid number on your ID card.");
+    var idError = getApplicationIdNumberError(idNumber);
+    if (idError) markInvalid("id_number", "ID Number", idError);
     if (!selectedFrontFile) markInvalid("id_front", "Front of Valid ID", "Upload photo of the FRONT of your ID.");
 
     if (firstInvalidEl) {
@@ -1865,8 +1855,13 @@ async function performApplicationSubmission() {
 
     var followUp = [
       dbAddNotification({ user_id: accountInfo.user.id, email: email, subject: subject, body: body, target_tab: "tab-apps", target_id: saved.id }),
-      dbAddNotification({ role: "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no, target_tab: "tab-queue", target_id: saved.id }),
-      dbAddNotification({ role: "manager", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no + " (" + p.name + ")", target_tab: "tab-queue", target_id: saved.id }),
+      dbAddNotification({ user_id: referral ? referral.agent_id : null, role: referral ? null : "agent", subject: "New Application " + saved.ref_no, body: fullName + " submitted " + saved.ref_no, target_tab: "tab-queue", target_id: saved.id }),
+      dbAddNotification({
+        role: "manager",
+        title: (referral ? "New personal-link application " : "New Application ") + saved.ref_no,
+        message: fullName + " applied for " + p.name + (referral ? " through an agent link." : "."),
+        target_tab: "tab-app-all", target_id: saved.id
+      }),
       confirmEmailPromise,
       dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")")
     ];

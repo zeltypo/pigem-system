@@ -2120,3 +2120,15 @@ textarea.input-invalid {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior:auto !important; animation-duration:.01ms !important; transition-duration:.01ms !important; }
 }
+
+.customer-overview { margin-bottom: 20px; }
+.customer-overview h1 { font-size: clamp(1.5rem, 3vw, 2rem); margin-bottom: 14px; }
+.customer-status-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.customer-status-counts > div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+.customer-status-counts dt { color: var(--muted); font-size: .875rem; }
+.customer-status-counts dd { color: var(--text); font-size: 1.5rem; font-weight: 750; margin: 4px 0 0; }
+.customer-application-row:has([data-correct]) { border-inline-start: 4px solid #b45309; }
+.agent-queue-header-action { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 640px) {
+  .customer-status-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

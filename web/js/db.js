@@ -1404,6 +1404,28 @@ async function dbClaimApplication(appId, staffId, expectedAssignee, expectedStat
   return Boolean(result.data);
 }
 
+async function dbReleaseReferralApplication(app, agent) {
+  if (!app?.agent_link_code || String(app.agent_id) !== String(agent.id) ||
+      !isAssignedToStaff(app.assigned_agent, agent) || app.status !== "Pending Review") return false;
+  var changes = { assigned_agent: null, updated_at: new Date().toISOString() };
+  if (IS_DEMO_MODE) {
+    var apps = readSaved("pigem_applications", []);
+    var row = apps.find(function (item) {
+      return item.id === app.id && item.assigned_agent === app.assigned_agent && item.status === "Pending Review";
+    });
+    if (!row) return false;
+    Object.assign(row, changes);
+    writeSaved("pigem_applications", apps);
+    return true;
+  }
+  var result = await supabaseClient.from("applications").update(changes)
+    .eq("id", app.id).eq("agent_id", agent.id).eq("agent_link_code", app.agent_link_code)
+    .eq("assigned_agent", app.assigned_agent).eq("status", "Pending Review").select("*").maybeSingle();
+  if (result.error) throw result.error;
+  if (result.data) _saveLocalAppMirror(result.data);
+  return Boolean(result.data);
+}
+
 async function dbUpdateApplication(appId, changes, expectedUpdatedAt) {
   changes.updated_at = new Date().toISOString();
   if (IS_DEMO_MODE) {
@@ -1546,6 +1568,7 @@ async function dbMarkNotificationRead(notifId, user) {
   var readMap = getLocalReadNotifMap(activeUser);
   readMap[String(notifId)] = 1;
   saveLocalReadNotifMap(activeUser, readMap);
+  if (/^(sys-api-|referral-)/.test(String(notifId))) return;
 
   var localList = readSaved("pigem_notifications", []);
   var changedLocal = false;
