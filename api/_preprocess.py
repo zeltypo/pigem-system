@@ -6,7 +6,7 @@ from os import getenv
 from threading import Lock
 from time import monotonic
 
-from PIL import Image, ImageStat
+from PIL import Image, ImageOps, ImageStat
 
 from _photo import PHOTO_ERRORS, decode_photo, jpeg_bytes
 
@@ -41,16 +41,23 @@ def _activate_license(sdk) -> bool:
         return _license_ready
 
 
-def _padded_quad(sdk, quad, width: int, height: int, minimum_ratio: float = 0.18):
+def _padded_quad(sdk, quad, width: int, height: int, minimum_ratio: float = 0.18, *, reading_copy=False):
     points = list(quad.points)
     margin = max(2, round(min(width, height) * 0.015))
     if len(points) != 4 or quad.get_area() < width * height * minimum_ratio:
         return None
-    center_x = sum(point.x for point in points) / 4
-    center_y = sum(point.y for point in points) / 4
+    tl, tr, br, bl = points
+    horizontal = abs(tr.x - tl.x) + abs(tr.y - tl.y) + abs(br.x - bl.x) + abs(br.y - bl.y)
+    vertical = abs(bl.x - tl.x) + abs(bl.y - tl.y) + abs(br.x - tr.x) + abs(br.y - tr.y)
+    x_pad, y_pad = (0.05, 0.16) if vertical > horizontal else (0.16, 0.05)
+    if not reading_copy:
+        x_pad = y_pad = 0.035
     padded = [
-        sdk.Point(round(center_x + (point.x - center_x) * 1.08), round(center_y + (point.y - center_y) * 1.08))
-        for point in points
+        sdk.Point(
+            round(point.x + (point.x - across.x) * x_pad + (point.x - down.x) * y_pad),
+            round(point.y + (point.y - across.y) * x_pad + (point.y - down.y) * y_pad),
+        )
+        for point, across, down in ((tl, tr, bl), (tr, tl, br), (br, bl, tr), (bl, br, tl))
     ]
     if any(not (margin <= point.x < width - margin and margin <= point.y < height - margin) for point in padded):
         return None
@@ -72,38 +79,41 @@ def _find_card(sdk, router, image_io, source, photo, template):
     width, height = photo.size
     quad = _detect_quad(router, source, template)
     if quad:
-        padded = _padded_quad(sdk, quad, width, height, minimum_ratio=0.12)
+        padded = _padded_quad(sdk, quad, width, height, minimum_ratio=0.12, reading_copy=True)
         if padded is not None:
             return padded
 
-    # Search two tighter views for small cards. The reading copy is still
-    # normalized from the full image using the confirmed source coordinates.
+    # Alternate framing and luminance for detection, then normalize the
+    # unfiltered source using two agreeing sets of whole-card coordinates.
     locations = []
-    for x_inset, y_inset in ((0.08, 0.06), (0.16, 0.10)):
+    for x_inset, y_inset, contrast_detection in (
+        (0.08, 0.06, False), (0.16, 0.10, False),
+        (0.11, 0.07, True), (0.17, 0.08, True),
+    ):
         left, top = round(width * x_inset), round(height * y_inset)
         region = photo.crop((left, top, width - left, height - top))
-        code, region_source = image_io.read_from_memory(jpeg_bytes(region, 95))
+        detection_image = ImageOps.autocontrast(region.convert("L"), cutoff=1) if contrast_detection else region
+        code, region_source = image_io.read_from_memory(jpeg_bytes(detection_image, 95))
         if code or region_source is None:
-            return None
+            continue
         try:
             candidate = _detect_quad(router, region_source, template)
         except RuntimeError:
-            return None
+            continue
         if not candidate or _padded_quad(sdk, candidate, region.width, region.height) is None:
-            return None
+            continue
         projected = sdk.Quadrilateral()
         projected.points = [sdk.Point(p.x + left, p.y + top) for p in candidate.points]
-        padded = _padded_quad(sdk, projected, width, height, minimum_ratio=0.09)
+        padded = _padded_quad(sdk, projected, width, height, minimum_ratio=0.09, reading_copy=True)
         if padded is None:
-            return None
+            continue
+        max_offset_squared = (min(width, height) * 0.035) ** 2
+        for previous in locations:
+            if all(min((p.x - q.x) ** 2 + (p.y - q.y) ** 2 for q in previous.points) <= max_offset_squared
+                   for p in padded.points):
+                return max((previous, padded), key=lambda item: item.get_area())
         locations.append(padded)
-
-    first, second = locations
-    limit = min(width, height) * 0.025
-    if any(min((p.x - q.x) ** 2 + (p.y - q.y) ** 2 for q in second.points) > limit ** 2
-           for p in first.points):
-        return None
-    return first if first.get_area() >= second.get_area() else second
+    return None
 
 
 def _normalizer_image(sdk, photo: Image.Image):
@@ -119,7 +129,7 @@ def _normalizer_image(sdk, photo: Image.Image):
         code, _, detection_settings = router.get_simplified_settings(detect)
         if code:
             raise RuntimeError("Document detection settings unavailable")
-        detection_settings.timeout = 6500
+        detection_settings.timeout = 4000
         detection_settings.document_settings.min_quadrilateral_area_ratio = 20
         code, _ = router.update_settings(detect, detection_settings)
         if code:
@@ -208,6 +218,7 @@ def prepare_photo(data: bytes, rotation: int = 0):
         url = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes(preview, 90)).decode("ascii")
         return encoded, {
             "bypassed": False, "enhanced": True, "cropped": cropped, "crop_verified": cropped,
+            "crop_revision": 2,
             "crop_status": "cropped" if cropped else "edges_uncertain", "applied_ops": ops,
             "engine": "dynamsoft", "preview_data_url": url,
         }

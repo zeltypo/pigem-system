@@ -981,7 +981,8 @@ function showAgentPreparedPhoto(container) {
   var findings = activePhotoCopyMode === "latest" ? getSavedAgentFindings(app) : current.screening_findings;
   var side = container.dataset.photoSide || "front";
   var preparation = findings && findings.stages && findings.stages.photoPreparation && findings.stages.photoPreparation[side];
-  var preview = preparation?.engine === "dynamsoft" && (!preparation.cropped || preparation.crop_verified === true)
+  var previousCrop = preparation?.cropped && preparation.crop_revision !== 2;
+  var preview = preparation?.engine === "dynamsoft" && !previousCrop && (!preparation.cropped || preparation.crop_verified === true)
     ? preparation.preview_data_url : "";
   image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
   var usingPreview = image.src === preview;
@@ -989,7 +990,7 @@ function showAgentPreparedPhoto(container) {
     ? (preparation.cropped ? "Cropped reading copy" : "Adjusted reading copy")
     : "Original uploaded photo";
   if (activeIdImgMode === "cropped" && activePhotoCopyMode !== "original") {
-    if (preparation?.crop_status === "edges_uncertain") {
+    if (previousCrop || preparation?.crop_status === "edges_uncertain") {
       status.textContent += ". Full image kept because the card edges could not be confirmed.";
     } else if (preparation?.crop_status === "normalizer_unavailable") {
       status.textContent += ". Enhanced reading copy is unavailable.";
