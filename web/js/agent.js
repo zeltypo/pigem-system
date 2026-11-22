@@ -985,6 +985,11 @@ function showAgentPreparedPhoto(container) {
   var preview = preparation?.engine === "dynamsoft" && !previousCrop &&
     (!preparation.cropped || preparation.crop_verified === true || preparation.suggested_preview_crop === true)
     ? preparation.preview_data_url : "";
+  if (preview && /^https:\/\//i.test(preview) && activePhotoCopyMode === "latest" && app?.screening?.finished_at) {
+    var previewUrl = new URL(preview);
+    previewUrl.searchParams.set("v", app.screening.finished_at);
+    preview = previewUrl.href;
+  }
   image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
   var usingPreview = image.src === preview;
   image.dataset.suggestedCrop = String(Boolean(usingPreview && preparation.suggested_preview_crop));
