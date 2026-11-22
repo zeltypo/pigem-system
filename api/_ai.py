@@ -1319,7 +1319,7 @@ def run_conditional_screening_pipeline(
     )
     if back_bytes and quality_report.get("back"):
         idp_back_bytes, preparation["back"] = _preprocess.prepare_photo(
-            back_bytes, quality_report["back"].get("rotation_degrees", 0)
+            back_bytes, quality_report["back"].get("rotation_degrees", 0), side="back"
         )
 
     print(

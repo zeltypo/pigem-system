@@ -982,12 +982,15 @@ function showAgentPreparedPhoto(container) {
   var side = container.dataset.photoSide || "front";
   var preparation = findings && findings.stages && findings.stages.photoPreparation && findings.stages.photoPreparation[side];
   var previousCrop = preparation?.cropped && preparation.crop_revision !== 2;
-  var preview = preparation?.engine === "dynamsoft" && !previousCrop && (!preparation.cropped || preparation.crop_verified === true)
+  var preview = preparation?.engine === "dynamsoft" && !previousCrop &&
+    (!preparation.cropped || preparation.crop_verified === true || preparation.suggested_preview_crop === true)
     ? preparation.preview_data_url : "";
   image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
   var usingPreview = image.src === preview;
+  image.dataset.suggestedCrop = String(Boolean(usingPreview && preparation.suggested_preview_crop));
   status.textContent = usingPreview
-    ? (preparation.cropped ? "Cropped reading copy" : "Adjusted reading copy")
+    ? (preparation.suggested_preview_crop ? "Suggested crop. Compare with the original to check all edges."
+      : preparation.cropped ? "Cropped reading copy" : "Adjusted reading copy")
     : "Original uploaded photo";
   if (activeIdImgMode === "cropped" && activePhotoCopyMode !== "original") {
     if (previousCrop || preparation?.crop_status === "edges_uncertain") {
@@ -2190,7 +2193,7 @@ async function downloadAgentIdPhoto(side) {
   var version = activePhotoCopyMode;
   var container = document.querySelector('#det-body [data-photo-container][data-photo-side="' + side + '"]');
   var imgEl = container ? container.querySelector("img") : null;
-  var url = imgEl?.src;
+  var url = imgEl?.dataset.suggestedCrop === "true" ? container.dataset.photo : imgEl?.src;
   url = url || (side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path);
   if (!url) return;
   try {

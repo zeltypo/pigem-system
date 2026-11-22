@@ -6,7 +6,7 @@ from os import getenv
 from threading import Lock
 from time import monotonic
 
-from PIL import Image, ImageOps, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 
 from _photo import PHOTO_ERRORS, decode_photo, jpeg_bytes
 
@@ -75,6 +75,90 @@ def _detect_quad(router, source, template):
     return items[0].get_location() if len(items) == 1 else None
 
 
+def _corners_from_outline(points):
+    def cross(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    ordered = sorted(set(points))
+    hull = []
+    for sequence in (ordered, reversed(ordered)):
+        half = []
+        for point in sequence:
+            while len(half) >= 2 and cross(half[-2], half[-1], point) <= 0:
+                half.pop()
+            half.append(point)
+        hull.extend(half[:-1])
+    while len(hull) > 4:
+        index = min(range(len(hull)), key=lambda i: cross(hull[i - 1], hull[i], hull[(i + 1) % len(hull)]))
+        hull.pop(index)
+    if len(hull) != 4:
+        return ()
+    start = min(range(4), key=lambda i: sum(hull[i]))
+    return hull[start:] + hull[:start]
+
+
+def _light_card_candidate(sdk, gray, threshold):
+    width, height = gray.size
+    mask = gray.point(lambda pixel: 255 if pixel >= threshold else 0)
+    mask = mask.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.MinFilter(7))
+    for ratio_x, ratio_y in ((0.53, 0.55), (0.50, 0.50), (0.56, 0.60)):
+        seed = round(width * ratio_x), round(height * ratio_y)
+        if mask.getpixel(seed) != 255:
+            continue
+        ImageDraw.floodfill(mask, seed, 128)
+        component = mask.point(lambda pixel: 255 if pixel == 128 else 0)
+        area = component.histogram()[255]
+        if not 0.10 * width * height <= area <= 0.45 * width * height:
+            continue
+        left, top, right, bottom = component.getbbox()
+        if min(left, top, width - right, height - bottom) < 3:
+            continue
+        samples = []
+        for y in range(top, bottom):
+            span = component.crop((left, y, right, y + 1)).getbbox()
+            if span:
+                samples.extend(((left + span[0], y), (left + span[2] - 1, y)))
+        corners = _corners_from_outline(samples)
+        if not corners:
+            continue
+        quad = sdk.Quadrilateral()
+        quad.points = [sdk.Point(x, y) for x, y in corners]
+        coverage = area / max(1, quad.get_area())
+        aspect = max(right - left, bottom - top) / min(right - left, bottom - top)
+        if 0.86 <= coverage <= 1.12 and 1.20 <= aspect <= 3.2:
+            return quad
+    return None
+
+
+def _find_light_card(sdk, photo):
+    gray = photo.convert("L")
+    gray.thumbnail((320, 320), Image.Resampling.LANCZOS)
+    width, height = gray.size
+    median, high = ImageStat.Stat(gray).median[0], 0
+    remaining = width * height * 0.055
+    for level, count in reversed(list(enumerate(gray.histogram()))):
+        remaining -= count
+        if remaining <= 0:
+            high = level
+            break
+    if high - median < 45:
+        return None
+    candidates = [
+        _light_card_candidate(sdk, gray, round(median + (high - median) * fraction))
+        for fraction in (0.39, 0.47)
+    ]
+    first, second = candidates
+    if first is None or second is None or any(
+        min((point.x - other.x) ** 2 + (point.y - other.y) ** 2 for other in second.points) > (min(width, height) * 0.05) ** 2
+        for point in first.points
+    ):
+        return None
+    selected = max(candidates, key=lambda q: q.get_area())
+    projected = sdk.Quadrilateral()
+    projected.points = [sdk.Point(round(p.x * photo.width / width), round(p.y * photo.height / height)) for p in selected.points]
+    return _padded_quad(sdk, projected, photo.width, photo.height, minimum_ratio=0.09, reading_copy=True)
+
+
 def _find_card(sdk, router, image_io, source, photo, template):
     width, height = photo.size
     quad = _detect_quad(router, source, template)
@@ -116,7 +200,7 @@ def _find_card(sdk, router, image_io, source, photo, template):
     return None
 
 
-def _normalizer_image(sdk, photo: Image.Image):
+def _normalizer_image(sdk, photo: Image.Image, side: str):
     # ImageIO works on a metadata-free transport copy in memory.
     image_io = sdk.ImageIO()
     code, source = image_io.read_from_memory(jpeg_bytes(photo, 95))
@@ -136,6 +220,10 @@ def _normalizer_image(sdk, photo: Image.Image):
             raise RuntimeError("Document detection settings rejected")
         width, height = photo.size
         location = _find_card(sdk, router, image_io, source, photo, detect)
+        suggested = False
+        if location is None and side == "back":
+            location = _find_light_card(sdk, photo)
+            suggested = location is not None
 
         lighting_sample = photo
         if location is not None:
@@ -149,7 +237,7 @@ def _normalizer_image(sdk, photo: Image.Image):
         brightness = min(22, max(0, round((118 - median) / 4)))
         contrast = 10 if stats.stddev[0] < 42 else 0
         if location is None and brightness == 0 and contrast == 0:
-            return b"", False, []
+            return b"", False, [], False
 
         code, _, settings = router.get_simplified_settings(normalize)
         if code:
@@ -186,12 +274,12 @@ def _normalizer_image(sdk, photo: Image.Image):
             ops.append("brightness")
         if contrast:
             ops.append("contrast")
-        return bytes(encoded), location is not None, ops
+        return bytes(encoded), location is not None, ops, suggested
     finally:
         del router
 
 
-def prepare_photo(data: bytes, rotation: int = 0):
+def prepare_photo(data: bytes, rotation: int = 0, *, side: str = "front"):
     metadata = {
         "bypassed": True, "enhanced": False, "cropped": False, "crop_verified": False,
         "crop_status": "not_checked", "applied_ops": [], "engine": "none", "preview_data_url": "",
@@ -207,7 +295,7 @@ def prepare_photo(data: bytes, rotation: int = 0):
         photo.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
         if rotation in _rotations:
             photo = photo.transpose(_rotations[rotation])
-        encoded, cropped, ops = _normalizer_image(sdk, photo)
+        encoded, cropped, ops, suggested = _normalizer_image(sdk, photo, side)
         if rotation in _rotations:
             ops.insert(0, f"rotate_{rotation}")
             encoded = encoded or jpeg_bytes(photo, 92)
@@ -216,10 +304,12 @@ def prepare_photo(data: bytes, rotation: int = 0):
         preview = decode_photo(encoded)
         preview.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
         url = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes(preview, 90)).decode("ascii")
-        return encoded, {
-            "bypassed": False, "enhanced": True, "cropped": cropped, "crop_verified": cropped,
+        return data if suggested else encoded, {
+            "bypassed": False, "enhanced": True, "cropped": cropped, "crop_verified": cropped and not suggested,
             "crop_revision": 2,
-            "crop_status": "cropped" if cropped else "edges_uncertain", "applied_ops": ops,
+            "suggested_preview_crop": suggested,
+            "crop_status": "suggested_crop" if suggested else "cropped" if cropped else "edges_uncertain",
+            "applied_ops": ops,
             "engine": "dynamsoft", "preview_data_url": url,
         }
     except (ImportError, RuntimeError, TypeError, AttributeError, *PHOTO_ERRORS) as error:
