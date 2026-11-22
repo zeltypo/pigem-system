@@ -161,6 +161,12 @@ function restoreApplyDraftState(hasExplicitUrlPlan) {
 
 async function initApplyPage() {
   var params = new URLSearchParams(window.location.search);
+  syncApplicationHandoffCompletion(1);
+  window.addEventListener("online", function () { syncApplicationHandoffCompletion(1); });
+  if (params.get("submission_complete") === "1" && sessionStorage.getItem(APPLICATION_HANDOFF_RECEIPT) !== null) {
+    showApplicationSubmissionReceipt();
+    return;
+  }
   if (params.get("phone_returned") === "1") {
     showApplicationReturnedToDesktop();
     return;
@@ -1823,6 +1829,7 @@ async function performApplicationSubmission() {
     }
     var saved = await dbCreateApplication(baseAppPayload);
     savedApplication = saved;
+    completeApplicationHandoff(saved.ref_no || saved.reference_no);
     if (loadingScreen) loadingScreen.hidden = true;
     var isAlreadyActive = accountInfo.status === "active";
     openPopup(
@@ -1866,7 +1873,6 @@ async function performApplicationSubmission() {
       dbAddActivity("application_submitted", saved.ref_no + " (" + email + ")")
     ];
     void Promise.allSettled(followUp);
-    completeApplicationHandoff();
   } catch (err) {
     if (loadingScreen) loadingScreen.hidden = true;
     if (savedApplication) {

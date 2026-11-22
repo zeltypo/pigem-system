@@ -166,6 +166,7 @@ class PhoneToken(BaseModel):
 class ApplicationUpdate(PhoneToken, ApplicationSnapshot):
     status: str
     percent: int = 0
+    reference: str = ""
 
 
 class PhonePhotos(PhoneToken):
@@ -267,6 +268,8 @@ def update_application(data: ApplicationUpdate):
         payload = {"status": data.status}
         if data.status == "returned":
             payload.update(_application_snapshot(data))
+        elif re.fullmatch(r"PIGEM-[A-Z0-9-]{1,32}", data.reference):
+            payload["reference"] = data.reference
         try:
             _write(key + "-result", json.dumps(payload).encode(), "This phone transfer has already finished.")
         except HTTPException as error:

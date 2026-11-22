@@ -771,6 +771,15 @@ class OpenAIScreeningService:
                 "reasons": reasons,
             }
 
+        if q.get("visual_assessment_unavailable"):
+            return {
+                "triage": "yellow",
+                "auto_needs_correction": False,
+                "correction_type": "agent_review",
+                "target_fields": target_fields,
+                "reasons": ["The photo assessment could not finish. Check the uploaded ID photos."],
+            }
+
         is_yellow = bool(not all_core_matched or not ocr_payload.get("front_readable") or not ocr_payload.get("back_readable") or q_verdict == "unfixable" or q_score < 20 or is_expired or doc_type_mismatch or core_mismatches or partials or not format_ok or not age_ok or not nlp_rules.get("mrz_valid", True) or not ocr_payload.get("is_valid_government_id") or ocr_payload.get("confidence") != "high" or ocr_payload.get("authenticity_flags"))
         if is_yellow:
             for p in partials:
@@ -1160,8 +1169,7 @@ def run_conditional_screening_pipeline(
     """Execute the 3-route conditional screening architecture:
     1. Stage 1 Image Quality Assessment Gate (`gpt-6.2-sol`).
     2. Conditional Routing:
-       - GOOD: Bypass OpenCV completely; keep original ID untouched; run Azure IDP + NLP rules + GPT-5.4 summary.
-       - FIXABLE: Run targeted OpenCV enhancement only for detected defects; then Azure IDP + NLP rules + GPT-5.4 remarks.
+       - READABLE OR FIXABLE: OpenCV measures the card border and lighting before Azure IDP, rules, and the recommendation.
        - CONFIRMED DEFECT: Stop early and request replacement of the affected photo.
        - SUSPECTED WRONG SIDE OR NON-ID: Stop before field comparison and ask staff to confirm the upload.
     """
@@ -1306,14 +1314,12 @@ def run_conditional_screening_pipeline(
     if callable(stage_callback):
         stage_callback("photo_preparation", {})
 
-    front_ops = list(quality_report["front"].get("targeted_opencv_ops") or [])
-    front_ops = [op for op in front_ops if op != "deglare"] if quality_report["front"].get("verdict") == "fixable" else []
-    idp_front_bytes, preparation["front"] = _preprocess.enhance_targeted(front_bytes, front_ops)
+    front_ops = quality_report["front"].get("targeted_opencv_ops") or []
+    idp_front_bytes, preparation["front"] = _preprocess.enhance_targeted(front_bytes, front_ops, screening_auto=True)
 
     if back_bytes and quality_report.get("back"):
-        back_ops = list(quality_report["back"].get("targeted_opencv_ops") or [])
-        back_ops = [op for op in back_ops if op != "deglare"] if quality_report["back"].get("verdict") == "fixable" else []
-        idp_back_bytes, preparation["back"] = _preprocess.enhance_targeted(back_bytes, back_ops)
+        back_ops = quality_report["back"].get("targeted_opencv_ops") or []
+        idp_back_bytes, preparation["back"] = _preprocess.enhance_targeted(back_bytes, back_ops, screening_auto=True)
 
     print(
         f"screening check={check_id} stage=opencv front_ops={preparation['front'].get('applied_ops')} back_ops={(preparation.get('back') or {}).get('applied_ops')}",
@@ -1341,9 +1347,12 @@ def run_conditional_screening_pipeline(
     try:
         if not ocr_payload.get("available"):
             raise RuntimeError("Document extraction unavailable")
-        ai_reasoning = _ai_service.reason_over_validated_json(
-            entered, comparisons, nlp_rules, ocr_payload,
-            quality_report=quality_report, previous_response_id="")
+        if quality_report.get("visual_assessment_unavailable"):
+            ai_reasoning = _ai_service._build_rule_guidance(comparisons, nlp_rules, ocr_payload, quality_report)
+        else:
+            ai_reasoning = _ai_service.reason_over_validated_json(
+                entered, comparisons, nlp_rules, ocr_payload,
+                quality_report=quality_report, previous_response_id="")
     except RuntimeError:
         ai_reasoning = {
             "available": False, "triage": "yellow", "auto_needs_correction": False,

@@ -1,8 +1,9 @@
-async function phoneTransfer(action, payload) {
+async function phoneTransfer(action, payload, keepalive) {
   var response = await fetch(_apiEndpoint("/phone-transfer/" + action), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    keepalive: keepalive === true,
     signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(22000) : undefined
   });
   var data = await response.json().catch(function () { return {}; });
@@ -26,6 +27,8 @@ function phoneTransferLinkContent(link, title, instructions) {
 
 var APPLICATION_HANDOFF_WATCH = "pigem_apply_handoff_watch";
 var APPLICATION_HANDOFF_EDIT = "pigem_apply_handoff_edit";
+var APPLICATION_HANDOFF_RECEIPT = "pigem_apply_handoff_receipt";
+var APPLICATION_HANDOFF_PENDING_COMPLETE = "pigem_apply_handoff_pending_complete";
 var applicationHandoffPhotos = null;
 var applicationHandoffBusy = false;
 var applicationHandoffPolling = false;
@@ -149,8 +152,9 @@ async function pollApplicationHandoff(watch) {
     }
     if (result.status === "submitted") {
       clearCompletedApplicationHandoff();
-      showHandoffProgress(100);
-      showApplicationHandoff("Application submitted", "Your application was submitted from the other device.", true);
+      sessionStorage.setItem(APPLICATION_HANDOFF_RECEIPT, result.reference || "");
+      history.replaceState(null, "", location.pathname + "?submission_complete=1");
+      showApplicationSubmissionReceipt();
       phoneTransfer("application/ack", { token: watch.token }).catch(function () {});
       return;
     }
@@ -265,11 +269,42 @@ async function returnApplicationToDesktop() {
   }
 }
 
-function completeApplicationHandoff() {
+function showApplicationSubmissionReceipt() {
+  var reference = sessionStorage.getItem(APPLICATION_HANDOFF_RECEIPT);
+  var message = reference ? "Reference number: " + reference : "Your application was received.";
+  document.getElementById("application-handoff-progress").hidden = true;
+  document.getElementById("application-handoff-home").hidden = false;
+  document.getElementById("btn-back-website").hidden = true;
+  showApplicationHandoff("Your submission is complete", message, true);
+}
+
+var sendingApplicationCompletion = false;
+async function syncApplicationHandoffCompletion(retries) {
+  var pending = sessionStorage.getItem(APPLICATION_HANDOFF_PENDING_COMPLETE);
+  if (!pending || sendingApplicationCompletion) return;
+  sendingApplicationCompletion = true;
+  try {
+    await phoneTransfer("application/update", JSON.parse(pending), true);
+    if (sessionStorage.getItem(APPLICATION_HANDOFF_PENDING_COMPLETE) === pending) {
+      sessionStorage.removeItem(APPLICATION_HANDOFF_PENDING_COMPLETE);
+    }
+  } catch (error) {
+    if (error.status === 410 || error.status === 409) {
+      sessionStorage.removeItem(APPLICATION_HANDOFF_PENDING_COMPLETE);
+    } else if (retries > 0) {
+      setTimeout(function () { syncApplicationHandoffCompletion(retries - 1); }, 1500);
+    }
+  } finally {
+    sendingApplicationCompletion = false;
+  }
+}
+
+function completeApplicationHandoff(reference) {
   var token = sessionStorage.getItem(APPLICATION_HANDOFF_EDIT);
   if (!token) return;
+  sessionStorage.setItem(APPLICATION_HANDOFF_PENDING_COMPLETE, JSON.stringify({
+    token: token, status: "submitted", reference: reference || ""
+  }));
   clearCompletedApplicationHandoff();
-  phoneTransfer("application/update", { token: token, status: "submitted" }).catch(function () {
-    return phoneTransfer("application/update", { token: token, status: "submitted" });
-  }).catch(function () {});
+  syncApplicationHandoffCompletion(2);
 }

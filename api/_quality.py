@@ -1,7 +1,7 @@
 """Stage 1 Image Quality Assessment Gate (`gpt-6.2-sol`) + OpenCV sanity metrics.
 
 Inspects raw ID images BEFORE OpenCV or Azure IDP runs.
-- `GOOD`: Bypass OpenCV completely; keep original ID bytes untouched.
+- `GOOD`: Recommend no corrective filters. OpenCV still checks the card boundary and lighting.
 - `FIXABLE`: Run OpenCV using ONLY the targeted mathematical operations needed.
 - `UNFIXABLE`: Stop early (`NEEDS_CORRECTION`) without wasting OpenCV or Azure IDP calls.
 
@@ -109,7 +109,7 @@ _QUALITY_SYSTEM_PROMPT = (
     "Only request rotation if the printed text itself is sideways (90/270) or upside-down (180). "
     "Classify into one of three verdicts:\n"
     "1. 'good': The ID card text is right-side-up (rotation 0), well-framed, well-lit, sharp, and all printed text regions "
-    "that actually appear on this side are clearly legible as-is. `targeted_opencv_ops` MUST be empty `[]` so OpenCV is bypassed.\n"
+    "that actually appear on this side are clearly legible as-is. `targeted_opencv_ops` MUST be empty `[]`.\n"
     "2. 'fixable': All key printed fields are present and not cut off, but the photo has recoverable defects such as "
     "sideways/upside-down text needing 90/180/270 degree rotation, tilted card with wide table background needing `deskew_crop`, "
     "dim lighting (`brighten`), flat contrast (`clahe`), sensor noise (`denoise`), "
@@ -369,6 +369,15 @@ def _review_upload_slots(front, back):
             "instruction": f"Please upload the {' and '.join(sides)} of your ID in the correct upload field."}
 
 
+def _assess_with_physical_fallback(image, side, declared_id_type, form_quality, physical):
+    try:
+        return assess_single_side(
+            image, side, declared_id_type, form_quality=form_quality, precomputed_metrics=physical["metrics"]
+        )
+    except RuntimeError:
+        return {**physical, "visual_assessment_unavailable": True}
+
+
 def assess_document_uploads(
     front_bytes: bytes,
     back_bytes: Optional[bytes] = None,
@@ -397,8 +406,8 @@ def assess_document_uploads(
         front_assessment, back_assessment = front_physical, back_physical
     else:
         with ThreadPoolExecutor(max_workers=2) as executor:
-            fut_front = executor.submit(assess_single_side, front_bytes, "FRONT", declared_id_type, "", form_quality, front_metrics)
-            fut_back = executor.submit(assess_single_side, back_bytes, "BACK", declared_id_type, "", form_quality, back_metrics) if back_bytes else None
+            fut_front = executor.submit(_assess_with_physical_fallback, front_bytes, "FRONT", declared_id_type, form_quality, front_physical)
+            fut_back = executor.submit(_assess_with_physical_fallback, back_bytes, "BACK", declared_id_type, form_quality, back_physical) if back_bytes else None
             front_assessment = fut_front.result()
             back_assessment = fut_back.result() if fut_back else None
 
@@ -450,6 +459,9 @@ def assess_document_uploads(
         "quality_score": min(scores) if scores else 0,
         "duplicate_front_back": duplicate_front_back,
         "upload_review": upload_review,
+        "visual_assessment_unavailable": any(
+            side and side.get("visual_assessment_unavailable") for side in (front_assessment, back_assessment)
+        ),
         "confirmed_defects": [{"side": item["side"].lower(), "code": item["confirmed_defect"]} for item in (front_assessment, back_assessment) if item and item.get("confirmed_defect")],
         "front_sha256": front_sha,
         "back_sha256": back_sha,

@@ -16,23 +16,23 @@ import numpy as np
 
 def _order_quad_points(pts: np.ndarray) -> Optional[np.ndarray]:
     points = pts.reshape(4, 2).astype(np.float32)
-    sums = points.sum(axis=1)
-    diffs = points[:, 0] - points[:, 1]
-    order = [int(sums.argmin()), int(diffs.argmax()), int(sums.argmax()), int(diffs.argmin())]
-    if len(set(order)) != 4:
+    if len(np.unique(points, axis=0)) != 4:
         return None
-    return points[order]
+    relative = points - points.mean(axis=0)
+    clockwise = points[np.argsort(np.arctan2(relative[:, 1], relative[:, 0]))]
+    return np.roll(clockwise, -int(clockwise.sum(axis=1).argmin()), axis=0)
 
 
-def _boundary_gradient_support(gray: np.ndarray, ordered: np.ndarray, w: float, h: float) -> Tuple[int, np.ndarray]:
+def _boundary_gradient_support(gray: np.ndarray, ordered: np.ndarray, w: float, h: float) -> Tuple[List[int], np.ndarray]:
     rows, cols = gray.shape[:2]
     center = ordered.mean(axis=0)
     step = max(4, int(round(min(w, h) * 0.025)))
-    support = 0
+    side_support = []
     for i in range(4):
+        support = 0
         p1 = ordered[i]
         p2 = ordered[(i + 1) % 4]
-        for ratio in (0.25, 0.5, 0.75):
+        for ratio in (0.18, 0.34, 0.5, 0.66, 0.82):
             pt = p1 + ratio * (p2 - p1)
             vec = center - pt
             norm = float(np.hypot(vec[0], vec[1]))
@@ -46,7 +46,8 @@ def _boundary_gradient_support(gray: np.ndarray, ordered: np.ndarray, w: float, 
             iy2 = int(np.clip(round(pt[1] - dy), 0, rows - 1))
             if abs(int(gray[iy1, ix1]) - int(gray[iy2, ix2])) >= 5:
                 support += 1
-    return support, center
+        side_support.append(support)
+    return side_support, center
 
 
 def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
@@ -116,9 +117,9 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
                     if area < w * h * 0.68:
                         continue
                     support, center = _boundary_gradient_support(blurred, ordered, w, h)
-                    if support < 5:
+                    if min(support) < 2 or sum(support) < 12:
                         continue
-                    score = area * (0.6 + support / 12.0)
+                    score = area * (0.6 + sum(support) / 20.0)
                     if score > best_score:
                         best_score = score
                         padded = np.empty_like(ordered)
@@ -131,27 +132,31 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
                             "height": int(round(h * 1.035)),
                             "area_ratio": round(area / frame_area, 3),
                         }
-        if best is not None:
-            break
     return best
 
 
-def _deskew_and_crop(image: np.ndarray) -> Tuple[np.ndarray, bool]:
-    found = detect_card_quad(image)
+def _deskew_and_crop(image: np.ndarray) -> Tuple[np.ndarray, str]:
+    scale = min(1.0, 960.0 / max(image.shape[:2]))
+    sample = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else image
+    found = detect_card_quad(sample)
     if not found:
-        return image, False
-    w = max(80, int(found["width"]))
-    h = max(80, int(found["height"]))
+        return image, "edges_uncertain"
+    if found["area_ratio"] >= 0.92:
+        return image, "full_frame"
+    w = max(80, int(found["width"] / scale))
+    h = max(80, int(found["height"] / scale))
     target = np.float32([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]])
-    warped = cv2.warpPerspective(image, cv2.getPerspectiveTransform(found["points"], target), (w, h))
-    return warped, True
+    points = found["points"] / scale
+    warped = cv2.warpPerspective(image, cv2.getPerspectiveTransform(points, target), (w, h))
+    return warped, "cropped"
 
 
-def _apply_brighten(image: np.ndarray) -> np.ndarray:
-    """Gamma correction (gamma < 1.0) to lift dark shadows without blowing out highlights."""
-    gamma = 0.72
-    table = np.array([((i / 255.0) ** gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
-    return cv2.LUT(image, table)
+def _apply_brighten(image: np.ndarray, gamma: float = 0.72) -> np.ndarray:
+    """Apply a gamma curve to luminance without changing the chroma channels."""
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    table = np.uint8(np.rint(((np.arange(256) / 255.0) ** gamma) * 255))
+    lab[:, :, 0] = cv2.LUT(lab[:, :, 0], table)
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 
 def _apply_deglare(image: np.ndarray) -> np.ndarray:
@@ -192,13 +197,14 @@ def _make_preview_data_url(image: np.ndarray) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(enc.tobytes()).decode("ascii")
 
 
-def enhance_targeted(data: bytes, ops: Optional[List[str]] = None) -> Tuple[bytes, Dict[str, Any]]:
-    """Run ONLY the specified OpenCV enhancement methods.
-
-    If `ops` is empty or None, bypass OpenCV completely and return the untouched original bytes.
-    """
+def enhance_targeted(
+    data: bytes, ops: Optional[List[str]] = None, *, screening_auto: bool = False
+) -> Tuple[bytes, Dict[str, Any]]:
+    """Screening uses orientation hints and measures crop and lighting with OpenCV."""
     requested = [str(op).strip() for op in (ops or []) if str(op).strip()]
-    if not requested:
+    if screening_auto:
+        requested = [op for op in requested if op in ("rotate_90_cw", "rotate_90_ccw", "rotate_180")]
+    if not requested and not screening_auto:
         return data, {
             "bypassed": True,
             "enhanced": False,
@@ -218,7 +224,7 @@ def enhance_targeted(data: bytes, ops: Optional[List[str]] = None) -> Tuple[byte
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
 
     applied: List[str] = []
-    cropped = False
+    crop_status = "not_checked"
 
     if "rotate_90_cw" in requested:
         image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
@@ -230,19 +236,32 @@ def enhance_targeted(data: bytes, ops: Optional[List[str]] = None) -> Tuple[byte
         image = cv2.rotate(image, cv2.ROTATE_180)
         applied.append("rotate_180")
 
-    if "deskew_crop" in requested:
-        image, did_crop = _deskew_and_crop(image)
-        cropped = did_crop
-        if did_crop:
+    if screening_auto or "deskew_crop" in requested:
+        image, crop_status = _deskew_and_crop(image)
+        if crop_status == "cropped":
             applied.append("deskew_crop")
 
-    if "deglare" in requested:
+    if screening_auto:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        low, median, high = np.percentile(gray[::3, ::3], (10, 50, 90))
+        if high - low >= 6 and 12 < median < 105 and high < 205:
+            gamma = float(np.clip(np.log(112 / 255) / np.log(median / 255), 0.66, 0.9))
+            image = _apply_brighten(image, gamma)
+            applied.append("brighten")
+        elif high - low >= 12 and low > 135 and 205 < median < high < 252:
+            gamma = float(np.clip(np.log(195 / 255) / np.log(median / 255), 1.1, 1.35))
+            image = _apply_brighten(image, gamma)
+            applied.append("darken")
+        if 6 <= high - low < 72 and high < 240:
+            image = _apply_clahe(image)
+            applied.append("clahe")
+    if not screening_auto and "deglare" in requested:
         image = _apply_deglare(image)
         applied.append("deglare")
-    if "brighten" in requested:
+    if not screening_auto and "brighten" in requested:
         image = _apply_brighten(image)
         applied.append("brighten")
-    if "clahe" in requested:
+    if not screening_auto and "clahe" in requested:
         image = _apply_clahe(image)
         if "clahe" not in applied:
             applied.append("clahe")
@@ -259,6 +278,7 @@ def enhance_targeted(data: bytes, ops: Optional[List[str]] = None) -> Tuple[byte
             "bypassed": True,
             "enhanced": False,
             "cropped": False,
+            "crop_status": crop_status,
             "applied_ops": [],
             "engine": "none",
             "preview_data_url": "",
@@ -270,7 +290,8 @@ def enhance_targeted(data: bytes, ops: Optional[List[str]] = None) -> Tuple[byte
     return encoded.tobytes(), {
         "bypassed": False,
         "enhanced": True,
-        "cropped": cropped,
+        "cropped": crop_status == "cropped",
+        "crop_status": crop_status,
         "applied_ops": applied,
         "engine": "opencv",
         "preview_data_url": _make_preview_data_url(image),

@@ -379,6 +379,16 @@ function selectMyApp(id, showModal) {
   }
 }
 
+function handleCorrectionIdTypeChange(select) {
+  var changed = select.value !== select.dataset.originalType;
+  var number = document.getElementById("fix-idno");
+  number.value = changed ? "" : number.defaultValue;
+  var hint = document.getElementById("fix-idtype-hint");
+  hint.textContent = changed ? "Enter the new ID number and upload its front photo. Add its back if needed." : "";
+  clearFieldError(select);
+  clearFieldError(number);
+}
+
 function openCustomerCorrection(id) {
   var app = findMyApp(id);
   if (!app || app.status !== "Needs Correction" || app.correction_declined) return;
@@ -389,6 +399,12 @@ function openCustomerCorrection(id) {
   custQrBackFile = null;
   var fields = app.correction_fields || [];
   var displayEmail = app.corrected_copy?.contact_email || app.email || "";
+  var currentIdType = app.id_type || "";
+  var idTypes = CONFIG.ID_TYPES.map(function (type) { return type.name; });
+  if (currentIdType && !idTypes.includes(currentIdType)) idTypes.unshift(currentIdType);
+  var idTypeOptions = idTypes.map(function (type) {
+    return '<option value="' + escapeHtml(type) + '"' + (type === currentIdType ? ' selected' : '') + '>' + escapeHtml(type) + '</option>';
+  }).join("");
   var html = '<h2>Correct application</h2><p class="small muted mt">' +
     escapeHtml(app.reference_no || app.ref_no) + '</p><p class="notice warn mt">' +
     escapeHtml(app.agent_remarks || "Update the requested details or ID photos.") + '</p>';
@@ -425,13 +441,17 @@ function openCustomerCorrection(id) {
           '<input id="fix-lname" type="text" ' + hiName + ' value="' + escapeHtml(app.last_name || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
       '</div>' +
+      '<div class="field"><label for="fix-idtype">Valid ID Type</label>' +
+        '<select id="fix-idtype" data-original-type="' + escapeHtml(currentIdType) + '" onchange="handleCorrectionIdTypeChange(this)" aria-describedby="fix-idtype-hint">' +
+        '<option value="">Select a valid ID</option>' + idTypeOptions + '</select>' +
+        '<p id="fix-idtype-hint" class="small muted mt" role="status"></p></div>' +
       '<div class="grid-2">' +
         '<div class="field">' +
           '<label>Birth Date ' + (fields.indexOf("birth_date") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
           '<input id="fix-bdate" type="date" ' + hiBdate + ' value="' + escapeHtml(app.birth_date || "") + '" />' +
         '</div>' +
         '<div class="field">' +
-          '<label>Primary ID Number (' + escapeHtml(app.id_type) + ') ' + (fields.indexOf("id_number") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
+          '<label for="fix-idno">Primary ID Number ' + (fields.indexOf("id_number") !== -1 ? '<span class="badge badge-red">Update Required</span>' : '') + '</label>' +
           '<input id="fix-idno" type="text" maxlength="36" ' + hiIdNo + ' value="' + escapeHtml(app.id_number || "") + '" oninput="if(typeof clearFieldError===\'function\') clearFieldError(this)" />' +
         '</div>' +
       '</div>' +
@@ -568,7 +588,11 @@ async function submitCustomerCorrection(appId) {
     if (/^[a-z0-9][a-z0-9._+-]*$/.test(newEmail)) newEmail += "@gmail.com";
     emailInput.value = newEmail;
     var phone = document.getElementById("fix-phone").value.replace(/\D/g, "") || oldPhone;
-    var idNo = document.getElementById("fix-idno").value.trim() || app.id_number;
+    var oldIdType = app.id_type || "";
+    var idType = document.getElementById("fix-idtype").value;
+    var idTypeChanged = idType !== oldIdType;
+    var idNo = document.getElementById("fix-idno").value.trim();
+    if (!idTypeChanged && !idNo) idNo = oldIdNo;
     var street = document.getElementById("fix-street").value.trim() || app.street;
 
     var fileInput = document.getElementById("fix-file");
@@ -590,11 +614,19 @@ async function submitCustomerCorrection(appId) {
     if (bdate !== oldBdate && !bdCheck.valid) { setFieldError("fix-bdate", bdCheck.message || "Applicant must be at least 18 years old."); hasErr = true; }
     if (phone !== oldPhone && !/^09\d{9}$/.test(phone)) { setFieldError("fix-phone", "Mobile number must be 11 digits starting with 09."); hasErr = true; }
 
-    if (idNo !== oldIdNo) {
+    if (idTypeChanged && !CONFIG.ID_TYPES.some(function (type) { return type.name === idType; })) {
+      setFieldError("fix-idtype", "Select a valid ID type.");
+      hasErr = true;
+    }
+    if (idTypeChanged && !file) {
+      setFieldError("fix-file", "Upload the front photo of your new ID.");
+      hasErr = true;
+    }
+    if (idTypeChanged || idNo !== oldIdNo) {
       var idError = getApplicationIdNumberError(idNo);
       if (idError) { setFieldError("fix-idno", idError); hasErr = true; }
     }
-    if (fields.includes("id_number") && idNo === oldIdNo && !file && !fileBack) {
+    if (!idTypeChanged && fields.includes("id_number") && idNo === oldIdNo && !file && !fileBack) {
       setFieldError("fix-idno", "Enter the corrected ID number.");
       hasErr = true;
     }
@@ -623,11 +655,11 @@ async function submitCustomerCorrection(appId) {
       hasErr = true;
     }
     var requestedSides = (app.screening && app.screening.correction_photo_sides) || [];
-    if (fields.includes("id_photo") && requestedSides.includes("front") && !file) {
+    if (!idTypeChanged && fields.includes("id_photo") && requestedSides.includes("front") && !file) {
       setFieldError("fix-file", "Upload a clearer photo of the front of your ID.");
       hasErr = true;
     }
-    if (fields.includes("id_photo") && requestedSides.includes("back") && !fileBack) {
+    if (!idTypeChanged && fields.includes("id_photo") && requestedSides.includes("back") && !fileBack) {
       setFieldError("fix-file-back", "Upload a clearer photo of the back of your ID.");
       hasErr = true;
     }
@@ -656,6 +688,7 @@ async function submitCustomerCorrection(appId) {
     if (bdate !== oldBdate) changedList.push("Birth Date (" + bdate + ")");
     if (newEmail !== oldEmail) changedList.push("Email Address (" + newEmail + ")");
     if (phone !== oldPhone) changedList.push("Mobile Number (" + phone + ")");
+    if (idTypeChanged) changedList.push("Valid ID type");
     if (idNo !== oldIdNo) changedList.push("ID Number (" + idNo + ")");
     if (street !== oldStreet) changedList.push("Address");
     if (file) changedList.push("New Front Valid ID Photo");
@@ -707,7 +740,7 @@ async function submitCustomerCorrection(appId) {
     }
 
     var idUrl = app.id_image_url || app.id_front_path;
-    var idBackUrl = app.id_back_image_url || app.id_back_path || "";
+    var idBackUrl = idTypeChanged ? "" : (app.id_back_image_url || app.id_back_path || "");
     var ownerId = app.customer_id || (currentCustomer && currentCustomer.id);
     var refTag = app.reference_no || app.ref_no || "app";
     if (file) {
@@ -721,7 +754,7 @@ async function submitCustomerCorrection(appId) {
       previous_submissions: previousCustomerSubmissions(app.corrected_copy, app.screening),
       requested_fields: Array.isArray(app.correction_fields) ? app.correction_fields : [],
       reviewed_findings: (app.screening && app.screening.correction_findings) || null,
-      id_type: app.id_type,
+      id_type: idType,
       full_name: fullName,
       first_name: fname,
       middle_name: cleanMid,
@@ -772,6 +805,7 @@ async function submitCustomerCorrection(appId) {
       customer_name: fullName,
       birth_date: bdate,
       phone: phone,
+      id_type: idType,
       id_number: idNo,
       street: street,
       id_front_path: idUrl,
@@ -780,7 +814,9 @@ async function submitCustomerCorrection(appId) {
       id_back_image_url: idBackUrl,
       id_cropped_url: file ? "" : (app.id_cropped_url || ""),
       cropped_id_path: file ? "" : (app.cropped_id_path || ""),
-      id_back_cropped_url: fileBack ? "" : (app.id_back_cropped_url || ""),
+      cropped_id_url: file ? "" : (app.cropped_id_url || ""),
+      id_back_cropped_url: fileBack || idTypeChanged ? "" : (app.id_back_cropped_url || ""),
+      cropped_back_url: fileBack || idTypeChanged ? "" : (app.cropped_back_url || ""),
       ai_result: null,
       screening: updatedScreening,
       original_copy: orig,
@@ -795,7 +831,7 @@ async function submitCustomerCorrection(appId) {
 
     if ((file || fileBack) && typeof dbCreateDocumentRecord === "function") {
       await dbCreateDocumentRecord(app.id, {
-        id_type: app.id_type || "",
+        id_type: idType,
         id_number: idNo || app.id_number || "",
         front_image_url: idUrl,
         back_image_url: idBackUrl,

@@ -1278,7 +1278,13 @@ function showAgentPreparedPhoto(container) {
   var preparation = findings && findings.stages && findings.stages.photoPreparation && findings.stages.photoPreparation[side];
   var preview = preparation && preparation.preview_data_url;
   image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
-  status.textContent = image.src === preview ? "Enhanced reading copy — original preserved" : "Original uploaded photo";
+  var usingPreview = image.src === preview;
+  status.textContent = usingPreview
+    ? (preparation.cropped ? "Cropped reading copy" : "Adjusted reading copy")
+    : "Original uploaded photo";
+  if (activeIdImgMode === "cropped" && preparation?.crop_status === "edges_uncertain" && activePhotoCopyMode !== "original") {
+    status.textContent += ". Full image kept because the card edges could not be confirmed.";
+  }
 }
 
 var agentDocumentTypes = [
