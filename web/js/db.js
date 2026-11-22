@@ -1482,30 +1482,37 @@ async function dbUploadDocument(file, folder, label) {
   var path = cleanFolder + "_" + cleanLabel + "_" + crypto.randomUUID() + "." + ext;
   if (file.size > 12000000) throw new Error("Choose a document smaller than 12 MB.");
 
-  if (!IS_DEMO_MODE && supabaseClient && supabaseClient.storage) {
-    for (var b = 0; b < DOCUMENT_BUCKETS.length; b++) {
-      var bucketName = DOCUMENT_BUCKETS[b];
-      try {
-        var res = await supabaseClient.storage.from(bucketName).upload(path, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type || "image/jpeg"
-        });
-        if (!res.error) {
-          var pub = supabaseClient.storage.from(bucketName).getPublicUrl(path);
-          if (pub && pub.data && pub.data.publicUrl) {
-            return pub.data.publicUrl;
-          }
-        } else {
-          console.warn("Supabase " + bucketName + " upload failed, trying next bucket:", res.error.message);
-        }
-      } catch (storageErr) {
-        console.warn("Storage bucket " + bucketName + " notice, trying next bucket:", storageErr);
-      }
-    }
+  if (IS_DEMO_MODE || !supabaseClient?.storage) {
+    throw new Error("Document storage is unavailable. Please try again later.");
   }
 
-  throw new Error("Document could not be saved. Please check your connection and try again.");
+  var bucket = supabaseClient.storage.from(DOCUMENT_BUCKETS[0]);
+  var status = 0;
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var uploaded = false;
+    try {
+      var res = await bucket.upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type || "image/jpeg"
+      });
+      status = Number(res.error?.statusCode || res.error?.status || 0);
+      uploaded = !res.error || (attempt > 0 && status === 409);
+    } catch (error) {
+      status = Number(error?.statusCode || error?.status || 0);
+    }
+    if (uploaded) return bucket.getPublicUrl(path).data.publicUrl;
+    if (status && ![408, 429].includes(status) && status < 500) break;
+    if (attempt < 2) await new Promise(function (resolve) { setTimeout(resolve, 500 * (attempt + 1)); });
+  }
+
+  var side = label === "id-front" ? "front ID photo" : label === "id-back" ? "back ID photo" : "document";
+  if (status === 413) throw new Error("The " + side + " is too large. Choose a smaller photo and try again.");
+  if ([401, 403, 404].includes(status)) {
+    throw new Error("The " + side + " could not be saved because document storage is unavailable. Please try again later.");
+  }
+  if (status === 415) throw new Error("The " + side + " format was not accepted. Choose a JPG or PNG photo.");
+  throw new Error("The " + side + " could not be uploaded. Check your connection and try again.");
 }
 
 async function dbGetDocumentLink(path) {

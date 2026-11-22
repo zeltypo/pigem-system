@@ -4,6 +4,7 @@ import hmac
 import os
 import secrets
 import time
+import traceback
 from urllib.parse import urlsplit
 import httpx
 import _ai
@@ -134,7 +135,9 @@ class ScreeningWorker:
         try:
             result = self.findings(job)
         except Exception as error:
-            print(f"screening job={job['id']} failed={type(error).__name__}", flush=True)
+            frame = traceback.extract_tb(error.__traceback__)[-1]
+            location = f"{os.path.basename(frame.filename)}:{frame.lineno}"
+            print(f"screening job={job['id']} failed={type(error).__name__} location={location}", flush=True)
             result = None
         finished = bool(rpc("pigem_finish_screening", {
             "job_id": job["id"], "job_attempt": job["attempt"], "findings": result

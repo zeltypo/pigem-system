@@ -1,6 +1,7 @@
 """Assess ID photo quality before document normalization and text extraction."""
 
 from concurrent.futures import ThreadPoolExecutor
+import base64
 import hashlib
 import json
 import os

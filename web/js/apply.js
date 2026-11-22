@@ -1785,11 +1785,11 @@ async function performApplicationSubmission() {
 
     var referral = referralAgentId ? await dbResolveAgentLink(referralAgentId) : null;
     if (referralAgentId && !referral) throw new Error("Your agent's application link is unavailable. Please reopen the link or use the regular application form.");
-    var accountInfo = await dbCreateAccountFromApplication(fullName, email);
     var applicationRef = generateApplicationReference();
     var appFolder = applicationRef + "_original";
     var frontPath = await dbUploadDocument(selectedFrontFile, appFolder, "id-front");
     var backPath = await dbUploadDocument(selectedBackFile, appFolder, "id-back");
+    var accountInfo = await dbCreateAccountFromApplication(fullName, email);
 
     advanceLoadingStep(3);
     var baseAppPayload = Object.assign({}, addrData, {
