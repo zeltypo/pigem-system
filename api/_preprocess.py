@@ -156,7 +156,28 @@ def _find_light_card(sdk, photo):
     selected = max(candidates, key=lambda q: q.get_area())
     projected = sdk.Quadrilateral()
     projected.points = [sdk.Point(round(p.x * photo.width / width), round(p.y * photo.height / height)) for p in selected.points]
-    return _padded_quad(sdk, projected, photo.width, photo.height, minimum_ratio=0.09, reading_copy=True)
+    return _padded_quad(sdk, projected, photo.width, photo.height, minimum_ratio=0.09)
+
+
+def _reading_adjustments(photo, location):
+    luminance = photo.convert("L")
+    luminance.thumbnail((320, 320), Image.Resampling.LANCZOS)
+    mask = None
+    if location is not None:
+        points = [(p.x * luminance.width / photo.width, p.y * luminance.height / photo.height)
+                  for p in location.points]
+        center_x = sum(x for x, _ in points) / 4
+        center_y = sum(y for _, y in points) / 4
+        mask = Image.new("L", luminance.size)
+        ImageDraw.Draw(mask).polygon(
+            [(round(center_x + (x - center_x) * 0.72), round(center_y + (y - center_y) * 0.72))
+             for x, y in points], fill=255,
+        )
+    stats = ImageStat.Stat(luminance, mask)
+    median = stats.median[0]
+    brightness = min(22, max(0, round((128 - median) / 4)))
+    contrast = min(18, max(0, round((48 - stats.stddev[0]) / 2)))
+    return brightness, contrast
 
 
 def _find_card(sdk, router, image_io, source, photo, template):
@@ -225,17 +246,7 @@ def _normalizer_image(sdk, photo: Image.Image, side: str):
             location = _find_light_card(sdk, photo)
             suggested = location is not None
 
-        lighting_sample = photo
-        if location is not None:
-            x = [point.x for point in location.points]
-            y = [point.y for point in location.points]
-            lighting_sample = photo.crop((min(x), min(y), max(x) + 1, max(y) + 1))
-        luminance = lighting_sample.convert("L")
-        luminance.thumbnail((320, 320))
-        stats = ImageStat.Stat(luminance)
-        median = stats.median[0]
-        brightness = min(22, max(0, round((118 - median) / 4)))
-        contrast = 10 if stats.stddev[0] < 42 else 0
+        brightness, contrast = _reading_adjustments(photo, location)
         if location is None and brightness == 0 and contrast == 0:
             return b"", False, [], False
 

@@ -1426,6 +1426,26 @@ async function dbReleaseReferralApplication(app, agent) {
   return Boolean(result.data);
 }
 
+async function dbReleaseClaim(appId, agent) {
+  if (IS_DEMO_MODE) {
+    var apps = readSaved("pigem_applications", []);
+    var app = apps.find(function (row) {
+      return row.id === appId && row.status === "Under Agent Review" && isAssignedToStaff(row.assigned_agent, agent);
+    });
+    if (!app) return false;
+    Object.assign(app, { assigned_agent: null, status: "Pending Review", updated_at: new Date().toISOString() });
+    writeSaved("pigem_applications", apps);
+    return true;
+  }
+  var result = await supabaseClient.rpc("pigem_release_claim", {
+    app_id: appId,
+    verified_token: sessionStorage.getItem("pigem_verified_screening_token") || "",
+    portal_token: getActiveSessionPair().tok || ""
+  });
+  if (result.error) throw result.error;
+  return result.data === true;
+}
+
 async function dbUpdateApplication(appId, changes, expectedUpdatedAt) {
   changes.updated_at = new Date().toISOString();
   if (IS_DEMO_MODE) {

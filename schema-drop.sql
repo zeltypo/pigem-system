@@ -9,6 +9,7 @@ DROP FUNCTION IF EXISTS public.pigem_enqueue_screening(text, text);
 DROP FUNCTION IF EXISTS public.pigem_claim_screening();
 DROP FUNCTION IF EXISTS public.pigem_finish_screening(uuid, integer, jsonb);
 DROP FUNCTION IF EXISTS public.pigem_screening_progress(uuid, integer, text);
+DROP FUNCTION IF EXISTS public.pigem_release_claim(text, text, text);
 
 DROP TABLE IF EXISTS
   pigem_private.admin_setup,

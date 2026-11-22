@@ -208,6 +208,8 @@ BEGIN
     (OLD.status='Pending Review' AND NEW.status='Under Agent Review') OR
     (OLD.status='Pending Review' AND NEW.status='Needs Correction' AND current_user IN ('postgres','service_role') AND NEW.screening->>'auto_correction_sent'='true') OR
     (OLD.status='Under Agent Review' AND NEW.status IN ('Encoding','Needs Correction')) OR
+    (OLD.status='Under Agent Review' AND NEW.status='Pending Review' AND
+      OLD.assigned_agent IS NOT NULL AND NEW.assigned_agent IS NULL AND current_user IN ('postgres','service_role')) OR
     (OLD.status='Encoding' AND NEW.status IN ('Approved','Rejected','Needs Correction')) OR
     (OLD.status='Needs Correction' AND NEW.status IN ('Pending Review','Under Agent Review','Rejected'))
   ) THEN RAISE EXCEPTION 'Invalid application status change: % to %',OLD.status,NEW.status; END IF;
@@ -870,6 +872,27 @@ BEGIN
 END;
 $$;
 REVOKE ALL ON FUNCTION public.pigem_referral_actor(text,text) FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.pigem_release_claim(app_id text, verified_token text, portal_token text)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE agent public.users%ROWTYPE;
+BEGIN
+  SELECT * INTO agent FROM public.users
+  WHERE id=public.pigem_referral_actor(verified_token,portal_token) AND active AND role='agent';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Sign in as an agent to release a claim'; END IF;
+  UPDATE public.applications
+  SET assigned_agent=NULL,status='Pending Review',updated_at=now()
+  WHERE id=app_id AND status='Under Agent Review' AND (
+    (nullif(trim(agent.username),'') IS NOT NULL AND
+      lower(ltrim(trim(assigned_agent),'@'))=lower(ltrim(trim(agent.username),'@'))) OR
+    (nullif(trim(agent.email),'') IS NOT NULL AND lower(trim(assigned_agent))=lower(trim(agent.email)))
+  );
+  RETURN FOUND;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pigem_release_claim(text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.pigem_release_claim(text,text,text) TO anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.pigem_request_referral(verified_token text, portal_token text)
 RETURNS jsonb

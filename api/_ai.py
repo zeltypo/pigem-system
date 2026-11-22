@@ -789,6 +789,18 @@ class OpenAIScreeningService:
                 reasons.append(nlp_rules["id_format_note"])
             if not age_ok and nlp_rules.get("age_note"):
                 reasons.append(nlp_rules["age_note"])
+            if not ocr_payload.get("front_readable"):
+                reasons.append("The front of the ID could not be read reliably.")
+            if not ocr_payload.get("back_readable"):
+                reasons.append("The back of the ID could not be read reliably.")
+            if not nlp_rules.get("mrz_valid", True):
+                reasons.append("The ID's machine-readable details could not be verified.")
+            if ocr_payload.get("authenticity_flags"):
+                reasons.append("The document check flagged details that need manual verification.")
+            if not ocr_payload.get("is_valid_government_id"):
+                reasons.append("Automated checks could not verify the document type. Check whether the uploaded ID is accepted.")
+            if ocr_payload.get("confidence") != "high":
+                reasons.append("The document check did not have high confidence in the extracted details.")
             return {
                 "triage": "yellow",
                 "auto_needs_correction": False,
@@ -872,7 +884,7 @@ class OpenAIScreeningService:
                 "The customer will receive an automatic request to replace the affected photo."
             )
         else:
-            primary_reason = triage_info["reasons"][0] if triage_info["reasons"] else "Minor discrepancy or partial field read."
+            primary_reason = triage_info["reasons"][0] if triage_info["reasons"] else "Some required details could not be verified."
             queue_summary = f"Agent Review Needed: {primary_reason}"
             final_rec = (
                 f"Final Recommendation: Manual Agent Review before claiming. {primary_reason} "
@@ -932,6 +944,7 @@ class OpenAIScreeningService:
             "auto_needs_correction": triage_info["auto_needs_correction"],
             "correction_type": triage_info["correction_type"],
             "target_fields": triage_info["target_fields"],
+            "review_reasons": triage_info["reasons"],
             "confirmed_defects": triage_info.get("confirmed_defects", []),
             "recommendation": recommendation,
             "queue_summary": queue_summary,
@@ -988,6 +1001,7 @@ class OpenAIScreeningService:
             "field_comparisons": masked_comparisons,
             "nlp_validation": {key: nlp_rules.get(key) for key in ("age_eligible", "is_expired", "id_format_valid", "mrz_valid")},
             "target_fields": base_guidance["target_fields"],
+            "review_reasons": base_guidance.get("review_reasons", []),
             "required_recommendation": base_guidance["recommendation"],
         }
 

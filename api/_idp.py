@@ -769,7 +769,7 @@ def extract_id_document(
         authenticity_flags.append("No readable identification text or document structure detected.")
     elif doc_conf > 0 and doc_conf < 0.55:
         authenticity_flags.append(
-            f"Low IDP document confidence ({int(doc_conf * 100)}%) — check for image tampering, glare, or screen recapture."
+            f"Low document extraction confidence ({int(doc_conf * 100)}%). Compare the original photo with the extracted details."
         )
     low_conf_fields = [
         label

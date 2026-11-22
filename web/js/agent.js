@@ -487,7 +487,7 @@ function agentBackgroundStatus(app) {
     running: (app?.screening?.phase || "Checking ID quality and details") + " — " + getScreeningEtaLabel(app) + ".",
     failed: "Manual Review Fallback — Automated document check could not finish. Inspect the ID photos and details manually."
   };
-  return states[app?.screening?.background_state] || "Click Check documents to inspect the ID photos and run verification.";
+  return states[app?.screening?.background_state] || "No background findings are available yet. Review the original ID photos if needed.";
 }
 
 function getScreeningQuickSummary(app) {
@@ -649,6 +649,7 @@ function renderAgentCards() {
     if (owned) {
       actions += '<option value="correction">Needs correction (PIGEM / ISP)</option><option value="status">ISP / Validator decision</option>' +
         '<option value="Encoding">ISP Encoding</option><option value="Approved">ISP Approved</option><option value="Rejected">ISP Rejected</option>';
+      if (activeBranch === "claimed") actions += '<option value="unclaim">Unclaim and return to Public Queue</option>';
     }
 
     var qMarkBtn = "";
@@ -720,7 +721,9 @@ function renderAgentCards() {
 function runAgentQueueAction(select) {
   var action = select.value;
   select.value = "";
-  if (["Encoding", "Approved", "Rejected"].includes(action)) {
+  if (action === "unclaim") {
+    confirmReleaseClaim(select.dataset.id);
+  } else if (["Encoding", "Approved", "Rejected"].includes(action)) {
     openAppDetail(select.dataset.id, "status", action);
   } else if (action) {
     openAppDetail(select.dataset.id, action);
@@ -783,6 +786,24 @@ function confirmReleaseReferral(appId) {
       showTab("queue");
     } catch (error) {
       showAlert("Could not move application", "Refresh My Queue and try again.");
+    }
+  });
+}
+
+function confirmReleaseClaim(appId) {
+  var app = findAppById(appId);
+  if (!app || app.status !== "Under Agent Review" || !isAssignedToStaff(app.assigned_agent, currentAgent)) return;
+  openConfirmPopup("Unclaim this application?", "The application will return to the Public Queue with its saved screening results.", "Unclaim", async function () {
+    try {
+      if (!await dbReleaseClaim(appId, currentAgent)) {
+        await refreshAgentData();
+        showAlert("Application unavailable", "The application may have been reassigned or moved to another stage.");
+        return;
+      }
+      await refreshAgentData();
+      showTab("queue");
+    } catch (error) {
+      showAlert("Could not unclaim application", "Refresh the queue and try again.");
     }
   });
 }
@@ -990,9 +1011,15 @@ function showAgentPreparedPhoto(container) {
     previewUrl.searchParams.set("v", app.screening.finished_at);
     preview = previewUrl.href;
   }
-  image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
-  var usingPreview = image.src === preview;
+  var usingPreview = Boolean(activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview);
   image.dataset.suggestedCrop = String(Boolean(usingPreview && preparation.suggested_preview_crop));
+  image.onerror = usingPreview ? function () {
+    image.onerror = null;
+    image.dataset.suggestedCrop = "false";
+    status.textContent = "Enhanced reading copy unavailable. Showing the original photo.";
+    image.src = url;
+  } : null;
+  image.src = usingPreview ? preview : url;
   status.textContent = usingPreview
     ? (preparation.suggested_preview_crop ? "Suggested crop. Compare with the original to check all edges."
       : preparation.cropped ? "Cropped reading copy" : "Adjusted reading copy")
@@ -1286,7 +1313,7 @@ function summarizeAgentIdFindings(result) {
   if (result.uploadReview?.finding) return result.uploadReview.finding + " Check the original uploads before requesting a correction.";
   var notes = [];
   var unclear = result.unclearSides || [];
-  var differences = result.fields.filter(function (field) { return field.status === "difference"; });
+  var differences = (result.fields || []).filter(function (field) { return field.status === "difference"; });
   var labels = differences.map(function (field) { return field.label.toLowerCase(); }).join(", ");
   if (result.nlpValidation?.age_eligible === false) {
     notes.push("Applicant does not meet the age requirement. Confirm before deciding.");
@@ -1558,9 +1585,6 @@ async function showAgentIdFindings(panel, app, copySnapshot) {
     panel._documentFindings = histResult;
     var histHeader = histResult.finalRecommendation || summarizeAgentIdFindings(histResult);
     var histLines = [histHeader];
-    if (histResult.queueSummary && histResult.queueSummary !== histHeader) {
-      histLines.push("Summary: " + histResult.queueSummary);
-    }
     if (Array.isArray(histResult.fields) && histResult.fields.some(function (f) { return f.status !== "unreadable"; })) {
       histLines.push(histResult.fields.filter(function (f) { return f.status !== "unreadable"; }).map(describeAgentIdField).join("\n"));
     }
@@ -1571,13 +1595,6 @@ async function showAgentIdFindings(panel, app, copySnapshot) {
     panel.textContent = "Manual Review Fallback Active: Automated AI screening is currently offline or paused. Please visually compare the applicant's Front & Back Valid ID photos below against the submitted Name, Birth Date, and ID Number, then proceed with your Agent decision.";
     return;
   }
-  var expected = {
-    name: panel.dataset.name,
-    birth: panel.dataset.birth,
-    number: panel.dataset.number,
-    type: panel.dataset.type || "",
-    previous_response_id: ""
-  };
   var check = app ? getAgentAppIdCheck(app) : null;
   if (!check) {
     panel.textContent = app ? agentBackgroundStatus(app) : "No saved findings for this copy. Review the original photo manually.";
@@ -1597,14 +1614,10 @@ async function showAgentIdFindings(panel, app, copySnapshot) {
 
   var headerLine = result.finalRecommendation || summarizeAgentIdFindings(result);
   var linesOut = [headerLine];
-  if (result.queueSummary && result.queueSummary !== headerLine) {
-    linesOut.push("Summary: " + result.queueSummary);
-  }
-  if (!result.failed && !result.unavailableSides?.length && !result.failedReads?.length && result.fields.some(function (field) { return field.status !== "unreadable"; })) {
-    linesOut.push(result.fields.filter(function (field) {
-      return field.status !== "unreadable";
-    }).map(describeAgentIdField).join("\n"));
-  }
+  var readableFields = (result.fields || []).filter(function (field) {
+    return field.status !== "unreadable";
+  });
+  if (readableFields.length) linesOut.push(readableFields.map(describeAgentIdField).join("\n"));
   if (!result.failed && result.nlpValidation) {
     var nlpLines = [];
     if (result.nlpValidation.age_note) nlpLines.push("Age check: " + result.nlpValidation.age_note);
