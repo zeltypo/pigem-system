@@ -41,10 +41,10 @@ def _activate_license(sdk) -> bool:
         return _license_ready
 
 
-def _padded_quad(sdk, quad, width: int, height: int):
+def _padded_quad(sdk, quad, width: int, height: int, minimum_ratio: float = 0.18):
     points = list(quad.points)
     margin = max(2, round(min(width, height) * 0.015))
-    if len(points) != 4 or quad.get_area() < width * height * 0.18:
+    if len(points) != 4 or quad.get_area() < width * height * minimum_ratio:
         return None
     center_x = sum(point.x for point in points) / 4
     center_y = sum(point.y for point in points) / 4
@@ -57,6 +57,53 @@ def _padded_quad(sdk, quad, width: int, height: int):
     result = sdk.Quadrilateral()
     result.points = padded
     return result
+
+
+def _detect_quad(router, source, template):
+    captured = router.capture(source, template)
+    if captured.get_error_code():
+        raise RuntimeError("Document detection failed")
+    documents = captured.get_processed_document_result()
+    items = documents.get_detected_quad_result_items() if documents else []
+    return items[0].get_location() if len(items) == 1 else None
+
+
+def _find_card(sdk, router, image_io, source, photo, template):
+    width, height = photo.size
+    quad = _detect_quad(router, source, template)
+    if quad:
+        padded = _padded_quad(sdk, quad, width, height, minimum_ratio=0.12)
+        if padded is not None:
+            return padded
+
+    # Search two tighter views for small cards. The reading copy is still
+    # normalized from the full image using the confirmed source coordinates.
+    locations = []
+    for x_inset, y_inset in ((0.08, 0.06), (0.16, 0.10)):
+        left, top = round(width * x_inset), round(height * y_inset)
+        region = photo.crop((left, top, width - left, height - top))
+        code, region_source = image_io.read_from_memory(jpeg_bytes(region, 95))
+        if code or region_source is None:
+            return None
+        try:
+            candidate = _detect_quad(router, region_source, template)
+        except RuntimeError:
+            return None
+        if not candidate or _padded_quad(sdk, candidate, region.width, region.height) is None:
+            return None
+        projected = sdk.Quadrilateral()
+        projected.points = [sdk.Point(p.x + left, p.y + top) for p in candidate.points]
+        padded = _padded_quad(sdk, projected, width, height, minimum_ratio=0.09)
+        if padded is None:
+            return None
+        locations.append(padded)
+
+    first, second = locations
+    limit = min(width, height) * 0.025
+    if any(min((p.x - q.x) ** 2 + (p.y - q.y) ** 2 for q in second.points) > limit ** 2
+           for p in first.points):
+        return None
+    return first if first.get_area() >= second.get_area() else second
 
 
 def _normalizer_image(sdk, photo: Image.Image):
@@ -77,13 +124,8 @@ def _normalizer_image(sdk, photo: Image.Image):
         code, _ = router.update_settings(detect, detection_settings)
         if code:
             raise RuntimeError("Document detection settings rejected")
-        detected = router.capture(source, detect)
-        if detected.get_error_code():
-            raise RuntimeError("Document detection failed")
-        documents = detected.get_processed_document_result()
-        quads = documents.get_detected_quad_result_items() if documents else []
         width, height = photo.size
-        location = _padded_quad(sdk, quads[0].get_location(), width, height) if len(quads) == 1 else None
+        location = _find_card(sdk, router, image_io, source, photo, detect)
 
         lighting_sample = photo
         if location is not None:
@@ -162,8 +204,8 @@ def prepare_photo(data: bytes, rotation: int = 0):
         if not encoded:
             return data, {**metadata, "crop_status": "edges_uncertain"}
         preview = decode_photo(encoded)
-        preview.thumbnail((960, 960), Image.Resampling.LANCZOS)
-        url = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes(preview, 86)).decode("ascii")
+        preview.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
+        url = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes(preview, 90)).decode("ascii")
         return encoded, {
             "bypassed": False, "enhanced": True, "cropped": cropped, "crop_verified": cropped,
             "crop_status": "cropped" if cropped else "edges_uncertain", "applied_ops": ops,

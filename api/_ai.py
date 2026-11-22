@@ -1325,7 +1325,9 @@ def run_conditional_screening_pipeline(
     print(
         f"screening check={check_id} stage=photo_preparation "
         f"front={preparation['front'].get('crop_status')} "
-        f"back={(preparation.get('back') or {}).get('crop_status')}",
+        f"front_ops={','.join(preparation['front'].get('applied_ops') or []) or 'none'} "
+        f"back={(preparation.get('back') or {}).get('crop_status') or 'not_uploaded'} "
+        f"back_ops={','.join((preparation.get('back') or {}).get('applied_ops') or []) or 'none'}",
         flush=True,
     )
     print(f"screening check={check_id} stage=idp started", flush=True)
