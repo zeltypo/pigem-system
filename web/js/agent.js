@@ -1276,13 +1276,14 @@ function showAgentPreparedPhoto(container) {
   var findings = activePhotoCopyMode === "latest" ? getSavedAgentFindings(app) : current.screening_findings;
   var side = container.dataset.photoSide || "front";
   var preparation = findings && findings.stages && findings.stages.photoPreparation && findings.stages.photoPreparation[side];
-  var preview = preparation && preparation.preview_data_url;
+  var previousCrop = preparation?.cropped && preparation.crop_verified !== true;
+  var preview = previousCrop ? "" : preparation?.preview_data_url;
   image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
   var usingPreview = image.src === preview;
   status.textContent = usingPreview
     ? (preparation.cropped ? "Cropped reading copy" : "Adjusted reading copy")
     : "Original uploaded photo";
-  if (activeIdImgMode === "cropped" && preparation?.crop_status === "edges_uncertain" && activePhotoCopyMode !== "original") {
+  if (activeIdImgMode === "cropped" && activePhotoCopyMode !== "original" && (previousCrop || preparation?.crop_status === "edges_uncertain")) {
     status.textContent += ". Full image kept because the card edges could not be confirmed.";
   }
 }

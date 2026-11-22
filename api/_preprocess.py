@@ -23,31 +23,27 @@ def _order_quad_points(pts: np.ndarray) -> Optional[np.ndarray]:
     return np.roll(clockwise, -int(clockwise.sum(axis=1).argmin()), axis=0)
 
 
-def _boundary_gradient_support(gray: np.ndarray, ordered: np.ndarray, w: float, h: float) -> Tuple[List[int], np.ndarray]:
-    rows, cols = gray.shape[:2]
-    center = ordered.mean(axis=0)
-    step = max(4, int(round(min(w, h) * 0.025)))
-    side_support = []
-    for i in range(4):
-        support = 0
-        p1 = ordered[i]
-        p2 = ordered[(i + 1) % 4]
-        for ratio in (0.18, 0.34, 0.5, 0.66, 0.82):
-            pt = p1 + ratio * (p2 - p1)
-            vec = center - pt
-            norm = float(np.hypot(vec[0], vec[1]))
-            if norm < 1e-3:
-                continue
-            dx = vec[0] * step / norm
-            dy = vec[1] * step / norm
-            ix1 = int(np.clip(round(pt[0] + dx), 0, cols - 1))
-            iy1 = int(np.clip(round(pt[1] + dy), 0, rows - 1))
-            ix2 = int(np.clip(round(pt[0] - dx), 0, cols - 1))
-            iy2 = int(np.clip(round(pt[1] - dy), 0, rows - 1))
-            if abs(int(gray[iy1, ix1]) - int(gray[iy2, ix2])) >= 5:
-                support += 1
-        side_support.append(support)
-    return side_support, center
+def _boundary_support(edge_band: np.ndarray, points: np.ndarray) -> List[float]:
+    fractions = np.linspace(0.06, 0.94, 36)[:, None]
+    support = []
+    for start, end in zip(points, np.roll(points, -1, axis=0)):
+        samples = np.rint(start + fractions * (end - start)).astype(int)
+        hits = edge_band[samples[:, 1], samples[:, 0]] != 0
+        support.append(float(hits.reshape(3, 12).mean(axis=1).min()))
+    return support
+
+
+def _has_content_outside(edges: np.ndarray, points: np.ndarray) -> bool:
+    exclusion = cv2.fillConvexPoly(np.zeros_like(edges), np.rint(points).astype(np.int32), 255)
+    outside = cv2.bitwise_and(edges, cv2.bitwise_not(exclusion))
+    edges_total = cv2.countNonZero(edges)
+    outside_total = cv2.countNonZero(outside)
+    if outside_total > max(65, 0.16 * edges_total):
+        return True
+    if outside_total < 28:
+        return False
+    nearby_edges = cv2.boxFilter(outside, cv2.CV_32S, (25, 25), normalize=False)
+    return cv2.minMaxLoc(nearby_edges)[1] >= 28 * 255
 
 
 def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
@@ -67,6 +63,8 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
         cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1],
         cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1],
     ]
+    edges = masks[0]
+    edge_band = cv2.dilate(masks[1], kernel)
 
     best: Optional[Dict[str, Any]] = None
     best_score = 0.0
@@ -88,12 +86,6 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
                     quad = cv2.approxPolyDP(src, tol * perimeter, True)
                     if len(quad) == 4 and cv2.isContourConvex(quad):
                         candidate_quads.append(quad)
-                if not candidate_quads and 0.06 * frame_area <= area <= 0.90 * frame_area:
-                    rect = cv2.minAreaRect(src)
-                    rw, rh = rect[1]
-                    if rw > 70 and rh > 70 and (area / float(rw * rh)) >= 0.78:
-                        box = cv2.boxPoints(rect).reshape(4, 1, 2).astype(np.float32)
-                        candidate_quads.append(box)
                 for quad in candidate_quads:
                     ordered = _order_quad_points(quad)
                     if ordered is None:
@@ -116,21 +108,28 @@ def detect_card_quad(image: np.ndarray) -> Optional[Dict[str, Any]]:
                         continue
                     if area < w * h * 0.68:
                         continue
-                    support, center = _boundary_gradient_support(blurred, ordered, w, h)
-                    if min(support) < 2 or sum(support) < 12:
+                    support = _boundary_support(edge_band, ordered)
+                    if min(support) < 0.58 or sum(support) < 3.1:
                         continue
-                    score = area * (0.6 + sum(support) / 20.0)
+                    quad_area = cv2.contourArea(ordered)
+                    score = quad_area * (0.8 + sum(support) / 20.0)
                     if score > best_score:
+                        center = ordered.mean(axis=0)
+                        padding = 1.10
+                        padded = center + (ordered - center) * padding
+                        if (
+                            np.any(padded < 0)
+                            or np.any(padded[:, 0] > width - 1)
+                            or np.any(padded[:, 1] > height - 1)
+                            or _has_content_outside(edges, padded)
+                        ):
+                            continue
                         best_score = score
-                        padded = np.empty_like(ordered)
-                        for idx in range(4):
-                            padded[idx, 0] = np.clip(center[0] + (ordered[idx, 0] - center[0]) * 1.035, 0, width - 1)
-                            padded[idx, 1] = np.clip(center[1] + (ordered[idx, 1] - center[1]) * 1.035, 0, height - 1)
                         best = {
                             "points": padded,
-                            "width": int(round(w * 1.035)),
-                            "height": int(round(h * 1.035)),
-                            "area_ratio": round(area / frame_area, 3),
+                            "width": int(round(w * padding)),
+                            "height": int(round(h * padding)),
+                            "area_ratio": round(quad_area / frame_area, 3),
                         }
     return best
 
@@ -141,13 +140,11 @@ def _deskew_and_crop(image: np.ndarray) -> Tuple[np.ndarray, str]:
     found = detect_card_quad(sample)
     if not found:
         return image, "edges_uncertain"
-    if found["area_ratio"] >= 0.92:
-        return image, "full_frame"
     w = max(80, int(found["width"] / scale))
     h = max(80, int(found["height"] / scale))
     target = np.float32([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]])
     points = found["points"] / scale
-    warped = cv2.warpPerspective(image, cv2.getPerspectiveTransform(points, target), (w, h))
+    warped = cv2.warpPerspective(image, cv2.getPerspectiveTransform(points, target), (w, h), borderMode=cv2.BORDER_REPLICATE)
     return warped, "cropped"
 
 
@@ -169,9 +166,11 @@ def _apply_deglare(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 
-def _apply_clahe(image: np.ndarray) -> np.ndarray:
+def _apply_clahe(image: np.ndarray, strength: float = 1.0) -> np.ndarray:
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-    lab[:, :, 0] = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(lab[:, :, 0])
+    light = lab[:, :, 0]
+    adjusted = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(light)
+    lab[:, :, 0] = cv2.addWeighted(light, 1.0 - strength, adjusted, strength, 0)
     return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 
@@ -243,8 +242,8 @@ def enhance_targeted(
 
     if screening_auto:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        low, median, high = np.percentile(gray[::3, ::3], (10, 50, 90))
-        if high - low >= 6 and 12 < median < 105 and high < 205:
+        low, median, high = np.percentile(gray[::3, ::3], (2, 50, 98))
+        if high - low >= 8 and 12 < median < 105:
             gamma = float(np.clip(np.log(112 / 255) / np.log(median / 255), 0.66, 0.9))
             image = _apply_brighten(image, gamma)
             applied.append("brighten")
@@ -252,8 +251,8 @@ def enhance_targeted(
             gamma = float(np.clip(np.log(195 / 255) / np.log(median / 255), 1.1, 1.35))
             image = _apply_brighten(image, gamma)
             applied.append("darken")
-        if 6 <= high - low < 72 and high < 240:
-            image = _apply_clahe(image)
+        if 8 <= high - low < 105 and 15 < median < 245:
+            image = _apply_clahe(image, strength=0.55)
             applied.append("clahe")
     if not screening_auto and "deglare" in requested:
         image = _apply_deglare(image)
@@ -291,6 +290,7 @@ def enhance_targeted(
         "bypassed": False,
         "enhanced": True,
         "cropped": crop_status == "cropped",
+        "crop_verified": crop_status == "cropped",
         "crop_status": crop_status,
         "applied_ops": applied,
         "engine": "opencv",
