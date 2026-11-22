@@ -832,6 +832,7 @@ async function openAppDetail(appId, mode, requestedStatus) {
 }
 
 function closeDetailModal() {
+  agentDynamsoft.clear();
   document.getElementById("app-detail-modal").classList.add("hidden");
 }
 
@@ -848,6 +849,10 @@ function switchCopyMode(mode, section) {
 }
 
 function switchIdImgMode(mode) {
+  if (mode === "dynamsoft" && !agentDynamsoft.requestLicense()) {
+    document.getElementById("photo-display-mode").value = activeIdImgMode;
+    return;
+  }
   activeIdImgMode = mode;
   renderDetailModalContent();
 }
@@ -1271,6 +1276,10 @@ function showAgentPreparedPhoto(container) {
   var status = container.querySelector("[data-photo-status]");
   var url = container.dataset.photo;
   if (!image || !status || !url) return;
+  if (activeIdImgMode === "dynamsoft") {
+    agentDynamsoft.show(container, image, status, url);
+    return;
+  }
   var app = findAppById(activeDetailAppId);
   var current = getAgentPreviewCopy(app, activePhotoCopyMode);
   var findings = activePhotoCopyMode === "latest" ? getSavedAgentFindings(app) : current.screening_findings;
@@ -2042,13 +2051,17 @@ async function renderDetailModalContent(updateResultsOnly) {
         '</div>' +
       '</div>' +
     '</div>';
+  var trialPhotoOption = agentDynamsoft.enabled && activePhotoCopyMode !== "original"
+    ? '<option value="dynamsoft"' + (activeIdImgMode === "dynamsoft" ? " selected" : "") + '>Dynamsoft trial preview</option>'
+    : "";
+  var enhancedPhotoLabel = trialPhotoOption ? "Enhanced reading copy (OpenCV)" : "Enhanced reading copy (if available)";
   var photosSection =
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos</div>' +
         renderAgentSubmissionPicker(app, "photo") +
       '</div>' +
-      '<div class="row" style="margin-bottom:12px"><label for="photo-display-mode">Photo view</label><select id="photo-display-mode" onchange="switchIdImgMode(this.value)"><option value="cropped"' + (activeIdImgMode === "cropped" ? " selected" : "") + '>Enhanced reading copy (if available)</option><option value="raw"' + (activeIdImgMode === "raw" ? " selected" : "") + '>Original image</option></select></div>' +
+      '<div class="row" style="margin-bottom:12px"><label for="photo-display-mode">Photo view</label><select id="photo-display-mode" onchange="switchIdImgMode(this.value)"><option value="cropped"' + (activeIdImgMode === "cropped" ? " selected" : "") + '>' + enhancedPhotoLabel + '</option>' + trialPhotoOption + '<option value="raw"' + (activeIdImgMode === "raw" ? " selected" : "") + '>Original image</option></select></div>' +
       '<div class="grid-2" style="margin-bottom:12px">' +
         '<div data-photo-container data-photo-side="front" data-photo="' + escapeHtml(frontIdPhotoUrl) + '" style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + "FRONT ID" + '</div>' +
@@ -2197,6 +2210,7 @@ async function renderDetailModalContent(updateResultsOnly) {
     var nextResults = template.content.querySelector("#document-check-results");
     if (currentResults && nextResults) currentResults.replaceWith(nextResults);
   } else {
+    agentDynamsoft.clear();
     document.getElementById("det-body").innerHTML = detailHtml;
   }
   var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
@@ -2480,7 +2494,8 @@ async function downloadAgentIdPhoto(side) {
   var version = activePhotoCopyMode;
   var container = document.querySelector('#det-body [data-photo-container][data-photo-side="' + side + '"]');
   var imgEl = container ? container.querySelector("img") : null;
-  var url = (imgEl && imgEl.src) ? imgEl.src : (side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path);
+  var url = activeIdImgMode === "dynamsoft" ? container?.dataset.photo : imgEl?.src;
+  url = url || (side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path);
   if (!url) return;
   try {
     var response = await fetch(url, { referrerPolicy: "no-referrer" });
