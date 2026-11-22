@@ -200,7 +200,7 @@ function cleanScreeningText(str) {
   return String(str || "")
     .replace(/\bAI Screening Engine\b/gi, "Application Screening")
     .replace(/\bAI Document Screening\b/gi, "Application Screening")
-    .replace(/\b(OpenCV|OpenAI|Gemini|FastAPI|Vercel|Qwen\S*|OCR|API|AI)\b/gi, "Screening")
+    .replace(/\b(OpenCV|Dynamsoft|OpenAI|Gemini|FastAPI|Vercel|Qwen\S*|OCR|API|AI)\b/gi, "Screening")
     .replace(/\bScreening\s+Screening\b/gi, "Screening");
 }
 
@@ -832,7 +832,6 @@ async function openAppDetail(appId, mode, requestedStatus) {
 }
 
 function closeDetailModal() {
-  agentDynamsoft.clear();
   document.getElementById("app-detail-modal").classList.add("hidden");
 }
 
@@ -849,10 +848,6 @@ function switchCopyMode(mode, section) {
 }
 
 function switchIdImgMode(mode) {
-  if (mode === "dynamsoft" && !agentDynamsoft.requestLicense()) {
-    document.getElementById("photo-display-mode").value = activeIdImgMode;
-    return;
-  }
   activeIdImgMode = mode;
   renderDetailModalContent();
 }
@@ -974,267 +969,6 @@ function compareAgentIdDetails(text, expected) {
 }
 
 var agentDocumentChecks = new Map();
-var agentOpenCv;
-
-function loadAgentOpenCv() {
-  if (!agentOpenCv) {
-    agentOpenCv = new Promise(function (resolve) {
-      var script = document.createElement("script");
-      var timeout = setTimeout(function () { script.remove(); resolve(null); }, 20000);
-      script.src = "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.11.0-release.1/dist/opencv.js";
-      script.integrity = "sha256-WtIp0mZvzmgDo69KVpEhvW2o0J1cFk26+w1/dYRgwl4=";
-      script.crossOrigin = "anonymous";
-      script.onload = function () {
-        Promise.resolve(window.cv).then(function (cv) {
-          if (cv && typeof cv.Mat === "function") { clearTimeout(timeout); resolve(cv); }
-        }).catch(function () { clearTimeout(timeout); resolve(null); });
-      };
-      script.onerror = function () { clearTimeout(timeout); resolve(null); };
-      document.head.appendChild(script);
-    });
-  }
-  var loading = agentOpenCv;
-  loading.then(function (cv) {
-    if (!cv && agentOpenCv === loading) agentOpenCv = null;
-  });
-  return loading;
-}
-
-function getAgentCardShape(points, cols, rows) {
-  var sums = points.slice().sort(function (a, b) { return a.x + a.y - b.x - b.y; });
-  var differences = points.slice().sort(function (a, b) { return a.x - a.y - b.x + b.y; });
-  var ordered = [sums[0], differences[3], sums[3], differences[0]];
-  if (new Set(ordered).size !== 4 || ordered.some(function (point) {
-    return point.x < 3 || point.y < 3 || point.x >= cols - 3 || point.y >= rows - 3;
-  })) return null;
-
-  var distance = function (a, b) { return Math.hypot(a.x - b.x, a.y - b.y); };
-  var top = distance(ordered[0], ordered[1]);
-  var bottom = distance(ordered[3], ordered[2]);
-  var left = distance(ordered[0], ordered[3]);
-  var right = distance(ordered[1], ordered[2]);
-  var width = (top + bottom) / 2;
-  var height = (left + right) / 2;
-  var aspect = Math.max(width, height) / Math.min(width, height);
-  if (aspect < 1.12 || aspect > 2.35 || Math.min(top, bottom) / Math.max(top, bottom) < 0.52 ||
-      Math.min(left, right) / Math.max(left, right) < 0.52) return null;
-  return { points: ordered, width: width, height: height };
-}
-
-function agentCardBoundaryEvidence(gray, shape) {
-  var points = shape.points;
-  var center = points.reduce(function (total, point) {
-    return { x: total.x + point.x / 4, y: total.y + point.y / 4 };
-  }, { x: 0, y: 0 });
-  var support = 0;
-  var step = Math.max(5, Math.round(Math.min(shape.width, shape.height) * 0.025));
-  function pixel(x, y) {
-    x = Math.max(0, Math.min(gray.cols - 1, Math.round(x)));
-    y = Math.max(0, Math.min(gray.rows - 1, Math.round(y)));
-    return gray.data[y * gray.cols + x];
-  }
-  for (var i = 0; i < 4; i++) {
-    var point = points[i];
-    var next = points[(i + 1) % 4];
-    [0.25, 0.5, 0.75].forEach(function (ratio) {
-      var x = point.x + ratio * (next.x - point.x);
-      var y = point.y + ratio * (next.y - point.y);
-      var length = Math.hypot(center.x - x, center.y - y);
-      if (!length) return;
-      var dx = (center.x - x) * step / length;
-      var dy = (center.y - y) * step / length;
-      if (Math.abs(pixel(x + dx, y + dy) - pixel(x - dx, y - dy)) >= 7) support++;
-    });
-  }
-  return { support: support, center: center };
-}
-
-function findAgentIdCorners(gray, cv) {
-  var enhanced = new cv.Mat();
-  var blurred = new cv.Mat();
-  var mask = new cv.Mat();
-  var hierarchy = new cv.Mat();
-  var polygon = new cv.Mat();
-  var kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-  var clahe = new cv.CLAHE(2.5, new cv.Size(8, 8));
-  var frameArea = gray.cols * gray.rows;
-  var best = null;
-  var bestScore = 0;
-
-  function scanMask() {
-    var contours = new cv.MatVector();
-    try {
-      cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
-      cv.findContours(mask, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-      for (var i = 0; i < contours.size(); i++) {
-        var contour = contours.get(i);
-        try {
-          var area = cv.contourArea(contour);
-          if (area < frameArea * 0.05 || area > frameArea * 0.96) continue;
-
-          var perimeter = cv.arcLength(contour, true);
-          var candidateShapes = [];
-          for (var tolerance of [0.015, 0.022, 0.035, 0.05, 0.065]) {
-            cv.approxPolyDP(contour, polygon, tolerance * perimeter, true);
-            if (polygon.rows === 4 && cv.isContourConvex(polygon)) {
-              var pts = [];
-              for (var j = 0; j < 4; j++) pts.push({ x: polygon.data32S[j * 2], y: polygon.data32S[j * 2 + 1] });
-              var sh = getAgentCardShape(pts, gray.cols, gray.rows);
-              if (sh) candidateShapes.push(sh);
-            }
-          }
-          if (!candidateShapes.length && area >= frameArea * 0.06 && area <= frameArea * 0.90 && typeof cv.minAreaRect === "function" && typeof cv.RotatedRect === "function" && typeof cv.RotatedRect.points === "function") {
-            try {
-              var rRect = cv.minAreaRect(contour);
-              var rw = rRect.size.width;
-              var rh = rRect.size.height;
-              if (rw > 70 && rh > 70 && (area / (rw * rh)) >= 0.78) {
-                var rPts = cv.RotatedRect.points(rRect);
-                var shRect = getAgentCardShape(rPts, gray.cols, gray.rows);
-                if (shRect) candidateShapes.push(shRect);
-              }
-            } catch (e) {}
-          }
-          for (var sIdx = 0; sIdx < candidateShapes.length; sIdx++) {
-            var shape = candidateShapes[sIdx];
-            if (area < shape.width * shape.height * 0.68) continue;
-            var evidence = agentCardBoundaryEvidence(blurred, shape);
-            if (evidence.support < 5) continue;
-            var score = area * (0.6 + evidence.support / 12);
-            if (score <= bestScore) continue;
-            bestScore = score;
-            best = {
-              points: shape.points.flatMap(function (point) {
-                return [
-                  Math.max(0, Math.min(gray.cols - 1, evidence.center.x + (point.x - evidence.center.x) * 1.04)),
-                  Math.max(0, Math.min(gray.rows - 1, evidence.center.y + (point.y - evidence.center.y) * 1.04))
-                ];
-              }),
-              width: Math.round(shape.width * 1.04),
-              height: Math.round(shape.height * 1.04)
-            };
-          }
-        } finally {
-          contour.delete();
-        }
-      }
-    } finally {
-      contours.delete();
-    }
-  }
-
-  try {
-
-    clahe.apply(gray, enhanced);
-    cv.GaussianBlur(enhanced, blurred, new cv.Size(5, 5), 0);
-    cv.Canny(blurred, mask, 20, 65);
-    scanMask();
-    if (!best) {
-      cv.Canny(blurred, mask, 9, 32);
-      scanMask();
-    }
-    if (!best) {
-      cv.adaptiveThreshold(blurred, mask, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 21, 5);
-      scanMask();
-    }
-    if (!best) {
-      cv.threshold(blurred, mask, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
-      scanMask();
-    }
-    if (!best) {
-      cv.threshold(blurred, mask, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
-      scanMask();
-    }
-    return best;
-  } finally {
-    [enhanced, blurred, mask, hierarchy, polygon, kernel, clahe].forEach(function (item) { item.delete(); });
-  }
-}
-
-async function enhanceAgentIdPhoto(photo, cv) {
-  if (!cv || typeof createImageBitmap !== "function") return null;
-  var bitmap = await createImageBitmap(photo);
-  var canvas = document.createElement("canvas");
-  var scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  try {
-    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  } finally {
-    bitmap.close();
-  }
-
-  var mats = [];
-  function mat() {
-    var result = new cv.Mat();
-    mats.push(result);
-    return result;
-  }
-  try {
-    var image = cv.imread(canvas);
-    mats.push(image);
-    var gray = mat();
-    var contrast = mat();
-    var soft = mat();
-    var sharpened = mat();
-    cv.cvtColor(image, gray, cv.COLOR_RGBA2GRAY);
-    var corners = findAgentIdCorners(gray, cv);
-    var color = image;
-    if (corners) {
-      var w = corners.width;
-      var h = corners.height;
-      var originalPoints = cv.matFromArray(4, 1, cv.CV_32FC2, corners.points);
-      var outputPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, w - 1, 0, w - 1, h - 1, 0, h - 1]);
-      mats.push(originalPoints, outputPoints);
-      var transform = cv.getPerspectiveTransform(originalPoints, outputPoints);
-      mats.push(transform);
-      color = mat();
-      cv.warpPerspective(image, color, transform, new cv.Size(w, h));
-      cv.cvtColor(color, gray, cv.COLOR_RGBA2GRAY);
-    }
-    var source = gray;
-    var meanLight = cv.mean(source)[0];
-    var adjustedLight = meanLight < 105 || meanLight > 205;
-    if (adjustedLight) {
-      var levels = Array.from({ length: 256 }, function (_, value) {
-
-        return Math.round(255 * Math.pow(value / 255, meanLight < 105 ? 0.75 : 1.2));
-      });
-      var lut = cv.matFromArray(1, 256, cv.CV_8U, levels);
-      mats.push(lut);
-      var brighter = mat();
-      cv.LUT(source, lut, brighter);
-      source = brighter;
-    }
-    var clahe = new cv.CLAHE(2, new cv.Size(8, 8));
-    mats.push(clahe);
-    clahe.apply(source, contrast);
-    cv.GaussianBlur(contrast, soft, new cv.Size(3, 3), 0);
-    cv.addWeighted(contrast, 1.23, soft, -0.23, 0, sharpened);
-    var originalLight = gray.data;
-    var enhancedLight = sharpened.data;
-    var pixels = color.data;
-    for (var i = 0, pixel = 0; i < originalLight.length; i++, pixel += 4) {
-      var adjustment = enhancedLight[i] - originalLight[i];
-      for (var channel = 0; channel < 3; channel++) {
-        var index = pixel + channel;
-        pixels[index] = Math.max(0, Math.min(255, pixels[index] + adjustment));
-      }
-    }
-    cv.imshow(canvas, color);
-    var cleanedBlob = await new Promise(function (resolve) {
-      if (typeof canvas.toBlob === "function") {
-        canvas.toBlob(function (b) { resolve(b); }, "image/jpeg", 0.92);
-      } else {
-        resolve(null);
-      }
-    });
-    return { canvas: canvas, blob: cleanedBlob, cropped: Boolean(corners), lightingAdjusted: adjustedLight };
-  } finally {
-    mats.forEach(function (item) { item.delete(); });
-  }
-}
-
 function withAgentReadTimeout(work, milliseconds) {
   var timer;
   return Promise.race([
@@ -1243,32 +977,6 @@ function withAgentReadTimeout(work, milliseconds) {
       timer = setTimeout(function () { reject(new Error("Document check timed out")); }, milliseconds);
     })
   ]).finally(function () { clearTimeout(timer); });
-}
-
-var agentPreparedPhotos = new Map();
-
-function prepareAgentIdPhoto(url, photo) {
-  if (!document.head) return Promise.resolve(null);
-  if (!agentPreparedPhotos.has(url)) {
-    var preparation = (async function () {
-      try {
-        if (!photo) {
-          var response = await withAgentReadTimeout(fetch(url, { referrerPolicy: "no-referrer" }), 10000);
-          if (!response.ok) return null;
-          photo = await withAgentReadTimeout(response.blob(), 10000);
-        }
-        return await enhanceAgentIdPhoto(photo, await loadAgentOpenCv());
-      } catch (error) {
-        return null;
-      }
-    })();
-    agentPreparedPhotos.set(url, preparation);
-    if (agentPreparedPhotos.size > 8) agentPreparedPhotos.delete(agentPreparedPhotos.keys().next().value);
-    preparation.then(function (result) {
-      if (!result && agentPreparedPhotos.get(url) === preparation) agentPreparedPhotos.delete(url);
-    });
-  }
-  return agentPreparedPhotos.get(url);
 }
 
 function showAgentPreparedPhoto(container) {
@@ -1281,25 +989,19 @@ function showAgentPreparedPhoto(container) {
   var findings = activePhotoCopyMode === "latest" ? getSavedAgentFindings(app) : current.screening_findings;
   var side = container.dataset.photoSide || "front";
   var preparation = findings && findings.stages && findings.stages.photoPreparation && findings.stages.photoPreparation[side];
-  if (activeIdImgMode === "dynamsoft") {
-    var rotation = preparation?.applied_ops?.find(function (op) { return op.startsWith("rotate_"); });
-    agentDynamsoft.show(container, image, status, url, rotation);
-    return;
-  }
-  var previousCrop = preparation?.cropped && preparation.crop_verified !== true;
-  var preview = previousCrop ? "" : preparation?.preview_data_url;
+  var preview = preparation?.engine === "dynamsoft" && (!preparation.cropped || preparation.crop_verified === true)
+    ? preparation.preview_data_url : "";
   image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
   var usingPreview = image.src === preview;
-  image.dataset.suggestedCrop = String(Boolean(usingPreview && preparation.suggested_preview_crop));
-  if (usingPreview && preparation.suggested_preview_crop) {
-    status.textContent = "Suggested crop for reading. Compare with the original to confirm all details are visible.";
-    return;
-  }
   status.textContent = usingPreview
     ? (preparation.cropped ? "Cropped reading copy" : "Adjusted reading copy")
     : "Original uploaded photo";
-  if (activeIdImgMode === "cropped" && activePhotoCopyMode !== "original" && (previousCrop || preparation?.crop_status === "edges_uncertain")) {
-    status.textContent += ". Full image kept because the card edges could not be confirmed.";
+  if (activeIdImgMode === "cropped" && activePhotoCopyMode !== "original") {
+    if (preparation?.crop_status === "edges_uncertain") {
+      status.textContent += ". Full image kept because the card edges could not be confirmed.";
+    } else if (preparation?.crop_status === "normalizer_unavailable") {
+      status.textContent += ". Enhanced reading copy is unavailable.";
+    }
   }
 }
 
@@ -2057,17 +1759,13 @@ async function renderDetailModalContent(updateResultsOnly) {
         '</div>' +
       '</div>' +
     '</div>';
-  var trialPhotoOption = agentDynamsoft.enabled && activePhotoCopyMode !== "original"
-    ? '<option value="dynamsoft"' + (activeIdImgMode === "dynamsoft" ? " selected" : "") + '>Dynamsoft trial preview</option>'
-    : "";
-  var enhancedPhotoLabel = trialPhotoOption ? "Enhanced reading copy (OpenCV)" : "Enhanced reading copy (if available)";
   var photosSection =
     '<div class="section-card">' +
       '<div class="section-head">' +
         '<div class="section-head-title"><span class="step-badge">2</span>Valid ID Photos</div>' +
         renderAgentSubmissionPicker(app, "photo") +
       '</div>' +
-      '<div class="row" style="margin-bottom:12px"><label for="photo-display-mode">Photo view</label><select id="photo-display-mode" onchange="switchIdImgMode(this.value)"><option value="cropped"' + (activeIdImgMode === "cropped" ? " selected" : "") + '>' + enhancedPhotoLabel + '</option>' + trialPhotoOption + '<option value="raw"' + (activeIdImgMode === "raw" ? " selected" : "") + '>Original image</option></select></div>' +
+      '<div class="row" style="margin-bottom:12px"><label for="photo-display-mode">Photo view</label><select id="photo-display-mode" onchange="switchIdImgMode(this.value)"><option value="cropped"' + (activeIdImgMode === "cropped" ? " selected" : "") + '>Enhanced reading copy</option>' + '<option value="raw"' + (activeIdImgMode === "raw" ? " selected" : "") + '>Original image</option></select></div>' +
       '<div class="grid-2" style="margin-bottom:12px">' +
         '<div data-photo-container data-photo-side="front" data-photo="' + escapeHtml(frontIdPhotoUrl) + '" style="border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--soft); text-align:center">' +
           '<div style="font-size:11.5px; font-weight:700; margin-bottom:6px">' + "FRONT ID" + '</div>' +
@@ -2216,7 +1914,6 @@ async function renderDetailModalContent(updateResultsOnly) {
     var nextResults = template.content.querySelector("#document-check-results");
     if (currentResults && nextResults) currentResults.replaceWith(nextResults);
   } else {
-    agentDynamsoft.clear();
     document.getElementById("det-body").innerHTML = detailHtml;
   }
   var findings = document.querySelector && document.querySelector("#det-body [data-id-text-result]");
@@ -2500,7 +2197,7 @@ async function downloadAgentIdPhoto(side) {
   var version = activePhotoCopyMode;
   var container = document.querySelector('#det-body [data-photo-container][data-photo-side="' + side + '"]');
   var imgEl = container ? container.querySelector("img") : null;
-  var url = activeIdImgMode === "dynamsoft" || imgEl?.dataset.suggestedCrop === "true" ? container?.dataset.photo : imgEl?.src;
+  var url = imgEl?.src;
   url = url || (side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path);
   if (!url) return;
   try {

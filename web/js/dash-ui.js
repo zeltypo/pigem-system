@@ -1301,7 +1301,7 @@ window.addEventListener("keydown", function (e) {
 function staffNotificationText(value) {
   var text = String(value || "");
   if (dashCurrentUser && ["agent", "manager"].includes(dashCurrentUser.role)) {
-    text = text.replace(/\b(OpenAI|OpenCV|Gemini|FastAPI|OCR|API|AI)\b/gi, "document check");
+    text = text.replace(/\b(OpenAI|Dynamsoft|OpenCV|Gemini|FastAPI|OCR|API|AI)\b/gi, "document check");
   }
   return text;
 }

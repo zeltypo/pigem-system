@@ -146,7 +146,7 @@ async function refreshManagerData() {
     badge.innerHTML = getMgrScreeningBadge(openApplication);
     var check = openApplication.screening || {};
     note.textContent = String(check.summary || check.advisory || "Waiting for the document check.")
-      .replace(/\b(OpenAI|OpenCV|Gemini|OCR|API|AI)\b/gi, "document check");
+      .replace(/\b(OpenAI|Dynamsoft|OpenCV|Gemini|OCR|API|AI)\b/gi, "document check");
   }
   mgrUsers = await dbListUsers();
   mgrLogs = typeof dbListLogs === "function" ? await dbListLogs() : [];
@@ -421,7 +421,7 @@ function openMgrAppModal(appId) {
         '<div><span>Customer View</span><b>' + customerStatusBadge(app.status) + '</b></div>' +
         '<div><span>Document Check</span><b id="mgr-check-badge">' + getMgrScreeningBadge(app) + '</b></div>' +
         '<div><span>Service Coverage</span><b>' + (typeof getCoverageBadgeHtml === "function" ? getCoverageBadgeHtml(app, true) : "-") + '</b></div>' +
-        '<div><span>Document Notes</span><b id="mgr-check-note" style="font-weight:500">' + escapeHtml(scrDetail.replace(/\b(OpenAI|OpenCV|Gemini|OCR|API|AI)\b/gi, "document check")) + '</b></div>' +
+        '<div><span>Document Notes</span><b id="mgr-check-note" style="font-weight:500">' + escapeHtml(scrDetail.replace(/\b(OpenAI|Dynamsoft|OpenCV|Gemini|OCR|API|AI)\b/gi, "document check")) + '</b></div>' +
         '<div><span>Plan</span><b>' + escapeHtml(app.plan_name) + '</b></div>' +
         '<div><span>Email and Mobile</span><b>' + escapeHtml(app.email + " / " + app.phone) + '</b></div>' +
         '<div><span>Primary ID</span><b>' + escapeHtml(app.id_type + " - " + app.id_number) + '</b></div>' +

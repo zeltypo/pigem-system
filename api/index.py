@@ -20,6 +20,7 @@ if _API_DIRECTORY not in sys.path:
 import _ai
 import _auth
 import _idp
+import _preprocess
 import _mailer
 import _openai_client
 import _screening_queue
@@ -96,7 +97,7 @@ def health():
         "provider": "openai",
         "idp": idp_ok,
         "idp_provider": _idp.provider_name(),
-        "opencv": True,
+        "dynamsoft_configured": _preprocess.is_configured(),
         "ocr": idp_ok,
         "locationiq_configured": bool((getenv("LOCATIONIQ_API_KEY") or "").strip()),
         "auto_screening_ready": idp_ok and openai_ok and _screening_queue.enabled(),

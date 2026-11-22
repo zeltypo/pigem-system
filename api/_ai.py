@@ -636,7 +636,7 @@ class FieldComparisonEngine(BaseTextMatcher):
 
 class OpenAIScreeningService:
     _TECH_TERMS_REGEX = re.compile(
-        r"\b(OpenCV|OpenAI|Google\s+AI|CLAHE|Laplacian|OCR|LLM|Artificial\s+Intelligence)\b",
+        r"\b(OpenCV|Dynamsoft|OpenAI|Google\s+AI|CLAHE|Laplacian|OCR|LLM|Artificial\s+Intelligence)\b",
         re.IGNORECASE,
     )
     _CODE_FENCE_REGEX = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
@@ -1169,7 +1169,7 @@ def run_conditional_screening_pipeline(
     """Execute the 3-route conditional screening architecture:
     1. Stage 1 Image Quality Assessment Gate (`gpt-6.2-sol`).
     2. Conditional Routing:
-       - READABLE OR FIXABLE: OpenCV measures the card border and lighting before Azure IDP, rules, and the recommendation.
+       - READABLE OR FIXABLE: Dynamsoft prepares a separate reading copy before Azure IDP, rules, and the recommendation.
        - CONFIRMED DEFECT: Stop early and request replacement of the affected photo.
        - SUSPECTED WRONG SIDE OR NON-ID: Stop before field comparison and ask staff to confirm the upload.
     """
@@ -1314,18 +1314,20 @@ def run_conditional_screening_pipeline(
     if callable(stage_callback):
         stage_callback("photo_preparation", {})
 
-    front_ops = quality_report["front"].get("targeted_opencv_ops") or []
-    idp_front_bytes, preparation["front"] = _preprocess.enhance_targeted(front_bytes, front_ops, screening_auto=True)
-
+    idp_front_bytes, preparation["front"] = _preprocess.prepare_photo(
+        front_bytes, quality_report["front"].get("rotation_degrees", 0)
+    )
     if back_bytes and quality_report.get("back"):
-        back_ops = quality_report["back"].get("targeted_opencv_ops") or []
-        idp_back_bytes, preparation["back"] = _preprocess.enhance_targeted(back_bytes, back_ops, screening_auto=True)
+        idp_back_bytes, preparation["back"] = _preprocess.prepare_photo(
+            back_bytes, quality_report["back"].get("rotation_degrees", 0)
+        )
 
     print(
-        f"screening check={check_id} stage=opencv front_ops={preparation['front'].get('applied_ops')} back_ops={(preparation.get('back') or {}).get('applied_ops')}",
+        f"screening check={check_id} stage=photo_preparation "
+        f"front={preparation['front'].get('crop_status')} "
+        f"back={(preparation.get('back') or {}).get('crop_status')}",
         flush=True,
     )
-
     print(f"screening check={check_id} stage=idp started", flush=True)
     if callable(stage_callback):
         stage_callback("extraction", {})

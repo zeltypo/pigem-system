@@ -1,6 +1,6 @@
 # PIGEM — Fiber Application and Document Review
 
-This is the replacement source copy for the existing PIGEM system. The stack stays the same: HTML, CSS, vanilla JavaScript, Supabase (Postgres and Storage), Python FastAPI on Vercel, OpenCV, Azure Document Intelligence, OpenAI and Gmail SMTP. It does not connect to Radius/RED Fiber; staff manually record the real validator's decisions.
+This is the replacement source copy for the existing PIGEM system. The stack includes: HTML, CSS, vanilla JavaScript, Supabase (Postgres and Storage), Python FastAPI on Vercel, Dynamsoft Document Normalizer, Azure Document Intelligence, OpenAI and Gmail SMTP. It does not connect to Radius/RED Fiber; staff manually record the real validator's decisions.
 
 **Read this first:** see REFINEMENT_NOTES.md for this update. JavaScript/Python syntax and local calendar rendering checks passed. No full functional testing, deployment, live database execution, or live provider calls were performed. The existing direct-browser database architecture uses broad access policies and public document URLs. It is not appropriate for real customer identification documents or production use without an authorization/storage redesign. Use fictional IDs and test data for the defense.
 
@@ -49,6 +49,7 @@ The browser obtains public project settings from /api/config.js. It no longer co
 | SUPABASE_SERVICE_ROLE_KEY | Server-only worker and QR storage access | Keep secret |
 | AZURE_DI_ENDPOINT | Azure Document Intelligence resource | Keep |
 | AZURE_DI_KEY | Azure credential | Keep secret |
+| DYNAMSOFT_SERVER_LICENSE | Dynamsoft Capture Vision for Python with Document Normalizer enabled | Set as a server-only secret |
 | OPENAI_API_KEY | Required for the complete two-model screening pipeline | Keep secret |
 | OPENAI_MODEL | Recommendation model | gpt-5.4 |
 | OPENAI_QUALITY_MODEL | Image and application quality model | gpt-6.2-sol (the account must have access to this exact API model ID) |
@@ -109,7 +110,9 @@ Create staff, manage availability and maintenance, inspect screening backlog, op
 
 ## 6. Screening design and cost
 
-The worker first checks objective file defects, then GPT-6.2 Sol assesses actual photo quality and basic application completeness indicators. Sol selects only actual needed operations from an allowlist; OpenCV performs those operations on a separate reading copy. Originals never change. Azure DI reads the original or enhanced photo, Python compares the extracted fields, and GPT-5.4 receives comparison statuses and quality evidence for a summary and recommendation, optionally a suggested remark. If a model fails, manual review remains possible. Red means a confirmed upload defect; yellow means ask an Agent to review; green is preliminary matching evidence, not approval. No generative image editing is used. OpenAI vision receives the ID photo (with EXIF removed); Azure receives the document for extraction. GPT-5.4 receives no raw ID number or ID image. Use fictional IDs until access controls and consent for external processing are reviewed: the inherited public documents bucket and broad database policies are not suitable for real sensitive customer IDs.
+The worker checks basic file quality and uses GPT-6.2 Sol to assess each photo. Dynamsoft Document Normalizer prepares a separate color reading copy with crop, perspective correction, brightness, and contrast when it can. If borders are uncertain, it keeps the full frame. Missing text, severe blur, or covered details require review or a clearer photo. Azure DI extracts the text, Python compares fields, and GPT-5.4 summarizes the findings. The original uploads stay available. If the normalizer is unavailable, screening can read the original photo. OpenAI vision receives a metadata-stripped image, and Azure receives the document for extraction. GPT-5.4 receives comparison results. Use fictional IDs until access controls and consent for external processing are reviewed.
+
+Request a Dynamsoft trial under Desktop/Server/Embedded with Python and Document Normalizer enabled. The JavaScript Web trial is for browser use. Add the server license to the existing Vercel project as `DYNAMSOFT_SERVER_LICENSE` and validate a fictional upload on a Preview deployment before promoting. The health endpoint reports whether the variable is present. A background screening run confirms activation and whether a reading copy was produced. Existing applications can still show their original photos, and new submissions receive the new previews after screening. No schema change is required.
 
 The OpenAI wording call receives a compact structured payload of comparison statuses, flags and target field names—not the applicant's name, birth date, ID number, raw OCR text or full image by default. It requests structured JSON, limits output, uses low reasoning effort, and does not chain previous applicant responses. Deterministic findings remain the source of truth; the model's draft message is optional and editable. If OpenAI is not configured, fails or exceeds its budget, the system still has deterministic review guidance. If Azure is unavailable, use manual review.
 

@@ -7,8 +7,9 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 import httpx
-import cv2
-import numpy as np
+from PIL import Image
+
+from _photo import PHOTO_ERRORS, decode_photo, jpeg_bytes
 
 import _openai_client
 
@@ -139,19 +140,14 @@ def _extract_labeled_fallbacks(lines: List[str]) -> Dict[str, Any]:
 
 def _azure_reading_bytes(image_bytes: bytes) -> bytes:
     # Prepare a separate API transport copy: F0 accepts up to 4 MB per document.
-    image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError("Invalid image")
-    h, w = image.shape[:2]
-    if min(h, w) < 50:
+    image = decode_photo(image_bytes)
+    if min(image.size) < 50:
         raise ValueError("Image dimensions are too small")
-    if max(h, w) > 3000:
-        scale = 3000 / max(h, w)
-        image = cv2.resize(image, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+    image.thumbnail((3000, 3000), Image.Resampling.LANCZOS)
     for quality in (95, 88, 80):
-        ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, quality])
-        if ok and len(encoded) <= 3_800_000:
-            return encoded.tobytes()
+        encoded = jpeg_bytes(image, quality)
+        if len(encoded) <= 3_800_000:
+            return encoded
     raise ValueError("Image exceeds Azure reading limit")
 
 
@@ -173,7 +169,7 @@ def _analyze_bytes_azure(image_bytes: bytes, model="prebuilt-idDocument") -> Opt
 
     try:
         reading_bytes = _azure_reading_bytes(image_bytes)
-    except (ValueError, cv2.error):
+    except PHOTO_ERRORS:
         print(f"azure_idp model={model} input_invalid", flush=True)
         return None
     url = f"{endpoint}/documentintelligence/documentModels/{model}:analyze?api-version=2024-11-30"

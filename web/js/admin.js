@@ -158,7 +158,7 @@ async function renderAiState() {
   var stAiEl = document.getElementById("st-ai");
   if (stAiEl) stAiEl.textContent = "gpt-6.2-sol + IDP + GPT-5.4";
   var lbl = document.getElementById("ai-status-label");
-  if (lbl) lbl.textContent = "Stage 1 Image Quality Gate (gpt-6.2-sol) → Conditional Targeted OpenCV (if fixable) → Stage 2 Azure Document Intelligence IDP → Stage 3 NLP Rules → Stage 4 GPT-5.4 Remarks & Recommendation.";
+  if (lbl) lbl.textContent = "Stage 1 Image Quality Gate (gpt-6.2-sol) → Dynamsoft Document Normalizer → Stage 2 Azure Document Intelligence IDP → Stage 3 NLP Rules → Stage 4 GPT-5.4 Remarks & Recommendation.";
 
   var queue = document.getElementById("admin-screening-queue");
   if (queue) {
@@ -239,12 +239,14 @@ async function checkApiHealth() {
         : "Add OPENAI_API_KEY and OPENAI_MODEL=gpt-5.4 in Vercel Environment Variables"
     },
     {
-      name: "Stage 1 Image Quality Assessment Gate (OpenAI gpt-6.2-sol) + Targeted OpenCV",
-      status: openaiConfigured ? "Active (" + (data.openai_quality_model || "gpt-6.2-sol") + " + OpenCV)" : "OpenCV Fallback Only",
-      badge: openaiConfigured ? "badge-green" : "badge-yellow",
-      healthy: true,
-      checked_at: nowIso,
-      detail: "Inspects raw ID uploads first. GOOD images bypass OpenCV completely; FIXABLE images run targeted OpenCV only; UNFIXABLE images stop early (NEEDS_CORRECTION)."
+      name: "Dynamsoft Document Normalizer",
+      status: data.dynamsoft_configured ? "License configured" : "Server license missing",
+      badge: data.dynamsoft_configured ? "badge-green" : "badge-yellow",
+      healthy: Boolean(data.dynamsoft_configured),
+      checked_at: data.dynamsoft_configured ? nowIso : "",
+      detail: data.dynamsoft_configured
+        ? "Prepares a separate reading copy with crop, perspective correction, and lighting adjustments. License activation is confirmed during screening."
+        : "Add DYNAMSOFT_SERVER_LICENSE for Python. The original photo goes to extraction while the normalizer is unavailable."
     },
     {
       name: "Google reCAPTCHA v2 Security (SiteVerify)",
