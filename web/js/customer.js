@@ -268,8 +268,8 @@ function customerApplicationStatus(app) {
 function renderAppList() {
   var listEl = document.getElementById("cust-app-list");
   if (!listEl) return;
-  var counts = { "Processing": 0, "Needs Correction": 0, "Approved": 0, "Rejected": 0 };
-  myApps.forEach(function (app) { counts[customerApplicationStatus(app)]++; });
+  var counts = { Processing: 0, Approved: 0, Rejected: 0 };
+  myApps.forEach(function (app) { counts[getCustomerStatus(app.status)]++; });
   document.getElementById("cust-app-status-counts").innerHTML = Object.entries(counts).map(function (entry) {
     return '<div><dt>' + entry[0] + '</dt><dd>' + entry[1] + '</dd></div>';
   }).join("");
