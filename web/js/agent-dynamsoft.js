@@ -1,6 +1,8 @@
 const agentDynamsoft = (() => {
   const enabled = new URLSearchParams(window.location.search).get("dynamsoft-trial") === "1";
   const template = "DetectAndNormalizeDocument_Default";
+  const detectTemplate = "DetectDocumentBoundaries_Default";
+  const normalizeTemplate = "NormalizeDocument_Default";
   const previews = new Map();
   let license = "";
   let router;
@@ -39,6 +41,7 @@ const agentDynamsoft = (() => {
       const settings = await instance.getSimplifiedSettings(template);
       settings.documentSettings.colourMode = sdk.DDN.EnumImageColourMode.ICM_COLOUR;
       settings.documentSettings.contrast = 5;
+      settings.documentSettings.minQuadrilateralAreaRatio = 20;
       settings.timeout = 8000;
       await instance.updateSettings(template, settings);
       return instance;
@@ -57,10 +60,11 @@ const agentDynamsoft = (() => {
       const next = points[(index + 1) % 4];
       return sum + point.x * next.y - next.x * point.y;
     }, 0)) / 2;
-    return area >= width * height * 0.25;
+    return area >= width * height * 0.18;
   }
 
-  async function prepare(url, signal) {
+  async function prepare(url, signal, rotation) {
+    if (!license) throw new Error("Trial license unavailable.");
     if (!router) {
       router = withAgentReadTimeout(startRouter(), 22000).catch((error) => {
         license = "";
@@ -76,23 +80,59 @@ const agentDynamsoft = (() => {
     const canvas = document.createElement("canvas");
     try {
       const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+      const angle = { rotate_90_cw: Math.PI / 2, rotate_90_ccw: -Math.PI / 2, rotate_180: Math.PI }[rotation] || 0;
+      const quarterTurn = Math.abs(angle) === Math.PI / 2;
+      canvas.width = quarterTurn ? height : width;
+      canvas.height = quarterTurn ? width : height;
+      const context = canvas.getContext("2d");
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate(angle);
+      context.drawImage(bitmap, -width / 2, -height / 2, width, height);
     } finally {
       bitmap.close();
     }
     if (signal.aborted) return null;
+    const types = window.Dynamsoft.Core.EnumCapturedResultItemType;
     const result = await instance.capture(canvas, template);
-    const enhancedType = window.Dynamsoft.Core.EnumCapturedResultItemType.CRIT_ENHANCED_IMAGE;
-    const items = (result.items || []).filter(item => item.type === enhancedType);
-    if (result.errorCode || items.length !== 1) return null;
-    const item = items[0];
-    if (!looksLikeWholeCard(item.location?.points, canvas.width, canvas.height)) return null;
-    return item.toBlob("image/jpeg");
+    if (result.errorCode) throw new Error("Document scanner returned an error.");
+    const enhanced = (result.items || []).filter(item => item.type === types.CRIT_ENHANCED_IMAGE);
+    if (enhanced.length === 1 && looksLikeWholeCard(enhanced[0].location?.points, canvas.width, canvas.height)) {
+      return { blob: await enhanced[0].toBlob("image/jpeg") };
+    }
+    if (signal.aborted) return null;
+    const detected = await instance.capture(canvas, detectTemplate);
+    if (detected.errorCode) throw new Error("Document border detection failed.");
+    const quads = (detected.items || []).filter(item => item.type === types.CRIT_DETECTED_QUAD);
+    const points = quads.length === 1 ? quads[0].location?.points : null;
+    if (!looksLikeWholeCard(points, canvas.width, canvas.height)) {
+      return { message: "No single full-card outline found. Showing the original photo." };
+    }
+    const centerX = points.reduce((sum, point) => sum + point.x, 0) / 4;
+    const centerY = points.reduce((sum, point) => sum + point.y, 0) / 4;
+    const padded = points.map(({ x, y }) => ({
+      x: Math.round(centerX + (x - centerX) * 1.10),
+      y: Math.round(centerY + (y - centerY) * 1.10)
+    }));
+    if (!looksLikeWholeCard(padded, canvas.width, canvas.height)) {
+      return { message: "The card is too close to the photo edge for a padded crop. Showing the original photo." };
+    }
+    const settings = await instance.getSimplifiedSettings(normalizeTemplate);
+    settings.roi.points = padded;
+    settings.roiMeasuredInPercentage = false;
+    settings.documentSettings.colourMode = window.Dynamsoft.DDN.EnumImageColourMode.ICM_COLOUR;
+    settings.documentSettings.contrast = 5;
+    settings.timeout = 8000;
+    await instance.updateSettings(normalizeTemplate, settings);
+    if (signal.aborted) return null;
+    const normalized = await instance.capture(canvas, normalizeTemplate);
+    if (normalized.errorCode) throw new Error("Document normalization failed.");
+    const copies = (normalized.items || []).filter(item => item.type === types.CRIT_ENHANCED_IMAGE);
+    return copies.length === 1 ? { blob: await copies[0].toBlob("image/jpeg") } : null;
   }
 
-  function show(container, image, status, original) {
+  function show(container, image, status, original, rotation) {
     if (previews.has(container)) return;
     const controller = new AbortController();
     const preview = { controller, objectUrl: "" };
@@ -102,13 +142,14 @@ const agentDynamsoft = (() => {
 
     const work = pendingCapture.then(() => {
       if (controller.signal.aborted) return null;
-      return withAgentReadTimeout(prepare(original, controller.signal), 35000);
+      return withAgentReadTimeout(prepare(original, controller.signal, rotation), 48000);
     });
     pendingCapture = work.catch(() => {});
-    work.then(blob => {
+    work.then(result => {
       if (!container.isConnected || controller.signal.aborted) return;
+      const blob = result?.blob;
       if (!blob?.size) {
-        status.textContent = "Original photo shown. A full-card crop could not be confirmed.";
+        status.textContent = result?.message || "No cropped copy was returned. Showing the original photo.";
         return;
       }
       preview.objectUrl = URL.createObjectURL(blob);

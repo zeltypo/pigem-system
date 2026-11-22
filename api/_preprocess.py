@@ -140,12 +140,69 @@ def _deskew_and_crop(image: np.ndarray) -> Tuple[np.ndarray, str]:
     found = detect_card_quad(sample)
     if not found:
         return image, "edges_uncertain"
+    return _warp_card(image, found, scale), "cropped"
+
+
+def _warp_card(image: np.ndarray, found: Dict[str, Any], scale: float = 1.0) -> np.ndarray:
     w = max(80, int(found["width"] / scale))
     h = max(80, int(found["height"] / scale))
     target = np.float32([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]])
     points = found["points"] / scale
-    warped = cv2.warpPerspective(image, cv2.getPerspectiveTransform(points, target), (w, h), borderMode=cv2.BORDER_REPLICATE)
-    return warped, "cropped"
+    return cv2.warpPerspective(image, cv2.getPerspectiveTransform(points, target), (w, h), borderMode=cv2.BORDER_REPLICATE)
+
+
+def _bright_card_quad(image: np.ndarray) -> Optional[Tuple[Dict[str, Any], float]]:
+    height, width = image.shape[:2]
+    scale = min(1.0, 480 / max(height, width))
+    sample = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    gray = cv2.GaussianBlur(cv2.cvtColor(sample, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+    rows, cols = gray.shape
+    middle, bright = np.percentile(gray, (50, 88))
+    if bright - middle < 38:
+        return None
+
+    candidates = []
+    closing = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 13))
+    opening = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    for fraction in (0.55, 0.65, 0.75, 0.85):
+        mask = cv2.threshold(gray, middle + fraction * (bright - middle), 255, cv2.THRESH_BINARY)[1]
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, closing)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, opening)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if not 0.14 * gray.size <= area <= 0.74 * gray.size:
+                continue
+            rect = cv2.minAreaRect(contour)
+            w, h = rect[1]
+            if min(w, h) < 65 or not 1.25 <= max(w, h) / min(w, h) <= 1.88 or area / (w * h) < 0.62:
+                continue
+            points = _order_quad_points(cv2.boxPoints(rect))
+            if points is not None:
+                candidates.append((fraction, points))
+
+    for fraction, points in candidates:
+        agreeing = [other for level, other in candidates if level != fraction and
+                    cv2.intersectConvexConvex(points, other)[0] >= 0.80 * max(cv2.contourArea(points), cv2.contourArea(other))]
+        if len(agreeing) < 2:
+            continue
+        box = _order_quad_points(cv2.boxPoints(cv2.minAreaRect(np.vstack([points, *agreeing]))))
+        if box is None:
+            continue
+        center = box.mean(axis=0)
+        padded = center + (box - center) * 1.17
+        if np.any(padded < 0) or np.any(padded >= (cols - 1, rows - 1)):
+            continue
+        inner = cv2.fillConvexPoly(np.zeros_like(gray), np.rint(box).astype(np.int32), 255)
+        outer = cv2.fillConvexPoly(np.zeros_like(gray), np.rint(padded).astype(np.int32), 255)
+        if np.median(gray[inner != 0]) - np.median(gray[outer == 0]) < 35:
+            continue
+        return {
+            "points": padded,
+            "width": round(float(np.linalg.norm(padded[1] - padded[0]))),
+            "height": round(float(np.linalg.norm(padded[3] - padded[0]))),
+        }, scale
+    return None
 
 
 def _apply_brighten(image: np.ndarray, gamma: float = 0.72) -> np.ndarray:
@@ -240,6 +297,7 @@ def enhance_targeted(
         if crop_status == "cropped":
             applied.append("deskew_crop")
 
+    preview_quad = _bright_card_quad(image) if screening_auto and crop_status == "edges_uncertain" else None
     if screening_auto:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         low, median, high = np.percentile(gray[::3, ::3], (2, 50, 98))
@@ -272,7 +330,8 @@ def enhance_targeted(
         if "sharpen" not in applied:
             applied.append("sharpen")
 
-    if not applied:
+    reading_copy = _warp_card(image, *preview_quad) if preview_quad else None
+    if not applied and reading_copy is None:
         return data, {
             "bypassed": True,
             "enhanced": False,
@@ -283,18 +342,22 @@ def enhance_targeted(
             "preview_data_url": "",
         }
 
-    ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 93])
-    if not ok:
-        raise ValueError("The uploaded image could not be prepared.")
-    return encoded.tobytes(), {
+    output = data
+    if applied:
+        ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 93])
+        if not ok:
+            raise ValueError("The uploaded image could not be prepared.")
+        output = encoded.tobytes()
+    return output, {
         "bypassed": False,
         "enhanced": True,
         "cropped": crop_status == "cropped",
         "crop_verified": crop_status == "cropped",
+        "suggested_preview_crop": reading_copy is not None,
         "crop_status": crop_status,
         "applied_ops": applied,
         "engine": "opencv",
-        "preview_data_url": _make_preview_data_url(image),
+        "preview_data_url": _make_preview_data_url(reading_copy if reading_copy is not None else image),
     }
 
 

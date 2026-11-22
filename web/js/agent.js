@@ -1276,19 +1276,25 @@ function showAgentPreparedPhoto(container) {
   var status = container.querySelector("[data-photo-status]");
   var url = container.dataset.photo;
   if (!image || !status || !url) return;
-  if (activeIdImgMode === "dynamsoft") {
-    agentDynamsoft.show(container, image, status, url);
-    return;
-  }
   var app = findAppById(activeDetailAppId);
   var current = getAgentPreviewCopy(app, activePhotoCopyMode);
   var findings = activePhotoCopyMode === "latest" ? getSavedAgentFindings(app) : current.screening_findings;
   var side = container.dataset.photoSide || "front";
   var preparation = findings && findings.stages && findings.stages.photoPreparation && findings.stages.photoPreparation[side];
+  if (activeIdImgMode === "dynamsoft") {
+    var rotation = preparation?.applied_ops?.find(function (op) { return op.startsWith("rotate_"); });
+    agentDynamsoft.show(container, image, status, url, rotation);
+    return;
+  }
   var previousCrop = preparation?.cropped && preparation.crop_verified !== true;
   var preview = previousCrop ? "" : preparation?.preview_data_url;
   image.src = activePhotoCopyMode !== "original" && activeIdImgMode === "cropped" && preview ? preview : url;
   var usingPreview = image.src === preview;
+  image.dataset.suggestedCrop = String(Boolean(usingPreview && preparation.suggested_preview_crop));
+  if (usingPreview && preparation.suggested_preview_crop) {
+    status.textContent = "Suggested crop for reading. Compare with the original to confirm all details are visible.";
+    return;
+  }
   status.textContent = usingPreview
     ? (preparation.cropped ? "Cropped reading copy" : "Adjusted reading copy")
     : "Original uploaded photo";
@@ -2494,7 +2500,7 @@ async function downloadAgentIdPhoto(side) {
   var version = activePhotoCopyMode;
   var container = document.querySelector('#det-body [data-photo-container][data-photo-side="' + side + '"]');
   var imgEl = container ? container.querySelector("img") : null;
-  var url = activeIdImgMode === "dynamsoft" ? container?.dataset.photo : imgEl?.src;
+  var url = activeIdImgMode === "dynamsoft" || imgEl?.dataset.suggestedCrop === "true" ? container?.dataset.photo : imgEl?.src;
   url = url || (side === "front" ? copy.id_image_url || copy.id_front_path : copy.id_back_image_url || copy.id_back_path);
   if (!url) return;
   try {
