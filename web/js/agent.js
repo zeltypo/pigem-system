@@ -314,7 +314,6 @@ async function refreshAgentData(silent) {
   var fix = 0;
   var approvedCount = 0;
   var rejectedCount = 0;
-  var planCounts = { "1000": 0, "1400": 0, "1900": 0 };
 
   for (var i = 0; i < allApps.length; i++) {
     var a = allApps[i];
@@ -329,10 +328,6 @@ async function refreshAgentData(silent) {
     if (st === "Approved") approvedCount++;
     if (st === "Rejected") rejectedCount++;
 
-    var planStr = String(a.plan_name || a.plan_id || "");
-    if (planStr.indexOf("1000") !== -1) planCounts["1000"]++;
-    else if (planStr.indexOf("1400") !== -1) planCounts["1400"]++;
-    else if (planStr.indexOf("1900") !== -1) planCounts["1900"]++;
   }
 
   var setTxt = function (id, val) {
@@ -356,9 +351,10 @@ async function refreshAgentData(silent) {
   setTxt("st-approved", approvedCount);
   setTxt("st-rejected", rejectedCount);
 
-  if (!silent) {
+  if (!silent || activeBranch === "overview") {
     renderPieChart("chart-agent-pie", [
       { label: "Unclaimed", value: unclaimed, color: "#64748b" },
+      { label: "My Queue", value: myQueue, color: "#7c3aed" },
       { label: "Claimed", value: myClaimed, color: "#2563eb" },
       { label: "Encoding", value: encodingCount, color: "#0284c7" },
       { label: "Needs Correction", value: fix, color: "#d97706" },
@@ -367,23 +363,19 @@ async function refreshAgentData(silent) {
     ], "Queue");
     renderBars("chart-agent-bars", [
       { label: "Unclaimed", value: unclaimed, color: "#64748b" },
+      { label: "My Queue", value: myQueue, color: "#7c3aed" },
       { label: "Claimed", value: myClaimed, color: "#2563eb" },
       { label: "Encoding", value: encodingCount, color: "#0284c7" },
       { label: "Needs Correction", value: fix, color: "#d97706" },
       { label: "Approved", value: approvedCount, color: "#15803d" },
       { label: "Rejected", value: rejectedCount, color: "#b91c1c" }
     ]);
-    renderColumns("chart-agent-cols", [
-      { label: "Plan 1000", value: planCounts["1000"], color: "#c8102e" },
-      { label: "Plan 1400", value: planCounts["1400"], color: "#0f172a" },
-      { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
-    ]);
-    renderPieChart("chart-agent-plan-pie", [
-      { label: "Plan 1000", value: planCounts["1000"], color: "#c8102e" },
-      { label: "Plan 1400", value: planCounts["1400"], color: "#0f172a" },
-      { label: "Plan 1900", value: planCounts["1900"], color: "#2563eb" }
-    ], "Plans");
-    renderCalendar("agent-calendar", allApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, currentAgent); }));
+    var myApplications = allApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, currentAgent); });
+    var planCounts = getOverviewPlanCounts(myApplications);
+    renderColumns("chart-agent-cols", planCounts);
+    renderPieChart("chart-agent-plan-pie", planCounts, "Plans");
+    renderOverviewIntake("chart-agent-intake", myApplications);
+    renderCalendar("agent-calendar", myApplications);
   }
   renderCalendar("agent-report-calendar", allApps.filter(function (a) { return isAssignedToStaff(a.assigned_agent, currentAgent); }));
   if (!silent || activeBranch === "myqueue" || activeBranch === "reports") await renderAgentLinks();

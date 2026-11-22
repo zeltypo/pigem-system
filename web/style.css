@@ -555,8 +555,9 @@ body.drawer-open .drawer-back { display: block; }
 .bars .bar { height: 12px; background: var(--bg-soft); border-radius: 6px; overflow: hidden; }
 .bars .bar div { height: 100%; background: var(--red); border-radius: 6px; }
 
-.columns { display: flex; align-items: flex-end; gap: 12px; height: 170px; margin-top: 14px; padding-top: 10px; }
-.columns .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; font-size: 12px; color: var(--muted); }
+.columns { display: flex; align-items: flex-end; gap: clamp(4px, 2vw, 12px); height: 170px; margin-top: 14px; padding-top: 10px; }
+.columns .col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; font-size: 12px; color: var(--muted); text-align: center; }
+.columns .col span { max-width: 100%; min-height: 2.6em; overflow-wrap: anywhere; }
 .columns .col div { width: 100%; max-width: 38px; background: var(--red); border-radius: 6px 6px 0 0; min-height: 3px; }
 .columns .col b { color: var(--text); font-size: 13px; }
 

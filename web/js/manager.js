@@ -153,15 +153,6 @@ async function refreshManagerData() {
   updateDashSearchApps(mgrApps);
 
   var { pending, fix, approved, rejected } = getOverviewStatusCounts(mgrApps);
-  var planCounts = new Map(getActivePlans().map(function (plan) {
-    return [String(plan.id), { label: plan.name, value: 0 }];
-  }));
-  mgrApps.forEach(function (app) {
-    var key = String(app.plan_id || app.plan || app.plan_name || "Unknown");
-    if (!planCounts.has(key)) planCounts.set(key, { label: app.plan_name || key, value: 0 });
-    planCounts.get(key).value++;
-  });
-
   document.getElementById("st-total").textContent = mgrApps.length;
   document.getElementById("st-pending").textContent = pending;
   document.getElementById("st-fix").textContent = fix;
@@ -182,7 +173,7 @@ async function refreshManagerData() {
     { label: "Approved", value: approved, color: "#15803d" },
     { label: "Rejected", value: rejected, color: "#dc2626" }
   ]);
-  renderBars("chart-mgr-cols", Array.from(planCounts.values()));
+  renderColumns("chart-mgr-cols", getOverviewPlanCounts(mgrApps));
   renderOverviewIntake("chart-mgr-intake", mgrApps);
   renderCalendar("mgr-calendar", mgrApps);
   renderCalendar("mgr-report-calendar", mgrApps);

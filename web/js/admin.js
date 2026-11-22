@@ -94,6 +94,19 @@ async function refreshAdminData() {
   ]);
 
   renderOverviewIntake("chart-admin-intake", adminApps);
+  var screeningCounts = { queued: 0, running: 0, completed: 0, failed: 0, other: 0 };
+  adminApps.forEach(function (app) {
+    var state = app.screening?.background_state;
+    if (["queued", "running", "completed", "failed"].includes(state)) screeningCounts[state]++;
+    else screeningCounts.other++;
+  });
+  renderBars("chart-admin-screening", [
+    { label: "Waiting", value: screeningCounts.queued, color: "#64748b" },
+    { label: "Checking", value: screeningCounts.running, color: "#2563eb" },
+    { label: "Completed", value: screeningCounts.completed, color: "#15803d" },
+    { label: "Manual review", value: screeningCounts.failed, color: "#b45309" },
+    { label: "No background status", value: screeningCounts.other, color: "#6b7280" }
+  ]);
   renderCalendar("admin-overview-calendar", adminApps);
   renderCalendar("admin-full-calendar", adminApps);
 

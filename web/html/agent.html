@@ -133,8 +133,22 @@
           <div class="stat" style="cursor:pointer" onclick="showTab('rejected')"><div class="num" id="st-rejected">0</div><div class="lbl">Rejected Applications</div></div>
         </div>
 
-
-
+        <div class="report-charts-grid" style="margin-bottom:20px">
+          <div class="card">
+            <h3 style="margin-bottom:12px">Application Status Breakdown</h3>
+            <div id="chart-agent-pie" style="margin-bottom:14px"></div>
+            <div id="chart-agent-bars"></div>
+          </div>
+          <div class="card">
+            <h3 style="margin-bottom:12px">Plans Requested</h3>
+            <div id="chart-agent-plan-pie" style="margin-bottom:14px"></div>
+            <div id="chart-agent-cols"></div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <h3 style="margin-bottom:12px">My New Applications · Last 7 Days</h3>
+          <div id="chart-agent-intake"></div>
+        </div>
         <div class="card">
           <h3 style="margin-bottom:12px">Monthly Application Calendar</h3>
           <div id="agent-calendar"></div>
@@ -176,18 +190,6 @@
 
 
       <section id="tab-reports" class="hidden">
-        <div class="report-charts-grid" style="margin-bottom:20px">
-          <div class="card">
-            <h3 style="margin-bottom:12px">Application Status Breakdown</h3>
-            <div id="chart-agent-pie" style="margin-bottom:14px"></div>
-            <div id="chart-agent-bars"></div>
-          </div>
-          <div class="card">
-            <h3 style="margin-bottom:12px">Plans Requested</h3>
-            <div id="chart-agent-plan-pie" style="margin-bottom:14px"></div>
-            <div id="chart-agent-cols"></div>
-          </div>
-        </div>
         <div class="card" style="margin-bottom:18px"><h3>Application Calendar Report</h3><div id="agent-report-calendar"></div></div>
         <div class="card" style="margin-bottom:18px">
           <div class="row between" style="align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px">

@@ -740,6 +740,26 @@ function getOverviewStatusCounts(apps) {
   return counts;
 }
 
+function getOverviewPlanCounts(apps) {
+  var plans = getActivePlans();
+  var counts = new Map(plans.map(function (plan) {
+    return [String(plan.id), { label: plan.name, value: 0 }];
+  }));
+  apps.forEach(function (app) {
+    var raw = String(app.plan_id || app.plan || app.plan_name || "");
+    var plan = plans.find(function (item) {
+      return String(item.id) === raw || item.name === raw;
+    });
+    var key = plan ? String(plan.id) : raw || "Unknown plan";
+    if (!counts.has(key)) counts.set(key, { label: app.plan_name || key, value: 0 });
+    counts.get(key).value++;
+  });
+  var colors = ["#c8102e", "#475569", "#2563eb", "#7c3aed", "#15803d"];
+  return Array.from(counts.values(), function (row, index) {
+    return { ...row, color: colors[index % colors.length] };
+  });
+}
+
 function renderOverviewIntake(boxId, apps) {
   var keyFormat = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "numeric", day: "numeric" });
   var labelFormat = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric" });
@@ -755,7 +775,7 @@ function renderOverviewIntake(boxId, apps) {
     var day = days.get(keyFormat.format(date));
     if (day) day.value++;
   });
-  renderBars(boxId, Array.from(days.values()));
+  renderColumns(boxId, Array.from(days.values()));
 }
 
 function renderBars(boxId, rows) {
@@ -789,10 +809,10 @@ function renderColumns(boxId, cols) {
   var html = '<div class="columns">';
   for (var j = 0; j < cols.length; j++) {
     var c = cols[j];
-    var pct = Math.max(6, Math.round((c.value / maxVal) * 100));
+    var pct = c.value > 0 ? Math.max(6, Math.round((c.value / maxVal) * 100)) : 0;
     html += '<div class="col">' +
       '<b>' + c.value + '</b>' +
-      '<div class="col-bar" style="height:' + pct + '%; background:' + (c.color || "#c8102e") + '"></div>' +
+      '<div class="col-bar" aria-hidden="true" style="height:' + pct + '%; background:' + (pct ? c.color || "#c8102e" : "transparent") + '"></div>' +
       '<span>' + escapeHtml(c.label) + '</span>' +
       '</div>';
   }
